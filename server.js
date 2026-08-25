@@ -478,6 +478,26 @@ function send(res, code, type, body) {
 
 const json = (res, obj, code = 200) => send(res, code, 'application/json', JSON.stringify(obj));
 
+// --- registry. Shared by both listeners: orchestrators curl from loopback, box workers
+// over tailnet. Agent POSTs carry no Origin header, so the gate rejects a *foreign*
+// origin rather than a missing one; every value is validated before any write. Host
+// "mac" is registry-only — it names lanes on this machine, which no ssh loop may target.
+async function registryRoute(req, res, p) {
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  const origin = req.headers.origin;
+  if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
+  const b = await body(req).catch(() => null);
+  if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+  if (!(b.host === 'mac' || HOSTS().includes(b.host)) || !SAFE_NAME.test(b.name || ''))
+    return json(res, { ok: false, error: 'unknown host or bad session name' }, 400);
+  if (p === '/api/registry/delete') {
+    db.prepare('DELETE FROM sessions WHERE host = ? AND name = ?').run(b.host, b.name);
+    return json(res, { ok: true });
+  }
+  const r = registryWrite(b);
+  return json(res, r.body, r.code);
+}
+
 const server = http.createServer(async (req, res) => {
   if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
@@ -503,24 +523,17 @@ const server = http.createServer(async (req, res) => {
       const r = await mint(b.ttl, b.principals);
       return json(res, r.body, r.code);
     }
-    // --- registry + kill. Agent-facing (orchestrators curl these from a session with no
-    // Origin header), so the gate rejects a *foreign* origin rather than a missing one;
-    // the listener is loopback-only and every value is validated below.
-    if (p === '/api/registry' || p === '/api/registry/delete' || p === '/api/kill') {
+    if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p);
+    if (p === '/api/kill') {
       if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
       const origin = req.headers.origin;
       if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
       const b = await body(req).catch(() => null);
       if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+      // Kill reaches for ssh, so only fleet hosts qualify — never mac.
       if (!HOSTS().includes(b.host) || !SAFE_NAME.test(b.name || ''))
         return json(res, { ok: false, error: 'unknown host or bad session name' }, 400);
-      if (p === '/api/registry/delete') {
-        db.prepare('DELETE FROM sessions WHERE host = ? AND name = ?').run(b.host, b.name);
-        return json(res, { ok: true });
-      }
-      if (p === '/api/kill') return json(res, await kill(b.host, b.name));
-      const r = registryWrite(b);
-      return json(res, r.body, r.code);
+      return json(res, await kill(b.host, b.name));
     }
     // Agent-facing: a local process holds no Origin, and the train itself is the gate.
     if (p === '/api/ghtoken' && req.method === 'GET') {
@@ -657,13 +670,15 @@ server.on('upgrade', (req, socket, head) => {
 
 server.listen(PORT, '127.0.0.1', () => console.log('fleetdeck http://localhost:' + PORT));
 
-// Tailnet broker: box workers need GitHub tokens too, so these two reads — and nothing
-// else — are reachable over tailscale. No static files, no POSTs, no key routes: a train
-// is still started only from this Mac's loopback UI.
+// Tailnet broker: box workers need GitHub tokens and registry writes, so these routes —
+// and nothing else — are reachable over tailscale. No static files, no key routes: a
+// train is still started only from this Mac's loopback UI, and kill stays loopback-only
+// because it reaches for ssh.
 async function tailnetHandler(req, res) {
   if (req.headers.host !== TAILNET_IP + ':' + PORT) return send(res, 403, 'text/plain', 'forbidden');
   const p = new URL(req.url, 'http://localhost').pathname;
   try {
+    if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p);
     if (req.method === 'GET' && p === '/api/ghtoken') {
       const r = await ghToken();
       return json(res, r.body, r.code);
