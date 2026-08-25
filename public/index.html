@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>fleetdeck</title>
+    <link rel="stylesheet" href="/vendor/xterm.css" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <div class="wordmark">fleetdeck</div>
+      <button id="drawer-close" class="ghost" aria-label="Close sessions" title="Close (or click outside)">✕</button>
+      <div class="row nav">
+        <button id="nav-windows" class="ghost sel">Windows</button>
+        <button id="fleet-btn" class="ghost">Registry</button>
+        <a class="ghost navlink" href="/keys.html">SSH keys</a>
+      </div>
+      <button id="connect-all" class="primary">Connect all</button>
+      <div class="section-label">Sessions</div>
+      <div id="sessions"></div>
+      <div class="sidebar-footer">
+        <div class="hint">detach = ctrl-b then d · closing a tile never kills the remote session · ⤢ fullscreen, ☰ switch, shift+esc back</div>
+        <div id="health"></div>
+        <div class="row">
+          <button id="refresh" class="ghost">Refresh</button>
+        </div>
+      </div>
+    </aside>
+    <main id="grid">
+      <div id="empty">No terminals open — pick a session, Connect all, or <button id="empty-fleet" class="linkbtn">open the Registry</button></div>
+    </main>
+    <!-- Fullscreen, never inside #grid: open tiles keep their websockets while it is up. -->
+    <div id="fleet" class="panel" hidden>
+      <div class="row">
+        <h2>Registry</h2>
+        <button id="fleet-close" class="ghost" aria-label="Close registry" title="Close (esc)">✕</button>
+      </div>
+      <div class="nav subnav">
+        <button id="tab-overview" class="ghost">Overview</button>
+        <button id="tab-details" class="ghost">Details</button>
+      </div>
+      <table>
+        <!-- Header cells are built from the active tab's column list, so the sort
+             mapping can never drift from the columns on screen. -->
+        <thead><tr id="fleet-head"></tr></thead>
+        <tbody id="fleet-rows"></tbody>
+      </table>
+    </div>
+    <script src="/vendor/xterm.js"></script>
+    <script src="/vendor/addon-fit.js"></script>
+    <script src="/vendor/addon-web-links.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

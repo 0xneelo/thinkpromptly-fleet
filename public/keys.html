@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>fleetdeck · ssh keys</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <div class="wordmark">fleetdeck</div>
+      <a class="ghost navlink" href="/">← Deck</a>
+      <div class="section-label">SSH keys</div>
+      <div class="hint">
+        Short-lived certs signed by the CA held in 1Password. Private keys stay on disk and are
+        never shown here.
+      </div>
+      <div class="sidebar-footer">
+        <button id="refresh" class="ghost">Refresh</button>
+      </div>
+    </aside>
+    <main id="keys-main">
+      <section class="panel">
+        <h2>Mint a cert</h2>
+        <div class="row">
+          <div class="row" id="ttls"></div>
+          <input id="principals" value="root" placeholder="root — vibe for german-box" aria-label="Principals" />
+          <button id="mint" class="primary">Mint</button>
+        </div>
+        <div class="hint">Minting pops a 1Password approval on the Mac — click Allow there.</div>
+        <div id="mint-error" class="notice" hidden></div>
+      </section>
+      <section class="panel">
+        <h2>GitHub train</h2>
+        <div class="row">
+          <div class="row" id="train-status"></div>
+          <div class="row" id="train-ttls"></div>
+          <button id="train-end" class="ghost" hidden>End train</button>
+        </div>
+        <div class="hint">
+          Starting a train pops one Touch ID on the Mac. While active, agents self-serve 1h tokens:
+          <code>curl -s localhost:3131/api/ghtoken</code>
+        </div>
+        <div id="train-error" class="notice" hidden></div>
+      </section>
+      <section class="panel">
+        <h2>Certificates</h2>
+        <div id="certs"></div>
+      </section>
+      <section class="panel">
+        <h2>Keys in ~/.ssh</h2>
+        <div id="pubkeys"></div>
+      </section>
+    </main>
+    <script src="/keys.js"></script>
+  </body>
+</html>

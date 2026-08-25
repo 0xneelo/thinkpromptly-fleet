@@ -1,0 +1,5 @@
+node_modules/
+fleet.db*
+*.log
+deploy-keys/github-app.env
+*.pem
