@@ -14,8 +14,9 @@ worker stays visible in the Registry view instead of disappearing. Status is one
 `/api/registry/delete` drops a row and `/api/kill` runs `tmux kill-session` (irreversible).
 
 **Last msg.** The Registry's "Last msg" column is the timestamp of the last assistant turn
-in each session's Claude Code transcript (`~/.claude/projects/<cwd-slugified>/<newest>.jsonl`
-on the box) — a truer idle signal than pane activity. `box/fleet-lastmsg.sh` is the master
+in each session's transcript — Claude Code (`~/.claude/projects/<cwd-slugified>/<newest>.jsonl`
+on the box) or, for Codex-breed workers, the newest `~/.codex/sessions/Y/M/D/rollout-*.jsonl`
+whose `session_meta` cwd matches the pane — a truer idle signal than pane activity. `box/fleet-lastmsg.sh` is the master
 copy; it must be **installed on the box** at `/home/vibe/bin/fleet-lastmsg.sh` (stdin, since
 the remote command string may hold no quotes or redirects):
 
