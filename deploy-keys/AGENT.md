@@ -4,7 +4,7 @@ SSH to our hosts uses short-lived OpenSSH certificates. Not static keys. Not the
 
 ## Connect
 
-Easiest path — two config aliases that always use the newest cert (via the `~/.ssh/deploy-certs/current` symlink): `ssh vps-deploy` (root@think-box) and `ssh gb-deploy` (vibe@german-box). If they fail with a missing-file or permission error, the current cert expired, was killed, or lacks your principal — ask the operator for a fresh `root,vibe` mint.
+Easiest path — four config aliases that always use the newest cert (via the `~/.ssh/deploy-certs/current` symlink): `ssh vps-deploy` (root@think-box), `ssh ob-deploy` (root@onboarding-app-box), `ssh ivybox-deploy` (root@ivy-box), `ssh gb-deploy` (vibe@german-box). If they fail with a missing-file or permission error, the current cert expired, was killed, or lacks your principal — ask the operator for a fresh `root,vibe` mint.
 
 Manual form: certs live in `~/.ssh/deploy-certs/<timestamp>/` — two files: `deployer` (private key) and `deployer-cert.pub` (certificate).
 
@@ -16,8 +16,8 @@ ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes \
 Hosts and login users (only CA-trusting hosts accept certs):
 - `root@138.199.198.246` — think-box (thinkpromptly.com / lowcapsxyz.com — lowcaps deploys; Hetzner "promptly"). Trusts the CA.
 - `vibe@100.80.44.86` — german-box (worker lane; Windows OpenSSH; default shell is cmd, tmux runs inside WSL). Trusts the CA.
-- `root@178.104.80.26` — onboarding-app-box (vibe.permissionless.credit; Hetzner "vibe-onboarding-app"). Does NOT trust the CA yet — use the static-key alias `ssh onboarding-box`.
-- `root@168.119.52.183` — ivy-box (ivy.market; Hetzner "ivy-market"). Does NOT trust the CA yet — use the static-key alias `ssh ivy-vps`.
+- `root@178.104.80.26` — onboarding-app-box (vibe.permissionless.credit; Hetzner "vibe-onboarding-app"). Trusts the CA (since 2026-08-27).
+- `root@168.119.52.183` — ivy-box (ivy.market; Hetzner "ivy-market"). Trusts the CA (since 2026-08-27).
 
 Not SSH targets: the Mac itself (orchestrator — CA, 1Password, fleetdeck) and the GitHub train (github.com as `0xneelo`, token flow below).
 
