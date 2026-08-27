@@ -1,5 +1,5 @@
 const TTLS = ['1h', '4h', '8h'];
-// root = VPS login, vibe = german-box login.
+// root = the VPS boxes' login (think-box, onboarding-app-box, ivy-box), vibe = german-box login.
 const PRINCIPALS = ['root', 'vibe'];
 // Exactly what you paste after `ssh` to use this cert and nothing else from the agent.
 const sshOpts = (dir) =>
@@ -182,7 +182,7 @@ ttlsEl.append(...ttlBtns);
 const principalsEl = document.getElementById('principals');
 for (const p of PRINCIPALS) {
   const b = el('button', 'ghost ttl sel', p);
-  b.title = p === 'root' ? 'VPS' : 'german-box';
+  b.title = p === 'root' ? 'VPS boxes: think · onboarding · ivy' : 'german-box';
   b.setAttribute('aria-pressed', 'true');
   b.onclick = () => {
     if (principals.has(p)) principals.delete(p);
