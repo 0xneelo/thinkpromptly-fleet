@@ -25,14 +25,22 @@ the remote command string may hold no quotes or redirects):
 
 Missing script or failed ssh is not an error: rows keep their stored `msg_at`, new ones show `—`.
 
-**Credits view.** `/credits.html` shows plan usage per team account — 5-hour, 7-day and
-paid extra-usage credits for each Claude account, plus the Codex/ChatGPT weekly window.
-Three sources feed it, best first: the live OAuth usage endpoint (needs a valid Claude Code
-token on that machine, gives real reset times), the Claude desktop app's
-`plan-usage-history.json` (derived numbers only, covers accounts with no CLI login), and
-`POST /api/credits` for machines outside the fleet. **Access tokens never leave the machine
-that owns them** — the collector calls the endpoint locally and emits only percentages,
-amounts and reset stamps. The desktop app's `config.json` holds a token cache and is never read.
+**Accounts view.** `/accounts.html` (API path stays `/api/credits`) shows plan usage per
+team account, most constrained first — 5-hour, 7-day and paid extra-usage credits for each
+Claude account, plus the Codex/ChatGPT weekly window, with a header summary of how many
+accounts are at or over a limit and what has been spent. Three sources feed it, best first:
+the live OAuth usage endpoint (needs a valid Claude Code token on that machine, gives real
+reset times), the Claude desktop app's `plan-usage-history.json` (derived numbers only,
+covers accounts with no CLI login), and `POST /api/credits` for machines outside the fleet.
+**Access tokens never leave the machine that owns them** — the collector calls the endpoint
+locally and emits only percentages, amounts and reset stamps. The desktop app's
+`config.json` holds a token cache and is never read.
+
+**Usage history.** Each account's sparkline is the desktop app's own 7-day series. Every
+machine sends at most 300 samples per org; the deck merges them into `credits_history`
+(org + second is the key, so the same sample from two machines lands once) and keeps
+**60 days**. One box therefore fills in the accounts another stopped sampling. The `seen on`
+line names every machine reporting that account and how.
 
 `credits-accounts.json` maps each Claude org uuid to a person. A CLI login on any fleet
 machine proves an account's email and flips its row to confirmed; unconfirmed rows are

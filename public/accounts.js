@@ -1,12 +1,16 @@
-// Labels, order and account identity all come from the API (credits-accounts.json is the
-// operator's copy); this page renders whatever it is handed.
+// Labels and account identity all come from the API (credits-accounts.json is the
+// operator's copy); this page renders whatever it is handed, most constrained first.
 const WIN_LABEL = { five_hour: '5 hour', seven_day: '7 day', extra: 'extra usage', weekly: 'weekly', secondary: 'session' };
 // Claude's own windows lead; anything model-specific follows in reported order.
 const WIN_ORDER = ['five_hour', 'seven_day', 'extra'];
 // What each row's numbers actually are, so a stale snapshot is never read as live usage.
 const SOURCE = { oauth: 'live', desktop: 'desktop snapshot', push: 'push', codex: 'live' };
+// The plan behind the windows. An unknown tier shows verbatim rather than as nothing.
+const TIER = { default_claude_max_20x: 'Max 20×', claude_max: 'Max' };
+const SVG = 'http://www.w3.org/2000/svg';
 
 const accountsEl = document.getElementById('accounts');
+const summaryEl = document.getElementById('summary');
 const errorsEl = document.getElementById('errors');
 const errorsPanel = document.getElementById('errors-panel');
 const refreshBtn = document.getElementById('refresh');
@@ -45,11 +49,21 @@ function until(epoch) {
   return 'resets in ' + (m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + (m % 60) + 'm');
 }
 
+const level = (pct) => (pct > 90 ? 'red' : pct >= 70 ? 'amber' : '');
+
+// The windows that say whether this account is about to hit a wall — the rest are either
+// paid credits or model-specific extras nobody plans around.
+const MAIN = { claude: (r) => [(r.windows || {}).five_hour, (r.windows || {}).seven_day], codex: (r) => [r.weekly, r.secondary] };
+const worst = (r) => {
+  const p = (MAIN[r.kind] || MAIN.claude)(r).filter((w) => w && typeof w.pct === 'number').map((w) => w.pct);
+  return p.length ? Math.max(...p) : null;
+};
+
 // A window with no percentage still gets a row — an empty bar says "reported, unknown".
 function bar(name, w) {
   const row = el('div', 'bar-row');
   const track = el('div', 'bar-track');
-  const fill = el('div', 'bar-fill' + (w.pct > 90 ? ' red' : w.pct >= 70 ? ' amber' : ''));
+  const fill = el('div', ('bar-fill ' + level(w.pct)).trim());
   fill.style.width = Math.max(0, Math.min(100, w.pct || 0)) + '%';
   track.append(fill);
   row.append(
@@ -61,6 +75,39 @@ function bar(name, w) {
   return row;
 }
 
+// The 7-day series the Claude desktop app has been sampling. Inline SVG, no library: a
+// polyline over a faint area, scaled to the sampled span so gaps in sampling read as gaps.
+function spark(history) {
+  const pts = history.filter((s) => typeof s.sd === 'number');
+  const row = el('div', 'bar-row');
+  row.append(el('span', 'muted', '7 day trend'));
+  if (pts.length < 2) {
+    row.append(el('span', 'muted', 'no history yet'), el('span', 'pct', ''), el('span', 'muted', ''));
+    return row;
+  }
+  const t0 = pts[0].t;
+  const span = pts[pts.length - 1].t - t0;
+  const xy = pts.map((s, i) => {
+    // All samples in the same second (or a one-point span) would divide by zero, so the
+    // fallback spreads them evenly by index instead.
+    const x = span > 0 ? ((s.t - t0) / span) * 100 : (i / (pts.length - 1)) * 100;
+    return x.toFixed(2) + ',' + (28 - (Math.max(0, Math.min(100, s.sd)) / 100) * 28).toFixed(2);
+  });
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('class', ('spark ' + level(pts[pts.length - 1].sd)).trim());
+  svg.setAttribute('viewBox', '0 0 100 28');
+  svg.setAttribute('preserveAspectRatio', 'none');
+  const area = document.createElementNS(SVG, 'polygon');
+  area.setAttribute('points', '0,28 ' + xy.join(' ') + ' 100,28');
+  const line = document.createElementNS(SVG, 'polyline');
+  line.setAttribute('points', xy.join(' '));
+  const title = document.createElementNS(SVG, 'title');
+  title.textContent = Math.max(1, Math.round(span / 86400)) + ' days, ' + pts.length + ' samples';
+  svg.append(area, line, title);
+  row.append(svg, el('span', 'pct', pts[pts.length - 1].sd + '%'), el('span', 'muted', ''));
+  return row;
+}
+
 function card(r) {
   const acct = el('div', 'acct');
   const head = el('div', 'row');
@@ -68,8 +115,13 @@ function card(r) {
   head.append(
     pill(live ? 'green' : r.source ? 'amber' : '', r.kind),
     el('span', 'who', r.label || r.email || r.id),
-    el('span', 'muted', r.email || r.org || '')
+    el('span', 'muted', r.email || '')
   );
+  // The uuid the desktop app and the accounts file both key on — eight characters is
+  // enough to match a row against the file by eye.
+  if (r.org) head.append(el('span', 'mono muted', r.org.slice(0, 8)));
+  const tier = TIER[r.tier] || r.tier || TIER[r.type] || r.type;
+  if (tier) head.append(pill('', tier));
   if (r.kind === 'codex' && r.plan) head.append(pill('', r.plan));
   // When the live reply carried no percentages, say whose numbers are on show.
   if (r.source)
@@ -112,22 +164,57 @@ function card(r) {
       const c = r.credit;
       const d = Number.isInteger(c.decimals) ? c.decimals : 2;
       const cur = c.currency ? ' ' + c.currency : '';
-      const line = el('div', c.capped ? 'notice' : 'muted',
+      acct.append(el('div', c.capped ? 'notice' : 'muted',
         'credits: ' + c.used.toFixed(d) + ' / ' + c.limit.toFixed(d) + cur +
-        (c.capped ? ' · spend limit reached' : '') + (c.enabled ? '' : ' · extra usage off'));
-      acct.append(line);
+        (c.capped ? ' · spend limit reached' : '') + (c.enabled ? '' : ' · extra usage off')));
     }
+    acct.append(spark(r.history || []));
   } else {
     if (r.weekly) acct.append(bar('weekly', r.weekly));
     if (r.secondary) acct.append(bar('secondary', r.secondary));
     if (r.credits && r.credits.has_credits)
       acct.append(el('div', 'muted', 'credits: ' + (r.credits.unlimited ? 'unlimited' : r.credits.balance)));
   }
+  // Which machines report this account and how: an account signed in nowhere is only ever
+  // seen through the desktop app, which is why its numbers carry no reset times.
+  if (r.seen && r.seen.length)
+    acct.append(el('div', 'muted seen', 'seen on ' + r.seen.map((s) => s.host + ' · ' + (SOURCE[s.source] || s.source)).join(', ')));
   return acct;
 }
 
+// Count and money, not percentages: how many accounts are out of room, and what the fleet
+// has actually spent. Currencies are listed side by side — adding them would invent a rate.
+function summary() {
+  const spend = new Map();
+  let hit = 0;
+  for (const r of rows) {
+    const w = Object.values(r.windows || {}).concat(r.weekly || [], r.secondary || []);
+    const c = r.credit;
+    if (w.some((x) => x && x.pct >= 100) || (c && c.capped)) hit++;
+    if (c && typeof c.used === 'number') {
+      const cur = c.currency || '';
+      spend.set(cur, (spend.get(cur) || 0) + c.used);
+    }
+  }
+  const money = [...spend].map(([cur, v]) => v.toFixed(2) + (cur ? ' ' + cur : ''));
+  return [
+    rows.length + (rows.length === 1 ? ' account' : ' accounts'),
+    hit + ' at or over a limit',
+    money.length ? 'spent ' + money.join(' · ') : 'no credits spent',
+  ];
+}
+
 function render() {
-  accountsEl.replaceChildren(...rows.map(card));
+  // Most constrained first, so whoever is about to hit a wall is at the top; an account
+  // nothing has reported has nothing to say and sorts last.
+  const sorted = rows.slice().sort((a, b) => {
+    const x = worst(a);
+    const y = worst(b);
+    if (x === null || y === null) return (x === null) - (y === null);
+    return y - x;
+  });
+  summaryEl.replaceChildren(...summary().map((t) => el('span', 'muted', t)));
+  accountsEl.replaceChildren(...sorted.map(card));
   errorsPanel.hidden = !errors.length;
   errorsEl.replaceChildren(...errors.map((e) => el('div', 'err', e.host + ': ' + e.message)));
 }

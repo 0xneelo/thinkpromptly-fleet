@@ -228,6 +228,12 @@ async function health() {
 db.exec(
   `CREATE TABLE IF NOT EXISTS credits (kind TEXT, id TEXT, email TEXT, org TEXT, host TEXT, payload TEXT, updated_at INTEGER, PRIMARY KEY (kind, id))`
 );
+// The desktop app samples usage as it is used, so the trend it keeps is the only history
+// the fleet has. A sample is immutable — same org and second means same reading, whichever
+// machine reports it — so the merge across machines is an INSERT OR IGNORE on that key.
+db.exec(
+  `CREATE TABLE IF NOT EXISTS credits_history (org TEXT, t INTEGER, fh REAL, sd REAL, xu REAL, PRIMARY KEY (org, t))`
+);
 
 const CREDITS_SH = path.join(__dirname, 'box', 'fleet-credits.sh');
 // Quote-free, argument-free: the same remote-command rule as fleet-lastmsg.sh.
@@ -273,6 +279,32 @@ const creditsUpsert = db.prepare(
 // An org row is provisional: once its email is known the account merges under that address.
 const creditsDropId = db.prepare('DELETE FROM credits WHERE kind = ? AND id = ?');
 const creditsGetId = db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?');
+const historyInsert = db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu) VALUES (?, ?, ?, ?, ?)');
+const historyPrune = db.prepare('DELETE FROM credits_history WHERE t < ?');
+const historyGet = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t');
+const HISTORY_KEEP = 60 * 86400; // a trend older than two months answers no question anyone asks
+const HISTORY_POINTS = 120; // enough shape for a sparkline; the rest is payload weight
+
+// Evenly spaced, first and last kept exactly — a trend line needs its shape and its ends,
+// not every point.
+function thin(a, max) {
+  if (a.length <= max) return a;
+  const step = (a.length - 1) / (max - 1);
+  return Array.from({ length: max }, (_, i) => a[Math.round(i * step)]);
+}
+
+// Only the three percentages travel, each 0-100 like every other source here. An org this
+// process cannot name still gets its samples: the mapping may arrive on a later collect.
+function creditsHistoryWrite(d) {
+  const now = Math.floor(Date.now() / 1000);
+  for (const s of Array.isArray(d.history) ? d.history : []) {
+    if (!s || typeof s !== 'object' || typeof s.org !== 'string') continue;
+    const t = epochOf(s.t);
+    // A future stamp is a skewed clock; it would sit forever at the right of every chart.
+    if (t === null || t > now || t < now - HISTORY_KEEP) continue;
+    historyInsert.run(s.org.slice(0, 64), t, pctOf(s.fh), pctOf(s.sd), pctOf(s.xu));
+  }
+}
 
 // Operator-editable, read per collect so an edit needs no restart. A malformed file must
 // not take the deck down — it just leaves every org unmapped and visibly so.
@@ -397,7 +429,14 @@ function creditsMap(accounts) {
   );
   for (const a of accounts)
     if (a && typeof a.org === 'string' && typeof a.email === 'string')
-      map.set(a.org, { email: a.email, label: (map.get(a.org) || {}).label || null, confirmed: true });
+      map.set(a.org, {
+        email: a.email,
+        label: (map.get(a.org) || {}).label || null,
+        confirmed: true,
+        // The plan behind the windows — only a CLI login on some machine knows it.
+        tier: typeof a.tier === 'string' ? a.tier.slice(0, 40) : null,
+        type: typeof a.type === 'string' ? a.type.slice(0, 40) : null,
+      });
   return map;
 }
 
@@ -412,6 +451,8 @@ function ident(org, email, map) {
     email: ok ? addr.toLowerCase() : null,
     label: (m && m.label) || (ok ? null : org ? String(org).slice(0, 8) + ' · unmapped org' : null),
     confirmed: m ? m.confirmed : !!ok,
+    tier: (m && m.tier) || null,
+    type: (m && m.type) || null,
   };
 }
 
@@ -468,10 +509,15 @@ function creditsWrite(rows) {
   // A collect carries no pushed rows, so without comparing against what is already stored
   // a local snapshot would clobber a better report an off-fleet machine pushed earlier.
   let written = 0;
-  for (const r of best.values()) {
+  for (const [k, r] of best) {
     const prev = creditsGetId.get(r.kind, r.id);
     if (prev && !beats(r, safeParse(prev.payload))) continue;
-    creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify(r), r.updated_at);
+    // Which machines report this account and how — every candidate for the key, not just
+    // the winner: an account signed in on three boxes is a different fact from one on one.
+    const seen = [];
+    for (const c of groups.get(k))
+      if (!seen.some((s) => s.host === c.host && s.source === c.source)) seen.push({ host: c.host, source: c.source });
+    creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify({ ...r, seen }), r.updated_at);
     if (r.email && r.org) creditsDropId.run(r.kind, 'org:' + r.org);
     written++;
   }
@@ -504,6 +550,13 @@ function creditsRows() {
   // next page load rather than only after the row is collected again.
   const byEmail = new Map(Object.values(cfg.orgs).map((m) => [String(m.email || '').toLowerCase(), m.label]));
   const at = (r) => (order.indexOf(r.kind + '\0' + r.id) + 1 || 999) - 1;
+  // Only Claude accounts have a trend: the desktop app is what samples them, and it knows
+  // nothing about Codex.
+  for (const r of rows) {
+    if (r.kind !== 'claude' || !r.org) continue;
+    const h = thin(historyGet.all(r.org), HISTORY_POINTS);
+    if (h.length) r.history = h;
+  }
   for (const r of rows)
     r.label =
       (r.kind === 'codex' ? (cfg.codex[r.id] || {}).label : (cfg.orgs[r.org] || {}).label || byEmail.get(r.id)) ||
@@ -542,6 +595,10 @@ async function creditsCollect(force) {
     // One mapping for the whole fleet: a CLI login on any machine names an org for all of them.
     const map = creditsMap(replies.flatMap(([, d]) => (Array.isArray(d.accounts) ? d.accounts : [])));
     creditsWrite(replies.flatMap(([host, d]) => creditsCandidates(d, host, map, false)));
+    // Every machine's samples merge into one series per org — one box keeps sampling the
+    // accounts another stopped using. Retention is bounded here, once per collect.
+    for (const [, d] of replies) creditsHistoryWrite(d);
+    historyPrune.run(Math.floor(Date.now() / 1000) - HISTORY_KEEP);
   }
   return { rows: creditsRows(), errors };
 }
@@ -835,13 +892,17 @@ async function creditsRoute(req, res) {
   if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
   const origin = req.headers.origin;
   if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
-  const b = await body(req, 32768).catch(() => null);
+  // A month of desktop samples is ~100KB of derived numbers, so the cap is per-line, not
+  // per-window: a push carrying its history must still fit.
+  const b = await body(req, 262144).catch(() => null);
   if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
   // A normalized row names its kind at the top level; wrap it so both shapes take the
   // same whitelisting path.
   const d = b.kind === 'claude' || b.kind === 'codex' ? { host: b.host, ts: b.updated_at, [b.kind]: b } : b;
   const map = creditsMap(Array.isArray(d.accounts) ? d.accounts : []);
-  if (!creditsWrite(creditsCandidates(d, 'push', map, true)))
+  const wrote = creditsWrite(creditsCandidates(d, 'push', map, true));
+  creditsHistoryWrite(d);
+  if (!wrote)
     return json(res, { ok: false, error: 'body must carry a claude or codex account with an email address or org' }, 400);
   return json(res, { ok: true });
 }

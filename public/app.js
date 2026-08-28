@@ -74,7 +74,7 @@ async function loadHealth() {
 }
 
 // Whichever window is furthest along is the one that will actually stop the account, so
-// that is the number worth a sidebar row; /credits.html carries the rest.
+// that is the number worth a sidebar row; /accounts.html carries the rest.
 function accountMini(r) {
   const w = r.windows || {};
   const pcts = (r.kind === 'codex' ? [w.weekly, r.weekly, r.secondary] : [w.five_hour, w.seven_day])

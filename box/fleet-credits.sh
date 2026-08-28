@@ -88,15 +88,20 @@ CRED=""
 # The token cache in that same directory (config.json) is NEVER read, parsed or emitted.
 # The org -> email pairs come from the CLI configs on this machine (this user's, the WSL
 # users', and the Windows side reachable from WSL), so the deck can resolve an org itself.
+# `desktop` stays the newest sample per org; `history` is the trend behind it, thinned.
 EXTRA=""
 [ -n "$PY" ] && EXTRA=$("$PY" -c '
 import glob, json, os
 home = os.path.expanduser("~")
 last = {}
+hist = {}
 for pat in [home + "/Library/Application Support/Claude/plan-usage-history.json",
             "/mnt/c/Users/*/AppData/Local/Packages/Claude_*/LocalCache/Roaming/Claude/plan-usage-history.json"]:
     for p in glob.glob(pat):
-        try: samples = json.load(open(p)).get("samples") or []
+        try:
+            # A runaway file is skipped rather than parsed into memory on a worker box.
+            if os.path.getsize(p) > 20000000: continue
+            samples = json.load(open(p)).get("samples") or []
         except Exception: continue
         # One row per org: the last sample it has, whichever file holds it.
         for s in samples:
@@ -104,6 +109,19 @@ for pat in [home + "/Library/Application Support/Claude/plan-usage-history.json"
             if not isinstance(org, str) or not isinstance(t, (int, float)): continue
             if org not in last or t > last[org]["t"]:
                 last[org] = {"org": org, "t": t, "u": s.get("u") or {}}
+            # The file stamps in ms, the deck works in seconds; the same second reported by
+            # two files is one sample, so the merge dedupes on it.
+            hist.setdefault(org, {})[int(t / 1000) if t > 1e11 else int(t)] = s.get("u") or {}
+history = []
+for org, pts in hist.items():
+    ts = sorted(pts)
+    # At most 300 per org: keep the newest, spread the rest evenly over the span.
+    if len(ts) > 300:
+        step = (len(ts) - 1) / 299.0
+        ts = [ts[int(round(i * step))] for i in range(300)]
+    for t in ts:
+        u = pts[t]
+        history.append({"org": org, "t": t, "fh": u.get("fh"), "sd": u.get("sd"), "xu": u.get("xu")})
 accts = {}
 for pat in [home + "/.claude.json", "/home/*/.claude.json", "/mnt/c/Users/*/.claude.json"]:
     for p in glob.glob(pat):
@@ -112,9 +130,10 @@ for pat in [home + "/.claude.json", "/home/*/.claude.json", "/mnt/c/Users/*/.cla
         if o.get("organizationUuid") and o.get("emailAddress"):
             accts[o["organizationUuid"]] = {"org": o["organizationUuid"], "email": o["emailAddress"],
                                             "tier": o.get("organizationRateLimitTier"),
+                                            "type": o.get("organizationType"),
                                             "extra": bool(o.get("hasExtraUsageEnabled"))}
-print(json.dumps({"desktop": list(last.values()), "accounts": list(accts.values())},
-                 separators=(",", ":")))
+print(json.dumps({"desktop": list(last.values()), "history": history,
+                  "accounts": list(accts.values())}, separators=(",", ":")))
 ' 2>/dev/null)
 
 # --- Codex. Newest rollout transcript; rate limits ride on its token_count events.
@@ -160,14 +179,15 @@ claude = None if e["CL_STATE"] == "absent" else {
 codex = None if e["CX_STATE"] == "absent" else dict(jl(e["CX"]) or {}, state=e["CX_STATE"])
 x = jl(e["EXTRA"]) or {}
 print(json.dumps({"host": e["HOSTN"], "ts": int(e["TSN"]), "claude": claude, "codex": codex,
-                  "desktop": x.get("desktop") or [], "accounts": x.get("accounts") or []},
+                  "desktop": x.get("desktop") or [], "history": x.get("history") or [],
+                  "accounts": x.get("accounts") or []},
                  separators=(",", ":")))
 ')
 elif [ -n "$JQ" ]; then
   # No python3: only the live Claude read survives — the desktop and Codex scans need it.
   LINE=$("$JQ" -nc --arg host "$HOST" --arg email "$EMAIL" --arg org "$ORG" --arg state "$STATE" \
     --argjson ts "$TS" --argjson usage "${USAGE:-null}" \
-    '{host:$host,ts:$ts,codex:null,desktop:[],accounts:[],claude:(if $state=="absent" then null else
+    '{host:$host,ts:$ts,codex:null,desktop:[],history:[],accounts:[],claude:(if $state=="absent" then null else
        {email:(if $email=="" then null else $email end),org:(if $org=="" then null else $org end),
         state:$state,usage:$usage} end)}')
 fi
