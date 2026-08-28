@@ -62,12 +62,13 @@
       "goal": "fleet: Coordinator v0.1 — state dir, run + portal skills, boot gate.",
       "done_milestone": "four deliverables committed, six proofs on XYZ-1827, pushed.",
       "owner": "Sylvia (tooling-engineer, agent-sylvia)",
-      "state": "UNKNOWN",
-      "blockers": [],
+      "state": "active",
+      "blockers": ["seed-confirmation-pending"],
       "next_decision": "operator: confirm the seeded board",
-      "reported_at": "2026-08-28T18:00:00Z",
+      "reported_at": "2026-08-28T19:10:00Z",
       "verified_at": null,
       "evidence": ["https://linear.app/synchronicity/issue/XYZ-1827"],
+      "ruled_out": ["Storing lane state in a session or in MEMORY.md — files + git are the memory (DESIGN §0)."],
       "next_report_due": "2026-08-29T09:00:00Z"
     }
   ],
