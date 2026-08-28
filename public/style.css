@@ -240,6 +240,196 @@ tr.gone td { opacity: 0.5; }
 .spill.hidden { color: var(--muted); opacity: 0.5; }
 .session .dot.amber { background: #f59e0b; }
 
+/* org chart: fixed like Registry so terminal sockets and tile state stay untouched */
+.org-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  overflow: auto;
+  padding: 28px clamp(20px, 4vw, 64px) 56px;
+  background: var(--bg);
+}
+.org-panel[hidden] { display: none; }
+.org-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  max-width: 1440px;
+  margin: 0 auto 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+}
+.org-header .section-label { padding: 0 0 6px; color: var(--coral); }
+.org-header h1 {
+  margin: 0;
+  color: var(--text-strong);
+  font: 28px/1.15 var(--serif);
+  font-weight: 400;
+}
+.org-header p { margin: 6px 0 0; color: var(--muted); max-width: 65ch; }
+.org-actions { display: flex; align-items: center; gap: 10px; }
+.org-actions .ghost { padding: 3px 9px; }
+.org-source {
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.org-source.fixture { color: #e4a354; border-color: rgba(228, 163, 84, 0.35); }
+.org-source.live { color: #62c58b; border-color: rgba(98, 197, 139, 0.35); }
+.org-source.pending { color: #e27667; border-color: rgba(226, 118, 103, 0.35); }
+.org-status {
+  max-width: 1440px;
+  margin: 0 auto 18px;
+  min-height: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.org-status.loading { animation: toast-pulse 1.4s ease-in-out infinite; }
+.org-status.has-error { color: #e27667; }
+.org-tree {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 24px 32px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.org-root {
+  min-width: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.org-seat,
+.org-host {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  min-height: 34px;
+  color: var(--text-strong);
+}
+.org-seat > strong,
+.org-host > strong { text-transform: capitalize; font-size: 14px; }
+.org-seat-mark,
+.org-host-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(217, 119, 87, 0.14);
+  color: var(--coral);
+  font: 600 11px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+.org-host-mark { background: rgba(255, 255, 255, 0.05); color: var(--muted); }
+.org-seat-owner { color: var(--muted); }
+.org-seat-epoch { margin-left: auto; color: var(--muted); font-size: 11px; }
+.org-branch {
+  position: relative;
+  margin: 10px 0 0 13px;
+  padding: 0 0 0 24px;
+  list-style: none;
+  border-left: 1px solid var(--line);
+}
+.org-root-branch { margin-top: 14px; }
+.org-item { position: relative; margin: 0 0 10px; }
+.org-item::before {
+  content: '';
+  position: absolute;
+  top: 22px;
+  left: -24px;
+  width: 18px;
+  border-top: 1px solid var(--line);
+}
+.org-node {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 7px 18px;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+}
+.org-node-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.org-node-title strong { overflow: hidden; color: var(--text-strong); text-overflow: ellipsis; white-space: nowrap; }
+.org-state-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--muted); }
+.state-active .org-state-dot { background: #43b779; }
+.state-suspect .org-state-dot { background: #e4a354; }
+.state-tombstone .org-state-dot,
+.state-reaped .org-state-dot,
+.state-offline .org-state-dot { background: #777570; }
+.org-pinger,
+.org-attention {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+.org-pinger { color: #76aeea; background: rgba(69, 134, 207, 0.13); }
+.org-pinger::before { content: ''; display: inline-block; width: 6px; height: 6px; margin-right: 5px; border-radius: 50%; background: #5b9be0; }
+.org-attention { color: #e4a354; background: rgba(228, 163, 84, 0.12); }
+.org-identity { display: flex; flex-wrap: wrap; gap: 5px 9px; min-width: 0; }
+.org-role { color: var(--text); }
+.org-session-name { overflow: hidden; color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
+.org-work { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: 12px; }
+.org-task { color: var(--coral); text-decoration: none; }
+a.org-task:hover { text-decoration: underline; }
+.org-facts {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  display: grid;
+  grid-template-columns: auto auto;
+  align-content: center;
+  gap: 2px 8px;
+  min-width: 105px;
+  margin: 0;
+  font-size: 11px;
+}
+.org-facts dt { color: var(--muted); }
+.org-facts dd { margin: 0; color: var(--text-strong); text-align: right; font-variant-numeric: tabular-nums; }
+.state-reaped,
+.state-offline { opacity: 0.62; }
+.state-tombstone { color: var(--muted); background: rgba(255, 255, 255, 0.025); }
+.org-empty { margin: 10px 0 0 36px; color: var(--muted); font-size: 12px; }
+.org-empty-state {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 28px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+}
+.org-empty-state strong { color: var(--text-strong); }
+
+@media (max-width: 960px) {
+  .org-tree { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .org-panel { padding: 18px 12px 36px; }
+  .org-header { align-items: flex-start; }
+  .org-header h1 { font-size: 24px; }
+  .org-actions { flex-direction: column-reverse; align-items: flex-end; }
+  .org-branch { margin-left: 7px; padding-left: 15px; }
+  .org-item::before { left: -15px; width: 10px; }
+  .org-node { grid-template-columns: 1fr; }
+  .org-facts { grid-column: 1; grid-row: auto; grid-template-columns: auto 1fr; }
+  .org-facts dd { text-align: left; }
+  .org-seat-epoch { margin-left: 36px; }
+}
+
 /* tiles */
 .tile {
   height: 40vh;
