@@ -633,8 +633,32 @@ function creditsWrite(rows) {
 
 // Every mapped account is listed even before a machine has reported it, in file order, so
 // a silent account reads as "no data yet" rather than vanishing.
+// How long a sample may still be quoted as a current figure. Not the window's own length:
+// the desktop source carries no reset stamp, so a seven-day reading days old may sit on
+// the far side of a reset and read "at the limit" for an account now at zero. These are
+// the ages within which the number is still worth asserting; past them the reading becomes
+// no reading, and only the trend line keeps it, which is honestly historical.
+const WINDOW_AGE = { five_hour: 2 * 3600, seven_day: 24 * 3600, extra: 7 * 86400 };
+function agedOut(r, now) {
+  if (!r.sample_ts) return r;
+  const age = now - r.sample_ts;
+  const windows = {};
+  let any = false;
+  for (const [n, w] of Object.entries(r.windows || {})) {
+    if (age > (WINDOW_AGE[n] ?? 7 * 86400)) {
+      windows[n] = { ...w, pct: null, stale: true };
+      any = true;
+    } else windows[n] = w;
+  }
+  return any ? { ...r, windows, stale_windows: true } : r;
+}
+
 function creditsRows() {
-  const rows = db.prepare('SELECT * FROM credits').all().map((r) => JSON.parse(r.payload));
+  const nowSec = Math.floor(Date.now() / 1000);
+  const rows = db
+    .prepare('SELECT * FROM credits')
+    .all()
+    .map((r) => agedOut(JSON.parse(r.payload), nowSec));
   const have = new Set(rows.map((r) => r.kind + '\0' + r.id));
   const cfg = creditsAccounts();
   const blank = (kind, id, extra) => ({

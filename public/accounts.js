@@ -151,7 +151,13 @@ function card(r) {
   // A desktop sample is only as fresh as the last time that account was used in the app.
   if (r.sample_ts) {
     const a = ago(r.sample_ts);
-    acct.append(el('div', 'muted ' + a.cls, 'sampled ' + a.text + ' — no reset times in this source'));
+    acct.append(
+      el('div', 'muted ' + a.cls, r.stale_windows
+        // Older than the window it measured: that window has reset since, so the reading
+        // is history, not a current figure, and the bars say so rather than guessing.
+        ? 'sampled ' + a.text + ' — older than the window it measured, so these have reset since'
+        : 'sampled ' + a.text + ' — no reset times in this source')
+    );
   }
   if (r.kind === 'claude') {
     const names = Object.keys(r.windows || {}).sort(
