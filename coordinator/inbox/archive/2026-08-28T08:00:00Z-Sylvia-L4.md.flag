@@ -1,0 +1,1 @@
+stale: event_time <= lane reported_at

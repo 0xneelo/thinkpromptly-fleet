@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "note": "Canonical. Written only by a coordinator run. DESIGN §4.",
+  "northstar": {
+    "text": "PROPOSED — not yet stated by the operator. See northstar.md.",
+    "ruling_id": null,
+    "confirmed_at": null,
+    "seed": "PROPOSED"
+  },
+  "lane_cap": 6,
+  "lanes": [
+    {
+      "id": "L1",
+      "seed": "PROPOSED",
+      "seed_source": "HANDOFF §⚡",
+      "goal": "lowcap: ship train 67 to prod once the gate suite is green.",
+      "done_milestone": "train 67 serving on prod; SPAIN ledger inside [0.22922, 0.23152].",
+      "owner": "UNASSIGNED (last known: the O30/O31 seat)",
+      "state": "UNKNOWN",
+      "blockers": ["gate-suite result unknown", "pre-deploy: lowcap-consensus-oneshot must be inactive"],
+      "next_decision": "operator: confirm lane + owner",
+      "reported_at": "2026-08-28T09:00:00Z",
+      "verified_at": null,
+      "evidence": ["docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md"],
+      "next_report_due": "2026-08-29T09:00:00Z"
+    },
+    {
+      "id": "L2",
+      "seed": "PROPOSED",
+      "seed_source": "HANDOFF §OUT-of-67",
+      "goal": "lowcap: clear the held do-not-weave lanes — Quentin XYZ-1795/1800, Liselotte XYZ-1794, Konradin XYZ-1690.",
+      "done_milestone": "all three audit clean (no CRITICAL/HIGH) and woven into a train.",
+      "owner": "UNASSIGNED (three lanes, no single owner)",
+      "state": "UNKNOWN",
+      "blockers": ["Quentin: archive filename collision (CRITICAL) +4 HIGH", "Liselotte: DBC owner unchecked; Pump.fun verify fails; migration 0053", "Konradin: metering not key-wide"],
+      "next_decision": "operator: keep rolled up or split later",
+      "reported_at": "2026-08-28T09:00:00Z",
+      "verified_at": null,
+      "evidence": ["docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md"],
+      "next_report_due": "2026-08-29T09:00:00Z"
+    },
+    {
+      "id": "L3",
+      "seed": "PROPOSED",
+      "seed_source": "XYZ-1742 + sub-lanes XYZ-1818/1819/1820",
+      "goal": "fleet: seat lifecycle — leases/fencing/reaper, hooks + pinger, org chart.",
+      "done_milestone": "three sub-lanes verified; XYZ-1742 closed.",
+      "owner": "UNASSIGNED (sub-lane workers retired)",
+      "state": "UNKNOWN",
+      "blockers": ["XYZ-1819 unpushed — no active GitHub train (bc85ca7)"],
+      "next_decision": "operator: accept done-claims or order verification",
+      "reported_at": "2026-08-28T00:00:00Z",
+      "verified_at": null,
+      "evidence": ["git:372bdf1", "git:ecab1a0", "git:64b3cfe"],
+      "next_report_due": "2026-08-29T09:00:00Z",
+      "note": "self-reported done-claimed; UNKNOWN until attested (§4b)."
+    },
+    {
+      "id": "L4",
+      "seed": "PROPOSED",
+      "seed_source": "XYZ-1827",
+      "goal": "fleet: Coordinator v0.1 — state dir, run + portal skills, boot gate.",
+      "done_milestone": "four deliverables committed, six proofs on XYZ-1827, pushed.",
+      "owner": "Sylvia (tooling-engineer, agent-sylvia)",
+      "state": "active",
+      "blockers": ["seed-confirmation-pending"],
+      "next_decision": "operator: confirm the seeded board",
+      "reported_at": "2026-08-28T19:10:00Z",
+      "verified_at": null,
+      "evidence": ["https://linear.app/synchronicity/issue/XYZ-1827"],
+      "ruled_out": ["Storing lane state in a session or in MEMORY.md — files + git are the memory (DESIGN §0)."],
+      "next_report_due": "2026-08-29T09:00:00Z"
+    }
+  ],
+  "operator_queue": [
+    {"id": "OQ-1", "item": "Confirm or write the northstar sentence.", "default": "none"},
+    {"id": "OQ-2", "item": "Confirm seeded lanes, owners, cadence.", "default": "stay PROPOSED"},
+    {"id": "OQ-3", "item": "Train-68 audit queue is NOT a lane — DESIGN §6 keeps tactical tasks in Linear. Say if you want it seeded.", "default": "stays out"}
+  ],
+  "effective_decisions_ref": "coordinator/decisions-effective.md"
+}
