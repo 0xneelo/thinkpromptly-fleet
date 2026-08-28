@@ -73,6 +73,52 @@ async function loadHealth() {
   }
 }
 
+// Whichever window is furthest along is the one that will actually stop the account, so
+// that is the number worth a sidebar row; /credits.html carries the rest.
+function accountMini(r) {
+  const w = r.windows || {};
+  const pcts = (r.kind === 'codex' ? [w.weekly, r.weekly, r.secondary] : [w.five_hour, w.seven_day])
+    .filter((x) => x && typeof x.pct === 'number')
+    .map((x) => x.pct);
+  const pct = pcts.length ? Math.max(...pcts) : null;
+  const c = r.credit;
+  const spent = c && typeof c.used === 'number' && typeof c.limit === 'number';
+  const row = el('div', 'acct-mini');
+  row.title = [
+    (r.label || r.id) + (r.email ? ' · ' + r.email : ''),
+    pct === null ? 'no usage reported' : 'highest window ' + pct + '%',
+    spent ? 'credits ' + c.used.toFixed(c.decimals ?? 2) + ' / ' + c.limit.toFixed(c.decimals ?? 2) + ' ' + (c.currency || '') : null,
+    r.source ? 'source: ' + r.source : 'no data yet',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const track = el('div', 'bar-track');
+  const fill = el('div', 'bar-fill' + (pct > 90 ? ' red' : pct >= 70 ? ' amber' : ''));
+  fill.style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+  track.append(fill);
+  // The strip is one sidebar wide: a first name fits where a full label does not, and the
+  // Codex account needs the suffix or it reads as a second row for the same person.
+  const full = r.label || r.email || r.id;
+  const short = String(full).split(' ')[0] + (r.kind === 'codex' ? ' ·gpt' : '');
+  row.append(el('span', 'mini-who', short), track, el('span', 'pct', pct === null ? '—' : pct + '%'));
+  // A spent pool does not show up in the windows above, so it needs its own mark.
+  if (c && c.capped) row.append(el('span', 'mini-flag', '€'));
+  return row;
+}
+
+// Reads stored rows; the server decides when a collect is due, so opening the deck does
+// not fan out over ssh every time.
+async function loadAccounts() {
+  const box = document.getElementById('accounts-mini');
+  if (!box) return;
+  try {
+    const d = await (await fetch('/api/credits')).json();
+    box.replaceChildren(...(d.rows || []).map(accountMini));
+  } catch {
+    box.replaceChildren(el('div', 'hint', 'accounts unavailable'));
+  }
+}
+
 // A server without the registry (or a row it has never classified) still lists sessions:
 // only host+name are ever required, everything else falls back.
 const norm = (s) => ({ label: '', role: '', worker: '', note: '', group: '', task: '', status: 'active', live: true, ...s });
@@ -592,6 +638,7 @@ document.addEventListener('click', (e) => {
 document.getElementById('refresh').onclick = () => {
   loadSessions();
   loadHealth();
+  loadAccounts();
 };
 const toggleFleet = (on = !fleetOpen) => {
   fleetOpen = on;
@@ -619,3 +666,4 @@ document.getElementById('connect-all').onclick = async () => {
 
 loadSessions();
 loadHealth();
+loadAccounts();
