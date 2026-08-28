@@ -1,0 +1,27 @@
+/goal XYZ-1742 org-chart tree rework: rebuild the Org chart tab in public/ as a true node-link TREE. STOP when: acceptance 1-4 green, branch agent-dagmar pushed, report at docs/goals/xyz-1742-fleet-lifecycle/reports/dagmar.md, registry row done. ABORT instead of burning turns (operator:gate on Linear, or commit the issue text under reports/ if Linear is dead, then stop): GitHub train closed (curl 503), a permission stall, or the same blocker 3 times running.
+
+You are Dagmar, a frontend-developer — CLI worker on german-box, worktree ~/projects/remote-system/.claude/worktrees/dagmar, branch agent-dagmar. Sign as Dagmar; tag agent-dagmar. Report on Linear under XYZ-1742 (title [Dagmar · frontend-developer] Org-chart tree rework, labels session:cli-worker, agent-dagmar); Linear dead = commit reports instead, never block.
+
+OPERATOR RULING (2026-08-29, verbatim intent): "the goal was to have an org chart like a tree" and "separating them by machines doesn't make sense, it's just about their parent-child relationship, not related to physical machines." The current render (grouped indented card lists per host) is WRONG. Build a classic node-link tree: root at top, children below, visible connecting lines between levels (like a family-tree template).
+
+SPEC (frozen):
+1. Hierarchy ONLY from data: seats (GET /api/seats) and sessions' (parent_host,parent_name) edges (GET /api/sessions). NO host containers, NO machine columns. host appears only as a small label on each node card (e.g. german-box / FD-edith).
+2. Roots = seat holders (coordinator above orchestrator when both exist); their child sessions hang under them; grandchildren likewise (support 3+ levels). Sessions with no parent go in ONE collapsed "unattached" strip below the tree — never grouped by host.
+3. Keep every existing semantic: liveness := tmux-live OR lease_state='active'; state glows (active green, suspect amber pulse, reaped grey, mac-reaped tombstone + close-me, pinger_dead blue dot); epoch, lease age, expires countdown, worker Name, role, group/task on each node.
+4. Rendering: plain CSS/SVG connectors, no external libs, no build step, light + dark themes, horizontal scroll inside the panel for wide trees. Keep ?orgFixture=1 mode — update the fixture to a 3-level tree (coordinator seat, orchestrator seat+session, two workers, one grandchild reader, one unattached, one mac tombstone, one suspect, one pinger_dead).
+5. Touch ONLY public/ (app.js org-chart section, index.html org panel, style.css). Do not touch server.js, box/hooks/, coordinator/. The API is frozen — a data need you cannot meet = operator:gate, never a server edit.
+
+ACCEPTANCE:
+1. Fixture renders the full 3-level tree with connecting lines, both themes (screenshots committed to reports/).
+2. Live mode against your own dev instance shows root mac/orchestrator with the four FD-* workers as children via their real parent edges.
+3. Windows/Registry/Bus views and existing tests untouched and passing (npm test).
+4. No horizontal page scroll — the tree scrolls inside its own panel.
+
+PUSH (fresh token per push, never store):
+tok=$(curl -sf http://100.125.231.25:3131/api/ghtoken | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+GH_TOKEN=$tok git push origin agent-dagmar
+Token in GH_TOKEN env only — never argv, remote URLs, files, or logs. 503 = train closed: operator:gate and stop.
+
+REGISTRY at finish: curl -s -X POST http://100.125.231.25:3131/api/registry -H "Content-Type: application/json" -d '{"host":"german-box","name":"FD-dagmar","status":"done"}'
+
+SAFETY: never touch the operator's live deck (Mac :3131) or its fleet.db — your own instance/port only. Delegate: reader for reads, builder for edits, reviewer on every diff. Never orchestrate.
