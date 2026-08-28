@@ -6,11 +6,45 @@
   --card: #1a1915;
   --bar: #21201d;
   --line: rgba(255, 255, 255, 0.08);
+  --divider: rgba(255, 255, 255, 0.06);
+  --control-line: rgba(255, 255, 255, 0.12);
+  --surface-subtle: rgba(255, 255, 255, 0.05);
+  --surface-hover: rgba(255, 255, 255, 0.06);
+  --surface-open: rgba(255, 255, 255, 0.08);
+  --scrollbar: rgba(255, 255, 255, 0.15);
+  --shadow: rgba(0, 0, 0, 0.35);
+  --drawer-shadow: rgba(0, 0, 0, 0.5);
+  --terminal-overlay: rgba(26, 25, 21, 0.55);
+  --button-ink: #1a1915;
+  --wordmark: #faf9f5;
   --text: #c2c0b6;
   --text-strong: #e8e6dc;
   --muted: #9b9892;
   --coral: #d97757;
   --serif: ui-serif, Georgia, "Times New Roman", serif;
+}
+
+:root[data-theme='light'] {
+  --bg: #f1f0ea;
+  --sidebar: #e7e5dc;
+  --card: #faf9f4;
+  --bar: #efede5;
+  --line: rgba(43, 41, 36, 0.12);
+  --divider: rgba(43, 41, 36, 0.09);
+  --control-line: rgba(43, 41, 36, 0.18);
+  --surface-subtle: rgba(43, 41, 36, 0.045);
+  --surface-hover: rgba(43, 41, 36, 0.07);
+  --surface-open: rgba(43, 41, 36, 0.1);
+  --scrollbar: rgba(43, 41, 36, 0.22);
+  --shadow: rgba(64, 59, 49, 0.14);
+  --drawer-shadow: rgba(64, 59, 49, 0.24);
+  --terminal-overlay: rgba(26, 25, 21, 0.55);
+  --button-ink: #faf8f1;
+  --wordmark: #25241f;
+  --text: #4e4c47;
+  --text-strong: #25241f;
+  --muted: #74716a;
+  --coral: #b95335;
 }
 
 html, body { height: 100%; }
@@ -25,9 +59,9 @@ body {
 
 :focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
 
-* { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.15) transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
-*::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
+*::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 4px; }
 *::-webkit-scrollbar-track { background: transparent; }
 
 /* sidebar */
@@ -39,7 +73,7 @@ body {
   gap: 10px;
   padding: 16px 12px 12px;
   background: var(--sidebar);
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
+  border-right: 1px solid var(--divider);
 }
 /* Fullscreen turns the sidebar into an off-canvas switcher above the maximized tile. */
 body.has-max #sidebar {
@@ -53,11 +87,11 @@ body.has-max #sidebar {
 }
 body.has-max.drawer-open #sidebar {
   transform: none;
-  box-shadow: 0 0 40px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 40px var(--drawer-shadow);
 }
 .wordmark {
   font: 20px/1.2 var(--serif);
-  color: #faf9f5;
+  color: var(--wordmark);
   padding: 0 4px 2px;
 }
 /* Drawer-only close: the ☰ toggle sits on the tile bar, which the open drawer covers. */
@@ -89,7 +123,7 @@ body.has-max.drawer-open #drawer-close {
   color: var(--text);
   cursor: pointer;
 }
-.session:hover { background: rgba(255, 255, 255, 0.05); }
+.session:hover { background: var(--surface-subtle); }
 .session .rowmax {
   margin-left: auto;
   padding: 0 6px;
@@ -100,7 +134,7 @@ body.has-max.drawer-open #drawer-close {
 .session:hover .rowmax,
 .session .rowmax:focus-visible,
 body.has-max .session .rowmax { opacity: 1; }
-.session.open { background: rgba(255, 255, 255, 0.08); }
+.session.open { background: var(--surface-open); }
 .session .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session.inactive { opacity: 0.45; }
 .inactive-toggle {
@@ -130,7 +164,7 @@ body.has-max .session .rowmax { opacity: 1; }
   flex-direction: column;
   gap: 8px;
   padding-top: 10px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--divider);
 }
 .hint { font-size: 11px; color: var(--muted); }
 #health { display: flex; flex-direction: column; gap: 6px; }
@@ -142,7 +176,7 @@ body.has-max .session .rowmax { opacity: 1; }
   padding: 4px 10px;
   border-radius: 999px;
   font-size: 12px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-subtle);
   border: 1px solid var(--line);
   cursor: default;
 }
@@ -154,7 +188,7 @@ body.has-max .session .rowmax { opacity: 1; }
 button { font: inherit; cursor: pointer; border-radius: 8px; }
 .primary {
   background: var(--coral);
-  color: #1a1915;
+  color: var(--button-ink);
   font-weight: 600;
   border: none;
   padding: 8px 14px;
@@ -162,12 +196,12 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 .primary:hover { background: #c96442; }
 .ghost {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--control-line);
   color: var(--text);
   padding: 6px 12px;
   align-self: flex-start;
 }
-.ghost:hover { background: rgba(255, 255, 255, 0.06); }
+.ghost:hover { background: var(--surface-hover); }
 /* an action in flight — the row is locked until the re-fetch lands */
 .ghost:disabled { opacity: 0.4; cursor: default; }
 .ghost:disabled:hover { background: transparent; }
@@ -231,7 +265,7 @@ tr.gone td { opacity: 0.5; }
   border-radius: 999px;
   font-size: 11px;
   border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--surface-subtle);
 }
 .spill.active { color: #22c55e; }
 .spill.done { color: var(--muted); }
@@ -326,7 +360,7 @@ tr.gone td { opacity: 0.5; }
   color: var(--coral);
   font: 600 11px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
 }
-.org-host-mark { background: rgba(255, 255, 255, 0.05); color: var(--muted); }
+.org-host-mark { background: var(--surface-subtle); color: var(--muted); }
 .org-seat-owner { color: var(--muted); }
 .org-seat-epoch { margin-left: auto; color: var(--muted); font-size: 11px; }
 .org-seat > .org-countdown { color: var(--text-strong); font-size: 11px; font-variant-numeric: tabular-nums; }
@@ -421,7 +455,7 @@ a.org-task:hover { text-decoration: underline; }
 }
 .state-reaped,
 .state-offline { opacity: 0.62; }
-.state-tombstone { color: var(--muted); background: rgba(255, 255, 255, 0.025); }
+.state-tombstone { color: var(--muted); background: var(--surface-subtle); }
 .org-empty { margin: 10px 0 0 36px; color: var(--muted); font-size: 12px; }
 .org-empty-state {
   grid-column: 1 / -1;
@@ -468,7 +502,7 @@ a.org-task:hover { text-decoration: underline; }
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 24px var(--shadow);
   position: relative;
 }
 .tile.max {
@@ -520,7 +554,7 @@ a.org-task:hover { text-decoration: underline; }
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(26, 25, 21, 0.55);
+  background: var(--terminal-overlay);
 }
 .overlay .card {
   display: flex;
@@ -532,7 +566,7 @@ a.org-task:hover { text-decoration: underline; }
   border-radius: 12px;
   background: var(--bar);
   border: 1px solid var(--line);
-  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 24px var(--shadow);
 }
 .overlay .card h2 { margin: 0; font: 16px var(--serif); color: var(--text-strong); font-weight: 400; }
 .overlay .card .note { font-size: 12px; color: var(--muted); max-width: 260px; }
@@ -566,8 +600,8 @@ a.ghost { text-decoration: none; }
 input {
   font: inherit;
   color: var(--text);
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: var(--surface-subtle);
+  border: 1px solid var(--control-line);
   border-radius: 8px;
   padding: 6px 10px;
   min-width: 220px;
@@ -602,7 +636,7 @@ input {
   user-select: all;
   padding: 6px 8px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--surface-subtle);
   border: 1px solid var(--line);
 }
 /* a freshly minted cert, so the new row is obvious in a list of stamps */
@@ -645,7 +679,7 @@ td { padding: 7px 12px 7px 0; border-top: 1px solid var(--line); }
   background: var(--bar);
   border: 1px solid var(--line);
   color: var(--text);
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 4px 14px var(--shadow);
   cursor: default;
 }
 /* pending has no timer, so the pulse is what says "still working" */

@@ -8,6 +8,19 @@ const XTERM_THEME = {
   selectionBackground: 'rgba(217,119,87,0.3)',
 };
 
+const queryTheme = new URLSearchParams(location.search).get('theme');
+const savedTheme = localStorage.getItem('fleetTheme');
+let colorTheme =
+  queryTheme === 'light' || queryTheme === 'dark'
+    ? queryTheme
+    : savedTheme === 'light' || savedTheme === 'dark'
+      ? savedTheme
+      : matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark';
+document.documentElement.dataset.theme = colorTheme;
+document.documentElement.style.colorScheme = colorTheme;
+
 const grid = document.getElementById('grid');
 const emptyEl = document.getElementById('empty');
 const fleetEl = document.getElementById('fleet');
@@ -16,6 +29,7 @@ const orgEl = document.getElementById('orgchart');
 const orgTreeEl = document.getElementById('org-tree');
 const orgStatusEl = document.getElementById('org-status');
 const orgSourceEl = document.getElementById('org-source');
+const themeToggle = document.getElementById('theme-toggle');
 const listEl = document.getElementById('sessions');
 const healthEl = document.getElementById('health');
 const tiles = new Map(); // key -> tile element
@@ -30,6 +44,20 @@ let orgOpen = false;
 let orgLoadId = 0;
 let orgTicks = [];
 const orgFixtureMode = new URLSearchParams(location.search).get('orgFixture') === '1';
+
+function syncTheme() {
+  document.documentElement.dataset.theme = colorTheme;
+  document.documentElement.style.colorScheme = colorTheme;
+  themeToggle.textContent = colorTheme === 'dark' ? '☀ Light' : '☾ Dark';
+  themeToggle.setAttribute('aria-pressed', String(colorTheme === 'light'));
+  themeToggle.title = 'Switch to ' + (colorTheme === 'dark' ? 'light' : 'dark') + ' theme';
+}
+themeToggle.onclick = () => {
+  colorTheme = colorTheme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('fleetTheme', colorTheme);
+  syncTheme();
+};
+syncTheme();
 
 const key = (host, session) => host + '\0' + session;
 const el = (tag, cls, text) => {
@@ -846,4 +874,9 @@ document.getElementById('connect-all').onclick = async () => {
 
 loadSessions();
 loadHealth();
+if (orgFixtureMode) toggleOrg(true);
 setInterval(tickOrgTimes, 1000);
+// Match the deck's existing 30-second maintenance cadence; countdowns stay local.
+setInterval(() => {
+  if (orgOpen) loadOrg();
+}, 30000);
