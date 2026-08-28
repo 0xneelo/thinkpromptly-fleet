@@ -8,10 +8,28 @@ const XTERM_THEME = {
   selectionBackground: 'rgba(217,119,87,0.3)',
 };
 
+const queryTheme = new URLSearchParams(location.search).get('theme');
+const savedTheme = localStorage.getItem('fleetTheme');
+let colorTheme =
+  queryTheme === 'light' || queryTheme === 'dark'
+    ? queryTheme
+    : savedTheme === 'light' || savedTheme === 'dark'
+      ? savedTheme
+      : matchMedia('(prefers-color-scheme: light)').matches
+        ? 'light'
+        : 'dark';
+document.documentElement.dataset.theme = colorTheme;
+document.documentElement.style.colorScheme = colorTheme;
+
 const grid = document.getElementById('grid');
 const emptyEl = document.getElementById('empty');
 const fleetEl = document.getElementById('fleet');
 const fleetRows = document.getElementById('fleet-rows');
+const orgEl = document.getElementById('orgchart');
+const orgTreeEl = document.getElementById('org-tree');
+const orgStatusEl = document.getElementById('org-status');
+const orgSourceEl = document.getElementById('org-source');
+const themeToggle = document.getElementById('theme-toggle');
 const listEl = document.getElementById('sessions');
 const healthEl = document.getElementById('health');
 const tiles = new Map(); // key -> tile element
@@ -22,6 +40,24 @@ let showHidden = localStorage.getItem('showHidden') === '1';
 // The fleet table is fullscreen above the grid: tiles keep their websockets while it is
 // open, so closing it shows them exactly as they were.
 let fleetOpen = false;
+let orgOpen = false;
+let orgLoadId = 0;
+let orgTicks = [];
+const orgFixtureMode = new URLSearchParams(location.search).get('orgFixture') === '1';
+
+function syncTheme() {
+  document.documentElement.dataset.theme = colorTheme;
+  document.documentElement.style.colorScheme = colorTheme;
+  themeToggle.textContent = colorTheme === 'dark' ? '☀ Light' : '☾ Dark';
+  themeToggle.setAttribute('aria-pressed', String(colorTheme === 'light'));
+  themeToggle.title = 'Switch to ' + (colorTheme === 'dark' ? 'light' : 'dark') + ' theme';
+}
+themeToggle.onclick = () => {
+  colorTheme = colorTheme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('fleetTheme', colorTheme);
+  syncTheme();
+};
+syncTheme();
 
 const key = (host, session) => host + '\0' + session;
 const el = (tag, cls, text) => {
@@ -34,8 +70,14 @@ const el = (tag, cls, text) => {
 function sync() {
   if (emptyEl) emptyEl.hidden = tiles.size > 0;
   fleetEl.hidden = !fleetOpen;
-  document.getElementById('nav-windows')?.classList.toggle('sel', !fleetOpen);
+  orgEl.hidden = !orgOpen;
+  const windowsOpen = !fleetOpen && !orgOpen;
+  document.getElementById('nav-windows')?.classList.toggle('sel', windowsOpen);
+  document.getElementById('nav-windows')?.setAttribute('aria-selected', String(windowsOpen));
+  document.getElementById('org-btn')?.classList.toggle('sel', orgOpen);
+  document.getElementById('org-btn')?.setAttribute('aria-selected', String(orgOpen));
   document.getElementById('fleet-btn').classList.toggle('sel', fleetOpen);
+  document.getElementById('fleet-btn').setAttribute('aria-selected', String(fleetOpen));
   for (const [k, row] of rows) row.classList.toggle('open', tiles.has(k));
 }
 
@@ -81,6 +123,201 @@ const fetchSessions = async () => {
   const d = await (await fetch('/api/sessions')).json();
   return { sessions: (d.sessions || []).map(norm), errors: d.errors || [] };
 };
+
+async function fetchOrgData() {
+  if (orgFixtureMode) {
+    const response = await fetch('/orgchart-m11.fixture.json');
+    if (!response.ok) throw new Error('fixture HTTP ' + response.status);
+    const fixture = FleetOrgChart.rebaseFixture(await response.json());
+    return { sessions: fixture.sessions, seats: fixture.seats, errors: fixture.errors || [], fixture: true };
+  }
+  const [sessionData, seatResponse] = await Promise.all([fetchSessions(), fetch('/api/seats')]);
+  if (!seatResponse.ok) throw new Error('/api/seats HTTP ' + seatResponse.status);
+  const seatData = await seatResponse.json();
+  return {
+    sessions: sessionData.sessions,
+    seats: Array.isArray(seatData) ? seatData : seatData.seats || [],
+    errors: sessionData.errors,
+    fixture: false,
+  };
+}
+
+const orgTask = (task) => {
+  if (!TASK_RE.test(task || '')) return el('span', 'org-task muted', task || 'no task');
+  const a = el('a', 'org-task', task);
+  a.href = 'https://linear.app/synchronicity/issue/' + task;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  return a;
+};
+
+function shortDuration(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return seconds + 's';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + 'm';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + 'h ' + (minutes % 60) + 'm';
+  return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
+}
+
+function leaseAge(row, now = Date.now()) {
+  const stamp = Date.parse(row.last_seen_at || '');
+  return Number.isFinite(stamp) ? shortDuration(now - stamp) : 'unknown';
+}
+
+function expiryText(epoch, now = Date.now()) {
+  const stamp = Number(epoch);
+  if (!Number.isFinite(stamp)) return 'none';
+  const delta = stamp - now;
+  return delta > 0 ? shortDuration(delta) + ' left' : 'expired ' + shortDuration(-delta) + ' ago';
+}
+
+function orgTime(kind, value) {
+  const node = el('span', kind === 'expiry' ? 'org-countdown' : 'org-lease-age');
+  orgTicks.push({ kind, value, node });
+  return node;
+}
+
+function tickOrgTimes() {
+  const now = Date.now();
+  for (const tick of orgTicks) {
+    tick.node.textContent = tick.kind === 'expiry'
+      ? expiryText(tick.value, now)
+      : leaseAge(tick.value, now);
+  }
+}
+
+function orgSessionCard(row) {
+  const state = FleetOrgChart.stateOf(row);
+  const card = el(
+    'article',
+    'org-node state-' + state + (FleetOrgChart.needsAttention(row) ? ' needs-attention' : '')
+  );
+  card.dataset.host = row.host;
+  card.dataset.name = row.name;
+  card.dataset.state = state;
+
+  const title = el('div', 'org-node-title');
+  title.append(el('span', 'org-state-dot'), el('strong', null, row.worker || row.name));
+  if (row.pinger_dead) {
+    const pinger = el('span', 'org-pinger', 'pinger');
+    pinger.title = 'Session is live; its detached heartbeat pinger failed';
+    title.append(pinger);
+  }
+  if (FleetOrgChart.needsAttention(row)) title.append(el('span', 'org-attention', 'idle 15m+'));
+  if (state === 'tombstone') {
+    const closeMe = el('span', 'org-close-me', '🪦 close me');
+    closeMe.title = 'Close this stale Mac desktop session; fleetdeck never kills Mac rows';
+    title.append(closeMe);
+  }
+
+  const identity = el('div', 'org-identity');
+  identity.append(
+    el('span', 'org-role', row.role || 'unassigned role'),
+    el('span', 'org-session-name mono', row.host + ' / ' + row.name)
+  );
+
+  const work = el('div', 'org-work');
+  work.append(el('span', null, row.group || 'no group'), el('span', 'muted', '/'), orgTask(row.task));
+
+  const facts = el('dl', 'org-facts');
+  for (const [label, value] of [
+    ['epoch', row.epoch == null ? 'legacy' : '#' + row.epoch],
+    ['lease', row.lease_state || (row.live ? 'tmux live' : 'unleased')],
+    ['lease age', orgTime('age', row)],
+    ['expires', orgTime('expiry', row.expires_at)],
+  ]) {
+    const dd = el('dd');
+    if (value instanceof Node) dd.append(value);
+    else dd.textContent = value;
+    facts.append(el('dt', null, label), dd);
+  }
+  card.setAttribute('aria-label', (row.worker || row.name) + ', ' + state);
+  card.append(title, identity, work, facts);
+  return card;
+}
+
+function orgBranch(node) {
+  const item = el('li', 'org-item');
+  item.append(orgSessionCard(node.row));
+  if (node.children.length) {
+    const list = el('ul', 'org-branch');
+    for (const child of node.children) list.append(orgBranch(child));
+    item.append(list);
+  }
+  return item;
+}
+
+function orgRoot(root) {
+  const section = el('section', 'org-root org-root-' + root.type);
+  const heading = el('div', root.type === 'seat' ? 'org-seat' : 'org-host');
+  if (root.type === 'seat') {
+    heading.append(
+      el('span', 'org-seat-mark', root.row.seat === 'coordinator' ? 'C' : 'O'),
+      el('strong', null, root.row.seat),
+      el('span', 'org-seat-owner mono', root.row.owner_host + ' / ' + root.row.owner_name),
+      el('span', 'org-seat-epoch', 'seat epoch #' + root.row.epoch),
+      orgTime('expiry', root.row.expires_at)
+    );
+  } else {
+    heading.append(
+      el('span', 'org-host-mark', '↳'),
+      el('strong', null, root.label),
+      el('span', 'muted', 'unattached sessions')
+    );
+  }
+  section.append(heading);
+  if (root.children.length) {
+    const list = el('ul', 'org-branch org-root-branch');
+    for (const child of root.children) list.append(orgBranch(child));
+    section.append(list);
+  } else {
+    section.append(el('div', 'org-empty', 'No current owner row'));
+  }
+  return section;
+}
+
+function renderOrg(data) {
+  const tree = FleetOrgChart.buildTree(data.sessions, data.seats);
+  orgTicks = [];
+  orgTreeEl.replaceChildren();
+  for (const root of tree) orgTreeEl.append(orgRoot(root));
+  if (!tree.length) orgTreeEl.append(el('div', 'org-empty-state', 'No seats or sessions to map.'));
+  orgSourceEl.textContent = data.fixture ? 'M11 fixture' : 'live API';
+  orgSourceEl.className = 'org-source ' + (data.fixture ? 'fixture' : 'live');
+  const orphanCount = tree.filter((node) => node.type === 'host').reduce((n, node) => n + node.children.length, 0);
+  const notes = [data.sessions.length + ' sessions', data.seats.length + ' seats'];
+  if (orphanCount) notes.push(orphanCount + ' unattached');
+  if (data.errors.length) notes.push(data.errors.length + ' host errors');
+  orgStatusEl.className = 'org-status' + (data.errors.length ? ' has-error' : '');
+  orgStatusEl.textContent = notes.join(' · ');
+  tickOrgTimes();
+}
+
+async function loadOrg() {
+  const loadId = ++orgLoadId;
+  orgStatusEl.className = 'org-status loading';
+  orgStatusEl.textContent = orgFixtureMode ? 'Loading M11 fixture…' : 'Loading live seats and sessions…';
+  try {
+    const data = await fetchOrgData();
+    if (loadId === orgLoadId) renderOrg(data);
+  } catch (error) {
+    if (loadId !== orgLoadId) return;
+    orgTreeEl.replaceChildren();
+    orgSourceEl.textContent = 'integration pending';
+    orgSourceEl.className = 'org-source pending';
+    orgStatusEl.className = 'org-status has-error';
+    orgStatusEl.textContent = 'Org chart unavailable: ' + error.message;
+    const empty = el('div', 'org-empty-state');
+    empty.append(
+      el('strong', null, 'The frozen seat endpoint is not available on this branch.'),
+      el('span', null, 'Use the committed contract fixture to review this UI.'),
+      Object.assign(el('a', 'ghost navlink', 'Open fixture preview'), { href: '/?orgFixture=1' })
+    );
+    orgTreeEl.append(empty);
+  }
+}
 
 const post = (url, body) =>
   fetch(url, {
@@ -595,16 +832,34 @@ document.getElementById('refresh').onclick = () => {
 };
 const toggleFleet = (on = !fleetOpen) => {
   fleetOpen = on;
-  if (fleetOpen) loadSessions();
+  if (fleetOpen) {
+    orgOpen = false;
+    loadSessions();
+  }
+  sync();
+};
+const toggleOrg = (on = !orgOpen) => {
+  orgOpen = on;
+  if (orgOpen) {
+    fleetOpen = false;
+    loadOrg();
+  }
   sync();
 };
 document.getElementById('fleet-btn').onclick = () => toggleFleet();
-document.getElementById('nav-windows')?.addEventListener('click', () => toggleFleet(false));
+document.getElementById('org-btn').onclick = () => toggleOrg();
+document.getElementById('nav-windows')?.addEventListener('click', () => {
+  fleetOpen = false;
+  orgOpen = false;
+  sync();
+});
 document.getElementById('fleet-close')?.addEventListener('click', () => toggleFleet(false));
+document.getElementById('org-close')?.addEventListener('click', () => toggleOrg(false));
 document.getElementById('empty-fleet')?.addEventListener('click', () => toggleFleet(true));
 // Esc closes the table; tiles handle their own Esc inside xterm, which never bubbles here.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && fleetOpen) toggleFleet(false);
+  else if (e.key === 'Escape' && orgOpen) toggleOrg(false);
 });
 document.getElementById('connect-all').onclick = async () => {
   const { sessions } = await fetchSessions();
@@ -619,3 +874,9 @@ document.getElementById('connect-all').onclick = async () => {
 
 loadSessions();
 loadHealth();
+if (orgFixtureMode) toggleOrg(true);
+setInterval(tickOrgTimes, 1000);
+// Match the deck's existing 30-second maintenance cadence; countdowns stay local.
+setInterval(() => {
+  if (orgOpen) loadOrg();
+}, 30000);

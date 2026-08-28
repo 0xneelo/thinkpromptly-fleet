@@ -11,8 +11,9 @@
       <div class="wordmark">fleetdeck</div>
       <button id="drawer-close" class="ghost" aria-label="Close sessions" title="Close (or click outside)">✕</button>
       <div class="row nav">
-        <button id="nav-windows" class="ghost sel">Windows</button>
-        <button id="fleet-btn" class="ghost">Registry</button>
+        <button id="nav-windows" class="ghost sel" aria-controls="grid" aria-selected="true">Windows</button>
+        <button id="org-btn" class="ghost" aria-controls="orgchart" aria-selected="false">Org chart</button>
+        <button id="fleet-btn" class="ghost" aria-controls="fleet" aria-selected="false">Registry</button>
         <a class="ghost navlink" href="/keys.html">SSH keys</a>
       </div>
       <button id="connect-all" class="primary">Connect all</button>
@@ -46,9 +47,26 @@
         <tbody id="fleet-rows"></tbody>
       </table>
     </div>
+    <section id="orgchart" class="org-panel" aria-labelledby="org-title" hidden>
+      <header class="org-header">
+        <div>
+          <div class="section-label">Fleet lifecycle</div>
+          <h1 id="org-title">Org chart</h1>
+          <p>Seat ownership, parent chains, and lease health.</p>
+        </div>
+        <div class="org-actions">
+          <span id="org-source" class="org-source"></span>
+          <button id="theme-toggle" class="ghost" type="button" aria-label="Switch color theme"></button>
+          <button id="org-close" class="ghost" aria-label="Close org chart" title="Close (esc)">✕</button>
+        </div>
+      </header>
+      <div id="org-status" class="org-status" role="status" aria-live="polite"></div>
+      <div id="org-tree" class="org-tree"></div>
+    </section>
     <script src="/vendor/xterm.js"></script>
     <script src="/vendor/addon-fit.js"></script>
     <script src="/vendor/addon-web-links.js"></script>
+    <script src="/orgchart.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
