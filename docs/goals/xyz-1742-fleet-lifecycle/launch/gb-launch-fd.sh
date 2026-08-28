@@ -14,7 +14,7 @@ ghtok() { curl -sf http://100.125.231.25:3131/api/ghtoken | python3 -c 'import j
 gitcred() { GH_TOKEN=$(ghtok) git -c credential.helper= -c 'credential.helper=!f(){ echo username=x-access-token; echo password=$GH_TOKEN; }; f' "$@"; }
 if [ ! -d "$REPO/.git" ]; then
   mkdir -p "$(dirname "$REPO")"
-  gitcred clone https://github.com/0xneelo/remote-system "$REPO" || { echo "STOP: clone failed — GitHub train open? repo exists?"; exit 1; }
+  gitcred clone https://github.com/0xneelo/thinkpromptly-fleet "$REPO" || { echo "STOP: clone failed — GitHub train open? repo exists?"; exit 1; }
 fi
 gitcred -C "$REPO" fetch origin || { echo "STOP: fetch failed — GitHub train open?"; exit 1; }
 [ -d "$WT" ] || git -C "$REPO" worktree add "$WT" -b "agent-$SLUG" "origin/$BRANCH" || exit 1
