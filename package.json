@@ -4,8 +4,14 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node server.js",
+<<<<<<< HEAD
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true",
     "test": "node --test --test-concurrency=1 test/*.test.js"
+=======
+    "build:claude-bridge": "sh scripts/build-claude-bridge.sh",
+    "test": "node --test",
+    "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true"
+>>>>>>> 6215c9f
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

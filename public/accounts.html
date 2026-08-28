@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>fleetdeck · accounts</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <div class="wordmark">fleetdeck</div>
+      <a class="ghost navlink" href="/">← Deck</a>
+      <div class="section-label">Accounts</div>
+      <div class="hint">
+        Usage per AI account, most constrained first. Every machine reads its own token
+        locally and reports only percentages — no access token ever leaves the machine that
+        owns it. The trend line is the Claude desktop app's own samples, merged across
+        machines. Names and org mapping live in <code>credits-accounts.json</code>.
+      </div>
+      <div class="sidebar-footer">
+        <button id="refresh" class="ghost">Refresh</button>
+      </div>
+    </aside>
+    <main id="credits-main">
+      <section class="panel">
+        <h2>Accounts</h2>
+        <div id="summary" class="row summary"></div>
+        <div id="accounts"></div>
+      </section>
+      <section class="panel" id="errors-panel" hidden>
+        <h2>Collector errors</h2>
+        <div id="errors"></div>
+      </section>
+    </main>
+    <script src="/accounts.js"></script>
+  </body>
+</html>

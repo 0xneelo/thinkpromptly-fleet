@@ -24,12 +24,15 @@ document.documentElement.style.colorScheme = colorTheme;
 const grid = document.getElementById('grid');
 const emptyEl = document.getElementById('empty');
 const fleetEl = document.getElementById('fleet');
+const busEl = document.getElementById('bus');
 const fleetRows = document.getElementById('fleet-rows');
 const orgEl = document.getElementById('orgchart');
 const orgTreeEl = document.getElementById('org-tree');
 const orgStatusEl = document.getElementById('org-status');
 const orgSourceEl = document.getElementById('org-source');
 const themeToggle = document.getElementById('theme-toggle');
+const busRows = document.getElementById('bus-rows');
+const busTarget = document.getElementById('bus-target');
 const listEl = document.getElementById('sessions');
 const healthEl = document.getElementById('health');
 const tiles = new Map(); // key -> tile element
@@ -41,6 +44,7 @@ let showHidden = localStorage.getItem('showHidden') === '1';
 // open, so closing it shows them exactly as they were.
 let fleetOpen = false;
 let orgOpen = false;
+let busOpen = false;
 let orgLoadId = 0;
 let orgTicks = [];
 const orgFixtureMode = new URLSearchParams(location.search).get('orgFixture') === '1';
@@ -71,13 +75,16 @@ function sync() {
   if (emptyEl) emptyEl.hidden = tiles.size > 0;
   fleetEl.hidden = !fleetOpen;
   orgEl.hidden = !orgOpen;
-  const windowsOpen = !fleetOpen && !orgOpen;
+  busEl.hidden = !busOpen;
+  const windowsOpen = !fleetOpen && !orgOpen && !busOpen;
   document.getElementById('nav-windows')?.classList.toggle('sel', windowsOpen);
   document.getElementById('nav-windows')?.setAttribute('aria-selected', String(windowsOpen));
   document.getElementById('org-btn')?.classList.toggle('sel', orgOpen);
   document.getElementById('org-btn')?.setAttribute('aria-selected', String(orgOpen));
   document.getElementById('fleet-btn').classList.toggle('sel', fleetOpen);
   document.getElementById('fleet-btn').setAttribute('aria-selected', String(fleetOpen));
+  document.getElementById('bus-btn')?.classList.toggle('sel', busOpen);
+  document.getElementById('bus-btn')?.setAttribute('aria-selected', String(busOpen));
   for (const [k, row] of rows) row.classList.toggle('open', tiles.has(k));
 }
 
@@ -102,6 +109,12 @@ async function loadHealth() {
       healthEl.append(
         pill('amber', h.host + ' · 1Password locked', 'Unlock 1Password on this Mac, then Refresh')
       );
+    else if (h.kind === 'linux')
+      healthEl.append(
+        h.reachable
+          ? pill('green', h.host + ' · reachable', 'ssh + tmux answered on this Linux host')
+          : pill('red', h.host + ' · unreachable', 'ssh to this Linux host failed — network or key')
+      );
     else if (h.holderOk === null || h.wslAlive === null)
       healthEl.append(
         pill('amber', h.host + ' · unreachable', 'ssh to the box failed — network or 1Password')
@@ -112,6 +125,52 @@ async function loadHealth() {
           ? pill('green', h.host + ' · holder OK', HOLDER_TIP)
           : pill('red', h.host + ' · HOLDER DOWN', HOLDER_TIP)
       );
+  }
+}
+
+// Whichever window is furthest along is the one that will actually stop the account, so
+// that is the number worth a sidebar row; /accounts.html carries the rest.
+function accountMini(r) {
+  const w = r.windows || {};
+  const pcts = (r.kind === 'codex' ? [w.weekly, r.weekly, r.secondary] : [w.five_hour, w.seven_day])
+    .filter((x) => x && typeof x.pct === 'number')
+    .map((x) => x.pct);
+  const pct = pcts.length ? Math.max(...pcts) : null;
+  const c = r.credit;
+  const spent = c && typeof c.used === 'number' && typeof c.limit === 'number';
+  const row = el('div', 'acct-mini');
+  row.title = [
+    (r.label || r.id) + (r.email ? ' · ' + r.email : ''),
+    pct === null ? 'no usage reported' : 'highest window ' + pct + '%',
+    spent ? 'credits ' + c.used.toFixed(c.decimals ?? 2) + ' / ' + c.limit.toFixed(c.decimals ?? 2) + ' ' + (c.currency || '') : null,
+    r.source ? 'source: ' + r.source : 'no data yet',
+  ]
+    .filter(Boolean)
+    .join('\n');
+  const track = el('div', 'bar-track');
+  const fill = el('div', 'bar-fill' + (pct > 90 ? ' red' : pct >= 70 ? ' amber' : ''));
+  fill.style.width = Math.max(0, Math.min(100, pct || 0)) + '%';
+  track.append(fill);
+  // The strip is one sidebar wide: a first name fits where a full label does not, and the
+  // Codex account needs the suffix or it reads as a second row for the same person.
+  const full = r.label || r.email || r.id;
+  const short = String(full).split(' ')[0] + (r.kind === 'codex' ? ' ·gpt' : '');
+  row.append(el('span', 'mini-who', short), track, el('span', 'pct', pct === null ? '—' : pct + '%'));
+  // A spent pool does not show up in the windows above, so it needs its own mark.
+  if (c && c.capped) row.append(el('span', 'mini-flag', '€'));
+  return row;
+}
+
+// Reads stored rows; the server decides when a collect is due, so opening the deck does
+// not fan out over ssh every time.
+async function loadAccounts() {
+  const box = document.getElementById('accounts-mini');
+  if (!box) return;
+  try {
+    const d = await (await fetch('/api/credits')).json();
+    box.replaceChildren(...(d.rows || []).map(accountMini));
+  } catch {
+    box.replaceChildren(el('div', 'hint', 'accounts unavailable'));
   }
 }
 
@@ -443,7 +502,13 @@ function actionCell(s) {
       toggleFleet(false);
       openMax(s.host, s.name);
     };
-    acts.append(show);
+    const message = el('button', 'ghost', 'Message');
+    message.title = 'Send a message through the bus';
+    message.onclick = () => {
+      toggleBus(true);
+      setBusTarget({ type: 'tmux', host: s.host, session: s.name });
+    };
+    acts.append(show, message);
   }
   acts.append(kill, tag, hide);
   if (!s.live) {
@@ -640,6 +705,109 @@ async function loadSessions() {
   sync();
 }
 
+const busTargetValue = (target) => JSON.stringify(target);
+const busTargetLabel = (target) =>
+  target.type === 'claude-desktop'
+    ? 'Claude Desktop · ' + (target.label || 'current chat')
+    : target.host + ' · ' + target.session;
+// Older claude-desktop messages carry no target.label; recover the recipient
+// from the "For <recipient>, …" convention in the message text.
+const messageTargetLabel = (message) => {
+  if (message.target.type === 'claude-desktop' && !message.target.label) {
+    const match = /^For ([^,]{1,60}),/.exec(message.text || '');
+    if (match) return 'Claude Desktop · ' + match[1];
+  }
+  return busTargetLabel(message.target);
+};
+
+let pendingBusTarget = '';
+function setBusTarget(target) {
+  const value = busTargetValue(target);
+  pendingBusTarget = value;
+  if ([...busTarget.options].some((option) => option.value === value)) {
+    busTarget.value = value;
+    pendingBusTarget = '';
+  }
+}
+
+async function loadBus() {
+  const previous = busTarget.value;
+  const sessionsPromise = fleetSessions.length
+    ? Promise.resolve(fleetSessions)
+    : fetchSessions().then((result) => result.sessions);
+  const [sessions, data] = await Promise.all([
+    sessionsPromise,
+    fetch('/api/messages?limit=50').then((response) => response.json()),
+  ]);
+  const targets = [
+    ...(data.targets || [{ type: 'claude-desktop', session: 'current' }]),
+    ...sessions
+      .filter((session) => session.live)
+      .map((session) => ({ type: 'tmux', host: session.host, session: session.name })),
+  ];
+  busTarget.replaceChildren(
+    ...targets.map((target) => {
+      const option = el('option', null, busTargetLabel(target));
+      option.value = busTargetValue(target);
+      return option;
+    })
+  );
+  const selected = pendingBusTarget || previous;
+  if ([...busTarget.options].some((option) => option.value === selected)) {
+    busTarget.value = selected;
+    pendingBusTarget = '';
+  }
+
+  busRows.replaceChildren();
+  for (const message of data.messages || []) {
+    const tr = el('tr');
+    const body = el('td', 'bus-body', message.text);
+    body.title = message.error || '';
+    const status = el('td', 'bus-status ' + message.status, message.status);
+    const actions = el('td');
+    if (message.status === 'failed') {
+      const retry = el('button', 'ghost', 'Retry');
+      retry.onclick = async () => {
+        retry.disabled = true;
+        const done = toast('Retrying message…', 'pending');
+        const result = await post('/api/messages/retry', { id: message.id });
+        done(
+          result.ok ? 'Message delivered' : 'Retry failed: ' + (result.error || 'unknown error'),
+          result.ok ? 'ok' : 'err'
+        );
+        loadBus();
+      };
+      actions.append(retry);
+    }
+    tr.append(
+      el('td', 'muted', ago(message.created_at).text),
+      el('td', 'mono', message.source),
+      el('td', 'mono', messageTargetLabel(message)),
+      status,
+      body,
+      actions
+    );
+    busRows.append(tr);
+  }
+  if (!busRows.children.length) {
+    const td = el('td', 'muted', 'No messages yet');
+    td.colSpan = 6;
+    const tr = el('tr');
+    tr.append(td);
+    busRows.append(tr);
+  }
+}
+
+function toggleBus(on = !busOpen) {
+  busOpen = on;
+  if (busOpen) {
+    fleetOpen = false;
+    orgOpen = false;
+    loadBus().catch((error) => toast('Bus unavailable: ' + error.message, 'err'));
+  }
+  sync();
+}
+
 // The drawer only exists in fullscreen, so it closes whenever the last maximized tile goes.
 function syncMaxBody() {
   const any = !!document.querySelector('.tile.max');
@@ -829,11 +997,13 @@ document.addEventListener('click', (e) => {
 document.getElementById('refresh').onclick = () => {
   loadSessions();
   loadHealth();
+  loadAccounts();
 };
 const toggleFleet = (on = !fleetOpen) => {
   fleetOpen = on;
   if (fleetOpen) {
     orgOpen = false;
+    busOpen = false;
     loadSessions();
   }
   sync();
@@ -842,25 +1012,54 @@ const toggleOrg = (on = !orgOpen) => {
   orgOpen = on;
   if (orgOpen) {
     fleetOpen = false;
+    busOpen = false;
     loadOrg();
   }
   sync();
 };
 document.getElementById('fleet-btn').onclick = () => toggleFleet();
 document.getElementById('org-btn').onclick = () => toggleOrg();
+document.getElementById('bus-btn').onclick = () => toggleBus();
 document.getElementById('nav-windows')?.addEventListener('click', () => {
   fleetOpen = false;
   orgOpen = false;
+  busOpen = false;
   sync();
 });
 document.getElementById('fleet-close')?.addEventListener('click', () => toggleFleet(false));
 document.getElementById('org-close')?.addEventListener('click', () => toggleOrg(false));
+document.getElementById('bus-close')?.addEventListener('click', () => toggleBus(false));
+document.getElementById('bus-refresh')?.addEventListener('click', () => loadBus());
 document.getElementById('empty-fleet')?.addEventListener('click', () => toggleFleet(true));
 // Esc closes the table; tiles handle their own Esc inside xterm, which never bubbles here.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && fleetOpen) toggleFleet(false);
   else if (e.key === 'Escape' && orgOpen) toggleOrg(false);
+  else if (e.key === 'Escape' && busOpen) toggleBus(false);
 });
+document.getElementById('bus-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  const done = toast('Delivering message…', 'pending');
+  try {
+    const result = await post('/api/messages', {
+      source: document.getElementById('bus-source').value,
+      target: JSON.parse(busTarget.value),
+      text: document.getElementById('bus-message').value,
+    });
+    done(
+      result.ok ? 'Message delivered' : 'Delivery failed: ' + (result.error || 'unknown error'),
+      result.ok ? 'ok' : 'err'
+    );
+    if (result.ok) document.getElementById('bus-message').value = '';
+    await loadBus();
+  } catch (error) {
+    done('Delivery failed: ' + error.message, 'err');
+  } finally {
+    button.disabled = false;
+  }
+};
 document.getElementById('connect-all').onclick = async () => {
   const { sessions } = await fetchSessions();
   for (const s of sessions) {
@@ -880,3 +1079,4 @@ setInterval(tickOrgTimes, 1000);
 setInterval(() => {
   if (orgOpen) loadOrg();
 }, 30000);
+loadAccounts();
