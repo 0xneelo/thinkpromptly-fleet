@@ -5,7 +5,7 @@
 **Implements:** `docs/goals/xyz-1742-fleet-lifecycle/CONTRACT.md` (FROZEN) in `server.js` + `fleet.db` schema
 **Acceptance:** operator decision M16 option (b) — the 15 named defects plus M1–M17 / S1–S7
 
-**Status: acceptance green.** `npm test` — **71 tests, 71 pass, 0 fail**. Every M1–M17 clause with
+**Status: acceptance green.** `npm test` — **73 tests, 73 pass, 0 fail**. Every M1–M17 clause with
 a named test has that test; S1–S7 are implemented, none deferred. All 15 named defects are mapped
 below. `npm start` boots clean on a fresh checkout and on a copy of a populated legacy `fleet.db`,
 and the reaper has been driven end to end against a real tmux session on this box.
@@ -68,7 +68,7 @@ if the construction were undone.
 | 11 | Cross-tenant identity tampering | **N/A** — single tenant. The session-level analogue is defect 5 | see row 5 |
 | 12 | SSE stream leaks other workspaces' runs | **prevented by construction** — there is no SSE, and every fleet-wide read (`/api/sessions`, `/api/health`, `/api/seats`) is loopback-only | `M11 — the fleet read stays off the tailnet` |
 | 13 | Webhook HMAC secrets plaintext at rest | **N/A** — webhooks are not in Lane 1 scope, and none were added | by inspection |
-| 14 | Pipeline/notification races → duplicate work or delivery | **fixed** — a double warn cannot happen (`warned_at IS NULL` is in the CAS), a double reap cannot happen (`lease_state='suspect'` is in the CAS), a double kill cannot happen (one in-flight kill per row, plus `killed_at IS NULL`), and a Name is closed once, after a confirmed kill | `M4 —` failed kill retries without rewriting `reaped_at`, `M4 —` name-close log holds exactly one entry, `M3 —` CAS tests |
+| 14 | Pipeline/notification races → duplicate work or delivery | **fixed** — a double warn cannot happen (`warned_at IS NULL` is in the CAS), a double reap cannot happen (`lease_state='suspect'` is in the CAS), a double kill cannot happen (one in-flight kill per row, plus `killed_at IS NULL`), and a Name is closed once, after a confirmed kill. A kill whose row changed incarnation mid-flight stamps nothing and alerts | `M4 —` failed kill retries without rewriting `reaped_at`, `M4 —` a Name is released only after the kill is confirmed, `M4 —` a kill whose row vanished mid-flight stamps nothing, `M4 —` re-claiming over an unconfirmed kill never happens quietly, `M3 —` CAS tests |
 | 15 | Append-only logs never pruned | **fixed** — heartbeats update in place and no history row is ever written; reaped rows are deleted after the retention window | `S5 —` reaped rows pruned, nothing else touched; `S5 —` five beats leave one row |
 
 Rows 16–35 of that table are the **unenumerated** counts. Per the operator's M16 option (b) they
@@ -112,7 +112,7 @@ Every clause, what it cost, and the test named in the clause itself.
 | **S3** shared bearer key on tailnet writes | `FLEET_TAILNET_KEY` + `safeCompare`; loopback exempt; unset by default so today's workers keep working, and the state is printed at boot | `S3 — an armed tailnet key rejects a write without it` · `S3 — unset, the key gates nothing`. See §5.7 |
 | **S4** INTEGER unix-ms everywhere, never compared to the legacy ISO strings | all eight new timestamp columns are INTEGER ms. The two families are never compared: every `<`/`<=`/`>=` on a timestamp in `server.js` names only a new column, and the legacy ISO columns are not compared anywhere at all | structural, and verifiable by grep; the M10 test asserts the columns exist and stay NULL on legacy rows |
 | **S5** retention, no history rows | reaped rows pruned after 14 days — except a box row whose kill was never confirmed, which is kept as evidence (§5 and the review that prompted it); heartbeats update in place | `S5 — reaped rows are pruned after the retention window and nothing else is` · `S5 — a heartbeat updates in place and writes no history row` · `S5 — retention keeps a reaped row whose kill was never confirmed` |
-| **S6** leaf subagents out of the v1 tree | **decided: out, and out by construction.** A row exists only if something claimed a lease for it or tmux listed it. A reader/hunter subagent has no tmux session and no pinger, so no route creates a row for one and Lane 3 has nothing to render. No code was needed | by construction — the two row-creating paths are `leaseClaim` and `seenStmt` |
+| **S6** leaf subagents out of the v1 tree | **decided: out.** The alternative — short-TTL child rows via lease-claim — was not built, and nothing produces a leaf-subagent row on its own: a reader or hunter has no tmux session for the poller to see and no pinger to claim a lease, so neither of the two automatic row sources yields one. What is *not* true is that the design forbids it: `POST /api/registry` can still create a row for any valid `(host, name)`, which is the pre-existing path by which the operator registers mac desktop lanes. So a caller could deliberately register a subagent row; nothing does, and Lane 3 has no data source to invent one from | by construction for the automatic paths (`leaseClaim`, `seenStmt`); by convention for the deliberate one (`registryWrite`) |
 | **S7** heartbeat is liveness-only by design | recorded in the contract and true in the code: the heartbeat body has no status field, and `lease_state` is server-derived | `S7 — a heartbeat is liveness-only and cannot store a status` |
 
 ---
@@ -188,7 +188,30 @@ they do today, because every box worker in the fleet, including the three lanes 
 posts to `/api/registry` over tailscale with no credential. Boot logs `tailnet_key=armed|unset`
 so the state is never a guess. Arming it is an ops step, not a code change.
 
-### 5.8 New environment knobs
+### 5.8 A re-claim over an unconfirmed kill is allowed, and alerted
+
+If a kill fails for a non-transient reason, the row stays `reaped` with `killed_at` NULL and the
+kill is owed. A claim landing in that gap is **allowed**: M1 requires the re-claim to succeed, and
+tmux session names are unique, so a new session under that name is itself evidence the old one is
+already gone — refusing would make a name permanently unclaimable whenever a host went away for
+good. What it does do is drop a standing kill obligation, and the row is the only record of it, so
+the claim raises an alert and logs `kill-obligation-dropped` with the dead incarnation's epoch.
+
+The *dangerous* window — a claim landing while the `tmux kill-session` ssh is literally in flight,
+where the kill would take the new session with it — is refused with a `409` telling the caller to
+retry. That is bounded by one ssh round trip.
+
+### 5.9 A row whose kill can never succeed is kept, and pruned by hand
+
+Retention deliberately does not prune a box row whose `killed_at` is NULL: deleting it would end
+the retry contract for a session nobody ever confirmed dead, and the next poll would re-create it
+as a bare sighting with no lifecycle history. For a host that is coming back, the retry lands and
+the row prunes normally. For a host that is *never* coming back, the rows stay as evidence and the
+purge is the operator's: `POST /api/registry/delete`. The retry cost is bounded either way — a host
+that did not answer this tick's poll is skipped rather than waited on, and at most `CASCADE_K`
+retries are attempted per tick, so one dead host cannot stall the sweep for the rest of the fleet.
+
+### 5.10 New environment knobs
 
 All default to today's behaviour when unset. `FLEET_TTL_S`, `FLEET_SUSPECT_WINDOW_S`,
 `FLEET_REAPER_TICK_S`, `FLEET_CASCADE_K`, `FLEET_RETENTION_DAYS` are S2's numbers made
@@ -202,7 +225,7 @@ logs `name-skip` and releases nothing.
 
 ## 6. How this was tested
 
-`npm test` → `node --test --test-concurrency=1 test/*.test.js`. 71 tests, no new dependency —
+`npm test` → `node --test --test-concurrency=1 test/*.test.js`. 73 tests, no new dependency —
 `node:test` and `node:assert/strict` only. Serial by choice: every test boots a real fleetdeck on
 real ports, and parallel files collided.
 
@@ -218,7 +241,13 @@ calling the handler directly.
 | `test/lease.test.js` | 15 | HTTP against a child process on its own ports |
 | `test/seats-fencing.test.js` | 21 | same, plus the fake poller so `/api/sessions` has hosts to merge |
 | `test/reaper.test.js` | 22 | in-process, driving `reaperTick()` by hand so a sweep is a step and not a race |
-| `test/kill-race.test.js` | 5 | in-process, with a fake ssh that stalls mid-kill to open the race windows on purpose |
+| `test/kill-race.test.js` | 7 | in-process, with a fake ssh that stalls mid-kill, fails hard, or hides a session for exactly N polls — the race windows opened on purpose |
+
+Five of those seven exist because a review found them, not because a clause named them. The one
+that mattered most: `killReaped` dispatched `tmux kill-session -t <name>` from a row snapshot, so
+a new incarnation claiming that name during the ssh round trip would have had its live session
+killed and its registry row stamped `killed`, and its Name released. That is the exact failure
+this lane exists to prevent, written by hand into the thing meant to prevent it.
 
 **The fake host poller** (`test/fake-ssh.js`) stands in for `ssh` through `FLEET_SSH_BIN`, with the
 same argv shape, and answers from a JSON state file: which sessions each host has, how long since
