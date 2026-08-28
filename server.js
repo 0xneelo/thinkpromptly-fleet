@@ -118,8 +118,8 @@ function run(cmd, args, opts = {}) {
 
 // BatchMode: no interactive auth fallback — a locked 1Password agent fails fast with
 // its message on stderr instead of hanging until the 15s kill.
-const ssh = (host, remoteCmd) =>
-  run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], SSH_OPTS);
+const ssh = (host, remoteCmd, opts) =>
+  run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], { ...SSH_OPTS, ...opts });
 
 const AGENT_LOCKED = 'communication with agent failed';
 
@@ -216,6 +216,334 @@ async function health() {
       return { host, holderOk, wslAlive, agentLocked };
     })
   );
+}
+
+// --- Credits: per-account AI usage. box/fleet-credits.sh runs on each machine and reports
+// two things: a live usage read for whichever account that machine's CLI is logged into
+// (its own token, read and used only there), and the Claude desktop app's usage history,
+// which covers every org that app has sampled — that is how accounts with no login on the
+// fleet are still seen. Only derived numbers come back (percentages, reset stamps, plan,
+// email, org uuid, hostname). No token is ever stored in fleet.db, logged, or sent to a
+// browser, and the desktop app's token cache is never read at all.
+db.exec(
+  `CREATE TABLE IF NOT EXISTS credits (kind TEXT, id TEXT, email TEXT, org TEXT, host TEXT, payload TEXT, updated_at INTEGER, PRIMARY KEY (kind, id))`
+);
+
+const CREDITS_SH = path.join(__dirname, 'box', 'fleet-credits.sh');
+// Quote-free, argument-free: the same remote-command rule as fleet-lastmsg.sh.
+const CREDITS_REMOTE = 'wsl sh /home/vibe/bin/fleet-credits.sh';
+const CREDITS_TTL = 60000; // the ssh fan-out is slow; a page load must not re-run it
+const ACCOUNTS_FILE = path.join(__dirname, 'credits-accounts.json');
+// Codex rollouts carry no account email, and the fleet has exactly one ChatGPT login. A
+// push may name its own account; anything else keys to this one.
+const CODEX_EMAIL = 'admin@deus.finance';
+const CREDIT_STATES = new Set(['ok', 'token_expired', 'rate_limited', 'error', 'absent']);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// A live read carries real reset stamps, so it beats a desktop sample describing the same
+// account in the same collect; both beat nothing.
+const SOURCE_RANK = { oauth: 3, push: 2, codex: 2, desktop: 1 };
+// A better source wins, but only while it is still reporting: once its row is half a day
+// old a weaker fresh one takes over, so a machine that stops pushing cannot pin a row.
+const RANK_STALE = 12 * 3600;
+const safeParse = (s) => {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+};
+const beats = (a, b) => {
+  if (!b) return true;
+  const ra = SOURCE_RANK[a.source] || 0;
+  const rb = SOURCE_RANK[b.source] || 0;
+  const at = a.updated_at || 0;
+  const bt = b.updated_at || 0;
+  // A read that failed carries no numbers, so it must not displace a recent one that
+  // succeeded: a single rate-limited call would otherwise erase a good live reading.
+  if (ra === rb && b.state === 'ok' && a.state !== 'ok' && at - bt < RANK_STALE) return false;
+  return ra === rb ? at >= bt : ra > rb || at - bt > RANK_STALE;
+};
+
+// Freshest wins: the same account is reported by every machine it is signed in on.
+const creditsUpsert = db.prepare(
+  `INSERT INTO credits (kind, id, email, org, host, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT(kind, id) DO UPDATE SET email = excluded.email, org = excluded.org, host = excluded.host,
+     payload = excluded.payload, updated_at = excluded.updated_at WHERE excluded.updated_at >= credits.updated_at`
+);
+// An org row is provisional: once its email is known the account merges under that address.
+const creditsDropId = db.prepare('DELETE FROM credits WHERE kind = ? AND id = ?');
+const creditsGetId = db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?');
+
+// Operator-editable, read per collect so an edit needs no restart. A malformed file must
+// not take the deck down — it just leaves every org unmapped and visibly so.
+function creditsAccounts() {
+  try {
+    const d = JSON.parse(fs.readFileSync(ACCOUNTS_FILE, 'utf8'));
+    return { orgs: d.orgs && typeof d.orgs === 'object' ? d.orgs : {}, codex: d.codex && typeof d.codex === 'object' ? d.codex : {} };
+  } catch (e) {
+    return { orgs: {}, codex: {} };
+  }
+}
+
+// Every source reports 0-100: the endpoint answers utilization 3.0 for 3% and 100.0 for a
+// spent pool, Codex used_percent likewise. Reading a value under 1 as a fraction instead
+// would turn the 0.4% right after a window resets into a 40% bar.
+const pctOf = (v) =>
+  typeof v !== 'number' || !Number.isFinite(v) ? null : Math.round(v * 10) / 10;
+
+// resets_at is an ISO string in some versions and an epoch (s or ms) in others.
+const epochOf = (v) => {
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.round(v > 1e11 ? v / 1000 : v);
+  const t = typeof v === 'string' ? Date.parse(v) : NaN;
+  return Number.isNaN(t) ? null : Math.round(t / 1000);
+};
+
+// Accepts a raw window from the endpoint or one this collector already normalized, so a
+// push of either shape lands on the same row.
+const HAS_PCT = ['utilization', 'used_percentage', 'used_percent', 'pct'];
+const win = (w) => {
+  if (!w || typeof w !== 'object') return null;
+  const raw = w.pct ?? w.utilization ?? w.used_percentage ?? w.used_percent;
+  return { pct: pctOf(raw), resets_at: epochOf(w.resets_at) };
+};
+const creditState = (s) => (CREDIT_STATES.has(s) ? s : 'error');
+
+// Window names drift (model-specific ones appear), so every window found is kept. Only the
+// fields below are kept: the untouched response is never stored or served, so a field the
+// endpoint adds later cannot leak into fleet.db or out to a browser.
+function claudeRow(c) {
+  // Some builds nest the windows under rate_limits, others return them at the top level.
+  const usage = c.usage && typeof c.usage === 'object' ? c.usage : null;
+  const limits = (usage && (usage.rate_limits || usage)) || c.windows || {};
+  const windows = {};
+  for (const [name, w] of Object.entries(limits)) {
+    if (name === 'extra_usage' || !w || typeof w !== 'object' || Array.isArray(w)) continue;
+    // Siblings like the flat `limits` array carry no utilization; only real windows count.
+    if (!HAS_PCT.some((k) => k in w)) continue;
+    const v = win(w);
+    if (!v) continue;
+    // The reply also carries codenamed windows for unreleased features; keep an unknown
+    // one only once it reports something, so the view is not padded with 0% noise.
+    if (!/^(five_hour|seven_day)(_|$)/.test(name) && !v.pct && v.resets_at === null) continue;
+    windows[String(name).slice(0, 40)] = v;
+  }
+  // extra_usage is the paid-credit pool: utilization is already 0-100, but the amounts are
+  // in minor units — decimal_places 2 means 4142 is 41.42 EUR against a 40.00 limit, which
+  // is why that pool reads as spent. Scaling is what makes used/limit agree with utilization.
+  const x = limits.extra_usage;
+  let credit = null;
+  if (x && typeof x === 'object') {
+    const pct = pctOf(x.utilization);
+    if (pct !== null) windows.extra = { pct, resets_at: null };
+    const dp = Number.isInteger(x.decimal_places) && x.decimal_places >= 0 && x.decimal_places <= 8 ? x.decimal_places : 0;
+    const amount = (v) => (typeof v === 'number' && Number.isFinite(v) ? v / 10 ** dp : null);
+    credit = {
+      used: amount(x.used_credits),
+      limit: amount(x.monthly_limit),
+      decimals: dp,
+      currency: typeof x.currency === 'string' ? x.currency.slice(0, 8) : null,
+      enabled: !!x.is_enabled,
+      capped: !!x.spend_limit_reached,
+    };
+  }
+  // An already-normalized row (a relayed push) carries its pool here, not under extra_usage.
+  if (!credit && c.credit && typeof c.credit === 'object') credit = c.credit;
+  return { state: creditState(c.state), windows, ...(credit ? { credit } : {}) };
+}
+
+// window_minutes 10080 = the weekly window (primary); secondary is the shorter one.
+function codexRow(c) {
+  const rl = c.rate_limits && typeof c.rate_limits === 'object' ? c.rate_limits : c;
+  const cr = rl.credits;
+  const secondary = win(rl.secondary);
+  const plan = typeof rl.plan_type === 'string' ? rl.plan_type : c.plan;
+  return {
+    state: creditState(c.state),
+    weekly: win(rl.primary || rl.weekly),
+    ...(secondary ? { secondary } : {}),
+    // balance arrives as a decimal string; kept verbatim rather than lossily parsed.
+    credits: cr && typeof cr === 'object'
+      ? {
+          balance: typeof cr.balance === 'number' ? cr.balance : String(cr.balance ?? '').slice(0, 32) || null,
+          unlimited: !!cr.unlimited,
+          has_credits: !!cr.has_credits,
+        }
+      : null,
+    plan: typeof plan === 'string' ? plan.slice(0, 40) : null,
+    snapshot_ts: epochOf(c.snapshot_ts),
+  };
+}
+
+// The desktop app's sample: fh/sd/xu are already 0-100, and it carries no reset stamps.
+// sample_ts is what matters — an org sampled six days ago is stale data, not 0% usage.
+function desktopRow(s) {
+  const u = s.u && typeof s.u === 'object' ? s.u : {};
+  const windows = {};
+  for (const [k, name] of [['fh', 'five_hour'], ['sd', 'seven_day'], ['xu', 'extra']]) {
+    const pct = pctOf(u[k]);
+    if (pct !== null) windows[name] = { pct, resets_at: null };
+  }
+  return { state: 'ok', windows, sample_ts: epochOf(s.t) };
+}
+
+// The file names the accounts; a CLI login on any machine proves one, so it wins and
+// confirms. An org can change hands on a shared box, which is why rows key on the uuid.
+function creditsMap(accounts) {
+  const map = new Map(
+    Object.entries(creditsAccounts().orgs).map(([org, m]) => [
+      org,
+      { email: typeof m.email === 'string' ? m.email : null, label: typeof m.label === 'string' ? m.label : null, confirmed: !!m.confirmed },
+    ])
+  );
+  for (const a of accounts)
+    if (a && typeof a.org === 'string' && typeof a.email === 'string')
+      map.set(a.org, { email: a.email, label: (map.get(a.org) || {}).label || null, confirmed: true });
+  return map;
+}
+
+// An account with neither an email nor an org is dropped rather than guessed at; an org
+// nobody can name still shows, flagged, so the operator knows a mapping is missing.
+function ident(org, email, map) {
+  const m = (typeof org === 'string' && map.get(org)) || null;
+  const addr = (typeof email === 'string' && email) || (m && m.email) || null;
+  const ok = addr && addr.length <= 254 && EMAIL_RE.test(addr);
+  return {
+    org: typeof org === 'string' ? org.slice(0, 64) : null,
+    email: ok ? addr.toLowerCase() : null,
+    label: (m && m.label) || (ok ? null : org ? String(org).slice(0, 8) + ' · unmapped org' : null),
+    confirmed: m ? m.confirmed : !!ok,
+  };
+}
+
+// One emitted line -> candidate rows: the live read for this machine's CLI account, one
+// per org the desktop app has sampled, and its Codex login. Nothing outside the whitelist
+// each *Row builder produces is kept.
+function creditsCandidates(d, host, map, push) {
+  if (!d || typeof d !== 'object') return [];
+  // Never later than now: a future stamp — a skewed clock, or a push claiming someone
+  // else's account — would otherwise outrank every later report and pin the row for good.
+  const now = Math.floor(Date.now() / 1000);
+  const claimed = Number.isFinite(d.ts) ? d.ts : Number.isFinite(d.updated_at) ? d.updated_at : now;
+  const t = Math.min(claimed, now);
+  const h = typeof d.host === 'string' && d.host ? d.host.slice(0, 64) : host;
+  const out = [];
+  const add = (kind, org, email, source, payload) => {
+    const i = ident(org, email, map);
+    const id = i.email || (i.org ? 'org:' + i.org : null);
+    if (id) out.push({ kind, id, host: h, updated_at: t, source: push ? 'push' : source, ...i, ...payload });
+  };
+  if (d.claude && typeof d.claude === 'object') add('claude', d.claude.org, d.claude.email, 'oauth', claudeRow(d.claude));
+  for (const s of Array.isArray(d.desktop) ? d.desktop : [])
+    if (s && typeof s === 'object' && typeof s.org === 'string') add('claude', s.org, null, 'desktop', desktopRow(s));
+  if (d.codex && typeof d.codex === 'object')
+    add('codex', null, typeof d.codex.email === 'string' ? d.codex.email : CODEX_EMAIL, 'codex', codexRow(d.codex));
+  return out;
+}
+
+// The endpoint answers for some accounts with every window zeroed and every resets_at
+// null — an unpopulated reply, not a real 0%. Taken at face value it would hide genuine
+// usage the desktop sample knows about, so a signal-free reply does not count as windows.
+// `extra` comes from the separate credit block and is populated even when the rate-limit
+// windows are not, so it cannot vouch for them.
+const hasSignal = (r) =>
+  Object.entries(r.windows || {}).some(([n, w]) => n !== 'extra' && w && (w.pct > 0 || w.resets_at !== null));
+
+function creditsWrite(rows) {
+  const best = new Map();
+  const groups = new Map();
+  for (const r of rows) {
+    const k = r.kind + '\0' + r.id;
+    groups.set(k, (groups.get(k) || []).concat(r));
+    if (beats(r, best.get(k))) best.set(k, r);
+  }
+  // Keep the winner's richer fields (only the endpoint reports credits) but borrow the
+  // percentages from the best source that actually reported any.
+  for (const [k, r] of best) {
+    if (hasSignal(r)) continue;
+    const alt = (groups.get(k) || [])
+      .filter((o) => o !== r && hasSignal(o))
+      .sort((a, b) => (SOURCE_RANK[b.source] || 0) - (SOURCE_RANK[a.source] || 0) || b.updated_at - a.updated_at)[0];
+    if (alt) best.set(k, { ...r, windows: alt.windows, sample_ts: alt.sample_ts, windows_from: alt.source });
+  }
+  // A collect carries no pushed rows, so without comparing against what is already stored
+  // a local snapshot would clobber a better report an off-fleet machine pushed earlier.
+  let written = 0;
+  for (const r of best.values()) {
+    const prev = creditsGetId.get(r.kind, r.id);
+    if (prev && !beats(r, safeParse(prev.payload))) continue;
+    creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify(r), r.updated_at);
+    if (r.email && r.org) creditsDropId.run(r.kind, 'org:' + r.org);
+    written++;
+  }
+  return written;
+}
+
+// Every mapped account is listed even before a machine has reported it, in file order, so
+// a silent account reads as "no data yet" rather than vanishing.
+function creditsRows() {
+  const rows = db.prepare('SELECT * FROM credits').all().map((r) => JSON.parse(r.payload));
+  const have = new Set(rows.map((r) => r.kind + '\0' + r.id));
+  const cfg = creditsAccounts();
+  const blank = (kind, id, extra) => ({
+    kind, id, host: null, updated_at: null, source: null, state: 'absent', windows: {}, ...extra,
+  });
+  const order = [];
+  for (const [org, m] of Object.entries(cfg.orgs)) {
+    const id = typeof m.email === 'string' ? m.email.toLowerCase() : 'org:' + org;
+    order.push('claude\0' + id);
+    if (!have.has('claude\0' + id))
+      rows.push(blank('claude', id, { org, email: typeof m.email === 'string' ? m.email.toLowerCase() : null, label: m.label || null, confirmed: !!m.confirmed }));
+  }
+  for (const [email, m] of Object.entries(cfg.codex)) {
+    const id = String(email).toLowerCase();
+    order.push('codex\0' + id);
+    if (!have.has('codex\0' + id))
+      rows.push(blank('codex', id, { org: null, email: id, label: m.label || null, confirmed: true }));
+  }
+  // Labels are applied on the way out, so renaming an account in the file shows up on the
+  // next page load rather than only after the row is collected again.
+  const byEmail = new Map(Object.values(cfg.orgs).map((m) => [String(m.email || '').toLowerCase(), m.label]));
+  const at = (r) => (order.indexOf(r.kind + '\0' + r.id) + 1 || 999) - 1;
+  for (const r of rows)
+    r.label =
+      (r.kind === 'codex' ? (cfg.codex[r.id] || {}).label : (cfg.orgs[r.org] || {}).label || byEmail.get(r.id)) ||
+      r.label ||
+      null;
+  return rows.sort((a, b) => at(a) - at(b));
+}
+
+let creditsAt = 0; // last live collect, ms
+
+async function creditsCollect(force) {
+  const errors = [];
+  if (force || Date.now() - creditsAt > CREDITS_TTL) {
+    creditsAt = Date.now(); // claimed before the awaits, so parallel loads don't stampede
+    const local = run('sh', [CREDITS_SH], { timeout: 30000 }).then((r) => ['mac', r]);
+    // Longer than the session poll's 15s: this one waits on a remote HTTPS call, and a
+    // slow endpoint must not be reported as a missing script.
+    const remote = HOSTS().map((host) => ssh(host, CREDITS_REMOTE, { timeout: 30000 }).then((r) => [host, r]));
+    // A host that is down, or has no script installed, leaves its stored rows standing.
+    const replies = [];
+    for (const [host, r] of await Promise.all([local, ...remote])) {
+      try {
+        const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
+        // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
+        // blaming a script that may well be installed and working.
+        if (!line)
+          throw new Error(
+            r.stderr.trim() ||
+              (r.err ? 'fleet-credits.sh did not answer: ' + (r.err.killed ? 'timed out' : r.err.message) : 'no output from fleet-credits.sh')
+          );
+        replies.push([host, JSON.parse(line)]);
+      } catch (e) {
+        errors.push({ host, message: e.message.slice(0, 500) });
+      }
+    }
+    // One mapping for the whole fleet: a CLI login on any machine names an org for all of them.
+    const map = creditsMap(replies.flatMap(([, d]) => (Array.isArray(d.accounts) ? d.accounts : [])));
+    creditsWrite(replies.flatMap(([host, d]) => creditsCandidates(d, host, map, false)));
+  }
+  return { rows: creditsRows(), errors };
 }
 
 // ssh-keygen -Lf prints one indented block per cert; every field is optional on a
@@ -443,11 +771,12 @@ async function ghToken() {
   return { code: 200, body: { ok: true, token: d.token, expires_at: d.expires_at, train_expires_at: trainExpiresAt } };
 }
 
-async function body(req) {
+// limit is generous only where it has to be: a credits push carries a whole usage response.
+async function body(req, limit = 4096) {
   let data = '';
   for await (const chunk of req) {
     data += chunk;
-    if (data.length > 4096) throw new Error('body too large'); // no legit body is close
+    if (data.length > limit) throw new Error('body too large');
   }
   return JSON.parse(data || '{}');
 }
@@ -498,6 +827,25 @@ async function registryRoute(req, res, p) {
   return json(res, r.body, r.code);
 }
 
+// --- credits push. Shared by both listeners, same gate as the registry: an off-fleet
+// machine (no ssh route from here) runs fleet-credits.sh push on a cron and carries no
+// Origin, so a *foreign* origin is rejected rather than a missing one. The body is either
+// a fleet-credits.sh line or one already-normalized row; nothing else is stored.
+async function creditsRoute(req, res) {
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  const origin = req.headers.origin;
+  if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
+  const b = await body(req, 32768).catch(() => null);
+  if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+  // A normalized row names its kind at the top level; wrap it so both shapes take the
+  // same whitelisting path.
+  const d = b.kind === 'claude' || b.kind === 'codex' ? { host: b.host, ts: b.updated_at, [b.kind]: b } : b;
+  const map = creditsMap(Array.isArray(d.accounts) ? d.accounts : []);
+  if (!creditsWrite(creditsCandidates(d, 'push', map, true)))
+    return json(res, { ok: false, error: 'body must carry a claude or codex account with an email address or org' }, 400);
+  return json(res, { ok: true });
+}
+
 const server = http.createServer(async (req, res) => {
   if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
@@ -524,6 +872,9 @@ const server = http.createServer(async (req, res) => {
       return json(res, r.body, r.code);
     }
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p);
+    if (p === '/api/credits' && req.method === 'GET')
+      return json(res, await creditsCollect(url.searchParams.get('refresh') === '1'));
+    if (p === '/api/credits') return await creditsRoute(req, res);
     if (p === '/api/kill') {
       if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
       const origin = req.headers.origin;
@@ -679,6 +1030,7 @@ async function tailnetHandler(req, res) {
   const p = new URL(req.url, 'http://localhost').pathname;
   try {
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p);
+    if (p === '/api/credits') return await creditsRoute(req, res);
     if (req.method === 'GET' && p === '/api/ghtoken') {
       const r = await ghToken();
       return json(res, r.body, r.code);

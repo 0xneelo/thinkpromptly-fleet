@@ -25,6 +25,32 @@ the remote command string may hold no quotes or redirects):
 
 Missing script or failed ssh is not an error: rows keep their stored `msg_at`, new ones show `—`.
 
+**Credits view.** `/credits.html` shows plan usage per team account — 5-hour, 7-day and
+paid extra-usage credits for each Claude account, plus the Codex/ChatGPT weekly window.
+Three sources feed it, best first: the live OAuth usage endpoint (needs a valid Claude Code
+token on that machine, gives real reset times), the Claude desktop app's
+`plan-usage-history.json` (derived numbers only, covers accounts with no CLI login), and
+`POST /api/credits` for machines outside the fleet. **Access tokens never leave the machine
+that owns them** — the collector calls the endpoint locally and emits only percentages,
+amounts and reset stamps. The desktop app's `config.json` holds a token cache and is never read.
+
+`credits-accounts.json` maps each Claude org uuid to a person. A CLI login on any fleet
+machine proves an account's email and flips its row to confirmed; unconfirmed rows are
+labelled as such in the view. To confirm the remaining one, sign that account into Claude
+Code once on any fleet machine and refresh.
+
+`box/fleet-credits.sh` is the master copy, installed on the box like `fleet-lastmsg.sh`:
+
+    ssh -o BatchMode=yes german-box "wsl tee /home/vibe/bin/fleet-credits.sh" < box/fleet-credits.sh
+    ssh -o BatchMode=yes german-box "wsl chmod +x /home/vibe/bin/fleet-credits.sh"
+
+A machine outside the fleet pushes instead of being polled — on a cron:
+
+    sh fleet-credits.sh push http://<tailnet-ip>:3131/api/credits
+
+A desktop-app sample only refreshes while that account is actually being used, so the view
+shows each sample's age; an org sampled days ago is stale data, not idle usage.
+
 **Quote-free rule.** `ssh german-box <cmd>` traverses zsh → Windows CMD → wsl → bash.
 Nested quotes get mangled and there is no reliable escaping, so every remote command
 string contains ZERO quotes; commands go through `execFile`/`pty.spawn` arg arrays and

@@ -321,7 +321,8 @@ tr.gone td { opacity: 0.5; }
 /* keys page */
 a.ghost { text-decoration: none; }
 #sidebar .sidebar-footer { margin-top: auto; }
-#keys-main {
+#keys-main,
+#credits-main {
   flex: 1;
   overflow: auto;
   padding: 16px;
@@ -392,6 +393,30 @@ input {
   from { background: rgba(217, 119, 87, 0.22); }
   to { background: transparent; }
 }
+
+/* credits page — one .acct per account, same divider rhythm as .cert */
+.acct {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.acct:first-child { border-top: none; padding-top: 0; }
+.acct .who { color: var(--text-strong); }
+.acct .fresh { margin-left: auto; font-size: 11px; color: var(--muted); }
+.bar-row {
+  display: grid;
+  grid-template-columns: 76px 1fr 52px 120px;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+.bar-track { height: 8px; border-radius: 4px; background: var(--bar); overflow: hidden; }
+.bar-fill { height: 100%; background: #22c55e; }
+.bar-fill.amber { background: #f59e0b; }
+.bar-fill.red { background: #ef4444; }
+.bar-row .pct { font-variant-numeric: tabular-nums; color: var(--text-strong); }
 
 table { width: 100%; border-collapse: collapse; }
 th {

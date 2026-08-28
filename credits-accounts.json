@@ -1,0 +1,28 @@
+{
+  "_comment": "Operator-editable map for the Credits view. Org uuids come from the Claude desktop app's usage history; a CLI login on any fleet machine proves the email itself and flips confirmed to true.",
+  "orgs": {
+    "c578669c-cdac-42d7-b451-13f3a3554d75": {
+      "email": "neelo@vibe.trading",
+      "label": "Reiner Garrecht",
+      "confirmed": true
+    },
+    "b14f597c-43a1-4b18-ab9d-a5ab74128546": {
+      "email": "lafayette@infinite-holdings.llc",
+      "label": "Lafayette Tabor",
+      "confirmed": true
+    },
+    "8323fe6e-fd4d-4f47-8a0d-7291a9da464c": {
+      "email": "admin@deus.finance",
+      "label": "Daniel Tabor",
+      "confirmed": true
+    },
+    "d24c4827-df47-40e3-af74-574418a03a4b": {
+      "email": "aylianator@gmail.com",
+      "label": "Aylin Yeter",
+      "confirmed": false
+    }
+  },
+  "codex": {
+    "admin@deus.finance": { "label": "Daniel Tabor (personal · ChatGPT)" }
+  }
+}
