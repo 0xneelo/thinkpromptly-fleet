@@ -1,4 +1,6 @@
 const TTLS = ['1h', '4h', '8h'];
+// root = the VPS boxes' login (think-box, onboarding-app-box, ivy-box), vibe = german-box login.
+const PRINCIPALS = ['root', 'vibe'];
 // Exactly what you paste after `ssh` to use this cert and nothing else from the agent.
 const sshOpts = (dir) =>
   `-o IdentitiesOnly=yes -o IdentityAgent=none -i ${dir}/deployer -o CertificateFile=${dir}/deployer-cert.pub`;
@@ -6,7 +8,6 @@ const sshOpts = (dir) =>
 const certsEl = document.getElementById('certs');
 const pubkeysEl = document.getElementById('pubkeys');
 const errEl = document.getElementById('mint-error');
-const principalsEl = document.getElementById('principals');
 const mintBtn = document.getElementById('mint');
 const trainStatusEl = document.getElementById('train-status');
 const trainErrEl = document.getElementById('train-error');
@@ -15,6 +16,8 @@ const trainEndBtn = document.getElementById('train-end');
 let state = { certs: [], keys: [] };
 let train = { active: false, expiresAt: null };
 let ttl = '1h';
+// Both by default — one cert serves the vps-deploy and gb-deploy aliases.
+let principals = new Set(PRINCIPALS);
 let flashDir = null; // the dir just minted — its card gets the flash animation once
 let ticks = []; // {epoch, cd} per live countdown, refreshed on every render
 
@@ -176,11 +179,31 @@ const ttlBtns = TTLS.map((v) => {
 });
 ttlsEl.append(...ttlBtns);
 
+const principalsEl = document.getElementById('principals');
+for (const p of PRINCIPALS) {
+  const b = el('button', 'ghost ttl sel', p);
+  b.title = p === 'root' ? 'VPS boxes: think · onboarding · ivy' : 'german-box';
+  b.setAttribute('aria-pressed', 'true');
+  b.onclick = () => {
+    if (principals.has(p)) principals.delete(p);
+    else principals.add(p);
+    b.classList.toggle('sel', principals.has(p));
+    b.setAttribute('aria-pressed', String(principals.has(p)));
+  };
+  principalsEl.append(b);
+}
+
 mintBtn.onclick = async () => {
   errEl.hidden = true;
+  const picked = PRINCIPALS.filter((p) => principals.has(p));
+  if (!picked.length) {
+    errEl.textContent = 'pick at least one principal';
+    errEl.hidden = false;
+    return;
+  }
   mintBtn.disabled = true;
   mintBtn.textContent = 'Minting…';
-  const r = await post('/api/sshkeys/mint', { ttl, principals: principalsEl.value.trim() });
+  const r = await post('/api/sshkeys/mint', { ttl, principals: picked.join(',') });
   mintBtn.disabled = false;
   mintBtn.textContent = 'Mint';
   if (r.ok) flashDir = r.outdir;
