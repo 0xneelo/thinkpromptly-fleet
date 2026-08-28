@@ -7,15 +7,27 @@ const { execFile, spawn } = require('child_process');
 const { DatabaseSync } = require('node:sqlite');
 const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
+const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
 
 const PORT = Number(process.env.PORT) || 3131;
-const TAILNET_IP = '100.125.231.25'; // Mac's tailscale address; token broker for box workers
-const HOSTS = () => JSON.parse(fs.readFileSync(path.join(__dirname, 'hosts.json'), 'utf8'));
+const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address
+// hosts.json entries are either "name" (a Windows+WSL box, the original shape) or
+// {"name":..., "kind":"linux"} for a plain Linux host, where tmux is reached directly
+// and the RDP-holder/WSL health probes do not apply.
+const HOSTS_RAW = () => JSON.parse(fs.readFileSync(path.join(__dirname, 'hosts.json'), 'utf8'));
+const name_ = (h) => (typeof h === 'string' ? h : h.name);
+const HOSTS = () => HOSTS_RAW().map(name_);
+const KIND = (host) => {
+  const e = HOSTS_RAW().find((h) => name_(h) === host);
+  return typeof e === 'string' || !e ? 'wsl' : e.kind || 'wsl';
+};
+// Every remote command is written bare; a WSL box gets the `wsl ` prefix put back here.
+const remote = (host, cmd) => (KIND(host) === 'linux' ? cmd : 'wsl ' + cmd);
 
 // --- Session registry: this process is the only writer. Orchestrators classify sessions
 // through /api/registry, and a row outlives the tmux session it describes — that is the
 // point, a killed worker that reappears in `tmux ls` is then visible as evidence.
-const db = new DatabaseSync(path.join(__dirname, 'fleet.db'));
+const db = new DatabaseSync(process.env.FLEET_DB || path.join(__dirname, 'fleet.db'));
 db.exec(
   `CREATE TABLE IF NOT EXISTS sessions (host TEXT, name TEXT, label TEXT DEFAULT '', role TEXT DEFAULT '', worker TEXT DEFAULT '', status TEXT DEFAULT 'active', note TEXT DEFAULT '', created_at TEXT, updated_at TEXT, last_seen_at TEXT, active_at TEXT, PRIMARY KEY (host, name))`
 );
@@ -80,7 +92,7 @@ function registryWrite(b) {
 
 // Irreversible on the box, so the row is only marked killed when tmux actually agreed.
 async function kill(host, name) {
-  const { err, stderr } = await ssh(host, 'wsl tmux kill-session -t ' + name);
+  const { err, stderr } = await ssh(host, remote(host, 'tmux kill-session -t ' + name));
   if (!err) registryWrite({ host, name, status: 'killed' });
   return { ok: !err, stderr: stderr.trim() };
 }
@@ -91,6 +103,32 @@ const CERTS_DIR = path.join(SSH_DIR, 'deploy-certs');
 const MINT_SH = path.join(__dirname, 'deploy-keys', 'mint-deploy-cert.sh');
 const GH_ENV = path.join(__dirname, 'deploy-keys', 'github-app.env');
 const OP_AGENT_SOCK = path.join(HOME, 'Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock');
+const CLAUDE_BRIDGE = process.env.CLAUDE_BRIDGE || path.join(__dirname, '.fleetdeck', 'claude-desktop-send');
+const BUS_TOKEN_FILE = process.env.FLEETDECK_BUS_TOKEN_FILE || path.join(HOME, '.fleetdeck-bus-token');
+
+function loadBusToken() {
+  if (process.env.FLEETDECK_BUS_TOKEN) return process.env.FLEETDECK_BUS_TOKEN;
+  try {
+    return fs.readFileSync(BUS_TOKEN_FILE, 'utf8').trim();
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+  const token = crypto.randomBytes(32).toString('base64url');
+  fs.writeFileSync(BUS_TOKEN_FILE, token + '\n', { mode: 0o600, flag: 'wx' });
+  console.log('fleetdeck message token created at ' + BUS_TOKEN_FILE);
+  return token;
+}
+
+const BUS_TOKEN = loadBusToken();
+
+function busAuthorized(req) {
+  const prefix = 'Bearer ';
+  const header = req.headers.authorization || '';
+  if (!header.startsWith(prefix)) return false;
+  const supplied = Buffer.from(header.slice(prefix.length));
+  const expected = Buffer.from(BUS_TOKEN);
+  return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+}
 
 // Quote-free rule: `ssh german-box <cmd>` traverses zsh -> Windows CMD -> wsl -> bash.
 // Nested quotes are mangled at some layer and there is no reliable escaping, so every
@@ -116,19 +154,47 @@ function run(cmd, args, opts = {}) {
   });
 }
 
+function runInput(cmd, args, input, opts = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, args, opts);
+    let stdout = '';
+    let stderr = '';
+    let spawnError = null;
+    child.stdout.on('data', (chunk) => (stdout += chunk));
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.on('error', (error) => (spawnError = error));
+    child.on('close', (code, signal) =>
+      resolve({
+        err:
+          spawnError ||
+          (code === 0 ? null : new Error(cmd + (signal ? ' killed by ' + signal : ' exited ' + code))),
+        stdout,
+        stderr,
+      })
+    );
+    child.stdin.end(input);
+  });
+}
+
 // BatchMode: no interactive auth fallback — a locked 1Password agent fails fast with
 // its message on stderr instead of hanging until the 15s kill.
 const ssh = (host, remoteCmd) =>
   run('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], SSH_OPTS);
+const sshInput = (host, remoteCmd, input) =>
+  runInput('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], input, SSH_OPTS);
 
 const AGENT_LOCKED = 'communication with agent failed';
 
+// An idle host is not a broken host: tmux exits non-zero when no server is running,
+// and says so differently per version — 3.6 reports the missing socket path instead.
+const NO_TMUX_SERVER = /no server running|no sessions|error connecting to .*(no such file or directory)/i;
+
 // Quote-free format string: no leading #, no comma inside braces, no $ — it survives
 // CMD -> wsl -> bash intact (verified against the box).
-const TMUX_LS = 'wsl tmux ls -F n=#{session_name},a=#{session_activity},c=#{session_created}';
+const TMUX_LS = 'tmux ls -F n=#{session_name},a=#{session_activity},c=#{session_created}';
 // Reads each session pane's Claude Code transcript and prints name<TAB>iso<TAB>msg|mtime.
 // Master copy: box/fleet-lastmsg.sh — the box may not have it installed, hence the soft fail.
-const LAST_MSG = 'wsl bash /home/vibe/bin/fleet-lastmsg.sh';
+const LAST_MSG = 'bash /home/vibe/bin/fleet-lastmsg.sh';
 const iso = (unix) => new Date(Number(unix) * 1000).toISOString();
 // The Windows -> wsl pipeline can turn line ends into CRLF, and a stray \r makes every
 // pattern below miss — which would silently mark the whole fleet gone.
@@ -139,10 +205,13 @@ async function sessions() {
   const live = [];
   await Promise.all(
     HOSTS().map(async (host) => {
-      const [ls, lm] = await Promise.all([ssh(host, TMUX_LS), ssh(host, LAST_MSG)]);
+      const [ls, lm] = await Promise.all([
+        ssh(host, remote(host, TMUX_LS)),
+        ssh(host, remote(host, LAST_MSG)),
+      ]);
       const { err, stdout, stderr } = ls;
       const blob = (stdout + stderr).toLowerCase();
-      if (err && !blob.includes('no server running') && !blob.includes('no sessions')) {
+      if (err && !NO_TMUX_SERVER.test(blob)) {
         out.errors.push({ host, message: (stderr.trim() || err.message).slice(0, 500) });
         return;
       }
@@ -199,6 +268,18 @@ async function sessions() {
 async function health() {
   return Promise.all(
     HOSTS().map(async (host) => {
+      // A Linux host has no RDP holder and no WSL to keep alive: reachability is the
+      // whole story, so probe tmux directly and let the UI render kind 'linux'.
+      if (KIND(host) === 'linux') {
+        const r = await ssh(host, 'tmux -V');
+        const blob = r.stdout + r.stderr;
+        return {
+          host,
+          kind: 'linux',
+          reachable: !r.err || /no server running|no sessions/i.test(blob),
+          agentLocked: blob.includes(AGENT_LOCKED),
+        };
+      }
       // holderOk: a disconnected RDP session for user Vibe is what keeps WSL alive on the box.
       const [q, p] = await Promise.all([
         ssh(host, 'qwinsta'),
@@ -443,11 +524,89 @@ async function ghToken() {
   return { code: 200, body: { ok: true, token: d.token, expires_at: d.expires_at, train_expires_at: trainExpiresAt } };
 }
 
-async function body(req) {
+function messageFailure(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  throw error;
+}
+
+function validateMessageTarget(target) {
+  if (!target || typeof target !== 'object') messageFailure(400, 'target must be an object');
+  if (target.type === 'claude-desktop') {
+    if (target.session !== 'current')
+      messageFailure(400, 'Claude Desktop currently supports session "current" only');
+    const label = typeof target.label === 'string' ? target.label.trim().slice(0, 60) : '';
+    return { type: 'claude-desktop', session: 'current', ...(label ? { label } : {}) };
+  }
+  if (target.type === 'tmux') {
+    if (!(target.host === 'mac' || HOSTS().includes(target.host)) || !SAFE_NAME.test(target.session || ''))
+      messageFailure(400, 'tmux target must name a configured host and safe session');
+    return { type: 'tmux', host: target.host, session: target.session };
+  }
+  messageFailure(400, 'target type must be tmux or claude-desktop');
+}
+
+function deliveryError(action, result) {
+  if (!result.err) return;
+  throw new Error(action + ': ' + (result.stderr.trim() || result.err.message));
+}
+
+async function deliverTmux(message) {
+  const { host, session } = message.target;
+  const buffer = 'fleetdeck_' + message.id.replace(/-/g, '').slice(0, 24);
+  const local = host === 'mac';
+  const loaded = local
+    ? await runInput('tmux', ['load-buffer', '-b', buffer, '-'], message.text, SSH_OPTS)
+    : await sshInput(host, remote(host, 'tmux load-buffer -b ' + buffer + ' -'), message.text);
+  deliveryError('tmux load-buffer failed', loaded);
+  const pasted = local
+    ? await run('tmux', ['paste-buffer', '-p', '-d', '-b', buffer, '-t', session], SSH_OPTS)
+    : await ssh(host, remote(host, 'tmux paste-buffer -p -d -b ' + buffer + ' -t ' + session));
+  if (pasted.err) {
+    if (local) await run('tmux', ['delete-buffer', '-b', buffer], SSH_OPTS);
+    else await ssh(host, remote(host, 'tmux delete-buffer -b ' + buffer));
+    deliveryError('tmux paste-buffer failed', pasted);
+  }
+  const submitted = local
+    ? await run('tmux', ['send-keys', '-t', session, 'Enter'], SSH_OPTS)
+    : await ssh(host, remote(host, 'tmux send-keys -t ' + session + ' Enter'));
+  deliveryError('tmux submit failed', submitted);
+}
+
+async function deliverClaudeDesktop(message) {
+  if (process.platform !== 'darwin') throw new Error('Claude Desktop delivery requires macOS');
+  if (!fs.existsSync(CLAUDE_BRIDGE))
+    throw new Error('Claude bridge is not built; run npm run build:claude-bridge');
+  const result = await runInput(CLAUDE_BRIDGE, [], message.text, {
+    timeout: 8000,
+    killSignal: 'SIGKILL',
+  });
+  deliveryError('Claude Desktop delivery failed', result);
+}
+
+async function deliverMessage(message) {
+  if (message.target.type === 'tmux') return deliverTmux(message);
+  return deliverClaudeDesktop(message);
+}
+
+const messageBus = new MessageBus(db, deliverMessage, validateMessageTarget);
+
+async function messageTargets() {
+  const result = await run('tmux', ['list-sessions', '-F', '#{session_name}'], SSH_OPTS);
+  const local = result.err && !NO_TMUX_SERVER.test((result.stdout + result.stderr).toLowerCase())
+    ? []
+    : lines(result.stdout).map((name) => name.trim()).filter((name) => SAFE_NAME.test(name));
+  return [
+    { type: 'claude-desktop', session: 'current' },
+    ...local.map((session) => ({ type: 'tmux', host: 'mac', session })),
+  ];
+}
+
+async function body(req, maxBytes = 4096) {
   let data = '';
   for await (const chunk of req) {
     data += chunk;
-    if (data.length > 4096) throw new Error('body too large'); // no legit body is close
+    if (Buffer.byteLength(data) > maxBytes) throw new Error('body too large');
   }
   return JSON.parse(data || '{}');
 }
@@ -498,6 +657,26 @@ async function registryRoute(req, res, p) {
   return json(res, r.body, r.code);
 }
 
+async function messageRoute(req, res, p, url) {
+  const origin = req.headers.origin;
+  if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
+  try {
+    if (p === '/api/messages' && req.method === 'GET') {
+      const limit = Number(url.searchParams.get('limit')) || 50;
+      return json(res, { messages: messageBus.list(limit), targets: await messageTargets() });
+    }
+    if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+    const b = await body(req, MAX_BODY_BYTES + 4096).catch(() => null);
+    if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+    const message =
+      p === '/api/messages/retry' ? await messageBus.retry(b.id) : await messageBus.send(b);
+    return json(res, { ok: message.status === 'delivered', ...message });
+  } catch (error) {
+    const code = Number.isInteger(error.code) ? error.code : 500;
+    return json(res, { ok: false, error: error.message }, code);
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
@@ -524,6 +703,8 @@ const server = http.createServer(async (req, res) => {
       return json(res, r.body, r.code);
     }
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p);
+    if (p === '/api/messages' || p === '/api/messages/retry')
+      return await messageRoute(req, res, p, url);
     if (p === '/api/kill') {
       if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
       const origin = req.headers.origin;
@@ -617,7 +798,7 @@ server.on('upgrade', (req, socket, head) => {
       // 1Password agent must fail fast so the Disconnected overlay shows the hint.
       const term = pty.spawn(
         'ssh',
-        ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-t', host, 'wsl tmux attach -t ' + session],
+        ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-t', host, remote(host, 'tmux attach -t ' + session)],
         {
         name: 'xterm-256color',
         cols,
@@ -676,9 +857,14 @@ server.listen(PORT, '127.0.0.1', () => console.log('fleetdeck http://localhost:'
 // because it reaches for ssh.
 async function tailnetHandler(req, res) {
   if (req.headers.host !== TAILNET_IP + ':' + PORT) return send(res, 403, 'text/plain', 'forbidden');
-  const p = new URL(req.url, 'http://localhost').pathname;
+  const url = new URL(req.url, 'http://localhost');
+  const p = url.pathname;
   try {
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p);
+    if ((p === '/api/messages' || p === '/api/messages/retry') && req.method === 'POST') {
+      if (!busAuthorized(req)) return json(res, { ok: false, error: 'invalid message bus token' }, 401);
+      return await messageRoute(req, res, p, url);
+    }
     if (req.method === 'GET' && p === '/api/ghtoken') {
       const r = await ghToken();
       return json(res, r.body, r.code);

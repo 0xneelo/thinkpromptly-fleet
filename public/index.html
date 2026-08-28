@@ -13,6 +13,7 @@
       <div class="row nav">
         <button id="nav-windows" class="ghost sel">Windows</button>
         <button id="fleet-btn" class="ghost">Registry</button>
+        <button id="bus-btn" class="ghost">Bus</button>
         <a class="ghost navlink" href="/keys.html">SSH keys</a>
       </div>
       <button id="connect-all" class="primary">Connect all</button>
@@ -44,6 +45,26 @@
              mapping can never drift from the columns on screen. -->
         <thead><tr id="fleet-head"></tr></thead>
         <tbody id="fleet-rows"></tbody>
+      </table>
+    </div>
+    <div id="bus" class="panel" hidden>
+      <div class="row">
+        <h2>Message bus</h2>
+        <button id="bus-close" class="ghost" aria-label="Close message bus" title="Close (esc)">✕</button>
+      </div>
+      <form id="bus-form" class="bus-form">
+        <label>Target<select id="bus-target" required></select></label>
+        <label>Source<input id="bus-source" value="fleetdeck-ui" maxlength="80" required /></label>
+        <label class="bus-message">Message<textarea id="bus-message" rows="6" maxlength="65536" required></textarea></label>
+        <button class="primary" type="submit">Send now</button>
+      </form>
+      <div class="row bus-history-head">
+        <h2>Recent deliveries</h2>
+        <button id="bus-refresh" class="ghost">Refresh</button>
+      </div>
+      <table>
+        <thead><tr><th>When</th><th>Source</th><th>Target</th><th>Status</th><th>Message</th><th></th></tr></thead>
+        <tbody id="bus-rows"></tbody>
       </table>
     </div>
     <script src="/vendor/xterm.js"></script>
