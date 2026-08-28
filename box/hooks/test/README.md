@@ -9,16 +9,24 @@ no files. Node 18+ core, no npm install.
 `localhost:3131` on the Mac). Always use the stub's own port.
 
 ```sh
-FD_STUB_PORT=3199 FD_STUB_TTL_S=6 node box/hooks/test/stub-server.js
+FD_STUB_PORT=3199 FD_STUB_TTL_S=6 FD_STUB_REAP_TICK_S=1 node box/hooks/test/stub-server.js
 ```
 
 | Env | Default | Meaning |
 |---|---|---|
 | `FD_STUB_PORT` | `3199` | listen port (binds `127.0.0.1` only) |
-| `FD_STUB_TTL_S` | `90` | lease TTL; reaper ticks every `ttl_s/3`, suspect window `2*ttl_s` |
+| `FD_STUB_TTL_S` | `90` | lease TTL; suspect window `2*ttl_s` |
+| `FD_STUB_REAP_TICK_S` | `30` | reaper tick — its own contract number (S2), not `ttl_s/3`; `run-tests.sh` sets it to 1s so the suite stays short |
 
 Contract routes: `POST /api/lease/claim`, `POST /api/heartbeat`, `GET /api/sessions`,
-`GET /api/health`. All timestamps are integer unix-ms.
+`GET /api/health`. All timestamps are integer unix-ms. `claim` validates `host` and `name`
+with the same rule as the real server (`host === 'mac' || hosts.json`, `SAFE_NAME`
+`^[A-Za-z0-9_-]{1,64}$`) so a body the stub accepts is one the backend accepts.
+
+`GET /api/sessions` rows carry one **stub-only extra**, `reaped_at` — handy for tests, not
+part of the contract's read surface. The stub warns at boot if `tmux` is missing: without it
+the M5 second liveness sample always reads "dead" and no `pinger_dead` case can fail, so
+`run-tests.sh` refuses to run at all in that state.
 
 Test-control routes — **stub-only, not in the contract**, and always served normally even in
 `down`/`slow` mode:

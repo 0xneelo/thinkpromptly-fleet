@@ -7,18 +7,30 @@
 // Node 18+ core only, no dependencies. Binds 127.0.0.1 - never point it at the live deck.
 //
 //   node box/hooks/test/stub-server.js
-//   FD_STUB_PORT=3199 FD_STUB_TTL_S=90
+//   FD_STUB_PORT=3199 FD_STUB_TTL_S=90 FD_STUB_REAP_TICK_S=30
 
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 const { execFileSync } = require('child_process');
 
 const PORT = Number(process.env.FD_STUB_PORT) || 3199;
 const TTL_S = Number(process.env.FD_STUB_TTL_S) || 90;
+// Reaper tick is its OWN number in the contract (S2 default 30s), not a function of the TTL.
+const REAP_TICK_S = Number(process.env.FD_STUB_REAP_TICK_S) || 30;
 const HOST = '127.0.0.1';
 const MAX_BODY = 64 * 1024;
+// Same host list and charset the real server validates against (server.js:99,491): a body
+// this stub accepts must be one the backend accepts, or a green test proves nothing.
+let HOSTS = ['german-box'];
+try {
+  HOSTS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'hosts.json'), 'utf8'));
+} catch (e) {
+  console.warn(`[stub] WARNING: cannot read hosts.json (${e.message}); falling back to ${JSON.stringify(HOSTS)}`);
+}
 // The parent edge is written ONLY on claim, and only for these hosts (CONTRACT: HOSTS() + mac).
-const PARENT_HOSTS = new Set(['german-box', 'mac']);
-const SAFE_NAME = /^[A-Za-z0-9._-]{1,64}$/;
+const PARENT_HOSTS = new Set([...HOSTS, 'mac']);
+const SAFE_NAME = /^[A-Za-z0-9_-]{1,64}$/;
 
 // key(host,name) -> row. beats: key -> [unix-ms of every accepted heartbeat].
 const sessions = new Map();
@@ -42,6 +54,17 @@ const now = () => Date.now();
 function tmuxLive(name) {
   try {
     execFileSync('tmux', ['has-session', '-t', '=' + name], { stdio: 'ignore' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Without tmux this always says "dead", every suspect row falls through to reaped, and the
+// M5 pinger_dead acceptance CANNOT fail - a green run that proved nothing. Say so loudly.
+function tmuxAvailable() {
+  try {
+    execFileSync('tmux', ['-V'], { stdio: 'ignore' });
     return true;
   } catch (e) {
     return false;
@@ -75,7 +98,7 @@ function tick() {
   }
 }
 
-const timer = setInterval(tick, Math.max(1, TTL_S / 3) * 1000);
+const timer = setInterval(tick, Math.max(1, Math.round(REAP_TICK_S * 1000)));
 timer.unref?.();
 
 // --- request plumbing --------------------------------------------------------
@@ -121,6 +144,10 @@ function claim(res, b) {
   const host = str(b.host);
   const name = str(b.name);
   if (!host || !name) return json(res, 400, { error: 'host_and_name_required' });
+  // Primary identity gets the same gate as the parent edge and the same gate as production
+  // (server.js:491). It also guarantees no tab can reach key(host,name).
+  if (!(host === 'mac' || HOSTS.includes(host)) || !SAFE_NAME.test(name))
+    return json(res, 400, { error: 'unknown host or bad session name' });
 
   const parentHost = str(b.parent_host);
   const parentName = str(b.parent_name);
@@ -149,7 +176,8 @@ function claim(res, b) {
   row.lease_state = 'active';
   row.suspect_at = null;
   row.reaped_at = null;
-  row.expires_at = now() + TTL_S * 1000;
+  // Integer unix-ms (S4), even for a fractional FD_STUB_TTL_S.
+  row.expires_at = now() + Math.round(TTL_S * 1000);
   if (b.worker != null) row.worker = str(b.worker) || null;
   if (b.role != null) row.role = str(b.role) || null;
   if (b.pid != null) row.pid = b.pid;
@@ -171,7 +199,7 @@ function heartbeat(res, b) {
     return json(res, 409, { current_epoch_hint: false, reason: 'stale_epoch' });
 
   const t = now();
-  row.expires_at = t + TTL_S * 1000;
+  row.expires_at = t + Math.round(TTL_S * 1000);
   if (row.lease_state !== 'active') {
     // A pinger_dead (or suspect) row that beats again with the current epoch is alive.
     row.suspect_at = null;
@@ -280,7 +308,14 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`fd stub listening on http://${HOST}:${PORT} ttl_s=${TTL_S} (NOT the real server)`);
+  console.log(
+    `fd stub listening on http://${HOST}:${PORT} ttl_s=${TTL_S} reap_tick_s=${REAP_TICK_S} (NOT the real server)`
+  );
+  if (!tmuxAvailable())
+    console.warn(
+      '[stub] WARNING: tmux is not available. The M5 second liveness sample always reads ' +
+        '"dead", so every suspect row reaps and no pinger_dead test can fail. Results are void.'
+    );
 });
 
 for (const sig of ['SIGTERM', 'SIGINT'])
