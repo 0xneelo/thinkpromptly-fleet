@@ -37,10 +37,13 @@ locally and emits only percentages, amounts and reset stamps. The desktop app's
 `config.json` holds a token cache and is never read.
 
 **Usage history.** Each account's sparkline is the desktop app's own 7-day series. Every
-machine sends at most 300 samples per org; the deck merges them into `credits_history`
-(org + second is the key, so the same sample from two machines lands once) and keeps
-**60 days**. One box therefore fills in the accounts another stopped sampling. The `seen on`
-line names every machine reporting that account and how.
+machine sends at most 300 samples per org and the deck stores at most that many per org per
+report, from at most 25 orgs — the limit is enforced at the writer, not trusted from the
+sender, because `/api/credits` accepts pushes from machines off the fleet. Samples merge
+into `credits_history` (org + second is the key, so the same sample from two machines lands
+once) and keep **60 days**, pruned by whichever path writes. One box therefore fills in the
+accounts another stopped sampling. The `seen on` line names every machine reporting that
+account and how.
 
 `credits-accounts.json` maps each Claude org uuid to a person. A CLI login on any fleet
 machine proves an account's email and flips its row to confirmed; unconfirmed rows are

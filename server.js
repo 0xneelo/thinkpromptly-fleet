@@ -293,16 +293,37 @@ function thin(a, max) {
   return Array.from({ length: max }, (_, i) => a[Math.round(i * step)]);
 }
 
+// What one report may add. The collector sends at most HISTORY_PER_ORG per org, so these
+// are that promise enforced at the writer: /api/credits takes pushes from machines off the
+// fleet, and a caller that ignores the limits must not be able to grow fleet.db without
+// bound. Anything past a limit is dropped, not an error — a long-running box is allowed to
+// know more than one request can carry.
+const HISTORY_PER_ORG = 300;
+const HISTORY_ORGS = 25;
+let historyPrunedAt = 0;
+
 // Only the three percentages travel, each 0-100 like every other source here. An org this
 // process cannot name still gets its samples: the mapping may arrive on a later collect.
 function creditsHistoryWrite(d) {
   const now = Math.floor(Date.now() / 1000);
+  const perOrg = new Map();
   for (const s of Array.isArray(d.history) ? d.history : []) {
     if (!s || typeof s !== 'object' || typeof s.org !== 'string') continue;
     const t = epochOf(s.t);
     // A future stamp is a skewed clock; it would sit forever at the right of every chart.
     if (t === null || t > now || t < now - HISTORY_KEEP) continue;
-    historyInsert.run(s.org.slice(0, 64), t, pctOf(s.fh), pctOf(s.sd), pctOf(s.xu));
+    const org = s.org.slice(0, 64);
+    const n = perOrg.get(org) || 0;
+    if (n === 0 && perOrg.size >= HISTORY_ORGS) continue;
+    if (n >= HISTORY_PER_ORG) continue;
+    perOrg.set(org, n + 1);
+    historyInsert.run(org, t, pctOf(s.fh), pctOf(s.sd), pctOf(s.xu));
+  }
+  // Pruning used to ride along with a collect, which a push never triggers: a deck nobody
+  // opens would then keep every sample it was ever sent. Throttled, so a burst prunes once.
+  if (perOrg.size && Date.now() - historyPrunedAt > 60000) {
+    historyPrunedAt = Date.now();
+    historyPrune.run(now - HISTORY_KEEP);
   }
 }
 
@@ -320,8 +341,10 @@ function creditsAccounts() {
 // Every source reports 0-100: the endpoint answers utilization 3.0 for 3% and 100.0 for a
 // spent pool, Codex used_percent likewise. Reading a value under 1 as a fraction instead
 // would turn the 0.4% right after a window resets into a 40% bar.
+// Clamped, because the number is also printed: the endpoint already reports a pool spent
+// past its limit as 100, and a faulty 145 must not reach a label saying "145%".
 const pctOf = (v) =>
-  typeof v !== 'number' || !Number.isFinite(v) ? null : Math.round(v * 10) / 10;
+  typeof v !== 'number' || !Number.isFinite(v) ? null : Math.min(100, Math.max(0, Math.round(v * 10) / 10));
 
 // resets_at is an ISO string in some versions and an epoch (s or ms) in others.
 const epochOf = (v) => {
@@ -474,7 +497,9 @@ function creditsCandidates(d, host, map, push) {
     if (id) out.push({ kind, id, host: h, updated_at: t, source: push ? 'push' : source, ...i, ...payload });
   };
   if (d.claude && typeof d.claude === 'object') add('claude', d.claude.org, d.claude.email, 'oauth', claudeRow(d.claude));
-  for (const s of Array.isArray(d.desktop) ? d.desktop : [])
+  // One row per org, and a machine sees a handful: the slice is what stops a push from
+  // turning a long list into as many stored rows.
+  for (const s of (Array.isArray(d.desktop) ? d.desktop : []).slice(0, HISTORY_ORGS))
     if (s && typeof s === 'object' && typeof s.org === 'string') add('claude', s.org, null, 'desktop', desktopRow(s));
   if (d.codex && typeof d.codex === 'object')
     add('codex', null, typeof d.codex.email === 'string' ? d.codex.email : CODEX_EMAIL, 'codex', codexRow(d.codex));
@@ -898,12 +923,17 @@ async function creditsRoute(req, res) {
   if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
   // A normalized row names its kind at the top level; wrap it so both shapes take the
   // same whitelisting path.
-  const d = b.kind === 'claude' || b.kind === 'codex' ? { host: b.host, ts: b.updated_at, [b.kind]: b } : b;
+  const d =
+    b.kind === 'claude' || b.kind === 'codex'
+      ? { host: b.host, ts: b.updated_at, history: b.history, [b.kind]: b }
+      : b;
   const map = creditsMap(Array.isArray(d.accounts) ? d.accounts : []);
   const wrote = creditsWrite(creditsCandidates(d, 'push', map, true));
-  creditsHistoryWrite(d);
+  // Only a body that named an account writes anything: a rejected push must not leave its
+  // samples behind, or a 400 would be a receipt for a write that happened anyway.
   if (!wrote)
     return json(res, { ok: false, error: 'body must carry a claude or codex account with an email address or org' }, 400);
+  creditsHistoryWrite(d);
   return json(res, { ok: true });
 }
 
