@@ -27,7 +27,7 @@ else
 fi
 tmux new-session -d -s "$SES" -c "$WT"
 tmux send-keys -t "$SES" "sh ~/.claude/session-kind/mark.sh --worker $NAME 2>/dev/null; $CMD" Enter
-ROLE=unknown; case $SLUG in edith) ROLE=backend-developer;; konrad) ROLE=devops-engineer;; alfons) ROLE=frontend-developer;; esac
+ROLE=unknown; case $SLUG in edith) ROLE=backend-developer;; konrad) ROLE=devops-engineer;; alfons) ROLE=frontend-developer;; sylvia) ROLE=tooling-engineer;; esac
 curl -s -X POST http://100.125.231.25:3131/api/registry -H "Content-Type: application/json" \
   -d "{\"host\":\"german-box\",\"name\":\"$SES\",\"group\":\"xyz-1742\",\"task\":\"XYZ-1742\",\"label\":\"$SLUG lane\",\"role\":\"$ROLE\",\"worker\":\"$NAME\"}" >/dev/null
 echo "LAUNCHED $NAME → tmux attach -t $SES"
