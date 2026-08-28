@@ -28,6 +28,7 @@ let showHidden = localStorage.getItem('showHidden') === '1';
 let fleetOpen = false;
 let orgOpen = false;
 let orgLoadId = 0;
+let orgTicks = [];
 const orgFixtureMode = new URLSearchParams(location.search).get('orgFixture') === '1';
 
 const key = (host, session) => host + '\0' + session;
@@ -122,6 +123,43 @@ const orgTask = (task) => {
   return a;
 };
 
+function shortDuration(ms) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  if (seconds < 60) return seconds + 's';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes + 'm';
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours + 'h ' + (minutes % 60) + 'm';
+  return Math.floor(hours / 24) + 'd ' + (hours % 24) + 'h';
+}
+
+function leaseAge(row, now = Date.now()) {
+  const stamp = Date.parse(row.last_seen_at || '');
+  return Number.isFinite(stamp) ? shortDuration(now - stamp) : 'unknown';
+}
+
+function expiryText(epoch, now = Date.now()) {
+  const stamp = Number(epoch);
+  if (!Number.isFinite(stamp)) return 'none';
+  const delta = stamp - now;
+  return delta > 0 ? shortDuration(delta) + ' left' : 'expired ' + shortDuration(-delta) + ' ago';
+}
+
+function orgTime(kind, value) {
+  const node = el('span', kind === 'expiry' ? 'org-countdown' : 'org-lease-age');
+  orgTicks.push({ kind, value, node });
+  return node;
+}
+
+function tickOrgTimes() {
+  const now = Date.now();
+  for (const tick of orgTicks) {
+    tick.node.textContent = tick.kind === 'expiry'
+      ? expiryText(tick.value, now)
+      : leaseAge(tick.value, now);
+  }
+}
+
 function orgSessionCard(row) {
   const state = FleetOrgChart.stateOf(row);
   const card = el(
@@ -140,6 +178,11 @@ function orgSessionCard(row) {
     title.append(pinger);
   }
   if (FleetOrgChart.needsAttention(row)) title.append(el('span', 'org-attention', 'idle 15m+'));
+  if (state === 'tombstone') {
+    const closeMe = el('span', 'org-close-me', '🪦 close me');
+    closeMe.title = 'Close this stale Mac desktop session; fleetdeck never kills Mac rows';
+    title.append(closeMe);
+  }
 
   const identity = el('div', 'org-identity');
   identity.append(
@@ -154,9 +197,15 @@ function orgSessionCard(row) {
   for (const [label, value] of [
     ['epoch', row.epoch == null ? 'legacy' : '#' + row.epoch],
     ['lease', row.lease_state || (row.live ? 'tmux live' : 'unleased')],
+    ['lease age', orgTime('age', row)],
+    ['expires', orgTime('expiry', row.expires_at)],
   ]) {
-    facts.append(el('dt', null, label), el('dd', null, value));
+    const dd = el('dd');
+    if (value instanceof Node) dd.append(value);
+    else dd.textContent = value;
+    facts.append(el('dt', null, label), dd);
   }
+  card.setAttribute('aria-label', (row.worker || row.name) + ', ' + state);
   card.append(title, identity, work, facts);
   return card;
 }
@@ -180,7 +229,8 @@ function orgRoot(root) {
       el('span', 'org-seat-mark', root.row.seat === 'coordinator' ? 'C' : 'O'),
       el('strong', null, root.row.seat),
       el('span', 'org-seat-owner mono', root.row.owner_host + ' / ' + root.row.owner_name),
-      el('span', 'org-seat-epoch', 'seat epoch #' + root.row.epoch)
+      el('span', 'org-seat-epoch', 'seat epoch #' + root.row.epoch),
+      orgTime('expiry', root.row.expires_at)
     );
   } else {
     heading.append(
@@ -202,6 +252,7 @@ function orgRoot(root) {
 
 function renderOrg(data) {
   const tree = FleetOrgChart.buildTree(data.sessions, data.seats);
+  orgTicks = [];
   orgTreeEl.replaceChildren();
   for (const root of tree) orgTreeEl.append(orgRoot(root));
   if (!tree.length) orgTreeEl.append(el('div', 'org-empty-state', 'No seats or sessions to map.'));
@@ -213,6 +264,7 @@ function renderOrg(data) {
   if (data.errors.length) notes.push(data.errors.length + ' host errors');
   orgStatusEl.className = 'org-status' + (data.errors.length ? ' has-error' : '');
   orgStatusEl.textContent = notes.join(' · ');
+  tickOrgTimes();
 }
 
 async function loadOrg() {
@@ -794,3 +846,4 @@ document.getElementById('connect-all').onclick = async () => {
 
 loadSessions();
 loadHealth();
+setInterval(tickOrgTimes, 1000);
