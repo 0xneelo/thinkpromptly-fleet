@@ -98,7 +98,9 @@ function pill(color, text, tip) {
 async function loadHealth() {
   let hosts;
   try {
-    hosts = await (await fetch('/api/health')).json();
+    const data = await (await fetch('/api/health')).json();
+    // The lifecycle build wraps the host list ({hosts, reaper_*}); the old shape was a bare array.
+    hosts = Array.isArray(data) ? data : data.hosts;
   } catch {
     healthEl.replaceChildren(pill('red', 'health unreachable'));
     return;
