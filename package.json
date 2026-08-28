@@ -4,6 +4,8 @@
   "version": "1.0.0",
   "scripts": {
     "start": "node server.js",
+    "build:claude-bridge": "sh scripts/build-claude-bridge.sh",
+    "test": "node --test",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true"
   },
   "dependencies": {

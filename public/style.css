@@ -202,7 +202,7 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
 .nav .sel { border-color: var(--coral); color: var(--coral); }
 
 /* registry table — fullscreen above the grid, so open tiles keep their sockets */
-#fleet {
+#fleet, #bus {
   position: fixed;
   inset: 0;
   z-index: 70;
@@ -210,9 +210,9 @@ button { font: inherit; cursor: pointer; border-radius: 8px; }
   border: none;
   border-radius: 0;
 }
-#fleet[hidden] { display: none; } /* .panel's display:flex would otherwise beat [hidden] */
-#fleet .row { align-items: baseline; }
-#fleet .row .ghost { margin-left: auto; padding: 2px 8px; }
+#fleet[hidden], #bus[hidden] { display: none; } /* .panel's display:flex would otherwise beat [hidden] */
+#fleet .row, #bus > .row { align-items: baseline; }
+#fleet .row .ghost, #bus > .row .ghost { margin-left: auto; padding: 2px 8px; }
 /* not .row: that rule above would shove the first sub-tab to the far right */
 .subnav { display: flex; }
 tr.gone td { opacity: 0.5; }
@@ -354,6 +354,30 @@ input {
   padding: 6px 10px;
   min-width: 220px;
 }
+select, textarea {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+textarea { resize: vertical; min-height: 110px; }
+.bus-form {
+  display: grid;
+  grid-template-columns: minmax(260px, 2fr) minmax(180px, 1fr);
+  gap: 12px;
+  max-width: 900px;
+}
+.bus-form label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); }
+.bus-form label > * { color: var(--text); }
+.bus-form .bus-message { grid-column: 1 / -1; }
+.bus-form .primary { justify-self: start; }
+.bus-history-head { margin-top: 14px; }
+.bus-body { max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bus-status.delivered { color: #22c55e; }
+.bus-status.failed { color: #ef4444; }
+.bus-status.queued, .bus-status.sending { color: #f59e0b; }
 .ttl.sel { border-color: var(--coral); color: var(--coral); }
 .notice {
   background: rgba(245, 158, 11, 0.12);

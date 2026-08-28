@@ -11,7 +11,10 @@ const XTERM_THEME = {
 const grid = document.getElementById('grid');
 const emptyEl = document.getElementById('empty');
 const fleetEl = document.getElementById('fleet');
+const busEl = document.getElementById('bus');
 const fleetRows = document.getElementById('fleet-rows');
+const busRows = document.getElementById('bus-rows');
+const busTarget = document.getElementById('bus-target');
 const listEl = document.getElementById('sessions');
 const healthEl = document.getElementById('health');
 const tiles = new Map(); // key -> tile element
@@ -22,6 +25,7 @@ let showHidden = localStorage.getItem('showHidden') === '1';
 // The fleet table is fullscreen above the grid: tiles keep their websockets while it is
 // open, so closing it shows them exactly as they were.
 let fleetOpen = false;
+let busOpen = false;
 
 const key = (host, session) => host + '\0' + session;
 const el = (tag, cls, text) => {
@@ -34,8 +38,10 @@ const el = (tag, cls, text) => {
 function sync() {
   if (emptyEl) emptyEl.hidden = tiles.size > 0;
   fleetEl.hidden = !fleetOpen;
-  document.getElementById('nav-windows')?.classList.toggle('sel', !fleetOpen);
+  busEl.hidden = !busOpen;
+  document.getElementById('nav-windows')?.classList.toggle('sel', !fleetOpen && !busOpen);
   document.getElementById('fleet-btn').classList.toggle('sel', fleetOpen);
+  document.getElementById('bus-btn').classList.toggle('sel', busOpen);
   for (const [k, row] of rows) row.classList.toggle('open', tiles.has(k));
 }
 
@@ -59,6 +65,12 @@ async function loadHealth() {
     if (h.agentLocked)
       healthEl.append(
         pill('amber', h.host + ' · 1Password locked', 'Unlock 1Password on this Mac, then Refresh')
+      );
+    else if (h.kind === 'linux')
+      healthEl.append(
+        h.reachable
+          ? pill('green', h.host + ' · reachable', 'ssh + tmux answered on this Linux host')
+          : pill('red', h.host + ' · unreachable', 'ssh to this Linux host failed — network or key')
       );
     else if (h.holderOk === null || h.wslAlive === null)
       healthEl.append(
@@ -252,7 +264,13 @@ function actionCell(s) {
       toggleFleet(false);
       openMax(s.host, s.name);
     };
-    acts.append(show);
+    const message = el('button', 'ghost', 'Message');
+    message.title = 'Send a message through the bus';
+    message.onclick = () => {
+      toggleBus(true);
+      setBusTarget({ type: 'tmux', host: s.host, session: s.name });
+    };
+    acts.append(show, message);
   }
   acts.append(kill, tag, hide);
   if (!s.live) {
@@ -449,6 +467,108 @@ async function loadSessions() {
   sync();
 }
 
+const busTargetValue = (target) => JSON.stringify(target);
+const busTargetLabel = (target) =>
+  target.type === 'claude-desktop'
+    ? 'Claude Desktop · ' + (target.label || 'current chat')
+    : target.host + ' · ' + target.session;
+// Older claude-desktop messages carry no target.label; recover the recipient
+// from the "For <recipient>, …" convention in the message text.
+const messageTargetLabel = (message) => {
+  if (message.target.type === 'claude-desktop' && !message.target.label) {
+    const match = /^For ([^,]{1,60}),/.exec(message.text || '');
+    if (match) return 'Claude Desktop · ' + match[1];
+  }
+  return busTargetLabel(message.target);
+};
+
+let pendingBusTarget = '';
+function setBusTarget(target) {
+  const value = busTargetValue(target);
+  pendingBusTarget = value;
+  if ([...busTarget.options].some((option) => option.value === value)) {
+    busTarget.value = value;
+    pendingBusTarget = '';
+  }
+}
+
+async function loadBus() {
+  const previous = busTarget.value;
+  const sessionsPromise = fleetSessions.length
+    ? Promise.resolve(fleetSessions)
+    : fetchSessions().then((result) => result.sessions);
+  const [sessions, data] = await Promise.all([
+    sessionsPromise,
+    fetch('/api/messages?limit=50').then((response) => response.json()),
+  ]);
+  const targets = [
+    ...(data.targets || [{ type: 'claude-desktop', session: 'current' }]),
+    ...sessions
+      .filter((session) => session.live)
+      .map((session) => ({ type: 'tmux', host: session.host, session: session.name })),
+  ];
+  busTarget.replaceChildren(
+    ...targets.map((target) => {
+      const option = el('option', null, busTargetLabel(target));
+      option.value = busTargetValue(target);
+      return option;
+    })
+  );
+  const selected = pendingBusTarget || previous;
+  if ([...busTarget.options].some((option) => option.value === selected)) {
+    busTarget.value = selected;
+    pendingBusTarget = '';
+  }
+
+  busRows.replaceChildren();
+  for (const message of data.messages || []) {
+    const tr = el('tr');
+    const body = el('td', 'bus-body', message.text);
+    body.title = message.error || '';
+    const status = el('td', 'bus-status ' + message.status, message.status);
+    const actions = el('td');
+    if (message.status === 'failed') {
+      const retry = el('button', 'ghost', 'Retry');
+      retry.onclick = async () => {
+        retry.disabled = true;
+        const done = toast('Retrying message…', 'pending');
+        const result = await post('/api/messages/retry', { id: message.id });
+        done(
+          result.ok ? 'Message delivered' : 'Retry failed: ' + (result.error || 'unknown error'),
+          result.ok ? 'ok' : 'err'
+        );
+        loadBus();
+      };
+      actions.append(retry);
+    }
+    tr.append(
+      el('td', 'muted', ago(message.created_at).text),
+      el('td', 'mono', message.source),
+      el('td', 'mono', messageTargetLabel(message)),
+      status,
+      body,
+      actions
+    );
+    busRows.append(tr);
+  }
+  if (!busRows.children.length) {
+    const td = el('td', 'muted', 'No messages yet');
+    td.colSpan = 6;
+    const tr = el('tr');
+    tr.append(td);
+    busRows.append(tr);
+  }
+}
+
+function toggleBus(on = !busOpen) {
+  busOpen = on;
+  if (busOpen) {
+    fleetOpen = false;
+    loadBus().catch((error) => toast('Bus unavailable: ' + error.message, 'err'));
+  }
+  sync();
+}
+
 // The drawer only exists in fullscreen, so it closes whenever the last maximized tile goes.
 function syncMaxBody() {
   const any = !!document.querySelector('.tile.max');
@@ -642,17 +762,51 @@ document.getElementById('refresh').onclick = () => {
 };
 const toggleFleet = (on = !fleetOpen) => {
   fleetOpen = on;
-  if (fleetOpen) loadSessions();
+  if (fleetOpen) {
+    busOpen = false;
+    loadSessions();
+  }
   sync();
 };
 document.getElementById('fleet-btn').onclick = () => toggleFleet();
-document.getElementById('nav-windows')?.addEventListener('click', () => toggleFleet(false));
+document.getElementById('bus-btn').onclick = () => toggleBus();
+document.getElementById('nav-windows')?.addEventListener('click', () => {
+  fleetOpen = false;
+  busOpen = false;
+  sync();
+});
 document.getElementById('fleet-close')?.addEventListener('click', () => toggleFleet(false));
+document.getElementById('bus-close')?.addEventListener('click', () => toggleBus(false));
+document.getElementById('bus-refresh')?.addEventListener('click', () => loadBus());
 document.getElementById('empty-fleet')?.addEventListener('click', () => toggleFleet(true));
 // Esc closes the table; tiles handle their own Esc inside xterm, which never bubbles here.
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && fleetOpen) toggleFleet(false);
+  else if (e.key === 'Escape' && busOpen) toggleBus(false);
 });
+document.getElementById('bus-form').onsubmit = async (event) => {
+  event.preventDefault();
+  const button = event.currentTarget.querySelector('button[type="submit"]');
+  button.disabled = true;
+  const done = toast('Delivering message…', 'pending');
+  try {
+    const result = await post('/api/messages', {
+      source: document.getElementById('bus-source').value,
+      target: JSON.parse(busTarget.value),
+      text: document.getElementById('bus-message').value,
+    });
+    done(
+      result.ok ? 'Message delivered' : 'Delivery failed: ' + (result.error || 'unknown error'),
+      result.ok ? 'ok' : 'err'
+    );
+    if (result.ok) document.getElementById('bus-message').value = '';
+    await loadBus();
+  } catch (error) {
+    done('Delivery failed: ' + error.message, 'err');
+  } finally {
+    button.disabled = false;
+  }
+};
 document.getElementById('connect-all').onclick = async () => {
   const { sessions } = await fetchSessions();
   for (const s of sessions) {
