@@ -114,6 +114,15 @@ while :; do
   code=$(printf '%s\n' "$out" | sed -n 1p)
   resp=$(printf '%s\n' "$out" | sed 1d)
   [ "$code" = 200 ] && break
+  # A 401 is configuration, not weather: the tailnet listener wants the shared bearer key
+  # (CONTRACT S3) and two more identical POSTs will be refused identically. Retrying would
+  # only bury the cause under a generic "failed after 3 attempts", so it gets its own exit
+  # and its own alert file - with no lease there is no pinger to surface it later.
+  if [ "$code" = 401 ]; then
+    fd_alert_unauthorized "$ses" "lease claim at session start"
+    fd_log "claim REJECTED 401 unauthorized: the tailnet bearer key is missing or wrong (set FD_TAILNET_KEY in $FD_DIR/fleet.env to the server's FLEET_TAILNET_KEY). Not retried, no pinger spawned, alert written to $HOME/launch/fd-alerts/$ses.txt"
+    exit 0
+  fi
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 3 ]; then
     fd_log "claim failed after 3 attempts (last http $code), no pinger spawned"

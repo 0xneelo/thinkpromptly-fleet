@@ -58,6 +58,7 @@ printf 'konradtest\tdevops-engineer\n' >"$FD_DIR/roles.map"
 SESSIONS=''
 STUB_PID=''
 STUB2_PID=''                 # case 13 runs a second, killable stub on its own loopback port
+STUB3_PID=''                 # cases 14-16 run a third stub with the S3 bearer gate armed
 FAILED=0
 PASSED=0
 N=0
@@ -68,6 +69,7 @@ cleanup() {
   pkill -f "fd-pinger.sh fdtest-$$-" 2>/dev/null
   [ -n "$STUB_PID" ] && kill "$STUB_PID" 2>/dev/null
   [ -n "$STUB2_PID" ] && kill "$STUB2_PID" 2>/dev/null
+  [ -n "$STUB3_PID" ] && kill "$STUB3_PID" 2>/dev/null
   if [ "$FAILED" -eq 0 ]; then rm -rf "$TMPROOT"; else echo "artifacts kept: $TMPROOT"; fi
 }
 trap cleanup EXIT INT TERM
@@ -95,7 +97,7 @@ echo
 
 # --- helpers ----------------------------------------------------------------
 tpost() { printf '%s' "${2:-{\}}" | curl -sS --max-time 5 -H 'Content-Type: application/json' \
-  --data-binary @- "$BASE$1" 2>/dev/null; }
+  --data-binary @- "${3:-$BASE}$1" 2>/dev/null; }
 
 # field of a row from GET /api/sessions (the contract route)
 sess() {
@@ -452,6 +454,140 @@ else
   fi
 fi
 
+# --- 14-17. the tailnet bearer key (CONTRACT S3) ------------------------------
+# The server gates every POST that arrives over the tailnet on a shared bearer key. The box
+# reaches it over the tailnet, so an armed key with no FD_TAILNET_KEY here means every claim
+# and every beat 401s. These four cases cover the arming, the mistake, and the leak.
+#
+# A third stub, on its own loopback port, because the gate is a process-wide setting and the
+# other twelve cases must keep running unauthenticated.
+PORT3=$((FD_STUB_PORT + 2))
+BASE3=http://127.0.0.1:$PORT3
+# Values invented by this run: a hit in `ps` or in a log is then evidence, never coincidence.
+KEY=fdtestkey-$$-a7c3f1e9b2d4
+KEY2=fdtestrotated-$$-5f8e0c1a
+WRONG=fdtestwrong-$$-000000
+KEYF=$TMPROOT/key.txt
+# The key reaches grep through -f, never through argv - a `grep -F "$KEY"` would put the key
+# on a command line that the ps sampler two lines below would then dutifully catch itself.
+printf '%s\n%s\n' "$KEY" "$KEY2" >"$KEYF"
+
+PSHITS=$TMPROOT/ps-key-hits.txt
+PSCURL=$TMPROOT/ps-curl-count.txt
+: >"$PSHITS"
+: >"$PSCURL"
+# Samples every process's argv while real requests are in flight, and records how many curls
+# it caught: "no key in argv" proves nothing if it never saw a curl at all.
+ps_sampler() {
+  _end=$(($(date +%s) + ${1:-8}))
+  while [ "$(date +%s)" -lt "$_end" ]; do
+    ps -eo args= >"$TMPROOT/ps.now" 2>/dev/null
+    grep -F -f "$KEYF" "$TMPROOT/ps.now" >>"$PSHITS" 2>/dev/null
+    grep -cE 'fd-pinger|curl' "$TMPROOT/ps.now" >>"$PSCURL" 2>/dev/null
+    sleep 0.05
+  done
+}
+
+if [ "$PORT3" = 3131 ]; then
+  bad "14 keyed claim and heartbeat" "refusing: port $PORT3 is the live deck's port"
+else
+  FD_STUB_PORT=$PORT3 FD_STUB_TAILNET_KEY=$KEY node "$STUB" >>"$TMPROOT/stub3.log" 2>&1 &
+  STUB3_PID=$!
+  i=0
+  while [ "$i" -lt 50 ]; do
+    curl -sS --max-time 2 "$BASE3/api/health" >/dev/null 2>&1 && break
+    i=$((i + 1))
+    sleep 0.2
+  done
+  if [ "$i" -ge 50 ]; then
+    bad "14 keyed claim and heartbeat" "third stub did not come up on $BASE3"
+  else
+    # --- 14. with the key configured, the whole lifecycle works ---------------
+    new_session FD_WORKER=keytest FD_BASE_URL=$BASE3 FD_TAILNET_KEY=$KEY; s14=$SES
+    if ! wait_active "$s14" 15 "$BASE3"; then
+      bad "14 keyed claim and heartbeat" "row never went active against a gated server"
+    else
+      k=0
+      while [ "$k" -lt 15 ] && [ "$(st "$s14" beat_count "$BASE3")" -lt 1 ] 2>/dev/null; do
+        sleep 1; k=$((k + 1))
+      done
+      b14=$(st "$s14" beat_count "$BASE3")
+      if [ "${b14:-0}" -ge 1 ]; then
+        ok "14 keyed claim and heartbeat" "epoch=$(st "$s14" epoch "$BASE3"), $b14 beat(s) accepted through the S3 gate"
+      else
+        bad "14 keyed claim and heartbeat" "claim ok but no heartbeat was accepted (beats=$b14)"
+      fi
+
+      # --- 15. the key is rotated under a live pinger: keep beating, say so ---
+      # The operator arms or changes FLEET_TAILNET_KEY while sessions are already running.
+      # Every beat now 401s. The contract enumerates only 410 and 409 as stop conditions and
+      # it is frozen, so the pinger must keep beating - but the first 401 has to be loud.
+      ps_sampler 8 &
+      SAMP_PID=$!
+      tpost /_test/tailnet_key "{\"key\":\"$KEY2\"}" "$BASE3" >/dev/null
+      b_before=$(st "$s14" beat_count "$BASE3")
+      sleep $((CAD * 3 + 1))
+      alert14=$HOME/launch/fd-alerts/$s14.txt
+      log14=$FD_DIR/log/$s14.log
+      alive14=$(pinger_count "$s14")
+      b_during=$(st "$s14" beat_count "$BASE3")
+      saw401=no
+      grep -q 'pinger: 401 unauthorized' "$log14" 2>/dev/null && saw401=yes
+      # Restore the key it should have had all along: a session must recover in place.
+      tpost /_test/tailnet_key "{\"key\":\"$KEY\"}" "$BASE3" >/dev/null
+      k=0
+      while [ "$k" -lt 15 ] && [ "$(st "$s14" beat_count "$BASE3")" -le "$b_during" ] 2>/dev/null; do
+        sleep 1; k=$((k + 1))
+      done
+      b_after=$(st "$s14" beat_count "$BASE3")
+      wait "$SAMP_PID" 2>/dev/null
+      if [ "$alive14" -ge 1 ] && [ "$saw401" = yes ] && [ -f "$alert14" ] &&
+        [ "$b_during" = "$b_before" ] && [ "${b_after:-0}" -gt "${b_during:-0}" ]; then
+        ok "15 401 keeps beating, loudly" "pinger survived $((CAD * 3 + 1))s of 401 (log + $alert14), beats $b_before->$b_during->$b_after after the key came back"
+      else
+        bad "15 401 keeps beating, loudly" "pingers=$alive14 logged_401=$saw401 alert=$([ -f "$alert14" ] && echo yes || echo no) beats $b_before->$b_during->$b_after"
+      fi
+
+      # --- 16. a claim with the wrong key is its own case, not "3 attempts" ---
+      new_session FD_WORKER=badkeytest FD_BASE_URL=$BASE3 FD_TAILNET_KEY=$WRONG; s16=$SES
+      sleep 4                                # 3 backoff retries would take ~6s; this must not
+      log16=$FD_DIR/log/$s16.log
+      alert16=$HOME/launch/fd-alerts/$s16.txt
+      named=no; generic=no
+      grep -q 'claim REJECTED 401' "$log16" 2>/dev/null && named=yes
+      grep -q 'claim failed after 3 attempts' "$log16" 2>/dev/null && generic=yes
+      row16=$(st "$s16" epoch "$BASE3")
+      if [ "$named" = yes ] && [ "$generic" = no ] && [ -f "$alert16" ] &&
+        [ "$(pinger_count "$s16")" = 0 ] && [ -z "$row16" ]; then
+        ok "16 claim 401 named, not generic" "log says 401 with the cause, alert written, no pinger, no row"
+      else
+        bad "16 claim 401 named, not generic" "named=$named generic=$generic alert=$([ -f "$alert16" ] && echo yes || echo no) pingers=$(pinger_count "$s16") row_epoch=${row16:-none}"
+      fi
+
+      # --- 17. the key is in no argv and in no log ----------------------------
+      # `-H "Authorization: Bearer $k"` would be readable by every user on this box through
+      # `ps`; the header goes into a 0600 curl --config file instead. This is the check that
+      # would catch a regression back to -H.
+      seen=$(sort -n "$PSCURL" 2>/dev/null | tail -1 | tr -dc 0-9)
+      leaks=$TMPROOT/key-in-logs.txt
+      grep -rlF -f "$KEYF" "$FD_DIR/log" "$TMPROOT/launch" "$TMPROOT/stub3.log" >"$leaks" 2>/dev/null
+      nps=$(wc -l <"$PSHITS" | tr -dc 0-9)
+      nlog=$(wc -l <"$leaks" | tr -dc 0-9)
+      if [ "${seen:-0}" -ge 1 ] && [ "${nps:-1}" = 0 ] && [ "${nlog:-1}" = 0 ]; then
+        ok "17 key never in argv or logs" "$(wc -l <"$PSCURL" | tr -dc 0-9) ps snapshots (max $seen curl/pinger lines), 0 key hits in argv, 0 in logs/alerts/tombstones"
+      else
+        bad "17 key never in argv or logs" "ps_hits=$nps log_files=$nlog curl_seen=$seen"
+        [ "${nps:-0}" -gt 0 ] && note "argv leak: $(head -1 "$PSHITS")"
+        [ "${nlog:-0}" -gt 0 ] && while IFS= read -r l; do note "log leak: $l"; done <"$leaks"
+      fi
+      tmux kill-session -t "=$s14" 2>/dev/null
+      tmux kill-session -t "=$s16" 2>/dev/null
+    fi
+  fi
+  [ -n "$STUB3_PID" ] && kill "$STUB3_PID" 2>/dev/null
+  STUB3_PID=''
+fi
+
 # --- 11. hygiene scan ---------------------------------------------------------
 # Static, and deliberately narrow about what it claims to prove:
 #  a) no remote execution at all, in command position (nothing writes the Mac from the box)
@@ -469,14 +605,24 @@ for f in fd-common.sh lease-claim.sh fd-pinger.sh deregister.sh; do
   grep -nE '(tmux|ssh)[^#]*\$' "$TMPROOT/joined.sh" |
     grep -E '\\"|\\'"'"'|'"'"'\\'"'"'\\'"'"'' |
     sed "s|^|$f b-quote-in-arg: |" >>"$hits"
-  grep -nE 'ghp_|github_pat_|Bearer |password|secret=' "$TMPROOT/joined.sh" |
+  # A hardcoded credential, not the string "Bearer": fd_post builds an Authorization header
+  # from FD_TAILNET_KEY, so the literal is legitimate and what matters is that no VALUE is
+  # baked in next to it.
+  grep -nE 'ghp_|github_pat_|Bearer[[:space:]]+[A-Za-z0-9._~+/=-]{6,}|password|secret=' "$TMPROOT/joined.sh" |
     sed "s|^|$f c-secret: |" >>"$hits"
+  # d) the key must never reach argv: `curl -H "Authorization: ..."` is readable by every
+  #    user on the box via ps. It goes in a 0600 --config file instead.
+  # Full-line comments are dropped first: fd_post's comment names the anti-pattern it avoids,
+  # and a scan that cannot tell a warning from a defect gets deleted rather than obeyed.
+  grep -nE '\-H[[:space:]]*.{0,2}Authorization' "$TMPROOT/joined.sh" |
+    grep -vE '^[0-9]+:[[:space:]]*#' |
+    sed "s|^|$f d-auth-in-argv: |" >>"$hits"
 done
 if [ -s "$hits" ]; then
   bad "11 hygiene scan" "$(wc -l <"$hits" | tr -dc 0-9) hit(s)"
   while IFS= read -r l; do note "$l"; done <"$hits"
 else
-  ok "11 hygiene scan" "4 scripts: no ssh/scp, no quoted interpolation, no token literals"
+  ok "11 hygiene scan" "4 scripts: no ssh/scp, no quoted interpolation, no token literals, no auth header in argv"
 fi
 
 echo

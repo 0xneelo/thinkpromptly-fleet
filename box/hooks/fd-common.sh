@@ -7,7 +7,10 @@
 #    stays silent on stdout unless it is explicitly a value-printing helper.
 #  - Zero-quote rule (server.js:95-99): values interpolated into a tmux command are
 #    whitelist-validated by fd_safe_name, never escaped. SAFE_NAME has no `.` on purpose.
-#  - No secrets: nothing here reads a credential store, and nothing writes the Mac.
+#  - One credential, handled like one: FD_TAILNET_KEY is the shared bearer key the server's
+#    tailnet listener requires on every POST (CONTRACT S3). It is never an argv word - `ps`
+#    is world-readable - so it travels to curl in a 0600 --config file. Nothing else here
+#    reads a credential store, and nothing writes the Mac.
 # POSIX sh only (WSL bash + macOS sh both run this).
 #
 # FD_NAME is a TEST / MAC-ONLY override of the session name. Inside tmux the tmux session
@@ -36,6 +39,7 @@ fd_load_config() {
   _e_ph=${FD_PARENT_HOST:-}
   _e_pn=${FD_PARENT_NAME:-}
   _e_to=${FD_CURL_TIMEOUT:-}
+  _e_key=${FD_TAILNET_KEY:-}
 
   [ -r "$FD_DIR/fleet.env" ] && . "$FD_DIR/fleet.env"
 
@@ -45,18 +49,42 @@ fd_load_config() {
   [ -n "$_e_ph" ] && FD_PARENT_HOST=$_e_ph
   [ -n "$_e_pn" ] && FD_PARENT_NAME=$_e_pn
   [ -n "$_e_to" ] && FD_CURL_TIMEOUT=$_e_to
+  [ -n "$_e_key" ] && FD_TAILNET_KEY=$_e_key
 
   FD_BASE_URL=${FD_BASE_URL:-http://100.125.231.25:3131}
   FD_HOST=${FD_HOST:-german-box}
   FD_PARENT_HOST=${FD_PARENT_HOST:-}
   FD_PARENT_NAME=${FD_PARENT_NAME:-}
   FD_CURL_TIMEOUT=${FD_CURL_TIMEOUT:-10}
+  # Empty is the normal case: the server only requires the key when FLEET_TAILNET_KEY is armed,
+  # and loopback (the Mac) is exempt either way. Surrounding spaces are trimmed (the server
+  # trims its own key too, so a tidy-up must not become a mismatch), but a `"`, a `\` or ANY
+  # control character is a dropped key, not a repaired one: the first two break the quoting of
+  # the curl config line, and a CR or LF - which is what a fleet.env that made a round trip
+  # through a CRLF editor looks like - would end that config line early and inject the rest as
+  # a further curl directive. A 401 with a named cause beats either.
+  FD_TAILNET_KEY=${FD_TAILNET_KEY:-}
+  while :; do
+    case $FD_TAILNET_KEY in
+      ' '*) FD_TAILNET_KEY=${FD_TAILNET_KEY#' '} ;;
+      *' ') FD_TAILNET_KEY=${FD_TAILNET_KEY%' '} ;;
+      *) break ;;
+    esac
+  done
+  case $FD_TAILNET_KEY in
+    *'"'* | *'\'* | *[[:cntrl:]]*)
+      FD_TAILNET_KEY=''
+      fd_log 'WARN FD_TAILNET_KEY contains a quote, backslash or control character (CR/LF/tab) - ignoring it, POSTs go unauthenticated'
+      ;;
+  esac
   if [ -z "${FD_LIVENESS:-}" ]; then
     if [ "$FD_HOST" = mac ]; then FD_LIVENESS=pid; else FD_LIVENESS=tmux; fi
   fi
 
-  # Exported so the detached pinger inherits the same target and dirs.
-  export FD_DIR FD_BASE_URL FD_HOST FD_LIVENESS FD_CURL_TIMEOUT
+  # Exported so the detached pinger inherits the same target and dirs. The key is exported
+  # too - a key set only in this hook's environment must reach the pinger, and /proc/<pid>/environ
+  # is owner-only, unlike the argv `ps` prints for every user on the box.
+  export FD_DIR FD_BASE_URL FD_HOST FD_LIVENESS FD_CURL_TIMEOUT FD_TAILNET_KEY
   return 0
 }
 
@@ -152,15 +180,62 @@ fd_older_than() {
 # POST $2 (a JSON string) to $FD_BASE_URL$1. The body goes in on stdin, never in argv.
 # Prints the HTTP code on line 1 and the response body on the rest; a dead connection or
 # a timeout prints `000` with an empty body and is NOT fatal.
+#
+# Every header goes through a curl --config file, always, not only when there is a key to
+# send: one code path is one code path to audit, and `-H "Authorization: Bearer $k"` would
+# put the shared key in argv, where any user on the box reads it out of `ps`. The file is
+# created by mktemp (0600) and chmod'd 0600 explicitly BEFORE the key is written into it,
+# and a trap inside the subshell removes it however that subshell ends. `printf` is a shell
+# builtin, so writing the key costs no process and no argv either.
 fd_post() {
   _tmp=$(mktemp 2>/dev/null) || { printf '000\n'; return 0; }
-  _code=$(printf '%s' "${2:-}" | curl -sS --max-time "${FD_CURL_TIMEOUT:-10}" \
-    -H 'Content-Type: application/json' --data-binary @- \
-    -o "$_tmp" -w '%{http_code}' "$FD_BASE_URL$1" 2>/dev/null)
+  _cfg=$(mktemp 2>/dev/null) || { rm -f "$_tmp" 2>/dev/null; printf '000\n'; return 0; }
+  if ! chmod 0600 "$_cfg" 2>/dev/null; then
+    rm -f "$_cfg" "$_tmp" 2>/dev/null
+    printf '000\n'
+    return 0
+  fi
+  printf 'header = "Content-Type: application/json"\n' >"$_cfg" 2>/dev/null
+  [ -n "${FD_TAILNET_KEY:-}" ] &&
+    printf 'header = "Authorization: Bearer %s"\n' "$FD_TAILNET_KEY" >>"$_cfg" 2>/dev/null
+  _code=$(
+    # Two traps, not one: on a signal both scratch files go, but on a NORMAL exit only the
+    # secret-bearing config does - $_tmp still holds the response body this function is about
+    # to print, and is removed by the last line below.
+    trap 'rm -f "$_cfg" "$_tmp" 2>/dev/null' INT TERM
+    trap 'rm -f "$_cfg" 2>/dev/null' EXIT
+    printf '%s' "${2:-}" | curl -sS --max-time "${FD_CURL_TIMEOUT:-10}" \
+      --config "$_cfg" --data-binary @- \
+      -o "$_tmp" -w '%{http_code}' "$FD_BASE_URL$1" 2>/dev/null
+  )
   case $_code in '' | *[!0-9]*) _code=000 ;; esac
   printf '%s\n' "$_code"
   cat "$_tmp" 2>/dev/null
-  rm -f "$_tmp" 2>/dev/null
+  rm -f "$_tmp" "$_cfg" 2>/dev/null
+  return 0
+}
+
+# The 401 note, in one place because both the claim and the pinger write it. A 401 is never
+# a network blip: the server's tailnet listener gates every POST on the shared bearer key
+# (CONTRACT S3), so this is configuration, and configuration is not something to retry
+# silently forever. $1 = session, $2 = what the caller was doing when it got the 401.
+fd_alert_unauthorized() {
+  _ad=$HOME/launch/fd-alerts
+  mkdir -p "$_ad" 2>/dev/null || return 0
+  printf '%s\n' \
+    "session:  ${1:-unknown}" \
+    "host:     ${FD_HOST:-unknown}" \
+    "url:      ${FD_BASE_URL:-unknown}" \
+    "when:     ${2:-a fleet POST}" \
+    "observed: $(date +%Y-%m-%dT%H:%M:%S%z) (local)" \
+    "" \
+    "The fleet server answered 401 unauthorized. Every POST that arrives over the tailnet" \
+    "carries a shared bearer key; this machine sent $([ -n "${FD_TAILNET_KEY:-}" ] && echo 'a key the server rejected' || echo 'no key at all')." \
+    "" \
+    "Fix: set FD_TAILNET_KEY in ${FD_DIR:-~/.claude/fleet}/fleet.env to the same value as the" \
+    "server's FLEET_TAILNET_KEY, then start a new session (or re-run lease-claim.sh)." \
+    "The Mac needs no key: its calls go to loopback, which the server exempts." \
+    >"$_ad/${1:-unknown}.txt" 2>/dev/null
   return 0
 }
 

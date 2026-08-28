@@ -7,7 +7,7 @@
 // Node 18+ core only, no dependencies. Binds 127.0.0.1 - never point it at the live deck.
 //
 //   node box/hooks/test/stub-server.js
-//   FD_STUB_PORT=3199 FD_STUB_TTL_S=90 FD_STUB_REAP_TICK_S=30
+//   FD_STUB_PORT=3199 FD_STUB_TTL_S=90 FD_STUB_REAP_TICK_S=30 FD_STUB_TAILNET_KEY=<key>
 
 const http = require('http');
 const fs = require('fs');
@@ -31,6 +31,25 @@ try {
 // The parent edge is written ONLY on claim, and only for these hosts (CONTRACT: HOSTS() + mac).
 const PARENT_HOSTS = new Set([...HOSTS, 'mac']);
 const SAFE_NAME = /^[A-Za-z0-9_-]{1,64}$/;
+
+// S3: the real server's tailnet listener rejects every POST that does not carry the shared
+// bearer key, and exempts loopback. This stub is loopback-only, so it emulates the GATE, not
+// the exemption - set FD_STUB_TAILNET_KEY and an unauthenticated POST gets the same
+// `401 text/plain unauthorized` the real tailnetHandler sends. Never logged, anywhere.
+// Mutable so /_test/tailnet_key can arm it under a running fleet of pingers.
+let tailnetKey = (process.env.FD_STUB_TAILNET_KEY || '').trim();
+function tailnetAuthed(req) {
+  if (!tailnetKey) return true;
+  const m = String(req.headers.authorization || '').match(/^Bearer\s+(.+)$/i);
+  return !!m && m[1] === tailnetKey;
+}
+// The real tailnetHandler (server.js:1445) gates on the Host header FIRST, for every method,
+// and answers `403 text/plain forbidden` before the bearer check ever runs. Emulated only
+// while the key is armed - unarmed, this stub is the plain loopback deck the other tests
+// drive. The expected value is this listener's own host:port, which is exactly what curl
+// sends to $FD_BASE_URL; override it to rehearse a mismatch.
+const TAILNET_HOST = process.env.FD_STUB_TAILNET_HOST || `${HOST}:${PORT}`;
+const tailnetHostOk = (req) => String(req.headers.host || '') === TAILNET_HOST;
 
 // key(host,name) -> row. beats: key -> [unix-ms of every accepted heartbeat].
 const sessions = new Map();
@@ -192,7 +211,12 @@ function claim(res, b) {
 
 function heartbeat(res, b) {
   const row = rowOf(b);
-  if (!row) return json(res, 409, { current_epoch_hint: false, reason: 'no_lease' });
+  // 404, not 409, for a row that is not there at all. Verified against Lane 1's server.js on
+  // 2026-08-28: it answers `404 {"error":"no lease for this session - claim first"}`, and the
+  // contract only ever specifies 409 for a missing or stale epoch on a row that EXISTS. The
+  // difference is load-bearing for the pinger: 409 is a stop-and-alert, 404 is transient, and
+  // a wiped or restarted deck must not stop every pinger in the fleet.
+  if (!row) return json(res, 404, { error: 'no lease for this session - claim first' });
   // M2: a reaped row never resurrects, whatever epoch the pinger holds.
   if (row.lease_state === 'reaped') return json(res, 410, { reason: 'reaped', reaped_at: row.reaped_at });
   if (typeof b.epoch !== 'number' || !Number.isFinite(b.epoch) || b.epoch !== row.epoch)
@@ -254,6 +278,15 @@ function testRoute(res, path, b) {
     row.expires_at = now() - 1000;
     return json(res, 200, { ok: true, expires_at: row.expires_at });
   }
+  if (path === '/_test/tailnet_key') {
+    // Arms or disarms the S3 gate on a RUNNING stub - the one thing an env var cannot do, and
+    // exactly the operator action this exists to rehearse: the key goes on while sessions are
+    // already beating. `key` is write-only; nothing ever reads it back out of this stub.
+    const k = typeof b.key === 'string' ? b.key.trim() : '';
+    if (/["\\]/.test(k)) return json(res, 400, { error: 'bad_key' });
+    tailnetKey = k;
+    return json(res, 200, { ok: true, tailnet_key: tailnetKey ? 'armed' : 'unset' });
+  }
   if (path === '/_test/mode') {
     const m = str(b.mode);
     if (!['normal', 'flaky', 'down', 'slow'].includes(m)) return json(res, 400, { error: 'bad_mode' });
@@ -298,7 +331,19 @@ const server = http.createServer(async (req, res) => {
     return json(res, code, { error: code === 413 ? 'too_large' : 'bad_json' });
   }
 
+  // Test-control routes are never gated: a harness must always be able to reset the stub,
+  // exactly as it is never gated on the real server (it has no /_test/ at all).
   if (path.startsWith('/_test/')) return testRoute(res, path, body);
+
+  // Her order, exactly: 403 for a Host that is not ours, then 401 for a bad or missing key.
+  if (tailnetKey && !tailnetHostOk(req)) {
+    res.writeHead(403, { 'content-type': 'text/plain' });
+    return res.end('forbidden');
+  }
+  if (req.method === 'POST' && !tailnetAuthed(req)) {
+    res.writeHead(401, { 'content-type': 'text/plain' });
+    return res.end('unauthorized');
+  }
 
   // Fault injection applies to contract routes only.
   if (mode === 'down') return json(res, 503, { error: 'synthetic_down' });
@@ -309,7 +354,8 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(
-    `fd stub listening on http://${HOST}:${PORT} ttl_s=${TTL_S} reap_tick_s=${REAP_TICK_S} (NOT the real server)`
+    `fd stub listening on http://${HOST}:${PORT} ttl_s=${TTL_S} reap_tick_s=${REAP_TICK_S} ` +
+      `tailnet_key=${tailnetKey ? 'armed' : 'unset'} (NOT the real server)`
   );
   if (!tmuxAvailable())
     console.warn(

@@ -118,28 +118,63 @@ else
 fi
 
 # ---------------------------------------------------------------- 2. fleet.env + roles.map
+# fleet.env may hold FD_TAILNET_KEY, so it is owner-only. This only ever REMOVES bits: an
+# operator who set 0400 keeps 0400, and a mode this script cannot read is left untouched
+# rather than guessed at. Silent when the file is already owner-only.
+tighten_owner_only() {
+  _m=$(stat -c %a "$1" 2>/dev/null) || _m=''
+  [ -n "$_m" ] || _m=$(stat -f %Lp "$1" 2>/dev/null) || _m=''
+  case $_m in '' | *[!0-7]*) return 0 ;; esac
+  _go=${_m#"${_m%??}"}                     # the group+other digits of a 3- or 4-digit mode
+  [ "$_go" = 00 ] && return 0
+  if [ -n "$DRY" ]; then
+    say "would tighten $2 to owner-only (mode $_m; it may hold a bearer key)"
+  elif chmod go-rwx "$1" 2>/dev/null; then
+    say "tightened $2 to owner-only (was mode $_m; it may hold a bearer key)"
+  else
+    say "WARNING: $2 is mode $_m and could not be tightened - it may hold a bearer key"
+  fi
+  return 0
+}
+
 seed_file() {
-  # $1 = path, $2 = description. Body on stdin. Never overwrites: fleet.env carries operator
-  # edits (a different FD_BASE_URL, a parent edge) and an upgrade must not undo them.
+  # $1 = path, $2 = description, $3 = mode to create it with (optional). Body on stdin.
+  # Never overwrites: fleet.env carries operator edits (a different FD_BASE_URL, a parent
+  # edge, a tailnet key) and an upgrade must not undo them.
   if [ -e "$1" ]; then
     say "$2 already present, left untouched"
+    [ -n "${3:-}" ] && tighten_owner_only "$1" "$2"
     cat >/dev/null
     return 0
   fi
   if [ -n "$DRY" ]; then
-    say "would seed $2"
+    say "would seed $2${3:+ (mode $3)}"
+    cat >/dev/null
+    return 0
+  fi
+  # Created INSIDE a `umask 077` subshell, so the file is owner-only from the instant it
+  # exists: `: >file` then chmod leaves a window in which any local process can open it and
+  # keep reading through the chmod, secret and all. The chmod after it only ever narrows
+  # further (an operator-chosen 0400, say), so no window is reopened.
+  # Any failure removes the partial file: a leftover empty fleet.env would look "already
+  # present" to every later run and never get its default content - one transient failure
+  # turning into a permanent one.
+  if [ -n "${3:-}" ] && ! { (umask 077; : >"$1") 2>/dev/null && chmod "$3" "$1" 2>/dev/null; }; then
+    rm -f "$1" 2>/dev/null
+    fail "cannot create $1 with mode $3"
     cat >/dev/null
     return 0
   fi
   if cat >"$1" 2>/dev/null; then
-    say "seeded $2"
+    say "seeded $2${3:+ (mode $3)}"
   else
+    rm -f "$1" 2>/dev/null
     fail "cannot write $1"
   fi
 }
 
 if [ "$MODE" = install ] && [ "$RC" = 0 ]; then
-  seed_file "$FLEET/fleet.env" "fleet.env" <<'ENV'
+  seed_file "$FLEET/fleet.env" "fleet.env" 0600 <<'ENV'
 # fleet-lifecycle config (XYZ-1742 Lane 2). Sourced by the hooks; the environment wins over
 # this file. Seeded once by install-box.sh and never rewritten - edit it freely.
 
@@ -156,6 +191,12 @@ FD_PARENT_NAME=orchestrator
 
 # Seconds any single HTTP call may take before it counts as a transient failure.
 FD_CURL_TIMEOUT=10
+
+# Shared bearer key for the server's tailnet listener: it must be byte-identical to the
+# server's FLEET_TAILNET_KEY, or every claim and heartbeat from this box gets a 401. Leave it
+# commented out while the server's key is unset. The mac never needs it - its calls go to
+# loopback, which the server exempts. This file is mode 0600 because of this line.
+#FD_TAILNET_KEY=
 
 # Liveness proof before every beat. Unset defaults to tmux on the box, pid on the mac:
 #   tmux -> tmux has-session      pid -> kill -0 $FD_PID

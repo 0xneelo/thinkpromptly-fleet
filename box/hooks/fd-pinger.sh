@@ -6,6 +6,9 @@
 # This loop is the FROZEN M8 contract (CONTRACT.md "Pinger contract"), followed literally:
 #   liveness proof before every beat  ->  200 renew / 410 tombstone+stop / 409 stop+surface
 #   / anything else is transient, keep beating. Re-claiming is NOT allowed from here.
+# 401 is the one code that is transient by the contract's letter and permanent in fact (a
+# wrong tailnet bearer key), so it keeps beating - inventing a fourth stop condition would be
+# amending a frozen contract - but it is surfaced the first time instead of spun on in silence.
 set -u
 
 FD_BIN=${FD_BIN:-$(dirname -- "$0")}
@@ -45,6 +48,7 @@ trap 'rm -f "$pidf" 2>/dev/null; exit 0' TERM INT
 fd_log "pinger: start pid=$$ epoch=$epoch ttl_s=$ttl cadence=${cadence}s"
 
 fails=0
+unauth=0
 while :; do
   # 1. Prove the session is alive BEFORE beating: a beat for a dead session is exactly the
   # false-positive this whole design exists to prevent.
@@ -66,6 +70,10 @@ while :; do
   case $code in
     200)
       fails=0
+      if [ "$unauth" -gt 0 ]; then
+        fd_log "pinger: authorized again after $unauth rejected beat(s), heartbeat accepted"
+        unauth=0
+      fi
       t=$(printf '%s' "$resp" | fd_json ttl_s)
       case $t in
         '' | *[!0-9]*) : ;;
@@ -124,6 +132,21 @@ while :; do
       fd_log "pinger: 409 fenced at epoch $epoch, alert written, exiting"
       rm -f "$pidf" 2>/dev/null
       exit 0
+      ;;
+    401)
+      # The tailnet listener rejected the shared bearer key (CONTRACT S3). This is NOT a blip,
+      # but the contract enumerates only 410 and 409 as stop conditions and it is frozen - so
+      # the beat continues (the key can be fixed under a running session, and the next beat
+      # then renews). What must not continue is the silence: beating forever against a 401
+      # while the row quietly expires is the worst of both. So the first one is loud, in the
+      # log AND in an alert file, and after that it is rate-limited like any other failure.
+      unauth=$((unauth + 1))
+      if [ "$unauth" = 1 ]; then
+        fd_alert_unauthorized "$ses" "heartbeat at epoch $epoch"
+        fd_log "pinger: 401 unauthorized - the tailnet bearer key is missing or wrong (FD_TAILNET_KEY must match the server's FLEET_TAILNET_KEY); still beating, alert written to $HOME/launch/fd-alerts/$ses.txt"
+      elif [ $((unauth % 10)) -eq 1 ]; then
+        fd_log "pinger: still 401 unauthorized after $unauth beats - fix FD_TAILNET_KEY"
+      fi
       ;;
     *)
       # 000 (no connection), 5xx, timeouts: all transient. Never exit on these - a deck
