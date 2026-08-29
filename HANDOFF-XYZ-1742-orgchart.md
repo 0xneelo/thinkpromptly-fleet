@@ -1,6 +1,7 @@
 # HANDOFF — XYZ-1742 fleet lifecycle ownership + org chart
 
-**From:** 🎛 ORCHESTRATOR 12 (`remote-system/.claude/worktrees/orgchart-agent-fleet-1fe872`)
+**From:** 🎛 ORCHESTRATOR 12 (seat closed 2026-08-29)
+**Where the work lives:** branch `claude/orgchart-agent-fleet-1fe872` in `~/remote-system`. The worktree this was written in has been recycled — check the branch out into a fresh worktree rather than looking for any absolute path.
 **To:** the next orchestrator seat on this build
 **Date:** 2026-08-27
 **State:** research complete, plan drafted, **nothing built, no workers launched**
