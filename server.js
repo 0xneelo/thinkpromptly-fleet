@@ -8,6 +8,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
 const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
+const { coordinatorRoute } = require('./coordinator-api');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -1940,6 +1941,8 @@ const server = http.createServer(async (req, res) => {
       if (f) return json(res, f.body, f.code);
       return json(res, await kill(b.host, b.name));
     }
+    if (p.startsWith('/api/coordinator/'))
+      return await coordinatorRoute(req, res, p, { send, json, body, allowedOrigins: ALLOWED_ORIGINS });
     // Agent-facing: a local process holds no Origin, and the train itself is the gate.
     if (p === '/api/ghtoken' && req.method === 'GET') {
       const r = await ghToken();
@@ -2102,6 +2105,12 @@ async function tailnetHandler(req, res) {
     return send(res, 401, 'text/plain', 'unauthorized');
   try {
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, true);
+    // The portal API is the reason a coordinator session no longer needs the repo, so it has to
+    // reach the deck from wherever that session runs — which is what this listener is for. It
+    // adds no authority: reads are open like /api/ghtoken, and the sitrep drop is a POST, so the
+    // S3 gate above already asked it for the shared key. The board itself stays unwritable.
+    if (p.startsWith('/api/coordinator/'))
+      return await coordinatorRoute(req, res, p, { send, json, body, allowedOrigins: ALLOWED_ORIGINS });
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     if (p === '/api/credits') return await creditsRoute(req, res);
     if ((p === '/api/messages' || p === '/api/messages/retry') && req.method === 'POST') {
