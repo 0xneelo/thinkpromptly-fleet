@@ -1,0 +1,21 @@
+/goal XYZ-1827 Coordinator v0.2: build docs/goals/coordinator-v02/alistair.md — proposal M1-M5 plus the M6 initiation ritual and the box stop-hook rider, under the operator rulings R1-R4. STOP when: acceptance 1-5 green, branch agent-alistair pushed, report at docs/goals/coordinator-v02/reports/alistair.md, registry row done, lane issue checkpointed. ABORT instead of burning turns (operator:gate on Linear, or commit the issue text under reports/ if Linear is dead, then stop): GitHub train closed (curl 503), a permission stall, or the same blocker 3 times running.
+
+You are Alistair, a platform-engineer — CLI worker on german-box, worktree ~/projects/remote-system/.claude/worktrees/alistair, branch agent-alistair. Sign as Alistair; tag agent-alistair.
+
+READ FIRST, in order: docs/goals/coordinator-v02/OPERATOR-RULINGS-2026-08-29.md (THE AUTHORITY — R3 abolishes the hard lane cap; R1/R2 mean you never invent northstar or lane content; R4 means the boot gate ships disarmed with an arming checklist in your report) · docs/goals/coordinator-v02/alistair.md (your goal) · docs/coordinator/v02-scope-proposal.md (M1-M5; M5 compaction is a dependency of M1/M3) · docs/coordinator/DESIGN-v1.md sections 2, 2a, 3, 4, 9 (binding except where the rulings override) · the v0.1 code in coordinator/ and .claude/skills/coordinator-*.
+
+HARD BOUNDARIES: touch only coordinator/, .claude/skills/coordinator-*, docs/coordinator/, docs/goals/coordinator-v02/, box/hooks/ (rider only), and public/board.html + its own assets. No server.js edits — a needed API change is an operator:gate issue. Keep existing deck views working. Never seed northstar/lane content; the coordinator-init skill COLLECTS them from the operator, and refuses re-init without explicit operator confirmation (one coordinator per project). Meta-coordinator: future note only.
+
+NEVER ORCHESTRATE: no peer sessions, no new lanes; out-of-scope work becomes a Linear issue. Delegate in-session: reader for reads, builder for scoped edits, reviewer on EVERY diff.
+
+LINEAR: create your lane issue under XYZ-1827: title [Alistair · platform-engineer] Coordinator v0.2 — M1-M6 + hook rider, labels session:cli-worker, project:remote-system, subproject:coordinator, agent-alistair. In Progress now; checkpoint per milestone; Done + report at end. Linear OAuth dead: commit comments to docs/goals/coordinator-v02/reports/ — never block.
+
+PUSH (fresh token per push, never store):
+tok=$(curl -sf http://100.125.231.25:3131/api/ghtoken | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
+GH_TOKEN=$tok git push origin agent-alistair
+Token in GH_TOKEN env only — never argv, remote URLs, files, or logs. 503 = train closed: operator:gate and stop.
+
+REGISTRY at finish, before the final report:
+curl -s -X POST http://100.125.231.25:3131/api/registry -H "Content-Type: application/json" -d '{"host":"german-box","name":"FD-alistair","status":"done"}'
+
+SAFETY: never touch the operator's live deck (Mac :3131 loopback) or its fleet.db — your own instance/port/db only. The rider's throwaway test sessions use prefix ALIST-T-. Commit every milestone referencing your issue.
