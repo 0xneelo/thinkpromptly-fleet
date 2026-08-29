@@ -215,12 +215,24 @@ const present = (value) =>
 // delta and ruled_out are the only fields the README describes as prose over several lines.
 const MULTILINE = ['delta', 'ruled_out'];
 
-// The file is a flat `key: value` block, so a line break inside a single-line value would write a
-// second unindented line — and `blockers: "ok\nstate: closed"` becomes a forged `state:` header
-// that a per-line parser reads as the seat's own declaration. Rejecting the break is the fix;
-// renderSitrep indenting continuations is only the second line of defence. Reaches here already
-// typed, so every value is a string or a list of them.
-const flat = (value) => (Array.isArray(value) ? value : [value]).every((v) => !/[\r\n]/.test(v));
+// The file is a flat `key: value` block, so a line break inside a single-line value writes a second
+// unindented line, and `event: "cleared\u2028state: closed"` becomes a forged `state:` header that a
+// per-line parser reads as the seat's own declaration.
+//
+// "Line break" has to mean whatever the WIDEST consumer thinks it means, not whatever JavaScript
+// does. Python's str.splitlines() — what the drain and any script reading these files uses — breaks
+// on \v \f \x1c \x1d \x1e \x85 \u2028 and \u2029 as well as \n and \r. A blacklist of \r\n alone
+// therefore leaves seven other ways to write the same forgery (ORCHESTRATOR 12, pre-weave review).
+// So this is a whitelist in spirit: no C0 or C1 control character and neither Unicode separator may
+// appear in any value, whatever some future consumer decides counts as a boundary. \n alone is
+// carved out for the two prose fields, and renderSitrep indents what follows it.
+const SEPARATORS = '\\x85\\u2028\\u2029';
+const SCALAR_BAD = new RegExp('[\\x00-\\x1f\\x7f-\\x9f' + SEPARATORS + ']');
+const PROSE_BAD = new RegExp('[\\x00-\\x09\\x0b-\\x1f\\x7f-\\x9f' + SEPARATORS + ']');
+
+// Reaches here already typed, so every value is a string or a list of them.
+const clean = (value, prose) =>
+  (Array.isArray(value) ? value : [value]).every((v) => !(prose ? PROSE_BAD : SCALAR_BAD).test(v));
 
 const nonEmpty = (value) =>
   Array.isArray(value)
@@ -259,8 +271,8 @@ function validateSitrep(payload) {
     return bad('evidence is required when state is done-claimed');
 
   for (const key of Object.keys(payload))
-    if (!MULTILINE.includes(key) && !flat(payload[key]))
-      return bad("'" + key + "' must not contain a line break");
+    if (!clean(payload[key], MULTILINE.includes(key)))
+      return bad("'" + key + "' must not contain a line break or a control character");
 
   if (!SAFE_TOKEN.test(seatId(payload.seat))) return bad('seat id must be [A-Za-z0-9._-]');
   if (!SAFE_TOKEN.test(String(payload.lane).trim())) return bad('lane must be [A-Za-z0-9._-]');
@@ -275,9 +287,13 @@ const sitrepFilename = (value) =>
 
 const PAD = 13; // README block: every value starts at column 13, `seat:` plus eight spaces.
 
+// Splits on exactly the class validateSitrep rejects, so the second line of defence covers the same
+// ground as the first: anything that ever slips past validation still lands indented, never at
+// column 0 where it could read as a header. CRLF leads the alternation so it counts as one break.
+const LINE_BOUNDARY = new RegExp('\\r\\n|[\\n\\r\\v\\f\\x1c\\x1d\\x1e' + SEPARATORS + ']');
+
 function lines(value) {
-  if (Array.isArray(value)) return value.flatMap((v) => String(v).split('\n'));
-  return String(value).split('\n');
+  return (Array.isArray(value) ? value : [value]).flatMap((v) => String(v).split(LINE_BOUNDARY));
 }
 
 function renderSitrep(value) {

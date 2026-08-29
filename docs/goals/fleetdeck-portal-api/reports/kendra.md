@@ -13,7 +13,7 @@ after a `/portal` session outside the repo could not read the board at all.
 | `coordinator-api.js` (new) | seven GET routes and one POST under `/api/coordinator/` |
 | `coordinator/gate.py` (new) | thin adapter so the byte gate is JSON, not prose |
 | `server.js` (+9 lines) | one `require`, one dispatch on each listener |
-| `test/coordinator-api.test.js` (new) | 37 cases |
+| `test/coordinator-api.test.js` (new) | 41 cases |
 | `.claude/skills/coordinator-portal/SKILL.md` | fresh-reads prefer the API, file fallback kept |
 
 ```
@@ -73,14 +73,15 @@ the filename.
    and says so in the answer when it is on the fallback. Intent intake gained the POST path; the
    fresh-read doctrine itself did not change, because the API is fresh-read by construction.
 4. **Tests** follow the repo convention — `node:test` + `node:assert/strict`, booting a real
-   server child through `test/http.js` on a random loopback port. 37 pass.
+   server child through `test/http.js` on a random loopback port. 41 pass.
 5. This report, plus `XYZ-1850` — the `operator:gate` for the deck restart, which also
    carries the tailnet ruling I want.
 
 ## Review
 
-Two `reviewer` passes. The first raised six findings, the second checked my fixes and caught three
-places where a fix was incomplete. All nine are fixed, each with a test that fails against the code
+Three passes: two `reviewer` subagents and ORCHESTRATOR 12's pre-weave review. The first raised six
+findings, the second caught three places where a fix was incomplete, the third caught that the most
+important fix was still incomplete. All ten are fixed, each with a test that fails against the code
 it replaced.
 
 **One was serious.** `renderSitrep` special-cased `blockers` and skipped the continuation-indent
@@ -117,6 +118,22 @@ and shares an event loop with the terminal websockets; and the skill's `curl` ex
 Also tightened while in there: every field must now be a string or a list of strings, so nothing
 reaches the renderer that `String()` would turn into `[object Object]` in a sitrep.
 
+**A third pass, from ORCHESTRATOR 12's pre-weave review, found the forged header again.** My fix
+had rejected `\r` and `\n`. Python's `str.splitlines()` — what the drain and every script reading
+these files actually uses — also breaks on `\v`, `\f`, `\x1c`, `\x1d`, `\x1e`, `\x85`, `U+2028`
+and `U+2029`. So seven other ways to write the same forgery were still open, and
+`event: "blocker cleared\u2028state: closed"` was accepted and written; `splitlines()` read the
+forged `state:` line *ahead of* the real one. I reproduced it before fixing it.
+
+The lesson is that "line break" has to mean whatever the **widest** consumer thinks it means, not
+what JavaScript thinks. The guard is now a class, not a blacklist of two: no C0 or C1 control
+character and neither Unicode separator may appear in any value, whatever some future reader
+decides counts as a boundary. `\n` alone is carved out for `delta` and `ruled_out`, and `lines()`
+splits on exactly the class validation rejects, so the indent defence covers the same ground as
+the check. Ninety vectors — ten code points across eight scalar fields and a list entry — are
+rejected; all three new tests fail against the old guard. One test asserts through real `python3`
+that `splitlines()` reads back exactly the fields the seat declared, once each.
+
 Worth recording for whoever touches the coordinator scripts next: a malformed board produces **no**
 traceback from `bundle.py`, `exceptions.py` or `gate.py` — `objects()` and its siblings guard every
 field, so only a wrong top-level type reaches the `FAIL:` path. The stderr filter is defence for a
@@ -142,9 +159,9 @@ run still accepts.
 
 ## Test state
 
-- `node --test test/coordinator-api.test.js` — **37 pass, 0 fail**.
+- `node --test test/coordinator-api.test.js` — **41 pass, 0 fail**.
 - `python3 coordinator/check.py --selftest` — **PASS (57 assertions)**, unchanged from base.
-- `npm test` — **113 pass, 0 fail** across the whole repo suite.
+- `npm test` — **117 pass, 0 fail** across the whole repo suite.
 
 ### A flake, not a regression
 

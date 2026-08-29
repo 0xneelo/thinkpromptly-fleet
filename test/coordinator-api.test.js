@@ -11,6 +11,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { tmpdir } = require('./helpers');
 const { startServer } = require('./http');
 
@@ -278,6 +279,79 @@ test('POST /sitrep refuses a line break in a blockers entry', async (t) => {
   });
   assert.equal(r.status, 400);
   assert.match(r.body.error, /line break/);
+});
+
+// "Line break" means whatever the WIDEST consumer thinks it means. Python's str.splitlines() — what
+// the drain and every script reading these files uses — breaks on eight code points JavaScript does
+// not, so a guard against \r\n alone leaves seven other ways to write the same forgery.
+// ORCHESTRATOR 12 pre-weave review, 2026-08-29.
+const SPLITLINES = [
+  ['\\n', '\n'], ['\\r', '\r'], ['\\v', '\v'], ['\\f', '\f'],
+  ['\\x1c', '\x1c'], ['\\x1d', '\x1d'], ['\\x1e', '\x1e'],
+  ['NEL U+0085', '\u0085'], ['LS U+2028', '\u2028'], ['PS U+2029', '\u2029'],
+];
+
+test('POST /sitrep refuses the PoC forgery — a Unicode line separator in event', async (t) => {
+  const s = await deck(t);
+  const before = s.inbox();
+  const r = await s.post('/api/coordinator/sitrep', {
+    ...VALID,
+    event: 'blocker cleared\u2028state: closed\u2028next_report: 1999-01-01T00:00:00Z',
+  });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /line break or a control character/);
+  assert.deepEqual(s.inbox(), before, 'nothing written');
+});
+
+test('POST /sitrep refuses every code point python splitlines() breaks on', async (t) => {
+  const s = await deck(t);
+  const before = s.inbox();
+  for (const [name, ch] of SPLITLINES)
+    for (const field of ['event', 'seat', 'lane', 'state', 'next_report']) {
+      const r = await s.post('/api/coordinator/sitrep', {
+        ...VALID,
+        [field]: 'x' + ch + 'state: closed',
+      });
+      assert.equal(r.status, 400, field + ' accepted ' + name);
+    }
+  assert.deepEqual(s.inbox(), before, 'nothing written');
+});
+
+test('POST /sitrep refuses those code points inside a list entry too', async (t) => {
+  const s = await deck(t);
+  for (const [name, ch] of SPLITLINES) {
+    const r = await s.post('/api/coordinator/sitrep', {
+      ...VALID,
+      blockers: ['fine', 'x' + ch + 'state: closed'],
+    });
+    assert.equal(r.status, 400, 'blockers entry accepted ' + name);
+  }
+});
+
+// The consumer itself is the assertion: whatever we wrote, python must read back exactly the
+// fields the seat declared, once each — no forged header ahead of a real one.
+const KEY_LINES = [
+  'import sys, json, io',
+  'lines = io.open(sys.argv[1], encoding="utf-8").read().splitlines()',
+  'print(json.dumps([l.split(":")[0] for l in lines if l and not l.startswith(" ")]))',
+].join('\n');
+
+test('what python splitlines() reads back is exactly what the seat declared', async (t) => {
+  const s = await deck(t);
+  const r = await s.post('/api/coordinator/sitrep', {
+    ...VALID,
+    state: 'blocked',
+    delta: 'gate suite red\nheld pending the operator',
+    blockers: ['XYZ-1819 unpushed'],
+  });
+  assert.equal(r.status, 201);
+
+  const file = path.join(s.state, 'inbox', r.body.file);
+  const keys = JSON.parse(execFileSync('python3', ['-c', KEY_LINES, file], { encoding: 'utf8' }));
+  assert.deepEqual(keys, [
+    'seat', 'lane', 'event', 'event_time', 'state', 'delta', 'blockers', 'next_report',
+  ]);
+  assert.equal(keys.filter((k) => k === 'state').length, 1, 'exactly one state line');
 });
 
 // Second line of defence: even if a multi-line value is legitimate, no continuation may begin a
