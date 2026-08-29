@@ -18,7 +18,7 @@ recipe or doc needed an edit — and a deck restart no longer closes the train.
 | `server.js` | the train block deleted; `trainProxy()` forwards the same paths on both listeners |
 | `mac/com.fleetdeck.train.plist` | LaunchAgent template — `RunAtLoad`, `KeepAlive`, throttled, file logging |
 | `mac/install-train-agent.sh` | install / `--uninstall` / `--print` / `--status`, ending in a live probe |
-| `mac/provision-fleet-secrets.sh` | generates + distributes `FLEET_TAILNET_KEY`, distributes `FLEETDECK_BUS_TOKEN` |
+| `mac/provision-fleet-secrets.sh` | distributes `FLEET_TAILNET_KEY` and `FLEETDECK_BUS_TOKEN` to the box |
 | `box/fleet-env-set.sh` | box-side setter: one key into `fleet.env`, value on **stdin**, 0600 |
 | `docs/train-broker.md` | operations: install, logs, failure modes, crash semantics, secrets |
 | `test/train-broker.test.js` | 16 tests — the broker in isolation |
@@ -103,9 +103,9 @@ quote-free rule, and `fleet.env` is created `0600` *before* anything is written 
 `test/provision.test.js` checks all of that mechanically against a recording fake `ssh`
 rather than leaving it to review.
 
-The generated `FLEET_TAILNET_KEY` lives at `~/.fleetdeck/tailnet-key` on the Mac and in the
-box's `fleet.env`. It is never printed, never sent to Linear, and never rotated by a re-run —
-a silent rotation would leave the box holding the old value and 401 every POST.
+`FLEET_TAILNET_KEY` is the operator's, at `deploy-keys/fleet-tailnet.env`, sourced by
+`up.sh`. The script distributes it and refuses to mint one — see the rider amendment below.
+It is never printed and never sent to Linear.
 
 ## Review
 
@@ -156,5 +156,64 @@ The bind-guard test originally pinned `127.0.0.2:18311`'s port at 28311 — insi
 tailnet listener. It collided occasionally and failed two lifecycle tests in a completely
 different file. The fixed port now sits below the band. Worth recording because the symptom
 pointed nowhere near the cause.
+
+— Zita
+
+## Rider amendment — 2026-08-29, mid-lane
+
+The orchestrator landed a coordination update while the lane was blocked on the push:
+`FLEET_TAILNET_KEY` now **exists**. The operator generated it at
+`deploy-keys/fleet-tailnet.env` (mode `0600`) and `up.sh` sources it. Rider (a) therefore
+changed from *generate and provision* to **distribute the existing key**.
+
+`mac/provision-fleet-secrets.sh` was reworked accordingly. It now reads the operator's file
+and **refuses to run if it is absent**, rather than helpfully minting a replacement. That
+refusal is the substance of the change: there is exactly one tailnet key in the fleet, and a
+second is not a spare but an outage — every box holding the wrong one gets `401` on every
+POST, and the symptom points at the box rather than at whatever minted the rival key. The
+generate path is gone, and a test asserts it stays gone.
+
+The file is **parsed, never sourced**: sourcing would execute whatever else it contains, on
+the machine that holds the App PEM. `export K=V`, bare `K=V`, and both quoting styles parse
+to identical bytes, with `CR` stripped — a stray carriage return would otherwise sit inside
+the bearer key and 401 everything. Six shapes are covered by test.
+
+Documented for the future GB-hosted deck: it must arm **this** key, not generate its own. It
+is a shared secret between the deck and every box, not a per-deck identity.
+
+### One thing the update got wrong, and it matters
+
+The update described `deploy-keys/fleet-tailnet.env` as git-excluded. On this tree it was
+**not**:
+
+```
+$ git check-ignore -v deploy-keys/fleet-tailnet.env
+(no output — not ignored)
+```
+
+`.gitignore` covered `deploy-keys/github-app.env` and `*.pem`, but not the new file. If it is
+excluded on the Mac, that is a local `.git/info/exclude`, which does not travel with the repo
+— and the future GB-hosted deck in point (1) checks out this same tree. An unignored key file
+is one `git add -A` from being published.
+
+Added to the tracked `.gitignore`, with a test that asserts the ignore comes from
+`.gitignore` and not from a local exclude.
+
+### Acceptance 5 against the live deck
+
+Point (2) offered the real deck for the tailnet sitrep test, read-only. Confirmed live and
+answering over the tailnet:
+
+```
+GET /api/coordinator/board       200
+GET /api/coordinator/exceptions  200
+GET /api/coordinator/inbox       200
+```
+
+But a read cannot settle acceptance 5. The S3 gate deliberately exempts reads — that is the
+rule under test — so `GET` returns 200 whether the key is armed or not, and the 401/authorised
+distinction only appears on a POST. POSTs stay on the local harness per the same update, where
+`test/coordinator-api.test.js:459` already proves both halves. Live confirmation is therefore
+a one-line operator check after the restart, and it is in the gate.
 
 — Zita

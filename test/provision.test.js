@@ -50,12 +50,18 @@ function harness(t, args = []) {
   fs.mkdirSync(home);
   fs.writeFileSync(path.join(home, '.fleetdeck-bus-token'), SECRET + '\n', { mode: 0o600 });
 
+  // The operator generates the tailnet key and up.sh sources it; this script only
+  // distributes it. The fixture stands in for deploy-keys/fleet-tailnet.env.
+  const keyfile = path.join(dir, 'fleet-tailnet.env');
+  fs.writeFileSync(keyfile, 'export FLEET_TAILNET_KEY=' + SECRET + '\n', { mode: 0o600 });
+
   const out = execFileSync('sh', [path.join(ROOT, 'mac', 'provision-fleet-secrets.sh'), ...args], {
     env: {
       ...process.env,
       PATH: bin + ':' + process.env.PATH,
       HOME: home,
       FAKE_SSH_LOG: log,
+      FLEET_TAILNET_KEY_FILE: keyfile,
     },
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -65,7 +71,7 @@ function harness(t, args = []) {
     .split('\n')
     .filter(Boolean)
     .map((l) => JSON.parse(l));
-  return { out, calls, home, dir };
+  return { out, calls, home, dir, keyfile };
 }
 
 test('every remote command string is quote-free', (t) => {
@@ -93,33 +99,6 @@ test('secrets travel on stdin, and arrive whole', (t) => {
   for (const c of withSecret)
     assert.match(c.cmd, /fleet-env-set\.sh (FD_TAILNET_KEY|FLEETDECK_BUS_TOKEN)$/,
       'a secret went to something other than the env setter: ' + c.cmd);
-});
-
-test('the generated tailnet key is 0600, hex, and reused on a second run', (t) => {
-  const h = harness(t, ['--tailnet']);
-  const keyfile = path.join(h.home, '.fleetdeck', 'tailnet-key');
-  const key = fs.readFileSync(keyfile, 'utf8').trim();
-  assert.match(key, /^[0-9a-f]{64}$/, 'the key must be hex with no space, quote or backslash');
-  assert.equal(fs.statSync(keyfile).mode & 0o777, 0o600);
-  assert.equal(fs.statSync(path.join(h.home, '.fleetdeck')).mode & 0o777, 0o700);
-
-  // A second run must not rotate the key: rotating it silently would leave the box holding
-  // the old value and every box POST would start 401-ing.
-  const again = execFileSync('sh', [path.join(ROOT, 'mac', 'provision-fleet-secrets.sh'), '--tailnet'], {
-    env: { ...process.env, PATH: path.join(h.dir, 'bin') + ':' + process.env.PATH, HOME: h.home, FAKE_SSH_LOG: path.join(h.dir, 'ssh.log') },
-    encoding: 'utf8',
-  });
-  assert.match(again, /reusing the FLEET_TAILNET_KEY/);
-  assert.equal(fs.readFileSync(keyfile, 'utf8').trim(), key, 'the key rotated on a re-run');
-});
-
-test('the key the box is sent is byte-identical to the one the Mac keeps', (t) => {
-  const h = harness(t, ['--tailnet']);
-  const key = fs.readFileSync(path.join(h.home, '.fleetdeck', 'tailnet-key'), 'utf8').trim();
-  const sent = h.calls.find((c) => /FD_TAILNET_KEY$/.test(c.cmd));
-  assert.ok(sent, 'FD_TAILNET_KEY was never pushed to the box');
-  // A trailing newline here would end up inside the bearer key and every POST would 401.
-  assert.equal(sent.stdin, key);
 });
 
 test('--bus refuses to run when the deck has never minted a token', (t) => {
@@ -221,4 +200,93 @@ test('a failed run leaves no temp file holding the secret', (t) => {
     assert.ok(!fs.readFileSync(path.join(fleet, f), 'utf8').includes(SECRET) || f === 'fleet.env',
       'the secret survived in ' + f);
   assert.deepEqual(fs.readdirSync(fleet), ['fleet.env']);
+});
+
+// --- rider (a) became distribute-only on 2026-08-29 -------------------------------------
+// The operator generates FLEET_TAILNET_KEY at deploy-keys/fleet-tailnet.env and up.sh sources
+// it. This script must never mint one. There is exactly one tailnet key in the fleet, and a
+// second is not a spare: every box holding the wrong one 401s on every POST, and the symptom
+// (pinger 401s) points at the box rather than at the script that quietly minted a rival key.
+
+test('the operator key is distributed, never regenerated', (t) => {
+  const h = harness(t, ['--tailnet']);
+  const before = fs.readFileSync(h.keyfile, 'utf8');
+
+  const sent = h.calls.find((c) => /FD_TAILNET_KEY$/.test(c.cmd));
+  assert.ok(sent, 'FD_TAILNET_KEY was never pushed to the box');
+  assert.equal(sent.stdin, SECRET, 'the box got something other than the operator key');
+
+  assert.equal(fs.readFileSync(h.keyfile, 'utf8'), before, "the operator's key file was rewritten");
+  assert.match(h.out, /distributing the operator's FLEET_TAILNET_KEY/);
+  assert.doesNotMatch(h.out, /generated a new/i, 'the script must not mint a key');
+  // Nothing may be left behind in the generate-era location either.
+  assert.equal(fs.existsSync(path.join(h.home, '.fleetdeck', 'tailnet-key')), false);
+});
+
+test('a missing key file is refused, not papered over with a fresh key', (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fleetdeck-prov-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const bin = fakeBin(dir);
+  const home = path.join(dir, 'home');
+  fs.mkdirSync(home);
+  fs.writeFileSync(path.join(home, '.fleetdeck-bus-token'), SECRET + '\n', { mode: 0o600 });
+  assert.throws(
+    () =>
+      execFileSync('sh', [path.join(ROOT, 'mac', 'provision-fleet-secrets.sh'), '--tailnet'], {
+        env: {
+          ...process.env,
+          PATH: bin + ':' + process.env.PATH,
+          HOME: home,
+          FAKE_SSH_LOG: path.join(dir, 'ssh.log'),
+          FLEET_TAILNET_KEY_FILE: path.join(dir, 'does-not-exist.env'),
+        },
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+    /only distributes it/
+  );
+});
+
+test('every shape up.sh might have written the key in parses to the same bytes', (t) => {
+  // The file is parsed, never sourced: sourcing would execute whatever else it contains, on
+  // the machine that holds the App PEM. So the parser has to cover the shapes by hand.
+  for (const line of [
+    'export FLEET_TAILNET_KEY=' + SECRET,
+    'FLEET_TAILNET_KEY=' + SECRET,
+    'export FLEET_TAILNET_KEY="' + SECRET + '"',
+    "export FLEET_TAILNET_KEY='" + SECRET + "'",
+    '# comment\nexport OTHER=x\nexport FLEET_TAILNET_KEY=' + SECRET,
+    'export FLEET_TAILNET_KEY=' + SECRET + '\r',
+  ]) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fleetdeck-prov-'));
+    t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+    const bin = fakeBin(dir);
+    const home = path.join(dir, 'home');
+    fs.mkdirSync(home);
+    fs.writeFileSync(path.join(home, '.fleetdeck-bus-token'), SECRET + '\n', { mode: 0o600 });
+    const keyfile = path.join(dir, 'k.env');
+    fs.writeFileSync(keyfile, line + '\n', { mode: 0o600 });
+    const log = path.join(dir, 'ssh.log');
+    fs.writeFileSync(log, '');
+    execFileSync('sh', [path.join(ROOT, 'mac', 'provision-fleet-secrets.sh'), '--tailnet'], {
+      env: { ...process.env, PATH: bin + ':' + process.env.PATH, HOME: home, FAKE_SSH_LOG: log, FLEET_TAILNET_KEY_FILE: keyfile },
+      encoding: 'utf8',
+    });
+    const sent = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).map(JSON.parse)
+      .find((c) => /FD_TAILNET_KEY$/.test(c.cmd));
+    // A stray CR or quote here would sit inside the bearer key and 401 every POST.
+    assert.equal(sent.stdin, SECRET, 'shape failed: ' + JSON.stringify(line));
+  }
+});
+
+test('deploy-keys/fleet-tailnet.env is git-ignored in the tracked .gitignore', () => {
+  // Excluding it only on the Mac via .git/info/exclude does not travel with the repo, and a
+  // future GB-hosted deck checks out this same tree. An unignored key file is one `git add -A`
+  // away from being published.
+  const { execFileSync: run } = require('child_process');
+  const out = run('git', ['check-ignore', '-v', 'deploy-keys/fleet-tailnet.env'], {
+    cwd: ROOT,
+    encoding: 'utf8',
+  });
+  assert.match(out, /^\.gitignore:/, 'must be ignored by the tracked .gitignore, not a local exclude');
 });

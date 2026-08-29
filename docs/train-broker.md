@@ -118,20 +118,34 @@ are the same kind of plumbing.
 
 ```sh
 sh mac/provision-fleet-secrets.sh          # run on the MAC
-sh mac/provision-fleet-secrets.sh --show   # armed/absent per machine; prints no value
+sh mac/provision-fleet-secrets.sh --show   # present/absent per machine; prints no value
 ```
+
+Neither secret is generated here and neither is ever printed, committed, logged, or passed
+as an argv word — `ps` is world-readable, so both travel to the box on stdin.
 
 **`FLEET_TAILNET_KEY`** — the shared bearer key the deck's tailnet listener requires on
 every POST arriving over tailscale, exempting loopback. Both ends of the wiring already
-existed (`server.js` `tailnetAuthed()`; `box/hooks/fd-common.sh` `FD_TAILNET_KEY`); what was
-missing was a value. The script generates one at `~/.fleetdeck/tailnet-key` (mode `0600`)
-and pushes the same bytes to the box's `~/.claude/fleet/fleet.env` (also `0600`). The deck
-half is one line you add to `up.sh`:
+existed (`server.js` `tailnetAuthed()`; `box/hooks/fd-common.sh` `FD_TAILNET_KEY`).
 
-    export FLEET_TAILNET_KEY=$(cat ~/.fleetdeck/tailnet-key)
+**The operator owns this key.** It lives at `deploy-keys/fleet-tailnet.env` (mode `0600`,
+git-ignored) and `up.sh` sources it, so the deck arms itself on the next start. The script
+**distributes** that key to the box and never mints one.
 
-While it is unset, the tailnet listener accepts unauthenticated POSTs. That is the current
-unarmed state, not a regression — but it is the reason to arm it.
+That is a deliberate refusal, not a missing feature. There is exactly one tailnet key in the
+fleet, and a second is not a spare — it is an outage: every box holding the wrong one gets
+`401` on every POST, and the symptom (a pinger logging 401s) points at the box rather than
+at whatever quietly minted a rival key. So the script fails loudly when the file is absent.
+
+**A future GB-hosted deck must arm this same key**, not generate its own. It is a shared
+secret between the deck and every box, not a per-deck identity.
+
+The file is parsed, never sourced — sourcing would execute whatever else it contains, on the
+machine that holds the App PEM. `export K=V`, bare `K=V`, and either quoting style all parse
+to the same bytes; a stray `CR` would otherwise sit inside the bearer key and 401 everything.
+
+While the key is unset the tailnet listener accepts unauthenticated POSTs. That was the
+state before 2026-08-29 — not a regression, but the reason to arm it.
 
 **`FLEETDECK_BUS_TOKEN`** — fleetdeck mints this at `~/.fleetdeck-bus-token` on first run.
 Box workers need the same value or `bin/fleet-message.js` cannot post: orchestrator→worker

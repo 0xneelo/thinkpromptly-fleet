@@ -10,9 +10,13 @@
 #
 # Rider a — FLEET_TAILNET_KEY. The server's tailnet listener requires this bearer key on
 #   every POST that arrives over tailscale and exempts loopback (server.js tailnetAuthed).
-#   Both ends of the wiring already exist; what was missing was a value. This generates one,
-#   keeps it on the Mac at ~/.fleetdeck/tailnet-key (0600) for the deck to source, and
-#   pushes the same bytes to the box.
+#   The operator already generated it at deploy-keys/fleet-tailnet.env (0600) and up.sh
+#   sources it, so this script DISTRIBUTES that key and never mints one. There is exactly
+#   one tailnet key in the fleet: a second would not be a spare, it would be an outage,
+#   because every box holding the wrong one 401s on every POST.
+#
+#   A future GB-hosted deck must arm THIS SAME key, not generate its own — it is a shared
+#   secret between the deck and every box, not a per-deck identity.
 #
 # Rider b — FLEETDECK_BUS_TOKEN (XYZ-1844). Fleetdeck mints this at ~/.fleetdeck-bus-token
 #   when it first runs. Box workers need the same value or bin/fleet-message.js cannot post
@@ -33,8 +37,9 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 HOST=german-box
 WSL=wsl
 BOXBIN=/home/vibe/bin
-KEYDIR="$HOME/.fleetdeck"
-KEYFILE="$KEYDIR/tailnet-key"
+# The operator's file, sourced by up.sh. Format is `export K=V` or a bare `K=V`, the same
+# shape as deploy-keys/github-app.env.
+KEYFILE=${FLEET_TAILNET_KEY_FILE:-$REPO/deploy-keys/fleet-tailnet.env}
 BUSFILE="${FLEETDECK_BUS_TOKEN_FILE:-$HOME/.fleetdeck-bus-token}"
 # The DECK's own tailnet address, not the box's — every box points at this same one, which
 # is why it does not vary with --host. It is the value README.md tells remote senders to
@@ -58,6 +63,17 @@ while [ $# -gt 0 ]; do
 done
 
 die() { echo "provision-fleet-secrets: $*" >&2; exit 1; }
+
+# Pull the value out of the operator's env file without sourcing it — sourcing would run
+# whatever else the file contains, and this runs on the machine that holds the App PEM.
+# Accepts `export K=V` and a bare `K=V`, quoted or not, same shapes as github-app.env.
+# Prints the value and nothing else; never echoes the file.
+read_key() {
+  sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}FLEET_TAILNET_KEY=//p' "$KEYFILE" |
+    tail -n 1 |
+    sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/" |
+    tr -d '\r\n'
+}
 say() { echo "  $*"; }
 
 # ssh joins its argument words with spaces into ONE remote command string, so passing
@@ -71,9 +87,9 @@ remote() {
 if [ "$MODE" = show ]; then
   echo "mac:"
   if [ -f "$KEYFILE" ]; then
-    say "FLEET_TAILNET_KEY  armed  ($(wc -c <"$KEYFILE" | tr -d ' ') bytes, mode $(stat -f %Lp "$KEYFILE"), $KEYFILE)"
+    say "FLEET_TAILNET_KEY  present ($(read_key | wc -c | tr -d ' ') chars, mode $(stat -f %Lp "$KEYFILE"), $KEYFILE)"
   else
-    say "FLEET_TAILNET_KEY  ABSENT ($KEYFILE)"
+    say "FLEET_TAILNET_KEY  ABSENT ($KEYFILE) - the operator generates this one, not this script"
   fi
   if [ -f "$BUSFILE" ]; then
     say "FLEETDECK_BUS_TOKEN armed ($(wc -c <"$BUSFILE" | tr -d ' ') bytes, mode $(stat -f %Lp "$BUSFILE"), $BUSFILE)"
@@ -102,20 +118,17 @@ remote chmod +x "$BOXBIN/fleet-env-set.sh"
 
 # ------------------------------------------------------------------- rider a: tailnet key
 if [ "$DO_TAILNET" = 1 ]; then
-  mkdir -p "$KEYDIR"
-  chmod 0700 "$KEYDIR"
-  if [ ! -f "$KEYFILE" ]; then
-    # 32 bytes of urandom, hex. No spaces, quotes or backslashes, so it survives both
-    # fleet.env sourcing and the curl --config line fd-common.sh writes.
-    umask 077
-    openssl rand -hex 32 > "$KEYFILE"
-    chmod 0600 "$KEYFILE"
-    echo "generated a new FLEET_TAILNET_KEY at $KEYFILE"
-  else
-    echo "reusing the FLEET_TAILNET_KEY already at $KEYFILE"
-  fi
+  [ -f "$KEYFILE" ] ||
+    die "no $KEYFILE — the operator generates the tailnet key and up.sh sources it. This
+  script only distributes it, on purpose: minting a second key here would leave the box
+  holding one the deck does not accept, and every POST from it would 401."
+  key=$(read_key) ||
+    die "$KEYFILE holds no FLEET_TAILNET_KEY= line"
+  [ -n "$key" ] || die "FLEET_TAILNET_KEY in $KEYFILE is empty"
+  echo "distributing the operator's FLEET_TAILNET_KEY from $KEYFILE (${#key} chars)"
   # Value on stdin only. The key NAME is the sole argv word, and it is not a secret.
-  tr -d '\r\n' < "$KEYFILE" | remote sh "$BOXBIN/fleet-env-set.sh" FD_TAILNET_KEY
+  printf '%s' "$key" | remote sh "$BOXBIN/fleet-env-set.sh" FD_TAILNET_KEY
+  key=''
 fi
 
 # ---------------------------------------------------------------------- rider b: bus token
@@ -130,16 +143,16 @@ cat <<'NEXT'
 
 Done on the box. Two things remain on this Mac, and only you can do them:
 
-1. Arm the deck with the same key. The deck reads FLEET_TAILNET_KEY from its environment,
-   so add this to up.sh (or export it before ./up.sh):
+1. Nothing, if up.sh already sources deploy-keys/fleet-tailnet.env — it does as of
+   2026-08-29, so the deck arms itself on the next start. Confirm with:
 
-       export FLEET_TAILNET_KEY=$(cat ~/.fleetdeck/tailnet-key)
-
-   Until it is exported, the tailnet listener accepts unauthenticated POSTs — which is the
-   current, unarmed state, not a new hole. Once armed, a box POST without the matching key
-   gets 401 and the pinger says so in its log.
+       sh mac/provision-fleet-secrets.sh --show
 
 2. Restart the deck (./up.sh) so it picks the key up.
+
+   Once armed, a box POST without the matching key gets 401 and the pinger says so in its
+   log. A future GB-hosted deck must arm THIS key, not generate its own: it is shared
+   between the deck and every box, not a per-deck identity.
 
 Verify from the box afterwards:
 
