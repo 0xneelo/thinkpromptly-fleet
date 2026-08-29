@@ -103,12 +103,101 @@ async function startServer(env = {}, opts = {}) {
     tailGet: (p, h) => tail('GET', p, undefined, h),
     // The db this instance writes, opened read-only-ish for assertions between calls.
     open: () => new (require('node:sqlite').DatabaseSync)(file),
+    // A SIGKILLed child reports signalCode, not exitCode, so the old exitCode-only guard let a
+    // second stop() wait forever on an 'exit' event that had already fired.
     async stop() {
-      if (child.exitCode !== null) return;
+      if (child.exitCode !== null || child.signalCode !== null) return;
       child.kill('SIGKILL');
       await new Promise((r) => child.on('exit', r));
     },
   };
 }
 
-module.exports = { startServer, TAILNET_BIND };
+// The same shape for fleetdeck-train.js: its own port, its own fixtures, never the operator's
+// broker. caffeinate is off by default because it is a macOS binary and the suite also runs on
+// Linux; a test that wants the real spawn clears FLEET_TRAIN_NO_CAFFEINATE itself.
+async function startBroker(env = {}, opts = {}) {
+  const port = env.FLEET_TRAIN_PORT ? Number(env.FLEET_TRAIN_PORT) : nextPort++;
+  const child = spawn(process.execPath, [path.join(ROOT, 'fleetdeck-train.js')], {
+    cwd: opts.cwd || ROOT,
+    env: {
+      ...process.env,
+      FLEET_TRAIN_PORT: String(port),
+      FLEET_TRAIN_BIND: '127.0.0.1',
+      FLEET_TRAIN_NO_CAFFEINATE: '1',
+      ...env,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let out = '';
+  child.stdout.on('data', (c) => (out += c));
+  child.stderr.on('data', (c) => (out += c));
+
+  await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('broker did not start:\n' + out)), 15000);
+    const poll = setInterval(() => {
+      if (!/fleetdeck-train http:\/\//.test(out)) return;
+      clearTimeout(timer);
+      clearInterval(poll);
+      resolve();
+    }, 20);
+    child.on('exit', (code) => {
+      clearTimeout(timer);
+      clearInterval(poll);
+      reject(new Error('broker exited ' + code + ':\n' + out));
+    });
+  });
+
+  // Host is set explicitly so the broker's DNS-rebinding guard is really under test; a test
+  // that wants to fail that guard passes its own `host` header through `headers`.
+  const call = (method, p, bodyObj, headers = {}) =>
+    new Promise((resolve, reject) => {
+      const payload = bodyObj === undefined ? null : JSON.stringify(bodyObj);
+      const req = http.request(
+        {
+          host: '127.0.0.1',
+          port,
+          path: p,
+          method,
+          headers: {
+            host: '127.0.0.1:' + port,
+            ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}),
+            ...headers,
+          },
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (c) => (data += c));
+          res.on('end', () => {
+            let json = null;
+            try { json = JSON.parse(data); } catch { /* text body (403/404/405) */ }
+            resolve({ status: res.statusCode, body: json, text: data });
+          });
+        }
+      );
+      req.on('error', reject);
+      if (payload) req.write(payload);
+      req.end();
+    });
+
+  const exited = new Promise((r) => child.on('exit', (code) => r(code)));
+  return {
+    port, child, call,
+    log: () => out,
+    get: (p, h) => call('GET', p, undefined, h),
+    post: (p, b, h) => call('POST', p, b, h),
+    // Signals are part of the contract: launchd stops the broker with SIGTERM and the window
+    // must be gone, so a test waits on the exit code rather than killing it hard.
+    signal: (sig) => {
+      child.kill(sig);
+      return exited;
+    },
+    async stop() {
+      if (child.exitCode !== null || child.signalCode !== null) return;
+      child.kill('SIGKILL');
+      await exited;
+    },
+  };
+}
+
+module.exports = { startServer, startBroker, TAILNET_BIND };

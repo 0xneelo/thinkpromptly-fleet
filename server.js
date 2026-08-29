@@ -475,7 +475,6 @@ const HOME = os.homedir();
 const SSH_DIR = path.join(HOME, '.ssh');
 const CERTS_DIR = path.join(SSH_DIR, 'deploy-certs');
 const MINT_SH = path.join(__dirname, 'deploy-keys', 'mint-deploy-cert.sh');
-const GH_ENV = path.join(__dirname, 'deploy-keys', 'github-app.env');
 const OP_AGENT_SOCK = path.join(HOME, 'Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock');
 const CLAUDE_BRIDGE = process.env.CLAUDE_BRIDGE || path.join(__dirname, '.fleetdeck', 'claude-desktop-send');
 const BUS_TOKEN_FILE = process.env.FLEETDECK_BUS_TOKEN_FILE || path.join(HOME, '.fleetdeck-bus-token');
@@ -1570,109 +1569,89 @@ function deleteCertDir(input) {
   return { code: 200, body: { ok: true } };
 }
 
-// --- GitHub train: the App PEM is fetched from 1Password once, held in this process's
-// memory for the train window and never logged, written to disk or sent to a browser.
-// While a train runs, any local process can GET a fresh 1h installation token.
+// --- GitHub train: the window itself now lives in fleetdeck-train.js, a loopback-only process
+// the com.fleetdeck.train LaunchAgent keeps running, so the App PEM and the train window survive
+// a deck restart. The deck keeps every consumer-facing URL and every gate and forwards the four
+// routes; nothing about /api/ghtoken or /api/ghtrain changed for a caller.
+const TRAIN_PORT = Number(process.env.FLEET_TRAIN_PORT) || 3132;
+const TRAIN_BIND = process.env.FLEET_TRAIN_BIND || '127.0.0.1';
 
-// Read per request so a corrected id takes effect without restarting the deck.
-// Format is `export KEY=VALUE`, the same file the shell script sources.
-function ghConfig() {
-  const cfg = {};
-  for (const line of fs.readFileSync(GH_ENV, 'utf8').split('\n')) {
-    const m = line.match(/^\s*export\s+([A-Z_]+)=(.*)$/);
-    if (m) cfg[m[1]] = m[2].trim().replace(/^"(.*)"$/, '$1');
-  }
-  return cfg;
-}
+// startTrain blocks on the 1Password approval prompt for up to MINT_TIMEOUT (120s), so the
+// proxy deadline has to outlast it: a shorter one would 503 a train that then starts anyway.
+const TRAIN_PROXY_TIMEOUT = 130000;
 
-let ghTrain = null; // { pem, expiresAt, timer, caffeinate } while a train is running
+// Deliberately different text from the broker's own `no active GitHub train` 503, so the two
+// are tellable apart: this one means the broker never answered, not that no train is running.
+const TRAIN_DOWN =
+  'train broker unreachable at ' + TRAIN_BIND + ':' + TRAIN_PORT +
+  ' — is the com.fleetdeck.train launch agent loaded?';
 
-function endTrain() {
-  if (!ghTrain) return;
-  clearTimeout(ghTrain.timer);
-  try {
-    ghTrain.caffeinate.kill();
-  } catch (e) {
-    // ESRCH: caffeinate already exited on its own -t deadline, which is the outcome we wanted.
-    if (e.code !== 'ESRCH') console.error('caffeinate kill failed:', e.message);
-  }
-  ghTrain = null;
-}
+// The broker answers with a small JSON object and nothing else. Buffering without a cap
+// would let anything that got to 127.0.0.1:TRAIN_PORT first — a crashed broker replaced by
+// another process, or a bug — grow the deck's memory without bound, and the deck is the
+// control plane for the whole fleet.
+const TRAIN_MAX_BODY = 65536;
 
-// op prints the document to stdout; its own error text (locked vault, CLI integration
-// off) is what the operator needs to see, so stderr goes to the UI verbatim.
-async function startTrain(ttl) {
-  const keyOp = ghConfig().GH_APP_KEY_OP;
-  if (!keyOp) return { code: 500, body: { ok: false, error: 'GH_APP_KEY_OP missing from deploy-keys/github-app.env' } };
-  const { err, stdout, stderr } = await run('op', ['document', 'get', keyOp], { timeout: MINT_TIMEOUT });
-  if (err)
-    return {
-      code: 502,
-      body: {
-        ok: false,
-        error:
-          stderr.trim() ||
-          '1Password read failed for ' + keyOp + ' — unlock 1Password; CLI integration must be on (Settings → Developer).',
-      },
+// Never rejects, and never logs the response — it carries an installation token.
+// `clientReq` is the inbound request, passed so an abandoned browser tab frees the deck's
+// socket to the broker instead of holding it for the full Touch ID window.
+async function trainProxy(method, p, bodyObj, clientReq) {
+  return new Promise((resolve) => {
+    const payload = bodyObj === undefined ? null : JSON.stringify(bodyObj);
+    let settled = false;
+    const done = (r) => {
+      if (settled) return;
+      settled = true;
+      resolve(r);
     };
-  if (!stdout.includes('PRIVATE KEY'))
-    return { code: 502, body: { ok: false, error: '1Password document ' + keyOp + ' is not a PEM private key' } };
-  endTrain(); // a second start replaces the running train rather than stacking timers
-  const expiresAt = Date.now() + TTL_MS[ttl];
-  // Keeps the Mac from idle-sleeping while a train is active, so a box worker can still
-  // reach the broker. Lid-close on battery still sleeps it — documented limitation.
-  const caffeinate = spawn('caffeinate', ['-i', '-t', String(TTL_MS[ttl] / 1000)], {
-    detached: true,
-    stdio: 'ignore',
-  });
-  caffeinate.on('error', (e) => console.error('caffeinate failed:', e.message)); // never kill the deck over it
-  caffeinate.unref();
-  ghTrain = { pem: stdout, expiresAt, timer: setTimeout(endTrain, TTL_MS[ttl]), caffeinate };
-  return { code: 200, body: { ok: true, expiresAt } };
-}
-
-const NO_TRAIN = 'no active GitHub train — ask the operator to start one on the keys page';
-
-// Signed in-process: the PEM never becomes an argv, a temp file or a child's stdin.
-function appJwt(pem, appId) {
-  const now = Math.floor(Date.now() / 1000);
-  const head = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-  const payload = Buffer.from(JSON.stringify({ iat: now - 30, exp: now + 540, iss: appId })).toString('base64url');
-  const signer = crypto.createSign('RSA-SHA256');
-  signer.update(head + '.' + payload);
-  return head + '.' + payload + '.' + signer.sign(pem, 'base64url');
-}
-
-async function ghToken() {
-  if (!ghTrain || Date.now() >= ghTrain.expiresAt) return { code: 503, body: { ok: false, error: NO_TRAIN } };
-  // Hoisted before any await: the wipe timer or /end may null ghTrain mid-request.
-  const { pem, expiresAt: trainExpiresAt } = ghTrain;
-  const cfg = ghConfig();
-  // Numeric check doubles as the guard for the id interpolated into the API path.
-  if (!/^\d+$/.test(cfg.GH_APP_ID || '') || !/^\d+$/.test(cfg.GH_APP_INSTALLATION_ID || ''))
-    return { code: 500, body: { ok: false, error: 'GH_APP_ID / GH_APP_INSTALLATION_ID must be numeric in deploy-keys/github-app.env' } };
-  let r;
-  try {
-    r = await fetch(
-      'https://api.github.com/app/installations/' + cfg.GH_APP_INSTALLATION_ID + '/access_tokens',
+    const req = http.request(
       {
-        method: 'POST',
+        host: TRAIN_BIND,
+        port: TRAIN_PORT,
+        path: p,
+        method,
+        // The broker's own Host guard checks this authority, so set it rather than inherit it.
         headers: {
-          authorization: 'Bearer ' + appJwt(pem, cfg.GH_APP_ID),
-          accept: 'application/vnd.github+json',
-          'user-agent': 'fleetdeck-broker', // GitHub rejects the request without one
+          host: TRAIN_BIND + ':' + TRAIN_PORT,
+          ...(payload
+            ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) }
+            : {}),
         },
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(TRAIN_PROXY_TIMEOUT),
+      },
+      (res) => {
+        let data = '';
+        let over = false;
+        res.on('data', (c) => {
+          if (over) return;
+          data += c;
+          if (data.length <= TRAIN_MAX_BODY) return;
+          over = true;
+          res.destroy();
+          done({ code: 502, body: { ok: false, error: 'train broker sent an oversized response' } });
+        });
+        res.on('end', () => {
+          if (over) return;
+          let parsed = null;
+          try {
+            parsed = JSON.parse(data);
+          } catch (e) {
+            // A text body from the broker (403/404/405) is not a shape a caller expects here.
+            parsed = { ok: false, error: data.trim() || 'train broker sent no body' };
+          }
+          done({ code: res.statusCode, body: parsed });
+        });
       }
     );
-  } catch (e) {
-    return { code: 502, body: { ok: false, error: 'GitHub unreachable: ' + (e.name === 'TimeoutError' ? 'timeout' : e.message) } };
-  }
-  const d = await r.json().catch(() => ({}));
-  // Only GitHub's own message is echoed — never the JWT that produced it.
-  if (!r.ok || !d.token)
-    return { code: 502, body: { ok: false, error: d.message || 'GitHub token request failed (HTTP ' + r.status + ')' } };
-  return { code: 200, body: { ok: true, token: d.token, expires_at: d.expires_at, train_expires_at: trainExpiresAt } };
+    req.setTimeout(TRAIN_PROXY_TIMEOUT, () => req.destroy());
+    req.on('error', () => done({ code: 503, body: { ok: false, error: TRAIN_DOWN } }));
+    // A start POST can sit here for the whole 120s Touch ID window. If the operator closes
+    // the tab, nothing is left waiting on this end. The broker still finishes the mint it
+    // already began — the sensor was touched, so opening that train is the right outcome.
+    if (clientReq) clientReq.on('close', () => req.destroy());
+    if (payload) req.write(payload);
+    req.end();
+  });
 }
 
 function messageFailure(code, message) {
@@ -1945,23 +1924,28 @@ const server = http.createServer(async (req, res) => {
       return await coordinatorRoute(req, res, p, { send, json, body, allowedOrigins: ALLOWED_ORIGINS });
     // Agent-facing: a local process holds no Origin, and the train itself is the gate.
     if (p === '/api/ghtoken' && req.method === 'GET') {
-      const r = await ghToken();
+      const r = await trainProxy('GET', '/api/ghtoken', undefined, req);
       return json(res, r.body, r.code);
     }
-    if (p === '/api/ghtrain' && req.method === 'GET')
-      return json(res, { active: !!ghTrain, expiresAt: ghTrain ? ghTrain.expiresAt : null });
+    if (p === '/api/ghtrain' && req.method === 'GET') {
+      const r = await trainProxy('GET', '/api/ghtrain', undefined, req);
+      return json(res, r.body, r.code);
+    }
     if (p === '/api/ghtrain' || p === '/api/ghtrain/end') {
       if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
-      // Same fail-closed Origin rule as the mint POSTs: starting a train unlocks the PEM.
+      // Same fail-closed Origin rule as the mint POSTs: starting a train unlocks the PEM. The
+      // gate stays here rather than moving to the broker — the browser only ever talks to the
+      // deck, and the deck's proxy request carries no Origin of its own.
       if (!ALLOWED_ORIGINS.has(req.headers.origin)) return send(res, 403, 'text/plain', 'forbidden');
       if (p === '/api/ghtrain/end') {
-        endTrain();
-        return json(res, { ok: true });
+        const r = await trainProxy('POST', '/api/ghtrain/end', {}, req);
+        return json(res, r.body, r.code);
       }
       const b = await body(req).catch(() => null);
       if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+      // Checked here as well as in the broker: defence in depth, and a bad ttl never travels.
       if (!TTL_MS[b.ttl]) return json(res, { ok: false, error: 'ttl must be 1h, 4h or 8h' }, 400);
-      const r = await startTrain(b.ttl);
+      const r = await trainProxy('POST', '/api/ghtrain', b, req);
       return json(res, r.body, r.code);
     }
   } catch (e) {
@@ -2118,11 +2102,13 @@ async function tailnetHandler(req, res) {
       return await messageRoute(req, res, p, url);
     }
     if (req.method === 'GET' && p === '/api/ghtoken') {
-      const r = await ghToken();
+      const r = await trainProxy('GET', '/api/ghtoken', undefined, req);
       return json(res, r.body, r.code);
     }
-    if (req.method === 'GET' && p === '/api/ghtrain')
-      return json(res, { active: !!ghTrain, expiresAt: ghTrain ? ghTrain.expiresAt : null });
+    if (req.method === 'GET' && p === '/api/ghtrain') {
+      const r = await trainProxy('GET', '/api/ghtrain', undefined, req);
+      return json(res, r.body, r.code);
+    }
   } catch (e) {
     return send(res, 500, 'text/plain', String(e.message));
   }

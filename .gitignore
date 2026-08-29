@@ -2,5 +2,8 @@ node_modules/
 fleet.db*
 *.log
 deploy-keys/github-app.env
+# The shared tailnet bearer key. Excluding it only on the Mac (.git/info/exclude) does
+# not travel with the repo, and a future GB-hosted deck checks out the same tree.
+deploy-keys/fleet-tailnet.env
 *.pem
 .fleetdeck/

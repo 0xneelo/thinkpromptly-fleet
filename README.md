@@ -22,6 +22,18 @@ senders set `FLEETDECK_URL=http://100.125.231.25:3131` and
 Message IDs are idempotent, failed deliveries stay visible and retryable, and tailnet message
 POSTs require the bearer token.
 
+**GitHub train.** The train broker is its own process, `fleetdeck-train.js`, run as a macOS
+launch agent (`com.fleetdeck.train`). It holds the GitHub App PEM and the train window in
+memory and mints 1h installation tokens; the deck **proxies** `/api/ghtoken` and
+`/api/ghtrain` on both listeners to it, so every consumer URL is unchanged. The point is
+that the train now survives `./up.sh` — deck restarts no longer close it. Install and
+operate it with:
+
+    sh mac/install-train-agent.sh            # --status, --uninstall, --print
+    sh mac/provision-fleet-secrets.sh        # FLEET_TAILNET_KEY + FLEETDECK_BUS_TOKEN
+
+Full operations notes, failure modes and crash semantics: `docs/train-broker.md`.
+
 **Session registry.** `fleet.db` (sqlite, server is the only writer) keeps a row per
 `host + tmux session` with label / role / worker / status / note, so a killed or vanished
 worker stays visible in the Registry view instead of disappearing. Status is one of

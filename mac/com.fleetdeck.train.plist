@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Template, not a live agent. mac/install-train-agent.sh fills in the placeholders and
+  writes the result to ~/Library/LaunchAgents/com.fleetdeck.train.plist. Editing the
+  installed copy by hand is fine; re-running the installer overwrites it.
+
+  This is a per-user LaunchAgent bootstrapped into gui/$UID on purpose. The broker shells
+  out to `op` for the App PEM, and the 1Password CLI only reaches the desktop app from
+  inside the operator's GUI login session. A system daemon would get "connection refused"
+  from 1Password every time.
+
+  It holds no secret. The PEM and every minted token live in the broker's memory only.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.fleetdeck.train</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE__</string>
+    <string>__REPO__/fleetdeck-train.js</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__REPO__</string>
+
+  <!-- launchd hands a process /usr/bin:/bin:/usr/sbin:/sbin and nothing else, so `op`
+       (Homebrew or /usr/local) would not be found. The installer writes the PATH it
+       actually resolved `op` and `node` on. -->
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH__</string>
+    <key>FLEET_TRAIN_PORT</key>
+    <string>__PORT__</string>
+    <key>FLEET_TRAIN_BIND</key>
+    <string>127.0.0.1</string>
+  </dict>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <!-- The whole point of the lane: the broker outlives every ./up.sh. KeepAlive brings it
+       back if it crashes; the in-memory train window does NOT come back with it, and the
+       operator restarts the train from the keys page. It still dies with the Mac. -->
+  <key>KeepAlive</key>
+  <true/>
+
+  <!-- Do not let a crash-loop spin: launchd throttles respawns to one per 10s. -->
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+
+  <key>ProcessType</key>
+  <string>Background</string>
+
+  <key>StandardOutPath</key>
+  <string>__LOGDIR__/out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__LOGDIR__/err.log</string>
+</dict>
+</plist>

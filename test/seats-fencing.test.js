@@ -4,7 +4,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { startServer } = require('./http');
+const { startServer, startBroker } = require('./http');
 const { tmpdir } = require('./helpers');
 
 const HOST = 'german-box';
@@ -343,7 +343,11 @@ test('M17 — the fence does not apply to the tailnet listener', async (t) => {
 // --- S3: the tailnet bearer key
 
 test('S3 — an armed tailnet key rejects a write without it', async (t) => {
-  const s = await startServer({ FLEET_TAILNET_KEY: 'hunter2' });
+  // The train window moved to fleetdeck-train.js, so reading it needs a broker behind the deck.
+  // The clause under test is unchanged: the tailnet key gates writes, never this read.
+  const brk = await startBroker();
+  t.after(() => brk.stop());
+  const s = await startServer({ FLEET_TAILNET_KEY: 'hunter2', FLEET_TRAIN_PORT: String(brk.port) });
   t.after(() => s.stop());
   const b = { host: HOST, name: 'EDITH-T-1', status: 'done' };
 

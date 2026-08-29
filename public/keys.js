@@ -111,12 +111,24 @@ function keysTable(keys) {
 
 // Called from render() only, so its countdown registers in the same fresh ticks list.
 function renderTrain() {
-  const live = train.active && train.expiresAt > Date.now();
-  trainStatusEl.replaceChildren(pill(live ? 'green' : '', live ? 'ACTIVE' : 'INACTIVE'));
+  // The status route answers {active, expiresAt}. An {ok:false, error} shape instead means
+  // the deck could not reach the broker at all — a different thing from no train being
+  // open, and the panel must not collapse the two into one INACTIVE badge. Saying INACTIVE
+  // while the broker is down sends the operator to the Touch ID sensor for a train that
+  // cannot start.
+  const down = train && train.ok === false;
+  const live = !down && train.active && train.expiresAt > Date.now();
+  trainStatusEl.replaceChildren(
+    down ? pill('amber', 'BROKER DOWN') : pill(live ? 'green' : '', live ? 'ACTIVE' : 'INACTIVE')
+  );
   if (live) {
     const cd = el('span', 'mono', left(train.expiresAt));
     ticks.push({ epoch: train.expiresAt, cd });
     trainStatusEl.append(cd);
+  }
+  if (down) {
+    trainErrEl.textContent = train.error || 'the train broker is not answering';
+    trainErrEl.hidden = false;
   }
   trainEndBtn.hidden = !live;
 }
