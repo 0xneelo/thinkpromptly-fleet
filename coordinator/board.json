@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "note": "Canonical. Written only by a coordinator run. DESIGN §4.",
   "northstar": {
     "text": "PROPOSED — not yet stated by the operator. See northstar.md.",
@@ -8,6 +8,11 @@
     "seed": "PROPOSED"
   },
   "lane_cap": 6,
+  "policy": {
+    "default_cadence_hours": 24,
+    "unattested_done_days": 3,
+    "queue_item_days": 3
+  },
   "lanes": [
     {
       "id": "L1",
@@ -17,11 +22,16 @@
       "done_milestone": "train 67 serving on prod; SPAIN ledger inside [0.22922, 0.23152].",
       "owner": "UNASSIGNED (last known: the O30/O31 seat)",
       "state": "UNKNOWN",
-      "blockers": ["gate-suite result unknown", "pre-deploy: lowcap-consensus-oneshot must be inactive"],
+      "blockers": [
+        "gate-suite result unknown",
+        "pre-deploy: lowcap-consensus-oneshot must be inactive"
+      ],
       "next_decision": "operator: confirm lane + owner",
       "reported_at": "2026-08-28T09:00:00Z",
       "verified_at": null,
-      "evidence": ["docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md"],
+      "evidence": [
+        "docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md"
+      ],
       "next_report_due": "2026-08-29T09:00:00Z"
     },
     {
@@ -32,11 +42,17 @@
       "done_milestone": "all three audit clean (no CRITICAL/HIGH) and woven into a train.",
       "owner": "UNASSIGNED (three lanes, no single owner)",
       "state": "UNKNOWN",
-      "blockers": ["Quentin: archive filename collision (CRITICAL) +4 HIGH", "Liselotte: DBC owner unchecked; Pump.fun verify fails; migration 0053", "Konradin: metering not key-wide"],
+      "blockers": [
+        "Quentin: archive filename collision (CRITICAL) +4 HIGH",
+        "Liselotte: DBC owner unchecked; Pump.fun verify fails; migration 0053",
+        "Konradin: metering not key-wide"
+      ],
       "next_decision": "operator: keep rolled up or split later",
       "reported_at": "2026-08-28T09:00:00Z",
       "verified_at": null,
-      "evidence": ["docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md"],
+      "evidence": [
+        "docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md"
+      ],
       "next_report_due": "2026-08-29T09:00:00Z"
     },
     {
@@ -47,11 +63,17 @@
       "done_milestone": "three sub-lanes verified; XYZ-1742 closed.",
       "owner": "UNASSIGNED (sub-lane workers retired)",
       "state": "UNKNOWN",
-      "blockers": ["XYZ-1819 unpushed — no active GitHub train (bc85ca7)"],
+      "blockers": [
+        "XYZ-1819 unpushed — no active GitHub train (bc85ca7)"
+      ],
       "next_decision": "operator: accept done-claims or order verification",
       "reported_at": "2026-08-28T00:00:00Z",
       "verified_at": null,
-      "evidence": ["git:372bdf1", "git:ecab1a0", "git:64b3cfe"],
+      "evidence": [
+        "git:372bdf1",
+        "git:ecab1a0",
+        "git:64b3cfe"
+      ],
       "next_report_due": "2026-08-29T09:00:00Z",
       "note": "self-reported done-claimed; UNKNOWN until attested (§4b)."
     },
@@ -63,19 +85,43 @@
       "done_milestone": "four deliverables committed, six proofs on XYZ-1827, pushed.",
       "owner": "Sylvia (tooling-engineer, agent-sylvia)",
       "state": "active",
-      "blockers": ["seed-confirmation-pending"],
+      "blockers": [
+        "seed-confirmation-pending"
+      ],
       "next_decision": "operator: confirm the seeded board",
       "reported_at": "2026-08-28T19:10:00Z",
       "verified_at": null,
-      "evidence": ["https://linear.app/synchronicity/issue/XYZ-1827"],
-      "ruled_out": ["Storing lane state in a session or in MEMORY.md — files + git are the memory (DESIGN §0)."],
+      "evidence": [
+        "https://linear.app/synchronicity/issue/XYZ-1827"
+      ],
+      "ruled_out": [
+        "Storing lane state in a session or in MEMORY.md — files + git are the memory (DESIGN §0)."
+      ],
       "next_report_due": "2026-08-29T09:00:00Z"
     }
   ],
   "operator_queue": [
-    {"id": "OQ-1", "item": "Confirm or write the northstar sentence.", "default": "none"},
-    {"id": "OQ-2", "item": "Confirm seeded lanes, owners, cadence.", "default": "stay PROPOSED"},
-    {"id": "OQ-3", "item": "Train-68 audit queue is NOT a lane — DESIGN §6 keeps tactical tasks in Linear. Say if you want it seeded.", "default": "stays out"}
+    {
+      "id": "OQ-1",
+      "item": "Confirm or write the northstar sentence.",
+      "default": "none",
+      "opened_at": "2026-08-28T09:00:00Z",
+      "deadline": "2026-08-29T09:00:00Z"
+    },
+    {
+      "id": "OQ-2",
+      "item": "Confirm seeded lanes, owners, cadence.",
+      "default": "stay PROPOSED",
+      "opened_at": "2026-08-28T09:00:00Z",
+      "deadline": "2026-08-29T09:00:00Z"
+    },
+    {
+      "id": "OQ-3",
+      "item": "Train-68 audit queue is NOT a lane — DESIGN §6 keeps tactical tasks in Linear. Say if you want it seeded.",
+      "default": "stays out",
+      "opened_at": "2026-08-28T09:00:00Z",
+      "deadline": "2026-08-29T09:00:00Z"
+    }
   ],
   "effective_decisions_ref": "coordinator/decisions-effective.md"
 }
