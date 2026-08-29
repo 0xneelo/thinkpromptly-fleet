@@ -1,9 +1,28 @@
 # HANDOFF — XYZ-1742 fleet lifecycle ownership + org chart
 
-**From:** 🎛 ORCHESTRATOR 12 (`remote-system/.claude/worktrees/orgchart-agent-fleet-1fe872`)
+> ## ⚠️ SUPERSEDED — THIS BUILD IS COMPLETE AND DEPLOYED (2026-08-28)
+>
+> Everything below is the **pre-build** handoff and is kept only as the historical
+> record of how the decision was reached. **Do not act on it.** In particular, ignore
+> §10's "next action: `/introduce-goal` for Lane 1" — all lanes are built, woven, and
+> merged to `main`.
+>
+> What actually happened, per 🎛 ORCHESTRATOR 17 and verified in git:
+> - §9's open decisions were all taken: hosting went **german-box** (operator override of
+>   the Mac-local recommendation); the `fable-audit` **ran** — verdict *AMEND FIRST*, 17 MUST
+>   amendments, see `AUDIT-XYZ-1742-lane1.md`; the lanes became sub-issues under XYZ-1742.
+> - Lanes landed: **Edith** (backend leases/epochs/two-phase reaper/seat fencing, 76/76 green),
+>   **Konrad** (hooks + detached pinger, box *and* mac), **Alfons** (org-chart tab), plus a
+>   fourth lane this pack never anticipated — **Sylvia**, Coordinator v0.1 (XYZ-1827).
+> - The 35-findings acceptance clause in §3 was amended: only 15 were enumerable in surviving
+>   sources, so acceptance became those 15 named plus M1–M17 / S1–S7 (operator-confirmed).
+> - Current record: `docs/goals/xyz-1742-fleet-lifecycle/reports/` on `0xneelo/thinkpromptly-fleet`.
+
+**From:** 🎛 ORCHESTRATOR 12 (seat closed 2026-08-29)
+**Where the work lives:** branch `claude/orgchart-agent-fleet-1fe872` in `~/remote-system`. The worktree this was written in has been recycled — check the branch out into a fresh worktree rather than looking for any absolute path.
 **To:** the next orchestrator seat on this build
 **Date:** 2026-08-27
-**State:** research complete, plan drafted, **nothing built, no workers launched**
+**State (at time of writing, 2026-08-27):** research complete, plan drafted, nothing built yet. **See the SUPERSEDED banner above — the build has since shipped.**
 
 Read this file top to bottom and you have the whole build cold. You do not need to
 re-run the research — it cost 28 agents and the conclusions are recorded below with
@@ -237,4 +256,6 @@ Nothing off the shelf provides these:
 `backend-developer`, with §5's contract block and §3's defect table pasted into the goal
 pack as the acceptance criteria. Lanes 2 and 3 stay parked until Lane 1's contract lands.
 
-**Nothing has been built. No worker has been launched. No goal pack exists yet.**
+**⚠️ This closing line was true on 2026-08-27 and is now false.** The goal packs were
+written, four workers ran, and the build shipped on 2026-08-28 — see the SUPERSEDED
+banner at the top of this file.
