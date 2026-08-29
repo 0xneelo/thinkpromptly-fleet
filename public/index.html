@@ -56,7 +56,7 @@
         <div>
           <div class="section-label">Fleet lifecycle</div>
           <h1 id="org-title">Org chart</h1>
-          <p>Seat ownership, parent chains, and lease health.</p>
+          <p>Parent-child hierarchy across the fleet. A host is a label on a node, never a group.</p>
         </div>
         <div class="org-actions">
           <span id="org-source" class="org-source"></span>
@@ -66,6 +66,7 @@
       </header>
       <div id="org-status" class="org-status" role="status" aria-live="polite"></div>
       <div id="org-tree" class="org-tree"></div>
+      <div id="org-unattached" class="org-unattached-wrap"></div>
     </section>
     <div id="bus" class="panel" hidden>
       <div class="row">

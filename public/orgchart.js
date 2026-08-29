@@ -36,7 +36,6 @@
   ];
 
   const sessionKey = (row) => row.host + '\0' + row.name;
-  const hostKey = (host) => 'host\0' + host;
   const seatKey = (seat) => 'seat\0' + seat;
   const textCompare = (a, b) => String(a || '').localeCompare(String(b || ''), 'en', {
     numeric: true,
@@ -82,32 +81,55 @@
     const sessions = (sessionRows || []).map(sessionRow);
     const seats = (seatRows || []).map(seatRow);
     const nodes = new Map(
-      sessions.map((row) => [sessionKey(row), { type: 'session', key: sessionKey(row), row, children: [] }])
+      sessions.map((row) => [
+        sessionKey(row),
+        { type: 'session', key: sessionKey(row), row, seat: null, children: [] },
+      ])
     );
     const roots = [];
+    const unattached = [];
     const assigned = new Set();
+    const rootKeys = new Set();
 
+    // A host is a label on a node, never a container: the only roots are seats, and a
+    // seat root is the owner session itself once that row exists.
     const seatOrder = { coordinator: 0, orchestrator: 1 };
     seats.sort(
       (a, b) =>
         (seatOrder[a.seat] ?? 99) - (seatOrder[b.seat] ?? 99) || textCompare(a.seat, b.seat)
     );
     for (const row of seats) {
-      const rootNode = { type: 'seat', key: seatKey(row.seat), row, children: [] };
       const owner = nodes.get(sessionKey({ host: row.owner_host, name: row.owner_name }));
       if (owner && !assigned.has(owner.key)) {
-        rootNode.children.push(owner);
+        owner.seat = row;
         assigned.add(owner.key);
+        rootKeys.add(owner.key);
+        roots.push(owner);
+      } else if (!owner) {
+        roots.push({ type: 'seat-vacant', key: seatKey(row.seat), row: null, seat: row, children: [] });
+      } else {
+        // Two seat rows naming one owner is a real transient during a handoff. Show the
+        // second seat as a conflict rather than dropping it out of the chart.
+        roots.push({
+          type: 'seat-vacant',
+          key: seatKey(row.seat),
+          row: null,
+          seat: row,
+          conflict: true,
+          children: [],
+        });
       }
-      roots.push(rootNode);
     }
 
-    // Keep a malformed parent cycle from making its members disappear. The first key in
-    // stable order becomes a host orphan; remaining valid edges still render beneath it.
+    // A cycle member is never attached, so every node in a malformed loop lands in the
+    // unattached strip instead of disappearing from the chart. The walk stops at a seat
+    // root: a root's own parent edge is not part of the built tree, so a stale pointer
+    // from a root into a cycle must not disown that root's real children.
     const wouldCycle = (childKey, parentKey) => {
       const seen = new Set([childKey]);
       let cursor = parentKey;
       while (cursor && nodes.has(cursor)) {
+        if (rootKeys.has(cursor)) return false;
         if (seen.has(cursor)) return true;
         seen.add(cursor);
         const row = nodes.get(cursor).row;
@@ -116,22 +138,6 @@
           : null;
       }
       return false;
-    };
-
-    const hostRoots = new Map();
-    const orphanUnderHost = (node) => {
-      let rootNode = hostRoots.get(node.row.host);
-      if (!rootNode) {
-        rootNode = {
-          type: 'host',
-          key: hostKey(node.row.host),
-          label: node.row.host,
-          children: [],
-        };
-        hostRoots.set(node.row.host, rootNode);
-      }
-      rootNode.children.push(node);
-      assigned.add(node.key);
     };
 
     const ordered = [...nodes.values()].sort(childSort);
@@ -146,7 +152,8 @@
         parent.children.push(node);
         assigned.add(node.key);
       } else {
-        orphanUnderHost(node);
+        unattached.push(node);
+        assigned.add(node.key);
       }
     }
 
@@ -155,9 +162,8 @@
       for (const child of node.children) sortChildren(child);
     };
     for (const rootNode of roots) sortChildren(rootNode);
-    const hosts = [...hostRoots.values()].sort((a, b) => textCompare(a.label, b.label));
-    for (const rootNode of hosts) sortChildren(rootNode);
-    return [...roots, ...hosts];
+    unattached.sort(childSort);
+    return { roots, unattached };
   }
 
   // The committed fixture carries exact integer timestamps. Rebase it at preview time
