@@ -74,7 +74,8 @@ the filename.
    fresh-read doctrine itself did not change, because the API is fresh-read by construction.
 4. **Tests** follow the repo convention — `node:test` + `node:assert/strict`, booting a real
    server child through `test/http.js` on a random loopback port. 37 pass.
-5. This report, plus the `operator:gate` issue below.
+5. This report, plus `XYZ-1850` — the `operator:gate` for the deck restart, which also
+   carries the tailnet ruling I want.
 
 ## Review
 
@@ -155,11 +156,15 @@ Both are reaper-timing tests, both pass in isolation, and the base commit passes
 honest reading is that this box flakes those two tests under load at roughly one run in four,
 whatever else is running; the route change touches no reaper path. Worth an eye, not a blocker.
 
-## Out of scope, filed not fixed
+## Issues
 
-- `node_modules/` was absent from this box, so `npm test` could not run here at all until I
-  installed the deps (gitignored, worktree-local). Nothing in the repo records that the suite needs
-  an install first.
-- `kill-race` M5 and `seats-fencing` M14 flake under load on this box, as above.
+| Issue | What |
+|---|---|
+| XYZ-1842 | this lane |
+| XYZ-1845 · XYZ-1846 · XYZ-1847 · XYZ-1848 | the four subtasks, all Done |
+| **XYZ-1850** | `operator:gate` — restart the deck; carries the tailnet ruling |
+| XYZ-1851 | out of scope, filed not fixed: `npm test` needs an undocumented `npm install` on german-box, and the two reaper tests flake under load |
+
+Branch `agent-kendra` @ `f684f05` (the API) plus this report, pushed.
 
 — Kendra
