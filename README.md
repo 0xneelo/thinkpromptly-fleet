@@ -6,6 +6,18 @@ terminal tile, "Connect all" opens a tile per session.
 
     npm install && npm start   # http://localhost:3131
 
+**Tests.** The suite is `node:test`, no framework. It needs the dependencies installed **in the
+worktree you run it from**: `node_modules/` is gitignored, so a fresh clone and every fresh
+`git worktree` starts without it.
+
+    npm install   # once per worktree — 6 packages, about 2s
+    npm test      # node --test, one file at a time
+
+`npm test` checks that first. `scripts/check-deps.js` runs as `pretest` and prints one line
+naming the missing packages, instead of letting the first test file die on `Cannot find
+module 'ws'` — a stack trace that reads like a broken branch. Every test binds its own
+loopback port and writes its own temp `fleet.db`, so a run never touches the operator's deck.
+
 **Message bus.** Fleetdeck persists messages in `fleet.db`, serializes delivery per target,
 and supports the current Claude Desktop session plus local or configured remote tmux sessions. Build the
 macOS bridge once, then send from Codex, Claude, scripts, or the Bus panel:
