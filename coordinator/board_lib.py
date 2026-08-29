@@ -223,3 +223,20 @@ def milestone_is_capability_shaped(text):
     if not isinstance(text, str) or not text.strip():
         return False
     return len(milestone_markers(text)) >= MILESTONE_MIN_MARKERS
+
+
+def board_exceptions(board, now):
+    """The M1 exceptions for a board, or its own stored copy when M1 is absent.
+
+    Both surfaces (render, notify) need this and neither may hard-depend on
+    exceptions.py: a surface that crashes because the computation is missing shows
+    the operator nothing, which is the failure mode M1 exists to prevent.
+    """
+    try:
+        import exceptions as exceptions_mod
+    except ImportError:
+        exceptions_mod = None
+    if exceptions_mod is not None:
+        return exceptions_mod.compute(board, now)
+    stored = board.get("exceptions")
+    return [item for item in stored if isinstance(item, dict)] if isinstance(stored, list) else []

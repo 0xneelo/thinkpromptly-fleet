@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>coordinator board · c019f5d</title><style>
+:root {
+  --bg:#262624; --card:#1a1915; --bar:#21201d; --line:rgba(255,255,255,.08);
+  --text:#c2c0b6; --strong:#e8e6dc; --muted:#9b9892; --coral:#d97757;
+  --green:#7cba7c; --amber:#d9a441; --blue:#7fb2d9; --red:#e0574f; --violet:#a98cd9;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0; background:var(--bg); color:var(--text);
+  font:13px/1.45 -apple-system,BlinkMacSystemFont,system-ui,"Segoe UI",sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+.page { max-width:1500px; margin:0 auto; padding:14px 18px 24px; }
+h2 { font:600 11px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase;
+     color:var(--muted); margin:0 0 8px; }
+.count { color:var(--strong); letter-spacing:0; margin-left:6px; }
+.slot { background:var(--card); border:1px solid var(--line); border-radius:8px;
+        padding:12px 14px; margin-bottom:12px; }
+.none { color:var(--muted); margin:0; }
+.cite { color:var(--muted); font:11px/1.4 var(--mono); margin:6px 0 0; }
+code { font:11px var(--mono); color:var(--muted); }
+
+/* stamp — a mismatch against the deployed HEAD is the staleness signal */
+.stamp { display:flex; flex-wrap:wrap; gap:14px; align-items:baseline;
+         padding:8px 14px; background:var(--bar); border:1px solid var(--line);
+         border-radius:8px; margin-bottom:12px; font:11px var(--mono); color:var(--muted); }
+.stamp .title { font:600 13px/1 var(--mono); letter-spacing:.16em; text-transform:uppercase;
+                color:var(--strong); }
+.stamp b { color:var(--text); font-weight:600; }
+
+.tag { font:600 10px var(--mono); letter-spacing:.08em; padding:2px 6px; border-radius:4px;
+       margin-left:8px; vertical-align:middle; }
+.tag.proposed { color:var(--amber); border:1px dashed var(--amber); }
+.tag.ruled { color:var(--green); border:1px solid var(--green); }
+
+/* 1 — northstar, physically separate from shift state */
+.northstar { border-left:3px solid var(--coral); }
+.star { color:var(--strong); font-size:15px; margin:0; }
+
+/* 2 — exceptions, pinned above everything */
+.exceptions.live { border:1px solid var(--red); background:#231816; }
+.exceptions.calm { border-left:3px solid var(--green); }
+.ex-list { list-style:none; margin:0; padding:0; }
+.ex { display:grid; grid-template-columns:150px 68px 62px 1fr 190px; gap:10px;
+      align-items:baseline; padding:6px 0; border-top:1px solid var(--line); }
+.ex:first-child { border-top:0; }
+.ex-kind { font:600 11px var(--mono); color:var(--red); letter-spacing:.04em; }
+.ex-subject { font:600 12px var(--mono); color:var(--strong); }
+.ex-age { font:12px var(--mono); color:var(--amber); }
+.ex-detail { color:var(--text); }
+.ex-id { font:10px var(--mono); color:var(--muted); text-align:right; }
+.ex-disputed-lane .ex-kind { color:#ff7a70; }
+
+/* 3+4 — queue beside lanes; both slots keep their position on every render */
+.cols { display:grid; grid-template-columns:minmax(280px,1fr) 2.1fr; gap:12px;
+        align-items:start; }
+.cols .slot { margin-bottom:0; }
+.qi-list { list-style:none; margin:0; padding:0; }
+.qi { padding:8px 0; border-top:1px solid var(--line); }
+.qi:first-child { border-top:0; }
+.qi-head, .qi-foot { display:flex; justify-content:space-between; gap:10px;
+                     font:11px var(--mono); color:var(--muted); }
+.qi-id { color:var(--strong); font-weight:600; }
+.qi-item { color:var(--text); margin:3px 0; }
+.qi-due.over { color:var(--red); font-weight:600; }
+.qi.expired { border-left:3px solid var(--red); padding-left:8px; }
+
+.lane-list { list-style:none; margin:0; padding:0; }
+.lane { display:grid; grid-template-columns:190px 1fr 210px; gap:12px;
+        padding:10px 0 10px 10px; border-top:1px solid var(--line);
+        border-left:3px solid var(--muted); }
+.lane:first-child { border-top:0; }
+.lid { font:600 14px var(--mono); color:var(--strong); }
+.lane-owner { display:block; color:var(--muted); font-size:11px; margin-top:4px; }
+.lane-body .k { display:block; font:10px var(--mono); letter-spacing:.1em;
+                text-transform:uppercase; color:var(--muted); margin-top:6px; }
+.goal { color:var(--strong); }
+.lane-body ul { margin:2px 0 0; padding-left:16px; }
+.lane-body li.none { list-style:none; margin-left:-16px; }
+.evidence { font:11px var(--mono); word-break:break-all; }
+.lane-clocks { font:11px var(--mono); }
+.clock { display:grid; grid-template-columns:60px 1fr; gap:4px; padding:2px 0; }
+.ck-label { color:var(--muted); }
+.ck-rel { color:var(--text); }
+.ck-abs { grid-column:2; color:var(--muted); font-size:10px; }
+.clock.never .ck-rel { color:var(--amber); }
+.clock.over .ck-rel { color:var(--red); font-weight:600; }
+.clock.expired .ck-rel, .clock.expired .ck-abs { color:var(--red);
+        text-decoration:line-through; }
+.clock.expired .ck-label::after { content:" exp"; color:var(--red); }
+.cadence { color:var(--muted); margin-top:6px; }
+
+/* states — done_claimed must never read as green */
+.badge { display:inline-block; font:600 10px var(--mono); letter-spacing:.08em;
+         padding:2px 7px; border-radius:4px; margin-left:8px; }
+.b-active { color:var(--blue); border:1px solid var(--blue); }
+.b-blocked { color:var(--amber); border:1px solid var(--amber); }
+.b-done_claimed { color:#20120c; border:1px solid var(--coral); font-weight:700;
+  background:repeating-linear-gradient(135deg,var(--coral) 0 6px,#8a4229 6px 12px); }
+.b-done_verified { color:#10200f; background:var(--green); border:1px solid var(--green); }
+.b-DISPUTED { color:#fff; background:var(--red); border:1px solid var(--red); }
+.b-UNKNOWN { color:var(--violet); border:1px dashed var(--violet); }
+.b-closed { color:var(--muted); border:1px solid var(--muted); }
+.state-active { border-left-color:var(--blue); }
+.state-blocked { border-left-color:var(--amber); }
+.state-done_claimed { border-left-color:var(--coral); background:rgba(217,119,87,.06); }
+.state-done_verified { border-left-color:var(--green); }
+.state-DISPUTED { border-left-color:var(--red); background:rgba(224,87,79,.1); }
+.state-UNKNOWN { border-left-color:var(--violet); border-left-style:dashed; }
+.state-closed { border-left-color:var(--muted); }
+
+/* staleness — dimming is progressive, and exceptions are never dimmed */
+.band-fresh { opacity:1; }
+.band-aging { opacity:.82; }
+.band-stale { opacity:.62; }
+.band-dark { opacity:.44; }
+.lane:hover { opacity:1; }
+
+.lg-row { display:flex; flex-wrap:wrap; gap:14px; }
+.lg { color:var(--muted); font-size:11px; }
+.lg .badge { margin:0 6px 0 0; }
+@media (max-width:1000px) { .cols { grid-template-columns:1fr; } .ex { grid-template-columns:1fr; }
+  .ex-id, .ex-detail { text-align:left; } .lane { grid-template-columns:1fr; } }
+</style></head><body><div class="page"><div class="stamp"><span class="title">Coordinator board</span><span>commit <b>c019f5d</b></span><span>generated <b>2026-08-29T11:08:58Z</b></span><span>source <b>coordinator/board.json</b></span><span>a stamp older than fleetdeck's HEAD means this page is stale — the board is <code>coordinator/board.json</code></span></div><section class="slot northstar"><h2>Northstar <span class="tag proposed">PROPOSED — binds nothing</span></h2><p class="star">PROPOSED — not yet stated by the operator. See northstar.md.</p><p class="cite">ruling — · confirmed —</p></section><section class="slot exceptions live"><h2>Exceptions <span class="count">4</span></h2><ul class="ex-list"><li class="ex ex-overdue-lane"><span class="ex-kind">overdue-lane</span><span class="ex-subject">L1</span><span class="ex-age">2h</span><span class="ex-detail">lane L1 (owner UNASSIGNED …) is 2h past its next_report_due</span><span class="ex-id">EX-overdue-lane-L1</span></li><li class="ex ex-overdue-lane"><span class="ex-kind">overdue-lane</span><span class="ex-subject">L2</span><span class="ex-age">2h</span><span class="ex-detail">lane L2 (owner UNASSIGNED …) is 2h past its next_report_due</span><span class="ex-id">EX-overdue-lane-L2</span></li><li class="ex ex-overdue-lane"><span class="ex-kind">overdue-lane</span><span class="ex-subject">L3</span><span class="ex-age">2h</span><span class="ex-detail">lane L3 (owner UNASSIGNED …) is 2h past its next_report_due</span><span class="ex-id">EX-overdue-lane-L3</span></li><li class="ex ex-overdue-lane"><span class="ex-kind">overdue-lane</span><span class="ex-subject">L4</span><span class="ex-age">2h</span><span class="ex-detail">lane L4 (owner Sylvia …) is 2h past its next_report_due</span><span class="ex-id">EX-overdue-lane-L4</span></li></ul></section><div class="cols"><section class="slot queue"><h2>Operator queue <span class="count">3</span></h2><ol class="qi-list"><li class="qi expired"><div class="qi-head"><span class="qi-id">OQ-1</span><span class="qi-age">open 1d 2h</span></div><div class="qi-item">Confirm or write the northstar sentence.</div><div class="qi-foot"><span class="qi-due over">deadline 2026-08-29T09:00:00Z · EXPIRED 2h</span><span class="qi-default">on expiry: none</span></div></li><li class="qi expired"><div class="qi-head"><span class="qi-id">OQ-2</span><span class="qi-age">open 1d 2h</span></div><div class="qi-item">Confirm seeded lanes, owners, cadence.</div><div class="qi-foot"><span class="qi-due over">deadline 2026-08-29T09:00:00Z · EXPIRED 2h</span><span class="qi-default">on expiry: stay PROPOSED</span></div></li><li class="qi expired"><div class="qi-head"><span class="qi-id">OQ-3</span><span class="qi-age">open 1d 2h</span></div><div class="qi-item">Train-68 audit queue is NOT a lane — DESIGN §6 keeps tactical tasks in Linear. Say if you want it seeded.</div><div class="qi-foot"><span class="qi-due over">deadline 2026-08-29T09:00:00Z · EXPIRED 2h</span><span class="qi-default">on expiry: stays out</span></div></li></ol></section><section class="slot lanes"><h2>Lanes <span class="count">4 / 6</span></h2><ol class="lane-list"><li class="lane state-UNKNOWN band-stale"><div class="lane-id"><span class="lid">L1</span><span class="badge b-UNKNOWN">UNKNOWN</span><span class="tag proposed">PROPOSED</span><span class="lane-owner">UNASSIGNED (last known: the O30/O31 seat)</span></div><div class="lane-body"><div class="goal">lowcap: ship train 67 to prod once the gate suite is green.</div><div class="milestone"><span class="k">done when</span>train 67 serving on prod; SPAIN ledger inside [0.22922, 0.23152].</div><div class="blockers"><span class="k">blockers (2)</span><ul><li>gate-suite result unknown</li><li>pre-deploy: lowcap-consensus-oneshot must be inactive</li></ul></div><div class="next"><span class="k">next decision</span>operator: confirm lane + owner</div><div class="evidence"><span class="k">evidence</span>docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md</div></div><div class="lane-clocks"><div class="clock"><span class="ck-label">reported</span><span class="ck-rel">1d 2h ago</span><span class="ck-abs">2026-08-28T09:00:00Z</span></div><div class="clock never"><span class="ck-label">verified</span><span class="ck-rel">never</span><span class="ck-abs">no attestation</span></div><div class="clock over"><span class="ck-label">due</span><span class="ck-rel">2h ago</span><span class="ck-abs">2026-08-29T09:00:00Z</span></div><div class="cadence">cadence 1d</div></div></li><li class="lane state-UNKNOWN band-stale"><div class="lane-id"><span class="lid">L2</span><span class="badge b-UNKNOWN">UNKNOWN</span><span class="tag proposed">PROPOSED</span><span class="lane-owner">UNASSIGNED (three lanes, no single owner)</span></div><div class="lane-body"><div class="goal">lowcap: clear the held do-not-weave lanes — Quentin XYZ-1795/1800, Liselotte XYZ-1794, Konradin XYZ-1690.</div><div class="milestone"><span class="k">done when</span>all three audit clean (no CRITICAL/HIGH) and woven into a train.</div><div class="blockers"><span class="k">blockers (3)</span><ul><li>Quentin: archive filename collision (CRITICAL) +4 HIGH</li><li>Liselotte: DBC owner unchecked; Pump.fun verify fails; migration 0053</li><li>Konradin: metering not key-wide</li></ul></div><div class="next"><span class="k">next decision</span>operator: keep rolled up or split later</div><div class="evidence"><span class="k">evidence</span>docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md</div></div><div class="lane-clocks"><div class="clock"><span class="ck-label">reported</span><span class="ck-rel">1d 2h ago</span><span class="ck-abs">2026-08-28T09:00:00Z</span></div><div class="clock never"><span class="ck-label">verified</span><span class="ck-rel">never</span><span class="ck-abs">no attestation</span></div><div class="clock over"><span class="ck-label">due</span><span class="ck-rel">2h ago</span><span class="ck-abs">2026-08-29T09:00:00Z</span></div><div class="cadence">cadence 1d</div></div></li><li class="lane state-UNKNOWN band-stale"><div class="lane-id"><span class="lid">L3</span><span class="badge b-UNKNOWN">UNKNOWN</span><span class="tag proposed">PROPOSED</span><span class="lane-owner">UNASSIGNED (sub-lane workers retired)</span></div><div class="lane-body"><div class="goal">fleet: seat lifecycle — leases/fencing/reaper, hooks + pinger, org chart.</div><div class="milestone"><span class="k">done when</span>three sub-lanes verified; XYZ-1742 closed.</div><div class="blockers"><span class="k">blockers (1)</span><ul><li>XYZ-1819 unpushed — no active GitHub train (bc85ca7)</li></ul></div><div class="next"><span class="k">next decision</span>operator: accept done-claims or order verification</div><div class="evidence"><span class="k">evidence</span>git:372bdf1 · git:ecab1a0 · git:64b3cfe</div></div><div class="lane-clocks"><div class="clock"><span class="ck-label">reported</span><span class="ck-rel">1d 11h ago</span><span class="ck-abs">2026-08-28T00:00:00Z</span></div><div class="clock never"><span class="ck-label">verified</span><span class="ck-rel">never</span><span class="ck-abs">no attestation</span></div><div class="clock over"><span class="ck-label">due</span><span class="ck-rel">2h ago</span><span class="ck-abs">2026-08-29T09:00:00Z</span></div><div class="cadence">cadence 1d 9h</div></div></li><li class="lane state-active band-stale"><div class="lane-id"><span class="lid">L4</span><span class="badge b-active">active</span><span class="tag proposed">PROPOSED</span><span class="lane-owner">Sylvia (tooling-engineer, agent-sylvia)</span></div><div class="lane-body"><div class="goal">fleet: Coordinator v0.1 — state dir, run + portal skills, boot gate.</div><div class="milestone"><span class="k">done when</span>four deliverables committed, six proofs on XYZ-1827, pushed.</div><div class="blockers"><span class="k">blockers (1)</span><ul><li>seed-confirmation-pending</li></ul></div><div class="next"><span class="k">next decision</span>operator: confirm the seeded board</div><div class="evidence"><span class="k">evidence</span>https://linear.app/synchronicity/issue/XYZ-1827</div></div><div class="lane-clocks"><div class="clock"><span class="ck-label">reported</span><span class="ck-rel">15h ago</span><span class="ck-abs">2026-08-28T19:10:00Z</span></div><div class="clock never"><span class="ck-label">verified</span><span class="ck-rel">never</span><span class="ck-abs">no attestation</span></div><div class="clock over"><span class="ck-label">due</span><span class="ck-rel">2h ago</span><span class="ck-abs">2026-08-29T09:00:00Z</span></div><div class="cadence">cadence 13h</div></div></li></ol></section></div><section class="slot legend"><h2>States</h2><div class="lg-row"><span class="lg"><span class="badge b-active">active</span>someone is on it</span><span class="lg"><span class="badge b-blocked">blocked</span>stopped, blocker listed</span><span class="lg"><span class="badge b-done_claimed">done-claimed</span>self-reported — NOT verified, no green</span><span class="lg"><span class="badge b-done_verified">done-verified</span>attested against evidence</span><span class="lg"><span class="badge b-DISPUTED">DISPUTED</span>two attestations conflict — only the operator rules</span><span class="lg"><span class="badge b-UNKNOWN">UNKNOWN</span>no signal; the dead-man switch flipped it</span><span class="lg"><span class="badge b-closed">closed</span>owes nothing</span></div><p class="cite">Lanes dim as <code>reported_at</code> ages past the lane's own cadence: full · aging · stale · dark. A struck-through <code>verified</code> stamp is past its cadence and no longer asserts anything.</p></section></div><script type="application/json" id="board-data">{"board": {"schema_version": 2, "note": "Canonical. Written only by a coordinator run. DESIGN §4.", "northstar": {"text": "PROPOSED — not yet stated by the operator. See northstar.md.", "ruling_id": null, "confirmed_at": null, "seed": "PROPOSED"}, "lane_cap": 6, "policy": {"default_cadence_hours": 24, "unattested_done_days": 3, "queue_item_days": 3}, "lanes": [{"id": "L1", "seed": "PROPOSED", "seed_source": "HANDOFF §⚡", "goal": "lowcap: ship train 67 to prod once the gate suite is green.", "done_milestone": "train 67 serving on prod; SPAIN ledger inside [0.22922, 0.23152].", "owner": "UNASSIGNED (last known: the O30/O31 seat)", "state": "UNKNOWN", "blockers": ["gate-suite result unknown", "pre-deploy: lowcap-consensus-oneshot must be inactive"], "next_decision": "operator: confirm lane + owner", "reported_at": "2026-08-28T09:00:00Z", "verified_at": null, "evidence": ["docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md"], "next_report_due": "2026-08-29T09:00:00Z"}, {"id": "L2", "seed": "PROPOSED", "seed_source": "HANDOFF §OUT-of-67", "goal": "lowcap: clear the held do-not-weave lanes — Quentin XYZ-1795/1800, Liselotte XYZ-1794, Konradin XYZ-1690.", "done_milestone": "all three audit clean (no CRITICAL/HIGH) and woven into a train.", "owner": "UNASSIGNED (three lanes, no single owner)", "state": "UNKNOWN", "blockers": ["Quentin: archive filename collision (CRITICAL) +4 HIGH", "Liselotte: DBC owner unchecked; Pump.fun verify fails; migration 0053", "Konradin: metering not key-wide"], "next_decision": "operator: keep rolled up or split later", "reported_at": "2026-08-28T09:00:00Z", "verified_at": null, "evidence": ["docs/coordinator/HANDOFF-2026-08-28-o30-to-o31.md"], "next_report_due": "2026-08-29T09:00:00Z"}, {"id": "L3", "seed": "PROPOSED", "seed_source": "XYZ-1742 + sub-lanes XYZ-1818/1819/1820", "goal": "fleet: seat lifecycle — leases/fencing/reaper, hooks + pinger, org chart.", "done_milestone": "three sub-lanes verified; XYZ-1742 closed.", "owner": "UNASSIGNED (sub-lane workers retired)", "state": "UNKNOWN", "blockers": ["XYZ-1819 unpushed — no active GitHub train (bc85ca7)"], "next_decision": "operator: accept done-claims or order verification", "reported_at": "2026-08-28T00:00:00Z", "verified_at": null, "evidence": ["git:372bdf1", "git:ecab1a0", "git:64b3cfe"], "next_report_due": "2026-08-29T09:00:00Z", "note": "self-reported done-claimed; UNKNOWN until attested (§4b)."}, {"id": "L4", "seed": "PROPOSED", "seed_source": "XYZ-1827", "goal": "fleet: Coordinator v0.1 — state dir, run + portal skills, boot gate.", "done_milestone": "four deliverables committed, six proofs on XYZ-1827, pushed.", "owner": "Sylvia (tooling-engineer, agent-sylvia)", "state": "active", "blockers": ["seed-confirmation-pending"], "next_decision": "operator: confirm the seeded board", "reported_at": "2026-08-28T19:10:00Z", "verified_at": null, "evidence": ["https://linear.app/synchronicity/issue/XYZ-1827"], "ruled_out": ["Storing lane state in a session or in MEMORY.md — files + git are the memory (DESIGN §0)."], "next_report_due": "2026-08-29T09:00:00Z"}], "operator_queue": [{"id": "OQ-1", "item": "Confirm or write the northstar sentence.", "default": "none", "opened_at": "2026-08-28T09:00:00Z", "deadline": "2026-08-29T09:00:00Z"}, {"id": "OQ-2", "item": "Confirm seeded lanes, owners, cadence.", "default": "stay PROPOSED", "opened_at": "2026-08-28T09:00:00Z", "deadline": "2026-08-29T09:00:00Z"}, {"id": "OQ-3", "item": "Train-68 audit queue is NOT a lane — DESIGN §6 keeps tactical tasks in Linear. Say if you want it seeded.", "default": "stays out", "opened_at": "2026-08-28T09:00:00Z", "deadline": "2026-08-29T09:00:00Z"}], "effective_decisions_ref": "coordinator/decisions-effective.md"}, "exceptions": [{"id": "EX-overdue-lane-L1", "kind": "overdue-lane", "subject": "L1", "since": "2026-08-29T09:00:00Z", "age_seconds": 7738, "age": "2h", "detail": "lane L1 (owner UNASSIGNED …) is 2h past its next_report_due"}, {"id": "EX-overdue-lane-L2", "kind": "overdue-lane", "subject": "L2", "since": "2026-08-29T09:00:00Z", "age_seconds": 7738, "age": "2h", "detail": "lane L2 (owner UNASSIGNED …) is 2h past its next_report_due"}, {"id": "EX-overdue-lane-L3", "kind": "overdue-lane", "subject": "L3", "since": "2026-08-29T09:00:00Z", "age_seconds": 7738, "age": "2h", "detail": "lane L3 (owner UNASSIGNED …) is 2h past its next_report_due"}, {"id": "EX-overdue-lane-L4", "kind": "overdue-lane", "subject": "L4", "since": "2026-08-29T09:00:00Z", "age_seconds": 7738, "age": "2h", "detail": "lane L4 (owner Sylvia …) is 2h past its next_report_due"}], "generated_at": "2026-08-29T11:08:58Z", "commit": "c019f5d"}</script></body></html>
