@@ -19,19 +19,17 @@ function instance(opts = {}) {
     JSON.stringify({ hosts: { 'german-box': { sessions: {} } }, calls: [], ...(opts.state || {}) })
   );
   const PORT = port++;
-  const m = load(
-    {
-      PORT,
-      FLEET_DB: path.join(dir, 'fleet.db'),
-      FLEET_HOSTS_FILE: hostsFile(dir),
-      FLEET_SSH_BIN: FAKE_SSH,
-      FLEET_FAKE_SSH_STATE: state,
-      FLEET_TTL_S: '1',
-      FLEET_SUSPECT_WINDOW_S: '1',
-      ...(opts.env || {}),
-    },
-    { listen: true }
-  );
+  const env = {
+    PORT,
+    FLEET_DB: path.join(dir, 'fleet.db'),
+    FLEET_HOSTS_FILE: hostsFile(dir),
+    FLEET_SSH_BIN: FAKE_SSH,
+    FLEET_FAKE_SSH_STATE: state,
+    FLEET_TTL_S: '1',
+    FLEET_SUSPECT_WINDOW_S: '1',
+    ...(opts.env || {}),
+  };
+  const m = load(env, { listen: true });
   const base = 'http://127.0.0.1:' + PORT;
   const post = (u, b) =>
     fetch(base + u, {
@@ -41,6 +39,10 @@ function instance(opts = {}) {
     }).then(async (r) => ({ status: r.status, body: await r.json() }));
   return {
     m, post, dir, state,
+    // The lifecycle waits below are derived from this instance's own clock settings rather
+    // than hardcoded, so a test can widen a window without every sleep going stale.
+    ttlMs: Number(env.FLEET_TTL_S) * 1000,
+    windowMs: Number(env.FLEET_SUSPECT_WINDOW_S) * 1000,
     row: (n) => m.db.prepare('SELECT * FROM sessions WHERE host = ? AND name = ?').get('german-box', n),
     ssh: () => JSON.parse(fs.readFileSync(state, 'utf8')).calls.map((c) => c.cmd),
     patch: (f) => {
@@ -53,24 +55,43 @@ function instance(opts = {}) {
   };
 }
 
-// Drives one session from claim to the tick that is about to reap it.
+// Drives one session from claim to the tick that is about to reap it. Every wait here is a
+// lower bound — sleeping longer than asked only makes the next step more certain — so a loaded
+// box cannot break them. The deadlines that a loaded box CAN break are the ones below, and
+// those wait for the evidence instead of guessing at a duration.
 async function toReapEdge(i, name, extra = {}) {
   const c = await i.post('/api/lease/claim', { host: 'german-box', name, worker: 'Edith', ...extra });
-  await sleep(1100); // clear the boot grace and expire the lease
+  await sleep(Math.max(i.ttlMs, i.windowMs) + 100); // clear the boot grace and expire the lease
   await i.tick(); // suspect + warn
-  await sleep(1100); // clear the appeal window
+  await sleep(i.windowMs + 100); // clear the appeal window
   return c.body.epoch;
 }
+
+// Polls for something the fixture has recorded, up to a bound, and says what it was waiting for
+// when it gives up. `await sleep(250)` in place of this is a deadline: it assumes the deck gets
+// somewhere within 250ms, and under load it does not — the reap for M4 below landed after the
+// row had already been deleted, which read as the alert never being raised.
+async function until(what, cond, ms = 20000) {
+  const deadline = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > deadline) throw new Error('timed out after ' + ms + 'ms waiting for ' + what);
+    await sleep(5);
+  }
+}
+
+// fake-ssh records a call before it starts stalling on killDelayMs, so a recorded kill-session
+// means the kill is dispatched and the window is open for as long as that stall lasts.
+const killInFlight = (i) => () => i.ssh().some((c) => /kill-session/.test(c));
 
 test('M4 — a claim is refused while its predecessor\'s kill is still in flight', async (t) => {
   // `tmux kill-session` names only the session, so a claim that lands mid-kill would hand the
   // new incarnation a name the reaper is at that moment destroying.
-  const i = instance({ state: { killDelayMs: 700, hosts: { 'german-box': { sessions: { 'EDITH-T-1': { activity: 1 } } } } } });
+  const i = instance({ state: { killDelayMs: 3000, hosts: { 'german-box': { sessions: { 'EDITH-T-1': { activity: 1 } } } } } });
   t.after(() => i.stop());
   await toReapEdge(i, 'EDITH-T-1');
 
   const ticking = i.tick();
-  await sleep(250); // the kill is now blocked inside the fake ssh
+  await until('the kill to reach the fake ssh', killInFlight(i)); // it is now blocked in there
   const during = await i.post('/api/lease/claim', { host: 'german-box', name: 'EDITH-T-1' });
   assert.equal(during.status, 409);
   assert.match(during.body.error, /kill is in flight/);
@@ -93,13 +114,13 @@ test('M4 — a kill whose row vanished mid-flight stamps nothing and raises an a
   const i = instance({
     dir,
     env: { FLEET_NAME_CLOSE_SCRIPT: script },
-    state: { killDelayMs: 700, hosts: { 'german-box': { sessions: { 'EDITH-T-1': { activity: 1 } } } } },
+    state: { killDelayMs: 3000, hosts: { 'german-box': { sessions: { 'EDITH-T-1': { activity: 1 } } } } },
   });
   t.after(() => i.stop());
 
   await toReapEdge(i, 'EDITH-T-1');
   const ticking = i.tick();
-  await sleep(250);
+  await until('the kill to reach the fake ssh', killInFlight(i));
   // Delete the row out from under the in-flight kill — the one write path that can still do it.
   i.m.db.prepare('DELETE FROM sessions WHERE host = ? AND name = ?').run('german-box', 'EDITH-T-1');
   await ticking;
@@ -114,9 +135,9 @@ test('M4 — a kill whose row vanished mid-flight stamps nothing and raises an a
   // name-close wiring is dead.
   i.patch((s) => { s.killDelayMs = 0; s.hosts['german-box'].sessions['EDITH-T-2'] = { activity: 1 }; });
   await i.post('/api/lease/claim', { host: 'german-box', name: 'EDITH-T-2', worker: 'Edith' });
-  await sleep(1100);
+  await sleep(Math.max(i.ttlMs, i.windowMs) + 100);
   await i.tick();
-  await sleep(1100);
+  await sleep(i.windowMs + 100);
   await i.tick();
   assert.equal(i.row('EDITH-T-2').lease_state, 'reaped');
   assert.match(fs.readFileSync(nameLog, 'utf8'), /^close Edith$/m, 'the Name is released on a clean reap');
@@ -125,7 +146,15 @@ test('M4 — a kill whose row vanished mid-flight stamps nothing and raises an a
 test('M5 — a session that reappears between the tick poll and the reap decision is not killed', async (t) => {
   // The opening poll is one sample of the whole fleet; the decision is taken per session, later.
   // `appearAfterLs: 1` makes the session invisible to the first sample and visible to the second.
+  // The window is widened to 3s for this test alone. The claim under test is "tmux says this
+  // session was active inside the suspect window, so it is a broken pinger, not a corpse", and
+  // the deck measures that against `Math.floor(activity_seconds) * 1000`. At a 1s window a
+  // literal `Math.floor(Date.now()/1000)` spent a uniform 0-999ms of the budget on truncation
+  // alone before the tick's own ssh round trips were charged to it — measured 252ms to 949ms of
+  // the 1000ms, so roughly one run in four reaped instead. 'now' below removes the truncation
+  // and the wider window removes the rest of the deadline; neither touches what is asserted.
   const i = instance({
+    env: { FLEET_SUSPECT_WINDOW_S: '3' },
     state: {
       hosts: {
         'german-box': {
@@ -138,7 +167,7 @@ test('M5 — a session that reappears between the tick poll and the reap decisio
   });
   t.after(() => i.stop());
   await toReapEdge(i, 'EDITH-T-1');
-  i.patch((s) => { s.hosts['german-box'].sessions['EDITH-T-1'].activity = Math.floor(Date.now() / 1000); });
+  i.patch((s) => { s.hosts['german-box'].sessions['EDITH-T-1'].activity = 'now'; });
   await i.tick();
 
   const r = i.row('EDITH-T-1');
@@ -184,7 +213,7 @@ test('S5 — retention keeps a reaped row whose kill was never confirmed', async
     )
     .run(old);
 
-  await sleep(1100);
+  await sleep(Math.max(i.ttlMs, i.windowMs) + 100);
   await i.tick();
 
   const names = i.m.db.prepare('SELECT host, name FROM sessions').all().map((r) => r.host + '/' + r.name);

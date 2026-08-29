@@ -16,21 +16,72 @@
 // A session entry may carry `appearAfterLs: n` — it stays invisible for the first n `tmux ls`
 // calls to its host and shows up from the (n+1)th onward, which is how a test makes a session
 // come back to life between one sample and the next.
+//
+// `activity` (and `created`) may be the string 'now' instead of a number: the timestamp is then
+// taken when this sample is answered, and rounded UP to the next whole second. tmux reports
+// activity in whole seconds, so a literal `Math.floor(Date.now()/1000)` written by the test
+// arrives at the deck already up to 999ms stale — against a suspect window of a second or two
+// that stale-by-truncation alone decided whether a session read as live. 'now' means what the
+// test means, "this session is active as the deck looks at it", and costs no margin.
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 
 const STATE = process.env.FLEET_FAKE_SSH_STATE;
+const LOCK = STATE + '.lock';
 const args = process.argv.slice(2);
 const host = args[args.length - 2];
 const cmd = args[args.length - 1];
 
-const read = () => JSON.parse(fs.readFileSync(STATE, 'utf8'));
-const write = (s) => fs.writeFileSync(STATE, JSON.stringify(s, null, 2));
+// The deck polls two commands at once — health() runs qwinsta and pgrep in a Promise.all — so
+// two copies of this fixture read-modify-write one state file concurrently. Unserialised, one
+// of them reads a half-written file, dies on the parse, and the deck reads that as "the ssh
+// itself failed" (holderOk: null): measured at 8.5% of /api/health calls, which is what made
+// M14 flake. mkdir is the atomic create every filesystem has, and the write lands by rename,
+// so a reader outside the lock — a test calling `i.ssh()` — never sees a partial file either.
+const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+const STALE_LOCK_MS = 10000;
 
-const state = read();
-state.calls = state.calls || [];
-state.calls.push({ host, cmd, at: Date.now() });
-write(state);
+function lock() {
+  const deadline = Date.now() + 20000;
+  for (;;) {
+    try {
+      fs.mkdirSync(LOCK);
+      return;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      // A fixture killed mid-write (execFile's own timeout is a SIGKILL) would otherwise wedge
+      // every later call in this test.
+      try {
+        if (Date.now() - fs.statSync(LOCK).mtimeMs > STALE_LOCK_MS) fs.rmdirSync(LOCK);
+      } catch { /* someone else got there first */ }
+      if (Date.now() > deadline) throw new Error('fake-ssh: state lock stuck at ' + LOCK);
+      nap(2);
+    }
+  }
+}
+
+// Read, mutate, write, all inside the lock. Returns whatever `fn` returns; the caller gets the
+// state it just wrote, so nothing outside re-reads a file another fixture may already own.
+function withState(fn) {
+  lock();
+  try {
+    const s = JSON.parse(fs.readFileSync(STATE, 'utf8'));
+    const r = fn(s);
+    const tmp = STATE + '.' + process.pid + '.tmp';
+    fs.writeFileSync(tmp, JSON.stringify(s, null, 2));
+    fs.renameSync(tmp, STATE);
+    return r === undefined ? s : r;
+  } finally {
+    try { fs.rmdirSync(LOCK); } catch { /* best effort */ }
+  }
+}
+
+// Every invocation is recorded, for the ordering assertions; the snapshot it returns is this
+// process's view of the fleet for the rest of the run.
+const state = withState((s) => {
+  s.calls = s.calls || [];
+  s.calls.push({ host, cmd, at: Date.now() });
+});
 
 // The zero-quote rule is a property of every command this fixture ever sees, so it is
 // enforced here rather than only asserted in one test (server.js:95-99).
@@ -60,6 +111,9 @@ function runLocal(c) {
   return execFileSync('bash', ['-lc', bare], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
+// tmux prints whole seconds. 'now' is rounded up so the truncation costs the test no margin.
+const stamp = (v) => (v === 'now' ? Math.ceil(Date.now() / 1000) : v);
+
 function out(s) {
   process.stdout.write(s);
   process.exit(0);
@@ -72,12 +126,15 @@ try {
       process.exit(255);
     }
     if (state.local) return out(runLocal(cmd));
-    const seen = (state.lsCount = state.lsCount || {});
-    const nth = (seen[host] = (seen[host] || 0) + 1);
-    write(state);
+    // Counted only once the poll actually answers, so a failing host does not advance
+    // anybody's appearAfterLs.
+    const nth = withState((s) => {
+      const seen = (s.lsCount = s.lsCount || {});
+      return (seen[host] = (seen[host] || 0) + 1);
+    });
     const rows = Object.entries(h.sessions || {})
       .filter(([, s]) => !s.appearAfterLs || nth > s.appearAfterLs)
-      .map(([n, s]) => 'n=' + n + ',a=' + s.activity + ',c=' + (s.created || s.activity));
+      .map(([n, s]) => 'n=' + n + ',a=' + stamp(s.activity) + ',c=' + stamp(s.created || s.activity));
     if (!rows.length) {
       process.stderr.write('no server running on /tmp/tmux-1000/default\n');
       process.exit(1);
@@ -95,11 +152,12 @@ try {
 
   if (/tmux kill-session/.test(cmd)) {
     const target = localTarget(cmd);
-    // Busy-wait: this is a child process, so blocking it is exactly the stall a slow ssh is.
-    if (state.killDelayMs) {
-      const until = Date.now() + state.killDelayMs;
-      while (Date.now() < until) execFileSync('true');
-    }
+    // Block the whole child: this is a separate process, so stopping it dead is exactly the
+    // stall a slow ssh is. The lock is not held across it — a test watches `calls` for this
+    // kill to know the window is open, and that read must not block behind the stall it is
+    // waiting for. (It used to spin on `execFileSync('true')`, which spent the stall spawning
+    // a process per millisecond and loaded the box it was supposed to be idle on.)
+    if (state.killDelayMs) nap(state.killDelayMs);
     if (h.killHard || state.killHard) {
       process.stderr.write('ssh: connect to host ' + host + ' port 22: Connection timed out\n');
       process.exit(255);
@@ -109,14 +167,16 @@ try {
       process.exit(1);
     }
     if (state.local) return out(runLocal(cmd));
-    const s = read();
-    const sess = s.hosts[host].sessions || {};
-    if (!(target in sess)) {
+    const gone = withState((s) => {
+      const sess = s.hosts[host].sessions || {};
+      if (!(target in sess)) return false;
+      delete sess[target];
+      return true;
+    });
+    if (!gone) {
       process.stderr.write("can't find session: " + target + '\n');
       process.exit(1);
     }
-    delete sess[target];
-    write(s);
     return out('');
   }
 
