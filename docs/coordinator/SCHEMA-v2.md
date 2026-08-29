@@ -112,3 +112,22 @@ it gained those keys.
 `check.py` validates the shape rather than the number, so a v1 board that has since gained
 the v2 keys still passes — but the number should track the shape, or the next reader has to
 guess which one is lying.
+
+## The `exceptions` key is a snapshot, not a cache
+
+`exceptions.py --apply` writes a top-level `exceptions` list into the board. That list is
+**provenance** — a record of what a given run saw, for external readers and for audit.
+
+**Nothing recomputes from it.** `bundle.build` and `gate_report` always call
+`exceptions.compute(board, now)`, and `board_lib.board_exceptions` prefers live compute,
+falling back to the stored list only when `exceptions.py` is absent entirely (a surface that
+crashes because the computation is missing shows the operator nothing).
+
+The reason is the one M1 exists for. If the boot bundle read the snapshot back, a lane that
+went overdue *after* the last run would boot a seat with the board as it was — silence
+reading as health — and the byte gate would be measured against a board that has since
+grown. `check.py --selftest` asserts that an empty stored snapshot cannot mask live
+exceptions, that a stale entry is not resurrected, and that the gate measures live state.
+
+`bundle.py`'s CLI prints one `WARN` when the snapshot disagrees with live state: that means
+the board has not been re-run since it drifted.

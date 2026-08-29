@@ -167,10 +167,19 @@ def footer(size):
 
 
 def build(board, now, board_path):
-    """The compacted bundle as plain text, footer included."""
-    found = board.get("exceptions")
-    if not isinstance(found, list):
-        found = exceptions.compute(board, now)
+    """The compacted bundle as plain text, footer included.
+
+    Exceptions are ALWAYS computed live from the board, never read back from the
+    board's own `exceptions` key. That key is a snapshot a run wrote for external
+    readers and for audit; it is provenance, not a cache. Preferring it here would
+    mean a lane that went overdue after the last run boots a seat with the state as
+    it was, which is the precise failure M1 exists to prevent: silence reading as
+    health. It would also freeze the byte gate against a board that has since grown.
+    A stale snapshot is therefore ignored for both the bundle text and the gate; the
+    CLI warns when it disagrees with live state, since that means the board has not
+    been re-run since it drifted.
+    """
+    found = exceptions.compute(board, now)
     found = [entry for entry in found if isinstance(entry, dict) and "id" in entry]
 
     blocks = [northstar_lines(board), exception_lines(found), lane_lines(board, now, found),
@@ -195,6 +204,16 @@ def gate_report(board, now, board_path):
     return size, BUNDLE_GATE_BYTES - size, int(round(size * 100.0 / BUNDLE_GATE_BYTES))
 
 
+def snapshot_drift(board, now):
+    """Ids the board's stored `exceptions` snapshot disagrees with live state on."""
+    stored = board.get("exceptions")
+    if not isinstance(stored, list):
+        return set(), set()
+    stored_ids = {e.get("id") for e in stored if isinstance(e, dict) and "id" in e}
+    live_ids = {e["id"] for e in exceptions.compute(board, now)}
+    return live_ids - stored_ids, stored_ids - live_ids
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("board", nargs="?", default=bl.default_board_path())
@@ -212,6 +231,15 @@ def main(argv=None):
     if now is None:
         print("FAIL: --now is not ISO-8601: %r" % (args.now,), file=sys.stderr)
         return 1
+
+    # The snapshot is never used for the bundle, but a drifted one means the board has
+    # not been re-run since its state moved — worth one line to whoever is looking.
+    appeared, cleared = snapshot_drift(board, now)
+    if appeared or cleared:
+        print("WARN: the board's stored `exceptions` snapshot is stale — %d live exception(s) "
+              "missing from it, %d listed that no longer hold. The bundle below uses live "
+              "state; run `exceptions.py --apply` to refresh the snapshot."
+              % (len(appeared), len(cleared)), file=sys.stderr)
 
     if args.size:
         size, headroom, pct = gate_report(board, now, args.board)

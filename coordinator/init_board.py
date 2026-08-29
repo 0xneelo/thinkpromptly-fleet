@@ -326,10 +326,13 @@ def main(argv=None):
                 print(refusal_text(args.out, existing), file=sys.stderr)
                 if not args.dry_run:
                     return 1
-                print("\n(--dry-run: the board it WOULD write follows. Nothing is written.)",
-                      file=sys.stderr)
-            print("RE-INIT authorised by the operator, recorded verbatim in the new board:")
-            print('  "%s"' % args.reinit_confirmed)
+                # A refused run is still refused under --dry-run; the preview is a
+                # courtesy, so nothing here may read as authorisation.
+                print("\n(--dry-run: REFUSED. The board it WOULD write follows. "
+                      "Nothing is written and nothing is authorised.)", file=sys.stderr)
+            else:
+                print("RE-INIT authorised by the operator, recorded verbatim in the new board:")
+                print('  "%s"' % args.reinit_confirmed)
         else:
             # Not initiated, but not empty either. A seeded board's PROPOSED lanes
             # are the operator's open questions; overwriting them unannounced loses

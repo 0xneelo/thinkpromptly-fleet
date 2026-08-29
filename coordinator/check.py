@@ -471,6 +471,54 @@ def call_runlog(argv):
     return code, out.getvalue()
 
 
+def selftest_snapshot_cannot_mask(now, checked):
+    """The stored `exceptions` snapshot must never stand in for live state (F1).
+
+    exceptions.py --apply writes board["exceptions"]. If the bundle read that back,
+    every boot after the last run would show the board as it was, and a lane that
+    went overdue since would be invisible to the seat booting to own it — silence
+    reading as health, which is the one thing M1 exists to prevent.
+    """
+    live = bl.load(bl.default_board_path())
+
+    # A board with real, live exceptions, carrying a snapshot that claims all-clear.
+    masked = dict(live, exceptions=[])
+    real = exceptions.compute(masked, now)
+    check(len(real) > 0, "fixture must have live exceptions to be masked, got 0")
+
+    text = bundle.build(masked, now, bl.default_board_path())
+    for entry in real:
+        check(entry["id"] in text,
+              "empty stored snapshot masked live exception %s out of the bundle" % entry["id"])
+    checked.append("bundle: an empty stored snapshot cannot mask %d live exception(s)" % len(real))
+
+    # A snapshot naming exceptions that no longer hold must not resurrect them either.
+    ghost = {"id": "EX-overdue-lane-GHOST", "kind": "overdue-lane", "subject": "GHOST",
+             "since": "2020-01-01T00:00:00Z", "age_seconds": 1, "age": "1m",
+             "detail": "a stale snapshot entry that no longer holds"}
+    stale = dict(live, exceptions=[ghost])
+    text = bundle.build(stale, now, bl.default_board_path())
+    check("EX-overdue-lane-GHOST" not in text,
+          "a stale snapshot entry was resurrected into the bundle")
+    checked.append("bundle: a stale snapshot entry is not resurrected")
+
+    # The gate must measure live state too, or the snapshot freezes the byte budget.
+    masked_size = bundle.gate_report(masked, now, bl.default_board_path())[0]
+    unstamped = dict(live)
+    unstamped.pop("exceptions", None)
+    live_size = bundle.gate_report(unstamped, now, bl.default_board_path())[0]
+    check(masked_size == live_size,
+          "the gate measured the snapshot (%d bytes) instead of live state (%d bytes)"
+          % (masked_size, live_size))
+    checked.append("bundle: the byte gate measures live state, not the snapshot")
+
+    # And the drift warning must actually notice.
+    appeared, cleared = bundle.snapshot_drift(masked, now)
+    check(len(appeared) == len(real) and not cleared,
+          "snapshot_drift missed %d live exception(s) absent from the snapshot" % len(real))
+    checked.append("bundle: snapshot drift is detected and reported")
+
+
 def selftest_runlog(root, checked):
     """(e) the ported lowcap incident, reproduced: no artefact, no counter."""
     inbox = os.path.join(root, "inbox")
@@ -584,6 +632,7 @@ def selftest():
         selftest_lane_cap(checked)
         selftest_policy_and_queue(checked)
         selftest_bundle(now, checked)
+        selftest_snapshot_cannot_mask(now, checked)
         selftest_runlog(root, checked)
         selftest_deadman(now, checked)
     except SelftestFailure as exc:

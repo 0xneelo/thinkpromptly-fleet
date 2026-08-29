@@ -344,3 +344,31 @@ this file is only worth anything if it is what the commands actually print.
 - `coordinator/board.json` shows as modified in this worktree from another builder's concurrent
   M1 work (the `policy` block, the queue-item deadlines). No run in this transcript wrote to it:
   every run against it used `--dry-run`, and the one without `--replace-proposed` was refused.
+
+### 1c. A refused run under `--dry-run` (defect F2, fixed)
+
+A refused run stays refused under `--dry-run`. The preview is a courtesy, so nothing it
+prints may read as authorisation — before the fix this path fell through and printed
+`RE-INIT authorised by the operator ... "None"` on stdout, which is exactly the sentence a
+reader should never see without the operator having said it.
+
+```console
+$ python3 coordinator/init_board.py --answers $T/answers.json --out $T/initiated.json --dry-run
+REFUSED: /tmp/claude-1000/f2/board.json is already initiated.
+  northstar.ruling_id = 'R-SAMPLE-1'
+  northstar.seed      = None
+DRY RUN: nothing written to /tmp/claude-1000/f2/board.json
+...
+# stdout carries the board it WOULD write, and nothing else:
+$ python3 coordinator/init_board.py ... --dry-run 2>/dev/null | grep -c "RE-INIT authorised"
+0
+```
+
+Exit code is 0 under `--dry-run` (the preview ran) and **1** without it (the run is refused):
+
+```console
+$ python3 coordinator/init_board.py --answers $T/answers.json --out $T/initiated.json; echo "exit=$?"
+REFUSED: ... is already initiated.
+...
+exit=1                 # and the board on disk is byte-identical afterwards
+```
