@@ -6,6 +6,7 @@
     "start": "node server.js",
     "build:claude-bridge": "sh scripts/build-claude-bridge.sh",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true",
+    "pretest": "node scripts/check-deps.js",
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "dependencies": {
