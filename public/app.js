@@ -28,6 +28,7 @@ const busEl = document.getElementById('bus');
 const fleetRows = document.getElementById('fleet-rows');
 const orgEl = document.getElementById('orgchart');
 const orgTreeEl = document.getElementById('org-tree');
+const orgUnattachedEl = document.getElementById('org-unattached');
 const orgStatusEl = document.getElementById('org-status');
 const orgSourceEl = document.getElementById('org-source');
 const themeToggle = document.getElementById('theme-toggle');
@@ -249,7 +250,25 @@ function tickOrgTimes() {
   }
 }
 
-function orgSessionCard(row) {
+function orgNodeCard(node) {
+  if (node.type === 'seat-vacant') {
+    const seat = node.seat;
+    const vacant = el('article', 'org-node org-node-vacant');
+    const badge = el('div', 'org-seat-badge');
+    badge.append(
+      el('span', 'org-seat-mark', seat.seat === 'coordinator' ? 'C' : 'O'),
+      el('strong', null, seat.seat),
+      el('span', 'org-session-name mono', seat.owner_host + ' / ' + seat.owner_name)
+    );
+    // A live /api/seats row carries no epoch; only the fixture does.
+    if (seat.epoch != null) badge.append(el('span', 'org-seat-epoch', '#' + seat.epoch));
+    badge.append(orgTime('expiry', seat.expires_at));
+    const why = node.conflict ? 'Owner row already holds another seat' : 'No current owner row';
+    vacant.append(badge, el('div', 'org-empty', why));
+    return vacant;
+  }
+
+  const row = node.row;
   const state = FleetOrgChart.stateOf(row);
   const card = el(
     'article',
@@ -286,7 +305,7 @@ function orgSessionCard(row) {
   for (const [label, value] of [
     ['epoch', row.epoch == null ? 'legacy' : '#' + row.epoch],
     ['lease', row.lease_state || (row.live ? 'tmux live' : 'unleased')],
-    ['lease age', orgTime('age', row)],
+    ['age', orgTime('age', row)],
     ['expires', orgTime('expiry', row.expires_at)],
   ]) {
     const dd = el('dd');
@@ -296,60 +315,79 @@ function orgSessionCard(row) {
   }
   card.setAttribute('aria-label', (row.worker || row.name) + ', ' + state);
   card.append(title, identity, work, facts);
+
+  // The seat is a badge on its owner's own node: seats never get a node of their own.
+  if (node.seat) {
+    card.classList.add('has-seat');
+    const badge = el('div', 'org-seat-badge');
+    badge.append(
+      el('span', 'org-seat-mark', node.seat.seat === 'coordinator' ? 'C' : 'O'),
+      el('strong', null, node.seat.seat)
+    );
+    if (node.seat.epoch != null) badge.append(el('span', 'org-seat-epoch', '#' + node.seat.epoch));
+    badge.append(orgTime('expiry', node.seat.expires_at));
+    card.prepend(badge);
+  }
   return card;
 }
 
-function orgBranch(node) {
-  const item = el('li', 'org-item');
-  item.append(orgSessionCard(node.row));
+function orgTreeNode(node) {
+  const cell = el('li', 'org-cell');
+  const wrap = el('div', 'org-node-wrap');
+  wrap.append(orgNodeCard(node));
+  cell.append(wrap);
   if (node.children.length) {
-    const list = el('ul', 'org-branch');
-    for (const child of node.children) list.append(orgBranch(child));
-    item.append(list);
+    const level = el('ul', 'org-level');
+    for (const child of node.children) level.append(orgTreeNode(child));
+    cell.append(level);
   }
-  return item;
+  return cell;
 }
 
-function orgRoot(root) {
-  const section = el('section', 'org-root org-root-' + root.type);
-  const heading = el('div', root.type === 'seat' ? 'org-seat' : 'org-host');
-  if (root.type === 'seat') {
-    heading.append(
-      el('span', 'org-seat-mark', root.row.seat === 'coordinator' ? 'C' : 'O'),
-      el('strong', null, root.row.seat),
-      el('span', 'org-seat-owner mono', root.row.owner_host + ' / ' + root.row.owner_name),
-      el('span', 'org-seat-epoch', 'seat epoch #' + root.row.epoch),
-      orgTime('expiry', root.row.expires_at)
-    );
-  } else {
-    heading.append(
-      el('span', 'org-host-mark', '↳'),
-      el('strong', null, root.label),
-      el('span', 'muted', 'unattached sessions')
-    );
-  }
-  section.append(heading);
-  if (root.children.length) {
-    const list = el('ul', 'org-branch org-root-branch');
-    for (const child of root.children) list.append(orgBranch(child));
-    section.append(list);
-  } else {
-    section.append(el('div', 'org-empty', 'No current owner row'));
-  }
-  return section;
+function orgRootTree(root) {
+  const level = el('ul', 'org-level org-level-root');
+  level.append(orgTreeNode(root));
+  return level;
 }
+
+// An unattached node keeps its own children (its parent row is missing, not its subtree),
+// so the strip counts every session it shows, not just its entries.
+const orgSubtreeCount = (node) =>
+  node.children.reduce((total, child) => total + orgSubtreeCount(child), 1);
 
 function renderOrg(data) {
-  const tree = FleetOrgChart.buildTree(data.sessions, data.seats);
+  const { roots, unattached } = FleetOrgChart.buildTree(data.sessions, data.seats);
   orgTicks = [];
   orgTreeEl.replaceChildren();
-  for (const root of tree) orgTreeEl.append(orgRoot(root));
-  if (!tree.length) orgTreeEl.append(el('div', 'org-empty-state', 'No seats or sessions to map.'));
+  orgUnattachedEl.replaceChildren();
+
+  const forest = el('div', 'org-forest');
+  for (const root of roots) forest.append(orgRootTree(root));
+  orgTreeEl.append(forest);
+  if (!roots.length && !unattached.length) {
+    orgTreeEl.append(el('div', 'org-empty-state', 'No seats or sessions to map.'));
+  }
+
+  const unattachedCount = unattached.reduce((total, node) => total + orgSubtreeCount(node), 0);
+  if (unattached.length) {
+    const strip = el('details', 'org-unattached');
+    const summary = el('summary');
+    summary.append(
+      el('span', null, 'Unattached sessions'),
+      el('span', 'org-unattached-count', String(unattachedCount)),
+      el('span', 'muted', 'no parent row in the fleet')
+    );
+    const list = el('div', 'org-unattached-list');
+    // Each entry renders as its own little tree: a missing parent must not hide its children.
+    for (const node of unattached) list.append(orgRootTree(node));
+    strip.append(summary, list);
+    orgUnattachedEl.append(strip);
+  }
+
   orgSourceEl.textContent = data.fixture ? 'M11 fixture' : 'live API';
   orgSourceEl.className = 'org-source ' + (data.fixture ? 'fixture' : 'live');
-  const orphanCount = tree.filter((node) => node.type === 'host').reduce((n, node) => n + node.children.length, 0);
   const notes = [data.sessions.length + ' sessions', data.seats.length + ' seats'];
-  if (orphanCount) notes.push(orphanCount + ' unattached');
+  if (unattachedCount) notes.push(unattachedCount + ' unattached');
   if (data.errors.length) notes.push(data.errors.length + ' host errors');
   orgStatusEl.className = 'org-status' + (data.errors.length ? ' has-error' : '');
   orgStatusEl.textContent = notes.join(' · ');
@@ -366,6 +404,8 @@ async function loadOrg() {
   } catch (error) {
     if (loadId !== orgLoadId) return;
     orgTreeEl.replaceChildren();
+    orgUnattachedEl.replaceChildren();
+    orgTicks = []; // otherwise the ticker keeps writing into the last render's detached nodes
     orgSourceEl.textContent = 'integration pending';
     orgSourceEl.className = 'org-source pending';
     orgStatusEl.className = 'org-status has-error';
