@@ -217,3 +217,17 @@ sh ~/.claude/session-kind/mark.sh --clear
   command that had already `cd`-ed to the repo root, so it cleared nothing and reported success —
   the number closed while the badge stayed. Run it alone, from the badged directory, and verify
   with `mark.sh --list` before trusting a close.
+
+## Addendum 3 (2026-08-30T15:5xZ) — final snapshot at seat close
+
+§2's train/cert values are older than this line; these supersede them (and both remain
+verify-don't-trust — the commands in §2 stand):
+
+- `origin/main` tip at close: `fe49eb3` (this doc, reachable from main — the index row naming
+  `21fcf07` is the doc's first landing; `fe49eb3` is current).
+- Deck: `/api/health` 200. Train: OPEN, `expiresAt 1788133484288`, deck and broker (`:3132`)
+  answering identically — isolation holding.
+- Deploy cert: re-minted, Valid **2026-08-30T18:43:00 → 2026-08-31T02:44:33** local.
+- Badge: cleared at close from inside the worktree (see the Addendum-2 scar). Seat number 12
+  already closed. Successor claims its own via `mark.sh --orchestrator "<topic>"`.
+- Nothing running: no watchers, no lanes, no background work. Zero `FD-*` sessions on the box.
