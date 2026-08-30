@@ -165,3 +165,55 @@ claim-per-write, this is by design). Trains/certs: see §2 expiries.
 ## Addendum (2026-08-30T10:47Z) — landing correction
 
 Supersedes: the header line "Landing commit … 031a703-amended". Actual landing commit of this doc on origin/main: `21fcf07` (verified `git merge-base --is-ancestor`). This addendum lands in a further commit; the INDEX row below it carries the final pointer.
+
+## Addendum 2 (2026-08-30T13:15Z) — three inbound peer handoffs after the freeze
+
+Supersedes nothing above; ADDS items. Three peer sessions closed into the frozen O12 seat.
+O12 verified every claim, recorded and preserved, and did NOT weave (O24 scar: a frozen
+predecessor must not execute the successor's chain). All four items carry Linear IDs.
+
+| inbound | verdict | routed to |
+|---|---|---|
+| `/operator-gone` skill | **no-op weave, confirmed**: 0 commits ahead of main, branch not on origin, artifact at `~/.claude/skills/operator-gone/` which is not a git repo | **XYZ-1895** (operator:decision — vendor into git vs scp per box; O12 recommends vendoring) |
+| `/coordinator-inbox` skill | real, **local-only commit `c0bbb4b`, no upstream** → O12 **pushed the branch to origin** so it cannot be lost; untested end-to-end, 2 open design questions | **XYZ-1894** |
+| train-broker lifecycle logging | real, pushed `95c3e03`, 1 file, not on main; operator's "XYZ-1827" routing was a mislabel — parent is XYZ-1854 | **XYZ-1897** (carries the `launchctl kickstart` between-trains caveat) |
+| Mac lacks `127.0.0.2` loopback alias | **verified by O12** (`ifconfig lo0 | grep -c 127.0.0.2` → 0) — deterministic, not flakiness: every `startServer()` burns a 15s reject, leaks orphaned servers | **XYZ-1896** (operator:gate, needs sudo) + design call |
+
+Corroboration worth having: that third peer independently confirmed the train cutover works —
+broker up continuously since 2026-08-29 22:51, the 23:41 train survived the 23:35 restart. The
+train the operator "lost" was pre-cutover code dying correctly. Forensic trick recorded in memory
+`gittrain-broker-cutover`: `ps ax -o pid,lstart,ppid,command | grep caffeinate` — each train
+spawns a detached `caffeinate`; ppid = broker (survivable) vs ppid 1 (orphan of a dead
+in-process deck).
+
+### New findings that change §6 and XYZ-1890
+
+- **`up.sh` is UNTRACKED in git** (`git ls-files --error-unmatch up.sh` fails; `??` in status).
+  The operator's single entry point is unversioned, and a peer's fix to its stale
+  "train dies with it" line exists only on the Mac's disk, in no diff. **XYZ-1890 M0 must first
+  decide how `up.sh` becomes versioned** — noted on that issue.
+- Orphaned `node server.js` processes: peer reaped the backlog (~46); O12 measured **4 remaining,
+  2 attributable to O12's own reviewer subagents** running the suite from this worktree. Root
+  cause is the `127.0.0.2` bind (XYZ-1896), not the reviewers.
+- Two branches now preserved on origin that were not before:
+  `claude/coordinator-insights-process-d7a9ba` (`c0bbb4b`) and, already pushed by its author,
+  `claude/gittrain-restart-interruptions-c4c351` (`95c3e03`).
+
+### Seat-ledger note (peer flagged a discrepancy — here is the truth)
+
+`number.py` shows 12 **closed** (correct). `mark.sh --list` still shows the
+`🎛 ORCHESTRATOR 12` badge on this worktree — **left armed deliberately** while the session is
+alive: the badge is what arms the no-source-write guard, and an unstamped live orchestrator is
+the more dangerous state. Clear it when the tab actually closes, **from inside the worktree**:
+
+```
+cd /Users/misterislez/remote-system/.claude/worktrees/upbeat-stonebraker-b9e2e7
+sh ~/.claude/session-kind/mark.sh --clear
+```
+
+### Scar (append to §10)
+
+- **`mark.sh --clear` is cwd-sensitive and fails silently.** O12's close ran it inside a compound
+  command that had already `cd`-ed to the repo root, so it cleared nothing and reported success —
+  the number closed while the badge stayed. Run it alone, from the badged directory, and verify
+  with `mark.sh --list` before trusting a close.
