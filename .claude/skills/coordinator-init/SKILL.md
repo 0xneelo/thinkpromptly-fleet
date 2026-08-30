@@ -139,8 +139,10 @@ accept or override**, one at a time:
 
 ## 2. Write the answers file
 
-Everything collected, and nothing else, into a JSON answers file (keep it out of the repo —
-`/tmp` is fine; the board is the record):
+Everything collected, and nothing else, into `coordinator/init-draft.json`, committed as
+answers accumulate (operator ruling D-7, 2026-08-29: coordinator context is stored
+mid-transit — never only in chat or /tmp). Mark it loudly as a non-binding draft: it seeds
+nothing, no run reads it, and the initiation commit deletes it — the board is the record:
 
 ```json
 {
@@ -160,8 +162,9 @@ word is wrong, it is their word that replaces it, not yours.
 ## 3. Initiate, validate, show, stop
 
 ```bash
-python3 coordinator/init_board.py --answers /tmp/coordinator-answers.json --out coordinator/board.json --dry-run
-python3 coordinator/init_board.py --answers /tmp/coordinator-answers.json --out coordinator/board.json
+python3 coordinator/init_board.py --answers coordinator/init-draft.json --out coordinator/board.json --dry-run
+python3 coordinator/init_board.py --answers coordinator/init-draft.json --out coordinator/board.json
+git rm coordinator/init-draft.json   # the board is the record; the draft dies in the initiation commit
 python3 coordinator/check.py
 ```
 
