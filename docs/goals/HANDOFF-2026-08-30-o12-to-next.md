@@ -161,3 +161,7 @@ claim-per-write, this is by design). Trains/certs: see §2 expiries.
 - **Deregistration ≠ lease release** (by contract, no release route) — mass cleanup creates
   guard-tripping suspects; drain must be deck-side and epoch-fenced (XYZ-1890).
 - Timezone traps thrice in one diagnosis: Mac +03, box +02, logs Z. Anchor timelines on Z only.
+
+## Addendum (2026-08-30T10:47Z) — landing correction
+
+Supersedes: the header line "Landing commit … 031a703-amended". Actual landing commit of this doc on origin/main: `21fcf07` (verified `git merge-base --is-ancestor`). This addendum lands in a further commit; the INDEX row below it carries the final pointer.
