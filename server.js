@@ -503,6 +503,10 @@ function busAuthorized(req) {
   return supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
 }
 
+// The two routes busAuthorized() owns. Named once so the S3 exemption in tailnetHandler() and
+// the routes it exempts cannot drift apart.
+const BUS_ROUTES = new Set(['/api/messages', '/api/messages/retry']);
+
 // Quote-free rule: `ssh german-box <cmd>` traverses zsh -> Windows CMD -> wsl -> bash.
 // Nested quotes are mangled at some layer and there is no reliable escaping, so every
 // remote command string must contain ZERO quote characters. Session names are the only
@@ -2085,7 +2089,14 @@ async function tailnetHandler(req, res) {
   const p = url.pathname;
   // S3: every write that arrives over tailscale carries the shared key. Reads keep their own
   // gates — /api/ghtoken is still fenced by whether a train is running at all.
-  if (req.method === 'POST' && !tailnetAuthed(req))
+  //
+  // XYZ-1888: the bus routes are the single exemption. They carry the deck's own BUS_TOKEN in
+  // this same `authorization: Bearer ...` header, so asking them for the tailnet key as well
+  // asks one header to equal two secrets — with the key armed, a box worker's reply could
+  // satisfy neither gate and the worker->deck half of the bus was structurally dead. The bus
+  // token is an equivalent-strength shared secret and busAuthorized() below still gates both
+  // routes unconditionally, so this frees the header, never the authority.
+  if (req.method === 'POST' && !BUS_ROUTES.has(p) && !tailnetAuthed(req))
     return send(res, 401, 'text/plain', 'unauthorized');
   try {
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, true);
@@ -2097,7 +2108,7 @@ async function tailnetHandler(req, res) {
       return await coordinatorRoute(req, res, p, { send, json, body, allowedOrigins: ALLOWED_ORIGINS });
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     if (p === '/api/credits') return await creditsRoute(req, res);
-    if ((p === '/api/messages' || p === '/api/messages/retry') && req.method === 'POST') {
+    if (BUS_ROUTES.has(p) && req.method === 'POST') {
       if (!busAuthorized(req)) return json(res, { ok: false, error: 'invalid message bus token' }, 401);
       return await messageRoute(req, res, p, url);
     }
