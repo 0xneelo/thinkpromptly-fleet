@@ -4,6 +4,12 @@
     {
       "name": "fleetdeck",
       "url": "http://localhost:3131"
+    },
+    {
+      "name": "fleetdeck-worktree",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["PORT=3135", "node", "server.js"],
+      "port": 3135
     }
   ]
 }

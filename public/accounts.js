@@ -1,8 +1,18 @@
 // Labels and account identity all come from the API (credits-accounts.json is the
 // operator's copy); this page renders whatever it is handed, most constrained first.
-const WIN_LABEL = { five_hour: '5 hour', seven_day: '7 day', extra: 'extra usage', weekly: 'weekly', secondary: 'session' };
+const WIN_LABEL = { five_hour: '5-hour limit', seven_day: 'Weekly · all models', extra: 'extra usage', weekly: 'weekly', secondary: 'session' };
 // Claude's own windows lead; anything model-specific follows in reported order.
 const WIN_ORDER = ['five_hour', 'seven_day', 'extra'];
+// A model-scoped weekly is named after its model, so its label is built, not looked up,
+// and it sits with the weekly it narrows rather than after the paid pool.
+const winLabel = (n) => {
+  if (WIN_LABEL[n]) return WIN_LABEL[n];
+  const m = /^seven_day_(.+)$/.exec(n);
+  if (!m) return n.replace(/_/g, ' ');
+  const t = m[1].replace(/_/g, ' ');
+  return 'Weekly · ' + t.charAt(0).toUpperCase() + t.slice(1);
+};
+const winRank = (n) => (/^seven_day_./.test(n) ? 2.5 : WIN_ORDER.indexOf(n) + 1 || 99);
 // What each row's numbers actually are, so a stale snapshot is never read as live usage.
 const SOURCE = { oauth: 'live', desktop: 'desktop snapshot', push: 'push', codex: 'live' };
 // The plan behind the windows. An unknown tier shows verbatim rather than as nothing.
@@ -42,18 +52,27 @@ function ago(epoch) {
   };
 }
 
-function until(epoch) {
+// The desktop app's own wording: the 5-hour window counts down, a weekly names the day and
+// time it comes back — days out, a countdown in hours is not what anyone plans around.
+const RESET_FMT = { weekday: 'short', hour: 'numeric', minute: '2-digit' };
+function until(name, epoch) {
   if (!epoch) return '';
+  if (/^seven_day/.test(name)) return 'resets ' + new Date(epoch * 1000).toLocaleString([], RESET_FMT).replace(', ', ' ');
   const m = Math.round((epoch * 1000 - Date.now()) / 60000);
   if (m <= 0) return 'resets now';
-  return 'resets in ' + (m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + (m % 60) + 'm');
+  return 'resets in ' + (m < 60 ? m + ' min' : Math.floor(m / 60) + ' hr ' + (m % 60) + ' min');
 }
 
 const level = (pct) => (pct > 90 ? 'red' : pct >= 70 ? 'amber' : '');
 
 // The windows that say whether this account is about to hit a wall — the rest are either
 // paid credits or model-specific extras nobody plans around.
-const MAIN = { claude: (r) => [(r.windows || {}).five_hour, (r.windows || {}).seven_day], codex: (r) => [r.weekly, r.secondary] };
+// Every 5-hour and weekly window counts, model-scoped ones included: a scoped weekly is a
+// wall too, and the pill has to go amber before it is hit.
+const MAIN = {
+  claude: (r) => Object.entries(r.windows || {}).filter(([n]) => /^(five_hour|seven_day)/.test(n)).map(([, w]) => w),
+  codex: (r) => [r.weekly, r.secondary],
+};
 const worst = (r) => {
   const p = (MAIN[r.kind] || MAIN.claude)(r).filter((w) => w && typeof w.pct === 'number').map((w) => w.pct);
   return p.length ? Math.max(...p) : null;
@@ -67,10 +86,10 @@ function bar(name, w) {
   fill.style.width = Math.max(0, Math.min(100, w.pct || 0)) + '%';
   track.append(fill);
   row.append(
-    el('span', 'muted', WIN_LABEL[name] || name.replace(/_/g, ' ')),
+    el('span', 'muted', winLabel(name)),
     track,
     el('span', 'pct', typeof w.pct === 'number' ? w.pct + '%' : '—'),
-    el('span', 'muted', until(w.resets_at))
+    el('span', 'muted', until(name, w.resets_at))
   );
   return row;
 }
@@ -80,7 +99,7 @@ function bar(name, w) {
 function spark(history) {
   const pts = history.filter((s) => typeof s.sd === 'number');
   const row = el('div', 'bar-row');
-  row.append(el('span', 'muted', '7 day trend'));
+  row.append(el('span', 'muted', 'weekly trend'));
   if (pts.length < 2) {
     row.append(el('span', 'muted', 'no history yet'), el('span', 'pct', ''), el('span', 'muted', ''));
     return row;
@@ -114,8 +133,8 @@ function card(r) {
   const live = r.source && r.state === 'ok';
   head.append(
     pill(live ? 'green' : r.source ? 'amber' : '', r.kind),
-    el('span', 'who', r.label || r.email || r.id),
-    el('span', 'muted', r.email || '')
+    el('span', 'who', r.email || r.label || r.id),
+    el('span', 'muted', r.email ? r.label || '' : '')
   );
   // The uuid the desktop app and the accounts file both key on — eight characters is
   // enough to match a row against the file by eye.
@@ -160,9 +179,7 @@ function card(r) {
     );
   }
   if (r.kind === 'claude') {
-    const names = Object.keys(r.windows || {}).sort(
-      (a, b) => (WIN_ORDER.indexOf(a) + 1 || 99) - (WIN_ORDER.indexOf(b) + 1 || 99)
-    );
+    const names = Object.keys(r.windows || {}).sort((a, b) => winRank(a) - winRank(b));
     if (!names.length) acct.append(el('div', 'muted', 'no usage windows reported'));
     for (const n of names) acct.append(bar(n, r.windows[n]));
     // The paid pool in money rather than percent — what "out of credits" actually means.

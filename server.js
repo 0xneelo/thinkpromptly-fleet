@@ -1181,6 +1181,20 @@ function claudeRow(c) {
     if (!/^(five_hour|seven_day)(_|$)/.test(name) && !v.pct && v.resets_at === null) continue;
     windows[String(name).slice(0, 40)] = v;
   }
+  // The per-model weekly lives only in the flat `limits` array: its top-level
+  // seven_day_<model> key comes back null. Entries are {kind, group, percent, resets_at,
+  // scope:{model:{display_name}}}, so the window is named after the model it narrows.
+  for (const e of Array.isArray(limits.limits) ? limits.limits : []) {
+    if (!e || typeof e !== 'object' || e.kind !== 'weekly_scoped') continue;
+    const model = e.scope && e.scope.model && e.scope.model.display_name;
+    if (typeof model !== 'string' || !model) continue;
+    const name = ('seven_day_' + model.toLowerCase().replace(/[^a-z0-9]+/g, '_')).slice(0, 40);
+    // Defer only to an entry that carries data — a top-level echo of all-nulls (or an
+    // earlier same-slug model) must not block the array's real percent/reset.
+    if (windows[name] && windows[name].pct != null) continue;
+    const v = win({ pct: e.percent, resets_at: e.resets_at });
+    if (v) windows[name] = v;
+  }
   // extra_usage is the paid-credit pool: utilization is already 0-100, but the amounts are
   // in minor units — decimal_places 2 means 4142 is 41.42 EUR against a 40.00 limit, which
   // is why that pool reads as spent. Scaling is what makes used/limit agree with utilization.
@@ -1362,7 +1376,8 @@ function agedOut(r, now) {
   const windows = {};
   let any = false;
   for (const [n, w] of Object.entries(r.windows || {})) {
-    if (age > (WINDOW_AGE[n] ?? 7 * 86400)) {
+    // A model-scoped weekly ages out with the weekly window it narrows.
+    if (age > (WINDOW_AGE[n.startsWith('seven_day') ? 'seven_day' : n] ?? 7 * 86400)) {
       windows[n] = { ...w, pct: null, stale: true };
       any = true;
     } else windows[n] = w;
