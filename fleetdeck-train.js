@@ -77,8 +77,11 @@ function ghConfig() {
 
 let ghTrain = null; // { pem, expiresAt, timer, caffeinate } while a train is running
 
-function endTrain() {
+function endTrain(reason) {
   if (!ghTrain) return;
+  // Lifecycle only — never the PEM, a token or a JWT. Without these lines the broker's log
+  // cannot answer "did the window survive that restart", which is the question it exists for.
+  console.log(new Date().toISOString() + ' train ended: ' + (reason || 'unspecified'));
   clearTimeout(ghTrain.timer);
   try {
     if (ghTrain.caffeinate) ghTrain.caffeinate.kill();
@@ -109,7 +112,7 @@ async function startTrain(ttl) {
     };
   if (!stdout.includes('PRIVATE KEY'))
     return { code: 502, body: { ok: false, error: '1Password document ' + keyOp + ' is not a PEM private key' } };
-  endTrain(); // a second start replaces the running train rather than stacking timers
+  endTrain('replaced by a new train'); // a second start replaces the running train rather than stacking timers
   const expiresAt = Date.now() + TTL_MS[ttl];
   // Keeps the Mac from idle-sleeping while a train is active, so a box worker can still
   // reach the broker. Lid-close on battery still sleeps it — documented limitation.
@@ -122,7 +125,8 @@ async function startTrain(ttl) {
     caffeinate.on('error', (e) => console.error('caffeinate failed:', e.message)); // never kill the broker over it
     caffeinate.unref();
   }
-  ghTrain = { pem: stdout, expiresAt, timer: setTimeout(endTrain, TTL_MS[ttl]), caffeinate };
+  ghTrain = { pem: stdout, expiresAt, timer: setTimeout(() => endTrain('ttl expired'), TTL_MS[ttl]), caffeinate };
+  console.log(new Date().toISOString() + ' train started: ttl=' + ttl + ' until ' + new Date(expiresAt).toISOString());
   return { code: 200, body: { ok: true, expiresAt } };
 }
 
@@ -217,7 +221,7 @@ async function handler(req, res) {
     }
     if (p === '/api/ghtrain/end') {
       if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
-      endTrain();
+      endTrain('ended by operator');
       return json(res, { ok: true });
     }
   } catch (e) {
@@ -236,7 +240,7 @@ if (!NO_LISTEN)
 for (const sig of ['SIGTERM', 'SIGINT'])
   process.on(sig, () => {
     // Clearing the window is synchronous and happens first, so it cannot be lost.
-    endTrain();
+    endTrain('broker stopping (' + sig + ')');
     // process.exit() truncates a pending stdout/stderr write, and under launchd both are
     // redirected to a log file rather than a TTY — so the last diagnostic line before a
     // stop would be the one that goes missing. Close the listener and let the loop drain,
