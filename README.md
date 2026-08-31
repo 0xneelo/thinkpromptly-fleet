@@ -76,7 +76,10 @@ covers accounts with no CLI login), and `POST /api/credits` for machines outside
 locally and emits only percentages, amounts and reset stamps. The desktop app's
 `config.json` holds a token cache and is never read.
 
-**Usage history.** Each account's sparkline is the desktop app's own 7-day series. Every
+**Usage history.** Each account's sparkline tracks the same weekly the bar quotes: once an
+org has two or more live OAuth samples (one written per collect), only those are served;
+accounts with no live token fall back to the desktop app's own 7-day series. The two are
+never mixed in one line — the desktop app samples a different weekly bucket. Every
 machine sends at most 300 samples per org and the deck stores at most that many per org per
 report, from at most 25 orgs — the limit is enforced at the writer, not trusted from the
 sender, because `/api/credits` accepts pushes from machines off the fleet. Samples merge

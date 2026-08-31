@@ -1032,6 +1032,14 @@ db.exec(
 db.exec(
   `CREATE TABLE IF NOT EXISTS credits_history (org TEXT, t INTEGER, fh REAL, sd REAL, xu REAL, PRIMARY KEY (org, t))`
 );
+// Which weekly a sample counts. Added after the table shipped, so the same idiom as the
+// sessions columns above: sqlite has no IF NOT EXISTS here. Defaulted, so every row already
+// stored reads as what it is — a desktop sample.
+try {
+  db.exec("ALTER TABLE credits_history ADD COLUMN source TEXT DEFAULT 'desktop'");
+} catch (e) {
+  if (!/duplicate column/i.test(e.message)) throw e;
+}
 
 const CREDITS_SH = path.join(__dirname, 'box', 'fleet-credits.sh');
 // Quote-free, argument-free: the same remote-command rule as fleet-lastmsg.sh. No wsl
@@ -1078,9 +1086,9 @@ const creditsUpsert = db.prepare(
 // An org row is provisional: once its email is known the account merges under that address.
 const creditsDropId = db.prepare('DELETE FROM credits WHERE kind = ? AND id = ?');
 const creditsGetId = db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?');
-const historyInsert = db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu) VALUES (?, ?, ?, ?, ?)');
+const historyInsert = db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu, source) VALUES (?, ?, ?, ?, ?, ?)');
 const historyPrune = db.prepare('DELETE FROM credits_history WHERE t < ?');
-const historyGet = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t');
+const historyGet = db.prepare('SELECT t, fh, sd, xu, source FROM credits_history WHERE org = ? ORDER BY t');
 const HISTORY_KEEP = 60 * 86400; // a trend older than two months answers no question anyone asks
 const HISTORY_POINTS = 120; // enough shape for a sparkline; the rest is payload weight
 
@@ -1116,7 +1124,7 @@ function creditsHistoryWrite(d) {
     if (n === 0 && perOrg.size >= HISTORY_ORGS) continue;
     if (n >= HISTORY_PER_ORG) continue;
     perOrg.set(org, n + 1);
-    historyInsert.run(org, t, pctOf(s.fh), pctOf(s.sd), pctOf(s.xu));
+    historyInsert.run(org, t, pctOf(s.fh), pctOf(s.sd), pctOf(s.xu), 'desktop');
   }
   // Pruning used to ride along with a collect, which a push never triggers: a deck nobody
   // opens would then keep every sample it was ever sent. Throttled, so a burst prunes once.
@@ -1347,6 +1355,7 @@ function creditsWrite(rows) {
   // A collect carries no pushed rows, so without comparing against what is already stored
   // a local snapshot would clobber a better report an off-fleet machine pushed earlier.
   let written = 0;
+  let sampled = 0; // the same per-report bound as creditsHistoryWrite: one sample, HISTORY_ORGS orgs
   for (const [k, r] of best) {
     const prev = creditsGetId.get(r.kind, r.id);
     if (prev && !beats(r, safeParse(prev.payload))) continue;
@@ -1358,6 +1367,17 @@ function creditsWrite(rows) {
     creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify({ ...r, seen }), r.updated_at);
     if (r.email && r.org) creditsDropId.run(r.kind, 'org:' + r.org);
     written++;
+    // The live read is its own trend. The desktop app counts a different seven-day bucket,
+    // so plotting its samples under a bar that quotes the endpoint reads as a contradiction:
+    // an account at 5% this week showed a line ending at 61%. Only a live weekly is sampled
+    // here — a pushed row is 'push', not 'oauth', so an off-fleet caller cannot seed this.
+    // windows_from names where borrowed percentages came from: an oauth winner carrying
+    // borrowed desktop windows must not stamp that desktop bucket into the oauth series.
+    const w = (r.windows_from || r.source) === 'oauth' && (r.windows || {}).seven_day;
+    if (r.kind === 'claude' && r.org && w && typeof w.pct === 'number' && sampled < HISTORY_ORGS) {
+      sampled++;
+      historyInsert.run(r.org, r.updated_at, null, w.pct, null, 'oauth');
+    }
   }
   return written;
 }
@@ -1413,11 +1433,21 @@ function creditsRows() {
   // next page load rather than only after the row is collected again.
   const byEmail = new Map(Object.values(cfg.orgs).map((m) => [String(m.email || '').toLowerCase(), m.label]));
   const at = (r) => (order.indexOf(r.kind + '\0' + r.id) + 1 || 999) - 1;
-  // Only Claude accounts have a trend: the desktop app is what samples them, and it knows
-  // nothing about Codex.
+  // Only Claude accounts have a trend: nothing samples Codex. One series, never a mix — the
+  // two sources count different weekly buckets, so a line that switches between them
+  // jump-cuts. A live account's own samples take over as soon as they have a shape; an
+  // account with no login on the fleet keeps the desktop trend, shallow live one or not.
   for (const r of rows) {
     if (r.kind !== 'claude' || !r.org) continue;
-    const h = thin(historyGet.all(r.org), HISTORY_POINTS);
+    const all = historyGet.all(r.org);
+    const live = all.filter((s) => s.source === 'oauth');
+    const desktop = all.filter((s) => s.source !== 'oauth');
+    // source is how the series is chosen, not part of the sample the page plots. A lone
+    // live point with no desktop history still serves, so the row degrades to the
+    // sparkline's own "no history yet" instead of vanishing.
+    const h = thin(live.length >= 2 || !desktop.length ? live : desktop, HISTORY_POINTS).map(
+      ({ source, ...s }) => s
+    );
     if (h.length) r.history = h;
   }
   for (const r of rows)

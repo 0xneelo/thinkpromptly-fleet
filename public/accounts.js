@@ -94,7 +94,8 @@ function bar(name, w) {
   return row;
 }
 
-// The 7-day series the Claude desktop app has been sampling. Inline SVG, no library: a
+// The 7-day series, from whichever source the server chose — the live readings once there
+// are two of them, the desktop app's samples otherwise. Inline SVG, no library: a
 // polyline over a faint area, scaled to the sampled span so gaps in sampling read as gaps.
 function spark(history) {
   const pts = history.filter((s) => typeof s.sd === 'number');
