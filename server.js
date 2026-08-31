@@ -8,7 +8,7 @@ const { DatabaseSync } = require('node:sqlite');
 const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
 const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
-const { coordinatorRoute } = require('./coordinator-api');
+const { coordinatorRoute, bootLine: coordinatorBootLine } = require('./coordinator-api');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -1973,7 +1973,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, await kill(b.host, b.name));
     }
     if (p.startsWith('/api/coordinator/'))
-      return await coordinatorRoute(req, res, p, { send, json, body, allowedOrigins: ALLOWED_ORIGINS });
+      return await coordinatorRoute(req, res, p, { send, json, body, url, allowedOrigins: ALLOWED_ORIGINS });
     // Agent-facing: a local process holds no Origin, and the train itself is the gate.
     if (p === '/api/ghtoken' && req.method === 'GET') {
       const r = await trainProxy('GET', '/api/ghtoken', undefined, req);
@@ -2133,6 +2133,10 @@ console.log(
     [IS_HOME && 'fleet', IS_MAC && 'mac', 'common'].filter(Boolean).join('+')
 );
 
+// Which boards this deck serves, if any. Serving the wrong one — the vendor's own fixture — is
+// the failure this line exists to make visible before a caller discovers it as a plausible board.
+console.log(coordinatorBootLine());
+
 if (!NO_LISTEN)
   server.listen(PORT, '127.0.0.1', () => console.log('fleetdeck http://localhost:' + PORT));
 
@@ -2169,7 +2173,7 @@ async function tailnetHandler(req, res) {
     // adds no authority: reads are open like /api/ghtoken, and the sitrep drop is a POST, so the
     // S3 gate above already asked it for the shared key. The board itself stays unwritable.
     if (p.startsWith('/api/coordinator/'))
-      return await coordinatorRoute(req, res, p, { send, json, body, allowedOrigins: ALLOWED_ORIGINS });
+      return await coordinatorRoute(req, res, p, { send, json, body, url, allowedOrigins: ALLOWED_ORIGINS });
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     if (p === '/api/credits') return await creditsRoute(req, res);
     if (BUS_ROUTES.has(p) && req.method === 'POST') {

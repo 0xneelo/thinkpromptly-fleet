@@ -1,4 +1,4 @@
-// The coordinator board over HTTP: seven read routes and one write.
+// The coordinator board over HTTP: eight read routes and one write.
 //
 // Every derived view — the bundle text, the live exceptions, the byte gate — is produced
 // by spawning the Python that already computes it. There is no JavaScript copy of any of
@@ -6,25 +6,18 @@
 // of the board is that there is one. The deck is a window onto the coordinator, not a
 // reimplementation of it.
 //
-// The write surface is deliberately one file drop into `coordinator/inbox/`. Nothing here
-// edits board.json, and nothing here commits: the board changes only through a run, which
+// The write surface is deliberately one file drop into the selected instance's `inbox/`. Nothing
+// here edits board.json, and nothing here commits: the board changes only through a run, which
 // is what makes the board's history auditable.
 
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
-// Data — board.json, the two prose files, inbox/ — is overridable so a test can point the
-// routes at a fixture directory. The Python lives with the real board and imports its
-// siblings by name, so the scripts are always resolved from the checkout and only the board
-// path travels as an argument. A fixture therefore needs a board and an inbox, nothing else.
-const COORDINATOR_DIR = process.env.FLEET_COORDINATOR_DIR || path.join(__dirname, 'coordinator');
+// The Python lives with the real board and imports its siblings by name, so the scripts are
+// always resolved from the checkout and only the board path travels as an argument. A board
+// root therefore needs a board and an inbox, nothing else.
 const SCRIPT_DIR = path.join(__dirname, 'coordinator');
-
-const BOARD = path.join(COORDINATOR_DIR, 'board.json');
-const INBOX = path.join(COORDINATOR_DIR, 'inbox');
-const NORTHSTAR = path.join(COORDINATOR_DIR, 'northstar.md');
-const DECISIONS = path.join(COORDINATOR_DIR, 'decisions-effective.md');
 // Overridable the same way FLEET_SSH_BIN is, so a test can stand in a script that fails the way a
 // missing or dying python3 does — the branch that must not answer with our argv.
 const PYTHON_BIN = process.env.FLEET_PYTHON_BIN || 'python3';
@@ -35,6 +28,169 @@ const GATE_PY = path.join(SCRIPT_DIR, 'gate.py');
 // cwd is the script dir so `import board_lib` resolves the same way it does on the CLI.
 // maxBuffer is generous: the bundle is gated at 8KB but the raw exceptions JSON is not.
 const PY_OPTS = { timeout: 15000, killSignal: 'SIGKILL', maxBuffer: 4 * 1024 * 1024, cwd: SCRIPT_DIR };
+
+// --- instances ------------------------------------------------------------
+//
+// This checkout is the coordinator VENDOR, not a coordinator instance (operator ruling: "you are
+// building the coordinator, you arent using it"). `coordinator/` here is the vendor's own frozen
+// dev fixture: it binds nothing, and a deck that served it would hand a caller a board that looks
+// real and is not. So there is no default board root any more. A deck serves the instances it was
+// given, and a deck that was given none serves no board at all — 503, never the fixture.
+//
+// An instance name arrives from the query string, so it is untrusted. It is only ever a key into
+// this map: never joined onto a path, never resolved, never turned into a directory name. That is
+// why `?instance=../../etc` needs no sanitising — it is a key that is not in the map, and the
+// answer is 404 without a single syscall.
+//
+// Selection is a query parameter rather than a path segment so every route stays the exact string
+// it already was, and every existing caller keeps working unchanged.
+
+// The same path as SCRIPT_DIR and a different fact about it: the scripts here are what the deck
+// runs, and the board here is what the deck must never serve.
+const VENDOR_DIR = path.join(__dirname, 'coordinator');
+const ALLOW_VENDOR_FIXTURE = process.env.FLEET_COORDINATOR_ALLOW_VENDOR_FIXTURE === '1';
+const LEGACY_DIR = (process.env.FLEET_COORDINATOR_DIR || '').trim();
+const DEFAULT_INSTANCE = (process.env.FLEET_COORDINATOR_DEFAULT_INSTANCE || '').trim();
+
+const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+// FLEET_COORDINATOR_INSTANCES is either the JSON itself or a path to a file holding it, told apart
+// by whether it parses. A registry that will not load leaves the deck serving no instances rather
+// than refusing to boot: this API is one surface of a process that also brokers every terminal in
+// the fleet, and a typo in one env var must not take the terminals down with it. The boot line
+// says so out loud instead.
+function loadInstances() {
+  const raw = (process.env.FLEET_COORDINATOR_INSTANCES || '').trim();
+  if (!raw) return { instances: Object.create(null), error: '' };
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    let text;
+    try {
+      text = fs.readFileSync(raw, 'utf8');
+    } catch (e) {
+      return { instances: Object.create(null), error: 'unreadable(' + e.code + ')' };
+    }
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return { instances: Object.create(null), error: 'file-is-not-JSON' };
+    }
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed))
+    return { instances: Object.create(null), error: 'not-an-object' };
+
+  // Null-prototype, and not for safety — has() already asks hasOwnProperty. On a plain `{}` the
+  // assignment `instances['__proto__'] = dir` hits Object.prototype's __proto__ accessor, which
+  // silently discards a string: the entry never becomes an own property, so the name is
+  // unreachable AND unreported. A deck that drops part of its configuration without saying so is
+  // the same class of bug as one that serves a fixture without saying so. With no prototype there
+  // is no accessor to trap it, so every key is an ordinary own property. Do not "tidy" this to {}.
+  const instances = Object.create(null);
+  const skipped = [];
+  for (const [name, dir] of Object.entries(parsed)) {
+    // A relative path resolves against whatever cwd the deck happened to start in, which is not a
+    // stable meaning for a board root. Dropped, not guessed at — and named in the boot line, so
+    // nothing is ever discarded in silence.
+    if (typeof dir === 'string' && dir && path.isAbsolute(dir)) instances[name] = dir;
+    else skipped.push(name);
+  }
+  return { instances, error: skipped.length ? 'skipped-non-absolute:' + skipped.join(',') : '' };
+}
+
+const { instances: INSTANCES, error: REGISTRY_ERROR } = loadInstances();
+const INSTANCE_NAMES = Object.keys(INSTANCES).sort();
+
+// The name resolution falls back to, or null when there is none. FLEET_COORDINATOR_DIR is the
+// unnamed single-instance form, so a deck configured that way has no default *name* even though
+// it does resolve — the two are different questions and this one answers honestly.
+function defaultName() {
+  if (LEGACY_DIR) return null;
+  if (DEFAULT_INSTANCE) return has(INSTANCES, DEFAULT_INSTANCE) ? DEFAULT_INSTANCE : null;
+  return INSTANCE_NAMES.length === 1 ? INSTANCE_NAMES[0] : null;
+}
+
+const realpath = (p) => {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+};
+
+// Real paths, not strings, so a symlink to the vendor checkout is caught too. Equality is not
+// enough on its own either: a board root *inside* coordinator/ is the same fixture wearing a
+// subdirectory.
+function isVendorFixture(dir) {
+  const real = realpath(dir);
+  const vendor = realpath(VENDOR_DIR);
+  return real === vendor || real.startsWith(vendor + path.sep);
+}
+
+// A board root's four files. Built per request, because which root is in play is a per-request
+// question now; SCRIPT_DIR deliberately is not, and still resolves from this checkout.
+const statePaths = (dir) => ({
+  dir,
+  board: path.join(dir, 'board.json'),
+  inbox: path.join(dir, 'inbox'),
+  northstar: path.join(dir, 'northstar.md'),
+  decisions: path.join(dir, 'decisions-effective.md'),
+});
+
+// Returns { st } or { error, code }. Both failure codes are non-2xx, which is what the portal's
+// documented file fallback keys on, and they are kept apart so an operator can read which one they
+// have: 404 is "the board you asked for is not there", 503 is "this deck serves no boards".
+function resolveInstance(req, deps) {
+  const url = deps.url || new URL(req.url, 'http://localhost');
+  const name = url.searchParams.get('instance');
+  let dir;
+  if (name) {
+    if (!has(INSTANCES, name)) return { code: 404, error: 'unknown coordinator instance' };
+    dir = INSTANCES[name];
+  } else if (LEGACY_DIR) {
+    dir = LEGACY_DIR;
+  } else if (DEFAULT_INSTANCE) {
+    // Named a default that is not configured: fail closed rather than silently serve some other
+    // board, which is the whole class of bug this milestone exists to close.
+    if (!has(INSTANCES, DEFAULT_INSTANCE))
+      return { code: 503, error: 'default coordinator instance is not configured' };
+    dir = INSTANCES[DEFAULT_INSTANCE];
+  } else if (INSTANCE_NAMES.length === 1) {
+    dir = INSTANCES[INSTANCE_NAMES[0]];
+  } else if (INSTANCE_NAMES.length > 1) {
+    return { code: 503, error: 'no coordinator instance selected — pass ?instance=<name>' };
+  } else {
+    return { code: 503, error: 'no coordinator instance configured' };
+  }
+
+  if (!ALLOW_VENDOR_FIXTURE && isVendorFixture(dir))
+    return {
+      code: 503,
+      error:
+        'refusing to serve the vendor fixture coordinator/ — this checkout builds the ' +
+        'coordinator, it is not a coordinator instance ' +
+        '(FLEET_COORDINATOR_ALLOW_VENDOR_FIXTURE=1 to override for local development)',
+    };
+  return { st: statePaths(dir) };
+}
+
+// Names only, never paths: this answers unauthenticated on the tailnet listener, and the paths
+// would be a map of the host's directory layout. 200 with an empty list on an unconfigured deck —
+// "what do you serve?" has an answer even when the answer is "nothing".
+const instancesRoute = (res, deps) =>
+  deps.json(res, { ok: true, instances: INSTANCE_NAMES, default: defaultName() });
+
+// One line at boot, in the style of the lifecycle and role lines: a 503 from /api/coordinator/*
+// should be explainable from the log alone.
+const bootLine = () =>
+  'coordinator: instances=' +
+  INSTANCE_NAMES.length +
+  (INSTANCE_NAMES.length ? ' (' + INSTANCE_NAMES.join(', ') + ')' : '') +
+  ' default=' +
+  (defaultName() || (LEGACY_DIR ? 'FLEET_COORDINATOR_DIR' : 'none')) +
+  (REGISTRY_ERROR ? ' registry_error=' + REGISTRY_ERROR : '') +
+  (ALLOW_VENDOR_FIXTURE ? ' vendor_fixture=allowed' : '');
 
 // Never rejects: a Python that exits non-zero is a result to inspect, not an exception.
 function run(cmd, args, opts = {}) {
@@ -49,14 +205,14 @@ function run(cmd, args, opts = {}) {
 // stderr worth relaying. Anything else is a Python traceback, which carries absolute paths and line
 // numbers of ours to a caller who has no business seeing them — a GET here is unauthenticated on
 // both listeners, so a malformed board must not turn into a map of the box.
-const why = (r) =>
+const why = (r, board) =>
   (r.stderr || '')
     .split('\n')
     .filter((line) => line.startsWith('FAIL:'))
     .join(' · ')
     // The scripts name the board by the path they were handed, which is an absolute path on this
     // box. The caller already knows which board it asked for; it does not need our layout.
-    .split(BOARD)
+    .split(board)
     .join('board.json')
     .slice(0, 200);
 
@@ -65,8 +221,8 @@ const why = (r) =>
 // the script did not manage a FAIL: line of its own — it timed out, python3 is missing, something
 // threw — the caller gets the shape of the failure and nothing else. The detail belongs in the
 // deck's own log, not in an answer to an unauthenticated GET.
-const reason = (r) =>
-  why(r) ||
+const reason = (r, board) =>
+  why(r, board) ||
   (r.err.killed ? 'timed out' : 'exited ' + (r.err.code === undefined ? 'abnormally' : r.err.code));
 
 const MARKDOWN = 'text/markdown; charset=utf-8';
@@ -89,21 +245,25 @@ function readText(res, file, type, deps) {
 // bundle.py prints a WARN to stderr when the board's stored exceptions snapshot has drifted
 // from live state. That warning is the script working correctly — the snapshot is provenance
 // and the bundle ignores it — so only a non-zero exit counts as a failure here.
-async function runPython(res, script, deps) {
-  if (!fs.existsSync(BOARD)) {
+async function runPython(res, script, st, deps) {
+  if (!fs.existsSync(st.board)) {
     deps.json(res, { ok: false, error: 'cannot read board.json' }, 404);
     return null;
   }
-  const r = await run(PYTHON_BIN, [script, BOARD], PY_OPTS);
+  const r = await run(PYTHON_BIN, [script, st.board], PY_OPTS);
   if (r.err) {
-    deps.json(res, { ok: false, error: path.basename(script) + ' failed: ' + reason(r) }, 500);
+    deps.json(
+      res,
+      { ok: false, error: path.basename(script) + ' failed: ' + reason(r, st.board) },
+      500
+    );
     return null;
   }
   return r;
 }
 
-async function pythonJson(res, script, deps) {
-  const r = await runPython(res, script, deps);
+async function pythonJson(res, script, st, deps) {
+  const r = await runPython(res, script, st, deps);
   if (!r) return;
   let parsed;
   try {
@@ -111,17 +271,17 @@ async function pythonJson(res, script, deps) {
   } catch {
     return deps.json(
       res,
-      { ok: false, error: path.basename(script) + ' did not print JSON: ' + why(r) },
+      { ok: false, error: path.basename(script) + ' did not print JSON: ' + why(r, st.board) },
       500
     );
   }
   return deps.json(res, parsed);
 }
 
-function boardRoute(res, deps) {
+function boardRoute(res, st, deps) {
   let parsed;
   try {
-    parsed = JSON.parse(fs.readFileSync(BOARD, 'utf8'));
+    parsed = JSON.parse(fs.readFileSync(st.board, 'utf8'));
   } catch (e) {
     const missing = e.code === 'ENOENT';
     return deps.json(
@@ -143,8 +303,8 @@ const INBOX_LIST_CAP = 500;
 
 // A run drains the inbox while the portal reads it, so any file named by the listing may be gone
 // by the time we stat it. That is the normal case, not an error: the file was applied.
-function inboxEntry(name) {
-  const full = path.join(INBOX, name);
+function inboxEntry(inbox, name) {
+  const full = path.join(inbox, name);
   const entry = { name, mtime: null, seat: null, lane: null, event: null };
   let head = '';
   try {
@@ -160,11 +320,11 @@ function inboxEntry(name) {
   return entry;
 }
 
-function inboxRoute(res, deps) {
+function inboxRoute(res, st, deps) {
   let names;
   try {
     names = fs
-      .readdirSync(INBOX, { withFileTypes: true })
+      .readdirSync(st.inbox, { withFileTypes: true })
       .filter((d) => d.isFile() && d.name.endsWith('.md') && d.name !== 'README.md')
       .map((d) => d.name);
   } catch {
@@ -177,7 +337,10 @@ function inboxRoute(res, deps) {
   // websockets. A healthy inbox holds a handful of files; a listing that has to page is already
   // telling the operator the thing they need to know, so cap it rather than stall the deck.
   const truncated = names.length > INBOX_LIST_CAP;
-  const pending = names.slice(0, INBOX_LIST_CAP).map(inboxEntry).filter(Boolean);
+  const pending = names
+    .slice(0, INBOX_LIST_CAP)
+    .map((n) => inboxEntry(st.inbox, n))
+    .filter(Boolean);
   pending.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : (a.mtime || '') < (b.mtime || '') ? -1 : 1));
   return deps.json(res, { ok: true, pending, total: names.length, truncated });
 }
@@ -314,7 +477,7 @@ function renderSitrep(value) {
   return out.join('\n') + '\n';
 }
 
-async function sitrepPost(req, res, deps) {
+async function sitrepPost(req, res, st, deps) {
   const { send, json, body, allowedOrigins } = deps;
   if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
   const origin = req.headers.origin;
@@ -326,7 +489,7 @@ async function sitrepPost(req, res, deps) {
   if (!checked.ok) return json(res, { ok: false, error: checked.error }, 400);
 
   const filename = sitrepFilename(checked.value);
-  const full = path.join(INBOX, filename);
+  const full = path.join(st.inbox, filename);
   try {
     // wx, so an existing file is never overwritten: the inbox is a durable record of what a
     // seat said, and a silent replacement would erase the earlier claim without a trace.
@@ -345,27 +508,54 @@ async function sitrepPost(req, res, deps) {
 
 // --- dispatch -------------------------------------------------------------
 
+// Every route that reads or writes a board, so an unresolvable instance fails the whole group
+// closed in one place while an unknown path keeps the plain 404 it always had.
+const BOARD_ROUTES = new Set([
+  '/api/coordinator/sitrep',
+  '/api/coordinator/board',
+  '/api/coordinator/northstar',
+  '/api/coordinator/decisions',
+  '/api/coordinator/inbox',
+  '/api/coordinator/bundle',
+  '/api/coordinator/exceptions',
+  '/api/coordinator/gate',
+]);
+
 async function coordinatorRoute(req, res, p, deps) {
   const { send, json } = deps;
-  if (p === '/api/coordinator/sitrep') return await sitrepPost(req, res, deps);
+  // Answerable without an instance, by design: it is the question "what do you serve?".
+  if (p === '/api/coordinator/instances')
+    return req.method === 'GET'
+      ? instancesRoute(res, deps)
+      : send(res, 405, 'text/plain', 'method not allowed');
+
+  if (!BOARD_ROUTES.has(p)) return send(res, 404, 'text/plain', 'not found');
+  // Ahead of the method check on purpose: the group fails closed as one unit, so a write to an
+  // unresolvable deck is told "this deck serves no board" (503) rather than "wrong method" (405).
+  // The 503 is the actionable half. On a deck that does resolve, the 405 below still answers.
+  const sel = resolveInstance(req, deps);
+  if (sel.error) return json(res, { ok: false, error: sel.error }, sel.code);
+  const st = sel.st;
+
+  if (p === '/api/coordinator/sitrep') return await sitrepPost(req, res, st, deps);
   // Reads are open like /api/sessions: they carry no authority and no Origin.
   if (req.method !== 'GET') return send(res, 405, 'text/plain', 'method not allowed');
 
-  if (p === '/api/coordinator/board') return boardRoute(res, deps);
-  if (p === '/api/coordinator/northstar') return readText(res, NORTHSTAR, MARKDOWN, deps);
-  if (p === '/api/coordinator/decisions') return readText(res, DECISIONS, MARKDOWN, deps);
-  if (p === '/api/coordinator/inbox') return inboxRoute(res, deps);
+  if (p === '/api/coordinator/board') return boardRoute(res, st, deps);
+  if (p === '/api/coordinator/northstar') return readText(res, st.northstar, MARKDOWN, deps);
+  if (p === '/api/coordinator/decisions') return readText(res, st.decisions, MARKDOWN, deps);
+  if (p === '/api/coordinator/inbox') return inboxRoute(res, st, deps);
   if (p === '/api/coordinator/bundle') {
-    const r = await runPython(res, BUNDLE_PY, deps);
+    const r = await runPython(res, BUNDLE_PY, st, deps);
     return r && send(res, 200, 'text/plain; charset=utf-8', r.stdout);
   }
   // No --apply, ever: that flag writes the board, and a GET must not move the board. The
   // list is recomputed per request for the same reason the bundle is — a cached exception
   // set ages into a lie, and silence would read as health.
-  if (p === '/api/coordinator/exceptions') return await pythonJson(res, EXCEPTIONS_PY, deps);
-  if (p === '/api/coordinator/gate') return await pythonJson(res, GATE_PY, deps);
+  if (p === '/api/coordinator/exceptions') return await pythonJson(res, EXCEPTIONS_PY, st, deps);
+  if (p === '/api/coordinator/gate') return await pythonJson(res, GATE_PY, st, deps);
 
   return send(res, 404, 'text/plain', 'not found');
 }
 
-module.exports = { coordinatorRoute, validateSitrep, renderSitrep, sitrepFilename, COORDINATOR_DIR };
+module.exports = { coordinatorRoute, validateSitrep, renderSitrep, sitrepFilename, bootLine };
