@@ -37,6 +37,29 @@ if (!FLEET_ROLES.includes(FLEET_ROLE))
 const IS_HOME = FLEET_ROLE === 'home';
 const IS_MAC = process.platform === 'darwin';
 
+// --- XYZ-1890 M5: 'mac' was never a hostname. Fifteen sites spelled it as a literal and every
+// one of them but the boot line below meant *this machine* — "reach it locally, never ssh to
+// it" — which was true only while home ran on the operator's Mac. hosts.json already lists
+// german-box, so a home deck running there would have ssh'd into itself on every poll. Naming
+// self makes that impossible; defaulting it to 'mac' leaves today's deck byte-for-byte as it
+// was, exactly the way FLEET_ROLE's home default did in M1.
+const FLEET_SELF_HOST = (process.env.FLEET_SELF_HOST || 'mac').trim();
+// The same boot gate FLEET_ROLE gets, for a sharper reason. A templated launch line whose
+// variable never expanded — FLEET_SELF_HOST="$BOX_NAME " — trims to '', which equals no host
+// string anywhere. Every exemption below then stops exempting at once: the deck ssh-polls and
+// ssh-kills its own lanes on every tick, silently, which is the whole failure this seam exists
+// to remove. It is not required to appear in hosts.json — 'mac' never has been, and self is
+// leasable without being a probe target. Non-empty is the only invariant.
+if (!FLEET_SELF_HOST)
+  throw new Error(
+    // JSON-quoted, not '...' like FLEET_ROLE's: the value that gets here is whitespace, and
+    // whitespace inside single quotes is exactly as invisible in the error as it was in the
+    // launch line. `"  "` and `" \n "` read differently; `'  '` and `' \n '` do not.
+    'FLEET_SELF_HOST is ' + JSON.stringify(process.env.FLEET_SELF_HOST || '') +
+      ', expected a non-empty host name: it names the one host this deck reaches locally ' +
+      'and never ssh-es to'
+  );
+
 // Only the routes no other group already names. LEASE_ROUTES and BUS_ROUTES are the dispatch
 // chain's own definitions of their groups, so they are read rather than copied: a route added
 // to either one is gated here the same day, instead of quietly dispatching on a satellite and
@@ -76,6 +99,17 @@ const KIND = (host) => {
 };
 // Every remote command is written bare; a WSL box gets the `wsl ` prefix put back here.
 const remote = (host, cmd) => (KIND(host) === 'linux' ? cmd : 'wsl ' + cmd);
+
+// Two different questions, and answering them from one list is what would ssh a deck into
+// itself. Keep them apart:
+//   HOSTS()       — MEMBERSHIP. "Is this a fleet host?" Registry writes, message targets and
+//                   kill validation ask this, and the answer may well include this machine.
+//   PROBE_HOSTS() — REACHABILITY. "Should I open an ssh to it?" Self is excluded structurally,
+//                   so listing this machine in hosts.json is harmless; and a satellite probes
+//                   nothing at all, because it is not the fleet's home and has no business
+//                   ssh-polling it. Every ssh fan-out (sessions, pollHosts, health, credits)
+//                   iterates this one, never HOSTS().
+const PROBE_HOSTS = () => (IS_HOME ? HOSTS().filter((h) => h !== FLEET_SELF_HOST) : []);
 
 // --- Lifecycle numbers (CONTRACT §Numbers, S2). Seconds in, milliseconds everywhere else.
 const secs = (k, d) => {
@@ -264,8 +298,8 @@ function registryWrite(b) {
 // Heartbeat is liveness-only by design — it carries no status field to mis-store, so
 // defect 1's mechanism cannot occur; distress goes through registry status/note (S7).
 
-// `mac` names desktop lanes on the operator's machine: leasable, never an ssh or kill target.
-const LEASE_HOSTS = () => new Set([...HOSTS(), 'mac']);
+// Self names the deck's own desktop lanes: leasable, never an ssh or kill target.
+const LEASE_HOSTS = () => new Set([...HOSTS(), FLEET_SELF_HOST]);
 const SEATS = new Set(['coordinator', 'orchestrator']);
 const LEASE_STATES = new Set(['active', 'suspect', 'reaped']);
 
@@ -334,7 +368,7 @@ function leaseClaim(b) {
   // names are unique, so a new session under this name is itself evidence the old one is gone.
   // What it does do is drop a standing kill obligation, and the row is the only record of it.
   const prior = leaseRow.get(id.host, id.name);
-  if (prior && prior.lease_state === 'reaped' && prior.killed_at === null && prior.host !== 'mac') {
+  if (prior && prior.lease_state === 'reaped' && prior.killed_at === null && prior.host !== FLEET_SELF_HOST) {
     lifecycleLog('kill-obligation-dropped', id.host, id.name, prior.epoch, 're-claimed before its kill was ever confirmed');
     raiseAlert(id.host, id.name + ' was re-claimed while a kill for epoch ' + prior.epoch + ' was still owed');
   }
@@ -519,7 +553,7 @@ function leaseRelease(b) {
   // was the only record that a tmux session on an unreachable host is still owed a kill. The
   // claim path says so out loud in the same situation (server.js:337-340) and a privileged
   // manual override must not be quieter than it.
-  if (before.lease_state === 'reaped' && before.killed_at === null && before.host !== 'mac') {
+  if (before.lease_state === 'reaped' && before.killed_at === null && before.host !== FLEET_SELF_HOST) {
     lifecycleLog('kill-obligation-dropped', id.host, id.name, before.epoch, 'released before its kill was ever confirmed');
     raiseAlert(id.host, id.name + ' was released while a kill for epoch ' + before.epoch + ' was still owed');
   }
@@ -746,7 +780,7 @@ async function sessions() {
   const out = { sessions: [], errors: [] };
   const live = [];
   await Promise.all(
-    HOSTS().map(async (host) => {
+    PROBE_HOSTS().map(async (host) => {
       const [ls, lm] = await Promise.all([
         ssh(host, remote(host, TMUX_LS)),
         ssh(host, remote(host, LAST_MSG)),
@@ -880,11 +914,12 @@ const seatSuspectStmt = db.prepare(
 // history row is ever written, so retention is one DELETE rather than a log rotation.
 // A box row whose kill never landed is kept past the window on purpose: deleting it ends the
 // retry contract for a session nobody ever confirmed dead, and the next poll would re-create it
-// as a fresh sighting with no lifecycle history at all. `mac` rows are never killed, so they
-// are the one kind that prunes on age alone.
+// as a fresh sighting with no lifecycle history at all. Self rows are never killed, so they
+// are the one kind that prunes on age alone. The self host is bound, not interpolated: it is
+// an environment value, and this is the only self-site that reaches SQL.
 const retentionStmt = db.prepare(
   `DELETE FROM sessions WHERE lease_state = 'reaped' AND reaped_at IS NOT NULL AND reaped_at < ?
-     AND (killed_at IS NOT NULL OR host = 'mac')`
+     AND (killed_at IS NOT NULL OR host = ?)`
 );
 
 // One ssh, one answer: name -> last tmux activity in unix MILLISECONDS, or ok:false when the
@@ -907,7 +942,7 @@ async function tmuxSample(host) {
 // The second, independent liveness source for the whole fleet, taken once at the top of a tick.
 async function pollHosts() {
   const sample = new Map();
-  await Promise.all(HOSTS().map(async (host) => sample.set(host, await tmuxSample(host))));
+  await Promise.all(PROBE_HOSTS().map(async (host) => sample.set(host, await tmuxSample(host))));
   return sample;
 }
 
@@ -915,7 +950,7 @@ async function pollHosts() {
 // spend tens of seconds in the warn phase's sequential ssh calls, and a session that came back
 // during that window must not die on evidence that old.
 async function sampleSession(host, name) {
-  if (host === 'mac') return { ok: true, activeAt: undefined }; // never appears in `tmux ls`
+  if (host === FLEET_SELF_HOST) return { ok: true, activeAt: undefined }; // never in a remote `tmux ls`
   const s = await tmuxSample(host);
   return s.ok ? { ok: true, activeAt: s.sessions.get(name) } : { ok: false };
 }
@@ -925,9 +960,10 @@ async function sampleSession(host, name) {
 const WARN_TEXT = 'fleetdeck-lease-expiring-heartbeat-now-or-this-session-is-reaped';
 
 async function warnSuspect(r) {
-  // A mac row has no tmux to display into; its appeal path is the 410 body it gets when it
-  // comes back and beats. Marking it warned is what lets it eventually be tombstoned.
-  if (r.host === 'mac') return { ok: true, note: 'mac row — 410 body is the appeal path' };
+  // A self row has no tmux to display into over ssh; its appeal path is the 410 body it gets
+  // when it comes back and beats. Marking it warned is what lets it eventually be tombstoned.
+  if (r.host === FLEET_SELF_HOST)
+    return { ok: true, note: FLEET_SELF_HOST + ' row — 410 body is the appeal path' };
   const { err, stderr } = await ssh(
     r.host,
     'wsl tmux display-message -d 10000 -t ' + r.name + ' ' + WARN_TEXT
@@ -939,7 +975,7 @@ async function warnSuspect(r) {
 // releasing a Name it cannot see — a box test instance must never free a live agent's Name.
 const NAME_CLOSE_SCRIPT = process.env.FLEET_NAME_CLOSE_SCRIPT || '';
 async function nameClose(r) {
-  if (r.host === 'mac') return; // never for a desktop row: the session may still be alive
+  if (r.host === FLEET_SELF_HOST) return; // never for a desktop row: the session may still be alive
   if (!NAME_CLOSE_SCRIPT)
     return lifecycleLog('name-skip', r.host, r.name, r.epoch, 'no FLEET_NAME_CLOSE_SCRIPT set');
   if (!r.worker || !SAFE_NAME.test(r.worker))
@@ -958,7 +994,7 @@ async function nameClose(r) {
 // the Name last. A crash anywhere here leaves a fenced row whose kill the next tick retries.
 async function killReaped(r) {
   const key = r.host + '\0' + r.name;
-  if (r.host === 'mac' || REAPER.killing.has(key)) return;
+  if (r.host === FLEET_SELF_HOST || REAPER.killing.has(key)) return;
   // The row is re-read rather than trusted from the caller's snapshot. `tmux kill-session` names
   // its target, and this design expects names to be reused — so a row that has already been
   // re-claimed under a new epoch must not have its successor killed in its place.
@@ -1058,7 +1094,7 @@ async function reaperTick() {
       trips.push([null, candidates.length + ' sessions would be reaped in one tick (K=' + CASCADE_K + ')']);
     for (const [host, n] of perHost) {
       const s = sample.get(host);
-      if (host !== 'mac' && (!s || !s.ok)) trips.push([host, 'ssh poll is failing']);
+      if (host !== FLEET_SELF_HOST && (!s || !s.ok)) trips.push([host, 'ssh poll is failing']);
       // `n > 1` is deliberate. M6 guards against a fleet-wide mass kill after a partition; read
       // literally, "every session on one host" would also cover a host with exactly one leased
       // session, and that host's last session could then never be reaped at all.
@@ -1098,7 +1134,7 @@ async function reaperTick() {
     //    host with N stuck rows costs N timeouts every tick and stalls the whole fleet's sweep.
     const retries = leasedRows
       .all()
-      .filter((r) => r.lease_state === 'reaped' && r.killed_at === null && r.host !== 'mac')
+      .filter((r) => r.lease_state === 'reaped' && r.killed_at === null && r.host !== FLEET_SELF_HOST)
       .filter((r) => {
         const s = sample.get(r.host);
         return s && s.ok;
@@ -1106,7 +1142,7 @@ async function reaperTick() {
       .slice(0, Math.max(1, CASCADE_K));
     for (const r of retries) await killReaped(r);
 
-    const pruned = retentionStmt.run(wall - RETENTION_MS).changes;
+    const pruned = retentionStmt.run(wall - RETENTION_MS, FLEET_SELF_HOST).changes;
     if (pruned) lifecycleLog('retention', 'fleet', '-', null, pruned + ' reaped rows past ' + RETENTION_DAYS + 'd');
   }
 
@@ -1136,7 +1172,7 @@ async function reaperLoop() {
 // under `hosts`; everything else is reaper observability.
 async function health() {
   const hosts = await Promise.all(
-    HOSTS().map(async (host) => {
+    PROBE_HOSTS().map(async (host) => {
       // A Linux host has no RDP holder and no WSL to keep alive: reachability is the
       // whole story, so probe tmux directly and let the UI render kind 'linux'.
       if (KIND(host) === 'linux') {
@@ -1581,10 +1617,10 @@ async function creditsCollect(force) {
   const errors = [];
   if (force || Date.now() - creditsAt > CREDITS_TTL) {
     creditsAt = Date.now(); // claimed before the awaits, so parallel loads don't stampede
-    const local = run('sh', [CREDITS_SH], { timeout: 30000 }).then((r) => ['mac', r]);
+    const local = run('sh', [CREDITS_SH], { timeout: 30000 }).then((r) => [FLEET_SELF_HOST, r]);
     // Longer than the session poll's 15s: this one waits on a remote HTTPS call, and a
     // slow endpoint must not be reported as a missing script.
-    const remotes = HOSTS().map((host) =>
+    const remotes = PROBE_HOSTS().map((host) =>
       ssh(host, remote(host, CREDITS_REMOTE), { timeout: 30000 }).then((r) => [host, r])
     );
     // A host that is down, or has no script installed, leaves its stored rows standing.
@@ -1835,7 +1871,7 @@ function validateMessageTarget(target) {
     return { type: 'claude-desktop', session: 'current', ...(label ? { label } : {}) };
   }
   if (target.type === 'tmux') {
-    if (!(target.host === 'mac' || HOSTS().includes(target.host)) || !SAFE_NAME.test(target.session || ''))
+    if (!(target.host === FLEET_SELF_HOST || HOSTS().includes(target.host)) || !SAFE_NAME.test(target.session || ''))
       messageFailure(400, 'tmux target must name a configured host and safe session');
     return { type: 'tmux', host: target.host, session: target.session };
   }
@@ -1850,7 +1886,7 @@ function deliveryError(action, result) {
 async function deliverTmux(message) {
   const { host, session } = message.target;
   const buffer = 'fleetdeck_' + message.id.replace(/-/g, '').slice(0, 24);
-  const local = host === 'mac';
+  const local = host === FLEET_SELF_HOST;
   const loaded = local
     ? await runInput('tmux', ['load-buffer', '-b', buffer, '-'], message.text, SSH_OPTS)
     : await sshInput(host, remote(host, 'tmux load-buffer -b ' + buffer + ' -'), message.text);
@@ -1894,7 +1930,7 @@ async function messageTargets() {
     : lines(result.stdout).map((name) => name.trim()).filter((name) => SAFE_NAME.test(name));
   return [
     { type: 'claude-desktop', session: 'current' },
-    ...local.map((session) => ({ type: 'tmux', host: 'mac', session })),
+    ...local.map((session) => ({ type: 'tmux', host: FLEET_SELF_HOST, session })),
   ];
 }
 
@@ -1937,15 +1973,15 @@ const json = (res, obj, code = 200) => send(res, code, 'application/json', JSON.
 
 // --- registry. Shared by both listeners: orchestrators curl from loopback, box workers
 // over tailnet. Agent POSTs carry no Origin header, so the gate rejects a *foreign*
-// origin rather than a missing one; every value is validated before any write. Host
-// "mac" is registry-only — it names lanes on this machine, which no ssh loop may target.
+// origin rather than a missing one; every value is validated before any write. The self
+// host is registry-only — it names lanes on this machine, which no ssh loop may target.
 async function registryRoute(req, res, p, viaTailnet) {
   if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
   const origin = req.headers.origin;
   if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
   const b = await body(req).catch(() => null);
   if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
-  if (!(b.host === 'mac' || HOSTS().includes(b.host)) || !SAFE_NAME.test(b.name || ''))
+  if (!(b.host === FLEET_SELF_HOST || HOSTS().includes(b.host)) || !SAFE_NAME.test(b.name || ''))
     return json(res, { ok: false, error: 'unknown host or bad session name' }, 400);
   if (p === '/api/registry/delete') {
     const f = fenceCheck(req, b, viaTailnet);
@@ -2272,8 +2308,28 @@ console.log(
 // What this deck is, in one line: a route that 404s should be explainable from the log alone.
 console.log(
   'role: ' + FLEET_ROLE + ' platform=' + process.platform + ' serves=' +
-    [IS_HOME && 'fleet', IS_MAC && 'mac', 'common'].filter(Boolean).join('+')
+    [IS_HOME && 'fleet', IS_MAC && 'mac', 'common'].filter(Boolean).join('+') +
+    // Fifteen behaviours turn on this one value, so it says which host the deck calls itself.
+    ' self=' + FLEET_SELF_HOST
 );
+
+// A Linux box that believes it is called `mac` is a contradiction the deck can spot on its own:
+// the 'mac' default exists only to keep the operator's Mac byte-for-byte as it was, and on any
+// non-darwin host it is never the right answer. It is exactly the forgotten-variable deploy —
+// FLEET_ROLE=home set, FLEET_SELF_HOST omitted — and until now nothing announced it.
+//
+// A warning, not a throw, and the reason is the safety property of this whole lane: the suite
+// runs on Linux with FLEET_SELF_HOST unset on purpose, because that is what proves default
+// equivalence. Throwing here would either break every one of those tests or force each of them
+// to carry the variable, and the cure would cost more than the disease. This fires in precisely
+// the deployment that is wrong, costs nothing everywhere else, and lands in deck.log where the
+// operator is already reading.
+if (!IS_MAC && FLEET_SELF_HOST === 'mac')
+  console.warn(
+    "WARNING: FLEET_SELF_HOST is 'mac' on platform " + process.platform + ", which cannot be " +
+      'right — this deck will treat its own lanes as remote ssh targets, and may ssh-poll and ' +
+      'ssh-kill itself. Set FLEET_SELF_HOST to the name this host is known by.'
+  );
 
 // Which boards this deck serves, if any. Serving the wrong one — the vendor's own fixture — is
 // the failure this line exists to make visible before a caller discovers it as a plausible board.

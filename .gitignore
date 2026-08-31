@@ -7,3 +7,6 @@ deploy-keys/github-app.env
 deploy-keys/fleet-tailnet.env
 *.pem
 .fleetdeck/
+# Agent worktrees. Untracked AND un-ignored, a routine `git clean -fd` in the main checkout
+# deletes every live agent's worktree along with its uncommitted work.
+.claude/worktrees/

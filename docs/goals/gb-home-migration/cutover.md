@@ -4,7 +4,7 @@ Moves the fleet's lease state to the new home with **zero epoch regressions**. E
 command; the prose says only what the command proves.
 
 Tool: `scripts/fleet-db-migrate.js` (`--check`, `--migrate`, `--verify`, `--compare-live`).
-Exit 0 = pass, 1 = act on it, 2 = bad usage. Nothing below runs unattended: steps 2, 6 and 7
+Exit 0 = pass, 1 = act on it, 2 = bad usage. Nothing below runs unattended: steps 2, 6, 6b and 7
 are operator gates.
 
 Flags: `--force` overwrites a destination (moving the old one aside, never deleting it),
@@ -104,13 +104,59 @@ that fails it makes the deck throw at boot instead of serving.
 Paste step 1, step 3 and step 6 output into the Linear proof comment. Those three together are
 the acceptance evidence: same rows, same epochs, boot-clean pragmas.
 
+## 6b. operator:gate — name the box as self, and list the Mac as a probed host
+
+`hosts.json` is a tracked file: the Mac and the box check out the same tree, so editing it is
+an activation, not a code change. It is left alone by M5 on purpose — changing it would alter
+the live Mac deck's behaviour at its next restart. Do it here, on the box, once step 6 has
+passed.
+
+`FLEET_SELF_HOST` is the deck's name for **itself**: the one host it reaches locally and never
+ssh-es to. It defaults to `mac`, which is why today's Mac is unaffected. The box must set it,
+or it will ssh into itself on every poll.
+
+    # on the box, before step 7
+    ssh german-box "wsl bash -lc 'cd \$(dirname $BOX_DB) && cat hosts.json'"
+
+Required contents for a box-hosted home:
+
+    ["mac", { "name": "onboarding-box", "kind": "linux" }, "german-box"]
+
+- **`mac` must be present.** The Mac becomes an ordinary remote fleet host once it is a
+  satellite: the box ssh-polls it for tmux sessions, health and credits, and `mac` rows are
+  ssh-killable there. Omit it and the box simply stops seeing the Mac's lanes.
+- **`german-box` may stay listed.** `PROBE_HOSTS()` (server.js:88-97) removes `FLEET_SELF_HOST`
+  from every ssh fan-out, so self appearing in `hosts.json` is harmless by construction — it
+  keeps membership (registry, message targets, kill validation) working for box rows.
+- **Do not remove `onboarding-box`** unless it is genuinely gone; it is a real fleet member.
+
+Whichever way the Mac is named in `hosts.json` must be an ssh target the box can actually
+reach (`ssh mac true` from the box), or every poll of it reports unreachable.
+
+Two guards, and neither is a substitute for the smoke below. A **blank** `FLEET_SELF_HOST` (a
+launch line whose variable never expanded) refuses to boot. An **unset** one still defaults to
+`mac`, which cannot be right on a Linux box — so the deck prints a `WARNING: FLEET_SELF_HOST is
+'mac' on platform linux` line and serves anyway. Grep `deck.log` for it after step 7:
+
+    ssh german-box "wsl bash -lc 'grep -c \"WARNING: FLEET_SELF_HOST\" deck.log'"
+
+`0` is the answer you want.
+
+The proof that the box does not probe itself is step 7's own smoke: the boot line reports
+`self=german-box`, and `/api/health` must list `mac` under `hosts` and must **not** list
+`german-box`.
+
 ## 7. operator:gate — start the box as home
 
-    ssh german-box "wsl bash -lc 'cd \$(dirname $BOX_DB) && FLEET_ROLE=home FLEET_DB=$BOX_DB ./up.sh'"
+    ssh german-box "wsl bash -lc 'cd \$(dirname $BOX_DB) && FLEET_ROLE=home FLEET_SELF_HOST=german-box FLEET_DB=$BOX_DB ./up.sh'"
+
+Both variables, every time. `FLEET_ROLE=home` without `FLEET_SELF_HOST=german-box` is a deck
+that ssh-es to itself on every poll loop and treats its own lanes as remote, ssh-killable rows.
 
 Then leave the Mac deck as a satellite (`FLEET_ROLE=satellite`) — it must never open the old
 `fleet.db` again. Two homes is split-brain: both would raise epochs, and neither's fence would
-mean anything.
+mean anything. A satellite probes nothing at all (`PROBE_HOSTS()` is empty off the home role),
+so the Mac's `/api/health` comes back with `hosts: []` — that is correct, not a failure.
 
 Smoke, from the Mac:
 
@@ -119,6 +165,9 @@ Smoke, from the Mac:
 
 Seat epochs must be at or above step 1's max. A seat epoch of 1 means the box booted an empty
 db — stop, and check `FLEET_DB`.
+
+`/api/health` must name `mac` under `hosts` and must not name `german-box`. Seeing
+`german-box` there means `FLEET_SELF_HOST` was not set: stop the deck and redo step 7.
 
 ## Rollback — the Mac resumes home
 
