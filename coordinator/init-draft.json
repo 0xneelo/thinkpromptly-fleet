@@ -1,5 +1,5 @@
 {
-  "_DRAFT": "coordinator-init interview IN PROGRESS (🧭 COORDINATOR 1 portal, 2026-08-29). Q1 complete; Q2 lane set NOT confirmed — lanes below carry goals only, the four per-lane fields (done_milestone, owner, next_decision, cadence_hours) are NOT yet collected. lane_cap and policy NOT yet asked. Do not initiate from this file as-is.",
+  "_DRAFT": "coordinator-init interview IN PROGRESS (🧭 COORDINATOR 8 portal, 2026-08-31; resumed from 🧭 1, 2026-08-29). Q1 complete. Q2 lane SET CONFIRMED by operator 2026-08-31: all 9 candidates + XYZ-1849, 'set is complete' — but per-lane fields (done_milestone, owner, next_decision, cadence_hours) NOT yet collected for any lane. lane_cap and policy NOT yet asked. Do not initiate from this file as-is.",
   "northstar": {
     "text": "Pricing lowcaps accurately enough so that margin protocols can be built upon.",
     "ruling_id": "linear-doc coordinator-northstar-pricing-lowcaps-f0ed42edeea3 (https://linear.app/synchronicity/document/coordinator-northstar-pricing-lowcaps-f0ed42edeea3)",
@@ -9,20 +9,20 @@
   },
   "lane_cap": null,
   "policy": null,
-  "lanes_candidate_goals_verbatim": [
-    "1. cyclomatic audit came back terrible",
-    "2. our solana, and evm had completly different services that created issues on every step",
-    "3. our whole architecture was more like a swiss cheese with holes everywhere",
-    "4. adding new chains like tron, aptos, sui and basically the top 20 of blockchains to adopt the exact same architecture as everything else",
-    "5. getting our diffs to zero reliably, and i mean zero issues ever.",
-    "6. building the perfect consensus sweep system, with historical sweep data (its still a little unreliable)",
-    "7. perfect our pool discovery and pool election system",
-    "8. have an absolute perfect way of calculating the prices for assets, we probably need to test out 20 different methods till we found something that covers everything",
-    "9. a system that automatically clears diffs and rules issues like spaceX reliably"
+  "lanes": [
+    {"id": "L1", "goal": "cyclomatic audit came back terrible", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L2", "goal": "our solana, and evm had completly different services that created issues on every step", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L3", "goal": "our whole architecture was more like a swiss cheese with holes everywhere", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L4", "goal": "adding new chains like tron, aptos, sui and basically the top 20 of blockchains to adopt the exact same architecture as everything else", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L5", "goal": "getting our diffs to zero reliably, and i mean zero issues ever.", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L6", "goal": "building the perfect consensus sweep system, with historical sweep data (its still a little unreliable)", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L7", "goal": "perfect our pool discovery and pool election system", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L8", "goal": "have an absolute perfect way of calculating the prices for assets, we probably need to test out 20 different methods till we found something that covers everything", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L9", "goal": "a system that automatically clears diffs and rules issues like spaceX reliably", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L10", "goal": "lowcap price reliability / RSC mega-print cure (XYZ-1849)", "_goal_source": "portal2 sitrep proposal, accepted into the set by operator 2026-08-31; operator may restate the goal line when this lane's fields are collected", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null}
   ],
   "_pending_inputs": [
-    "operator said 'i might have missed some stuff' — 🔬 RESEARCHER 4 lane sweep list outstanding",
-    "portal2 sitrep proposes lane: lowcap price reliability / RSC mega-print cure (XYZ-1849) — map into set or stand alone, operator call",
+    "operator 2026-08-31: 'all 9 plus 1849, set is complete' — R4 researcher sweep list no longer gating",
     "seeded PROPOSED lanes L1-L4 + OQ1-3 get REPLACED at initiation (--replace-proposed) — operator has seen the list"
   ]
 }
