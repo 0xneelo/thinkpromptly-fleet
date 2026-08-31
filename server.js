@@ -785,10 +785,17 @@ const retentionStmt = db.prepare(
 // and the fleet-wide poll and the per-session re-check must never drift apart on the wording
 // tmux uses or the format it prints — so both go through here.
 async function tmuxSample(host) {
-  const { err, stdout, stderr } = await ssh(host, TMUX_LS);
+  // remote(): a WSL box needs the `wsl ` prefix or the command lands in Windows CMD, which
+  // answers `'tmux' is not recognized`. That is an err with no idle wording in it, so the host
+  // read as UNREACHABLE on every tick — the cascade guard tripped `ssh poll is failing` for
+  // german-box forever while sessions() (which does prefix) kept the same rows fresh.
+  const { err, stdout, stderr } = await ssh(host, remote(host, TMUX_LS));
   const blob = (stdout + stderr).toLowerCase();
-  const empty = blob.includes('no server running') || blob.includes('no sessions');
-  if (err && !empty) return { ok: false, sessions: new Map() };
+  // NO_TMUX_SERVER, not a local list: tmux 3.4 and 3.6 both report an idle socket as
+  // `error connecting to <path> (No such file or directory)`, which the two-string check
+  // missed — an idle host then read as unreachable and tripped the guard too. This is the
+  // drift this function exists to prevent, so it uses the same pattern sessions() does.
+  if (err && !NO_TMUX_SERVER.test(blob)) return { ok: false, sessions: new Map() };
   const sessions = new Map();
   for (const line of lines(stdout)) {
     const g = line.match(/^n=(.+),a=(\d+),c=(\d+)$/);

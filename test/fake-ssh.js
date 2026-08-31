@@ -178,7 +178,15 @@ try {
       .filter(([, s]) => !s.appearAfterLs || nth > s.appearAfterLs)
       .map(([n, s]) => 'n=' + n + ',a=' + stamp(s.activity) + ',c=' + stamp(s.created || s.activity));
     if (!rows.length) {
-      process.stderr.write('no server running on /tmp/tmux-1000/default\n');
+      // Two wordings, both meaning "reachable, nothing running". A host that once had a server
+      // says `no server running`; a socket that was never created — which is what tmux 3.4 AND
+      // 3.6 report on a cold box — says `error connecting to <path>`. The deck must read both
+      // as idle, so a test can ask for either.
+      process.stderr.write(
+        h.idleAsSocketError
+          ? 'error connecting to /tmp/tmux-1000/default (No such file or directory)\n'
+          : 'no server running on /tmp/tmux-1000/default\n'
+      );
       process.exit(1);
     }
     return out(rows.join('\n') + '\n');
