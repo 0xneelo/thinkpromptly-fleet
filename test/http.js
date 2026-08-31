@@ -14,6 +14,22 @@ const TAILNET_BIND = '127.0.0.2'; // second loopback address, so both listeners 
 // rather than derived from a pid that lands in the same range on every one of them.
 let nextPort = 20000 + Math.floor(Math.random() * 20000);
 
+// A rejected start does not mean the child died: on a timeout it is still running (server.js
+// logs an unavailable tailnet listener and keeps going), and the caller never receives the
+// handle that would let it stop(). Kill it here, or it outlives the whole suite holding its
+// port and its fleet.db.
+async function awaitOrKill(child, ready) {
+  try {
+    await ready;
+  } catch (e) {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill('SIGKILL');
+      await new Promise((r) => child.on('exit', r));
+    }
+    throw e;
+  }
+}
+
 // Resolves once the child has printed both listener lines, rejects if it dies first.
 async function startServer(env = {}, opts = {}) {
   const dir = opts.dir || tmpdir('http');
@@ -42,7 +58,10 @@ async function startServer(env = {}, opts = {}) {
   child.stderr.on('data', (c) => (out += c));
 
   const ready = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('server did not start:\n' + out)), 15000);
+    const timer = setTimeout(() => {
+      clearInterval(poll); // the timeout path owns its own cleanup; it must not rely on the kill
+      reject(new Error('server did not start:\n' + out));
+    }, 15000);
     const check = () => {
       if (/tailnet broker http/.test(out)) {
         clearTimeout(timer);
@@ -57,7 +76,7 @@ async function startServer(env = {}, opts = {}) {
       reject(new Error('server exited ' + code + ':\n' + out));
     });
   });
-  await ready;
+  await awaitOrKill(child, ready);
 
   // Host header is set explicitly: the loopback listener allow-lists it and the tailnet
   // listener matches it against its own authority, so both gates are really under test.
@@ -133,8 +152,11 @@ async function startBroker(env = {}, opts = {}) {
   child.stdout.on('data', (c) => (out += c));
   child.stderr.on('data', (c) => (out += c));
 
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('broker did not start:\n' + out)), 15000);
+  const ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      clearInterval(poll); // as in startServer: the timeout path owns its own cleanup
+      reject(new Error('broker did not start:\n' + out));
+    }, 15000);
     const poll = setInterval(() => {
       if (!/fleetdeck-train http:\/\//.test(out)) return;
       clearTimeout(timer);
@@ -147,6 +169,7 @@ async function startBroker(env = {}, opts = {}) {
       reject(new Error('broker exited ' + code + ':\n' + out));
     });
   });
+  await awaitOrKill(child, ready);
 
   // Host is set explicitly so the broker's DNS-rebinding guard is really under test; a test
   // that wants to fail that guard passes its own `host` header through `headers`.

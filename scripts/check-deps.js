@@ -37,3 +37,32 @@ if (missing.length) {
   );
   process.exit(1);
 }
+
+// test/http.js gives the tailnet listener its own loopback address so the suite can tell a
+// tailnet-source request from a loopback-source one — the composed-gate coverage whose absence
+// produced XYZ-1888. macOS does not provide 127.0.0.2 until someone adds the alias. Without it
+// every test that boots a deck child sits out test/http.js's 15s start timeout instead of
+// failing, so the suite takes minutes to say what this says once, here, in a sentence.
+const net = require('net');
+const TAILNET_BIND = '127.0.0.2';
+
+const probe = net.createServer();
+probe.once('error', (e) => {
+  const fix =
+    process.platform === 'darwin'
+      ? 'sudo ifconfig lo0 alias ' + TAILNET_BIND + ' up    # not persistent — re-run after a reboot'
+      : 'sudo ip addr add ' + TAILNET_BIND + '/8 dev lo';
+  console.error(
+    'fleetdeck: the suite needs ' +
+      TAILNET_BIND +
+      ' and this machine cannot bind it (' +
+      e.code +
+      ') — run:\n  ' +
+      fix +
+      '\nthen `npm test` again.'
+  );
+  // exitCode rather than exit(): a bare process.exit() can truncate this message on the way out
+  // when stderr is a pipe, and the message is the only reason this check exists.
+  process.exitCode = 1;
+});
+probe.listen(0, TAILNET_BIND, () => probe.close());
