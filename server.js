@@ -19,6 +19,51 @@ const TAILNET_HOST = process.env.FLEET_TAILNET_HOST || TAILNET_IP + ':' + PORT;
 // Overridable so a worker can run a throwaway instance beside the operator's live deck.
 const HOSTS_FILE = process.env.FLEET_HOSTS_FILE || path.join(__dirname, 'hosts.json');
 const DB_FILE = process.env.FLEET_DB || path.join(__dirname, 'fleet.db');
+
+// --- XYZ-1890 M1: one codebase, two decks. Route existence is the conjunction of two
+// independent facts, and neither implies the other:
+//   role     — 'home' is the sole fleet.db writer, so it alone serves leases/seats/bus/kill;
+//   platform — minting a cert needs *this Mac's* 1Password agent socket, so the key routes
+//              are granted by the hardware, never by the role.
+// Defaulting the role to home and gating the Mac routes on darwin leaves today's Mac exactly
+// as it is (home + darwin = everything), while a Linux box can never serve a mint it cannot
+// physically honor. No route may exist on a host that cannot honor it.
+const FLEET_ROLE = (process.env.FLEET_ROLE || 'home').trim();
+const FLEET_ROLES = ['home', 'satellite'];
+// Same boot gate as assertPragmas(): a typo'd role must refuse to serve rather than degrade
+// into a half-served deck whose missing half looks like a bug in the caller.
+if (!FLEET_ROLES.includes(FLEET_ROLE))
+  throw new Error("FLEET_ROLE is '" + FLEET_ROLE + "', expected one of: " + FLEET_ROLES.join(', '));
+const IS_HOME = FLEET_ROLE === 'home';
+const IS_MAC = process.platform === 'darwin';
+
+// Only the routes no other group already names. LEASE_ROUTES and BUS_ROUTES are the dispatch
+// chain's own definitions of their groups, so they are read rather than copied: a route added
+// to either one is gated here the same day, instead of quietly dispatching on a satellite and
+// writing fleet.db because a second list was not updated. A bare Set is not enough on its own
+// either — the coordinator API is matched by prefix, exactly the way the handlers match it.
+const HOME_ROUTES = new Set([
+  '/api/sessions', '/api/registry', '/api/registry/delete', '/api/seats', '/api/seats/claim',
+  '/api/credits', '/api/kill',
+]);
+// A function, not a composed Set: the two borrowed sets are declared further down beside their
+// handlers, and this is only ever called at request time, long after the module has loaded.
+function isHomeRoute(p) {
+  return (
+    HOME_ROUTES.has(p) || LEASE_ROUTES.has(p) || BUS_ROUTES.has(p) || p.startsWith('/api/coordinator/')
+  );
+}
+const MAC_ROUTES = new Set(['/api/sshkeys', '/api/sshkeys/mint', '/api/sshkeys/delete']);
+const isMacRoute = (p) => MAC_ROUTES.has(p);
+
+// Why this path does not exist on this deck, or '' if it does. /api/health, the ghtoken and
+// ghtrain proxies (the train broker is a separate process) and every static file are ungated:
+// they answer on any role, on any platform.
+function notServed(p) {
+  if (!IS_HOME && isHomeRoute(p)) return "not served in role '" + FLEET_ROLE + "'";
+  if (!IS_MAC && isMacRoute(p)) return "not served on platform '" + process.platform + "'";
+  return '';
+}
 // hosts.json entries are either "name" (a Windows+WSL box, the original shape) or
 // {"name":..., "kind":"linux"} for a plain Linux host, where tmux is reached directly
 // and the RDP-holder/WSL health probes do not apply.
@@ -1866,6 +1911,9 @@ const server = http.createServer(async (req, res) => {
   if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
+  // 404 rather than 403: on this deck the route is absent, not forbidden.
+  const absent = notServed(p);
+  if (absent) return send(res, 404, 'text/plain', absent);
   try {
     if (p === '/api/sessions') return json(res, await sessions());
     if (p === '/api/health') return json(res, await health());
@@ -2000,6 +2048,9 @@ server.on('upgrade', (req, socket, head) => {
     return socket.destroy();
   const url = new URL(req.url, 'http://localhost');
   if (url.pathname !== '/term') return socket.destroy();
+  // A tile attaches to a fleet tmux session, which only the home deck brokers; same rejection
+  // path as any other upgrade this listener does not serve.
+  if (!IS_HOME) return socket.destroy();
   const host = url.searchParams.get('host');
   const session = url.searchParams.get('session');
   const cols = dim(parseInt(url.searchParams.get('cols'), 10), 80);
@@ -2076,6 +2127,12 @@ console.log(
     ' fence=' + FENCE_MODE + ' tailnet_key=' + (TAILNET_KEY ? 'armed' : 'unset')
 );
 
+// What this deck is, in one line: a route that 404s should be explainable from the log alone.
+console.log(
+  'role: ' + FLEET_ROLE + ' platform=' + process.platform + ' serves=' +
+    [IS_HOME && 'fleet', IS_MAC && 'mac', 'common'].filter(Boolean).join('+')
+);
+
 if (!NO_LISTEN)
   server.listen(PORT, '127.0.0.1', () => console.log('fleetdeck http://localhost:' + PORT));
 
@@ -2087,6 +2144,13 @@ async function tailnetHandler(req, res) {
   if (req.headers.host !== TAILNET_HOST) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
   const p = url.pathname;
+  // Same gate as the loopback handler — a satellite is not the fleet's writer on either
+  // listener — and deliberately still ahead of the S3 key check: a route that does not exist
+  // here is never asked for a credential. The body is the bare 'not found' this handler already
+  // gives an unknown path, though: this runs pre-auth, so it must not hand a caller off the
+  // tailnet this deck's role and platform. The descriptive body stays on loopback, where the
+  // reader is the operator on their own machine.
+  if (notServed(p)) return send(res, 404, 'text/plain', 'not found');
   // S3: every write that arrives over tailscale carries the shared key. Reads keep their own
   // gates — /api/ghtoken is still fenced by whether a train is running at all.
   //
@@ -2134,7 +2198,9 @@ if (!NO_LISTEN)
 
 // Off only for tests, which drive reaperTick() by hand so a sweep is a step rather than a race.
 const NO_REAPER = process.env.FLEET_NO_REAPER === '1';
-if (!NO_REAPER) {
+// The tick is the only recurring timer that writes fleet.db (its host poll runs inside
+// reaperTick), and the home deck is its sole writer: a satellite must never sweep.
+if (!NO_REAPER && IS_HOME) {
   setInterval(reaperLoop, REAPER_TICK_MS);
   console.log('reaper: every ' + REAPER_TICK_MS / 1000 + 's, no reaps for the first ' + SUSPECT_WINDOW_MS / 1000 + 's');
 }
