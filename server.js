@@ -2331,6 +2331,24 @@ if (!IS_MAC && FLEET_SELF_HOST === 'mac')
       'ssh-kill itself. Set FLEET_SELF_HOST to the name this host is known by.'
   );
 
+// XYZ-1890 M6, seam 3. The Name pool is fleet state, and only the fleet's home reaps — so an
+// unconfigured home is the one deployment where nameClose() can never release anything. Every
+// reaped worker keeps its claim, the pool drains one Name per reap, and the only trace is a
+// `name-skip` line per row that reads like routine housekeeping. Nothing else notices: names
+// rotate back in thirty days, so the leak looks like a slow, plausible shortage rather than a
+// missing variable.
+//
+// A warning, not a throw, for the same reason the line above is one: the suite boots home decks
+// with FLEET_NAME_CLOSE_SCRIPT unset everywhere (test/helpers.js clears it on purpose), and
+// nameClose() already fails safe at the call site — it would rather skip a Name than close one
+// it cannot see. A satellite is silent here because it never reaps at all.
+if (IS_HOME && !NAME_CLOSE_SCRIPT)
+  console.warn(
+    'WARNING: FLEET_NAME_CLOSE_SCRIPT is unset on the fleet home — reaped sessions keep their ' +
+      'worker Names forever, so the pool leaks one claim per reap with only a `name-skip` ' +
+      'lifecycle line to show for it. Point it at the pool\'s name.py on this host.'
+  );
+
 // Which boards this deck serves, if any. Serving the wrong one — the vendor's own fixture — is
 // the failure this line exists to make visible before a caller discovers it as a plausible board.
 console.log(coordinatorBootLine());
@@ -2393,8 +2411,24 @@ async function tailnetHandler(req, res) {
 }
 
 const tailnet = http.createServer(tailnetHandler);
-// Tailscale down or the address not yet assigned: log it and keep serving loopback.
-tailnet.on('error', (e) => console.error('tailnet listener unavailable: ' + e.code));
+// XYZ-1890 M6. Tailscale down, or — far more likely on a new home — the address belongs to
+// another machine. TAILNET_IP defaults to the Mac's 100.125.231.25 and both TAILNET_BIND and
+// TAILNET_HOST derive from it, so a box deck launched without it binds an address it does not
+// have. The bind fails, this handler runs, and the process keeps serving loopback: every box
+// smoke test passes while the Mac finds registry, leases, bus and /api/coordinator/* simply
+// absent. An errno alone does not say that, so the line says the consequence instead.
+//
+// Still non-fatal, and deliberately: test/http.js survives a failed tailnet bind, and so does
+// the orphan reaper. Loud, not fatal — the same trade the two warnings above make.
+tailnet.on('error', (e) =>
+  console.error(
+    'WARNING: tailnet listener unavailable (' + e.code + ') binding ' + TAILNET_BIND + ':' + PORT +
+      ' — this deck is serving LOOPBACK ONLY. Every route the fleet reaches it by over tailscale ' +
+      '(registry, leases, bus, coordinator) is unreachable, and loopback health checks will not ' +
+      'show it. Likely cause: TAILNET_IP (or FLEET_TAILNET_BIND) names an address this host does ' +
+      'not have — it defaults to the Mac.'
+  )
+);
 if (!NO_LISTEN)
   tailnet.listen(PORT, TAILNET_BIND, () => console.log('tailnet broker http://' + TAILNET_HOST));
 

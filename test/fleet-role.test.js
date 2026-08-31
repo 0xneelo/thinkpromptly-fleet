@@ -212,3 +212,89 @@ test('an unrecognised FLEET_ROLE refuses to boot and names the bad value', async
   assert.equal((await s.get('/api/seats')).status, 404);
   await s.stop();
 });
+
+test('XYZ-1890 M6 seam 3 — a home with no Name-close script says the pool will leak', async (t) => {
+  // The pool is fleet state and only the home reaps, so this is the one deployment where
+  // nameClose() can never release a Name. Unconfigured, it skips — correctly, since it would
+  // rather leak a claim than close one it cannot see — and the leak's only trace is a
+  // `name-skip` line that reads like routine housekeeping. The boot line is what names it.
+  const forgotten = await deck(t, { FLEET_ROLE: 'home', FLEET_NAME_CLOSE_SCRIPT: '' });
+  assert.match(forgotten.log(), /WARNING: FLEET_NAME_CLOSE_SCRIPT is unset on the fleet home/);
+  assert.match(forgotten.log(), /leaks one claim per reap/);
+
+  // Configured, there is nothing to warn about. Without this half the test would pass against
+  // a deck that printed the line unconditionally.
+  const armed = await deck(t, {
+    FLEET_ROLE: 'home',
+    FLEET_NAME_CLOSE_SCRIPT: path.join(__dirname, 'name.py'),
+  });
+  assert.doesNotMatch(armed.log(), /WARNING: FLEET_NAME_CLOSE_SCRIPT/);
+
+  // A satellite never reaps, so it has no Name to close and nothing to say about one.
+  const sat = await deck(t, { FLEET_ROLE: 'satellite', FLEET_NAME_CLOSE_SCRIPT: '' });
+  assert.doesNotMatch(sat.log(), /WARNING: FLEET_NAME_CLOSE_SCRIPT/);
+});
+
+// XYZ-1890 M6. The tailnet bind is the one listener whose failure the deck survives, which is
+// what makes it dangerous: the process stays up, loopback answers everything, and the fleet
+// finds the deck's tailnet routes simply gone. startServer() cannot be used here — it waits for
+// the `tailnet broker` line that this deck will never print — so the child is driven by hand.
+function bindFail(t, bind) {
+  const dir = tmpdir('tailnet-bind');
+  return new Promise((resolve, reject) => {
+    const probe = require('net').createServer();
+    probe.listen(0, '127.0.0.1', () => {
+      const port = probe.address().port;
+      probe.close(() => {
+        const child = require('child_process').spawn(
+          process.execPath,
+          [path.join(__dirname, '..', 'server.js')],
+          {
+            env: {
+              ...process.env,
+              PORT: String(port),
+              FLEET_DB: path.join(dir, 'fleet.db'),
+              FLEET_HOSTS_FILE: path.join(dir, 'hosts.json'),
+              FLEET_TAILNET_BIND: bind,
+              FLEET_NO_REAPER: '1',
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+          }
+        );
+        fs.writeFileSync(path.join(dir, 'hosts.json'), JSON.stringify([HOST]));
+        t.after(() => child.kill('SIGKILL'));
+        let out = '';
+        const done = setTimeout(() => reject(new Error('no verdict:\n' + out)), 15000);
+        for (const s of [child.stdout, child.stderr])
+          s.on('data', (c) => {
+            out += c;
+            // Both lines, so the test proves the deck kept serving loopback as well as warned.
+            if (/tailnet listener unavailable/.test(out) && /fleetdeck http:\/\//.test(out)) {
+              clearTimeout(done);
+              resolve(out);
+            }
+          });
+        child.on('exit', (code) => {
+          clearTimeout(done);
+          reject(new Error('the deck exited ' + code + ' — a failed tailnet bind must not be fatal:\n' + out));
+        });
+      });
+    });
+  });
+}
+
+test('XYZ-1890 M6 — a failed tailnet bind names its consequence, not just its errno', async (t) => {
+  // 192.0.2.1 is TEST-NET-1: routable-looking, never assigned to this host. It stands in for the
+  // real trap — a box deck inheriting TAILNET_IP's default, which is the Mac's address.
+  const out = await bindFail(t, '192.0.2.1');
+
+  // The errno alone was the old line, and it is what let this failure read as noise.
+  assert.match(out, /WARNING: tailnet listener unavailable \(\w+\) binding 192\.0\.2\.1:\d+/);
+  assert.match(out, /serving LOOPBACK ONLY/);
+  assert.match(out, /registry, leases, bus, coordinator/);
+  assert.match(out, /TAILNET_IP \(or FLEET_TAILNET_BIND\) names an address this host does not have/);
+
+  // The half that makes the warning necessary: the deck is alive and loopback is fine, so
+  // nothing else in the smoke would have caught it. bindFail() already required both lines.
+  assert.match(out, /fleetdeck http:\/\/localhost:\d+/);
+});
