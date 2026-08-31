@@ -21,13 +21,36 @@ const HOSTS_FILE = process.env.FLEET_HOSTS_FILE || path.join(__dirname, 'hosts.j
 const DB_FILE = process.env.FLEET_DB || path.join(__dirname, 'fleet.db');
 // hosts.json entries are either "name" (a Windows+WSL box, the original shape) or
 // {"name":..., "kind":"linux"} for a plain Linux host, where tmux is reached directly
-// and the RDP-holder/WSL health probes do not apply.
-const HOSTS_RAW = () => JSON.parse(fs.readFileSync(HOSTS_FILE, 'utf8'));
+// and the RDP-holder/WSL health probes do not apply. An entry may also carry
+// {"ssh":"<alias>"} to dial the host through a different ~/.ssh/config alias than its
+// fleet name — see SSH_HOST.
+//
+// Re-read rather than captured at boot, so editing hosts.json takes effect without a deck
+// restart. The parse is cached against the file's own mtime+size: every ssh call resolves a
+// kind and a destination through here, so a poll tick would otherwise re-parse a file that
+// changes once a month a dozen times over.
+let hostsCache = null;
+const HOSTS_RAW = () => {
+  const st = fs.statSync(HOSTS_FILE);
+  const key = st.mtimeMs + ':' + st.size;
+  if (!hostsCache || hostsCache.key !== key)
+    hostsCache = { key, val: JSON.parse(fs.readFileSync(HOSTS_FILE, 'utf8')) };
+  return hostsCache.val;
+};
 const name_ = (h) => (typeof h === 'string' ? h : h.name);
 const HOSTS = () => HOSTS_RAW().map(name_);
+const entry_ = (host) => HOSTS_RAW().find((h) => name_(h) === host);
 const KIND = (host) => {
-  const e = HOSTS_RAW().find((h) => name_(h) === host);
+  const e = entry_(host);
   return typeof e === 'string' || !e ? 'wsl' : e.kind || 'wsl';
+};
+// The ssh destination for a host, which need not be its fleet name. german-box carries
+// "ssh":"gb-deploy" — a config alias pinned to the short-lived deploy cert with
+// `IdentityAgent none`, so the ~20s poll authenticates without ever touching the
+// operator's 1Password agent. `Host german-box` stays the operator's own personal route.
+const SSH_HOST = (host) => {
+  const e = entry_(host);
+  return (typeof e === 'string' || !e ? null : e.ssh) || host;
 };
 // Every remote command is written bare; a WSL box gets the `wsl ` prefix put back here.
 const remote = (host, cmd) => (KIND(host) === 'linux' ? cmd : 'wsl ' + cmd);
@@ -558,10 +581,42 @@ function runInput(cmd, args, input, opts = {}) {
 // The binary is overridable so tests can drive a fake host poller with the same argv shape;
 // unset, this is the plain `ssh` it has always been.
 const SSH_BIN = process.env.FLEET_SSH_BIN || 'ssh';
-const ssh = (host, remoteCmd, opts) =>
-  run(SSH_BIN, ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], { ...SSH_OPTS, ...opts });
-const sshInput = (host, remoteCmd, input) =>
-  runInput(SSH_BIN, ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], input, SSH_OPTS);
+const sshArgs = (dest, remoteCmd) => ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', dest, remoteCmd];
+
+// A host reached through a cert alias offers the deploy cert and nothing else, so a publickey
+// refusal there has exactly one cause and one fix. Said once per host and not again until that
+// host answers: at three polls a minute the alternative is a deck.log full of one line.
+const CERT_FAIL = /permission denied \(publickey|no such identity|identity file .* not accessible/i;
+// ssh's own transport diagnostics all begin `ssh: ` — refused, timed out, no such hostname.
+// An unreachable host is not a verdict on the cert, so it neither warns nor clears: without
+// this, one poll timing out at TCP would wipe the flag its sibling poll had just set and the
+// same line would be logged again on the next tick.
+const SSH_TRANSPORT = /^ssh: /im;
+const certWarned = new Set();
+function certGate(host, dest, r) {
+  if (dest === host) return r; // no cert alias — nothing here is about the cert
+  if (r.err && CERT_FAIL.test(r.stderr)) {
+    if (!certWarned.has(host))
+      console.error(
+        '[ssh] ' + now() + ' ' + host + ' via ' + dest + ': deploy cert rejected or missing — ' +
+          'mint a fresh one with deploy-keys/mint-deploy-cert.sh. This host has no 1Password fallback.'
+      );
+    certWarned.add(host);
+  } else if (!r.err || !SSH_TRANSPORT.test(r.stderr)) {
+    // The remote command itself ran — whatever it exited with, the cert was accepted.
+    certWarned.delete(host);
+  }
+  return r;
+}
+
+const ssh = async (host, remoteCmd, opts) => {
+  const dest = SSH_HOST(host);
+  return certGate(host, dest, await run(SSH_BIN, sshArgs(dest, remoteCmd), { ...SSH_OPTS, ...opts }));
+};
+const sshInput = async (host, remoteCmd, input) => {
+  const dest = SSH_HOST(host);
+  return certGate(host, dest, await runInput(SSH_BIN, sshArgs(dest, remoteCmd), input, SSH_OPTS));
+};
 
 const AGENT_LOCKED = 'communication with agent failed';
 
@@ -2009,11 +2064,12 @@ server.on('upgrade', (req, socket, head) => {
     try {
       if (!HOSTS().includes(host) || !SAFE_NAME.test(session || '')) return ws.close(4400);
 
-      // BatchMode: never fall back to a password prompt inside the tile — a locked
-      // 1Password agent must fail fast so the Disconnected overlay shows the hint.
+      // BatchMode: never fall back to a password prompt inside the tile — a refused
+      // credential must fail fast so the Disconnected overlay shows the hint. The tile
+      // dials SSH_HOST(host), the same cert alias the poll uses, not the fleet name.
       const term = pty.spawn(
         'ssh',
-        ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-t', host, remote(host, 'tmux attach -t ' + session)],
+        ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', '-t', SSH_HOST(host), remote(host, 'tmux attach -t ' + session)],
         {
         name: 'xterm-256color',
         cols,

@@ -125,6 +125,14 @@ if (!h) {
   process.exit(255);
 }
 
+// Authentication happens before the remote command runs, so this fails every call to the
+// host, not just its poll — the way an expired deploy cert does. `pollFail` is the other
+// half of the pair: a transport failure, which says nothing about the credential.
+if (h.authFail) {
+  process.stderr.write('deployer@' + host + ': Permission denied (publickey).\n');
+  process.exit(255);
+}
+
 // A killed session must be one of this worker's own throwaways. The prefix guard lives in the
 // fixture so no test, however written, can reach an FD-* or LC-* session on this machine.
 const localTarget = (c) => {

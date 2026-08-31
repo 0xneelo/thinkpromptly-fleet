@@ -24,7 +24,10 @@ const MAX_BODY = 64 * 1024;
 // this stub accepts must be one the backend accepts, or a green test proves nothing.
 let HOSTS = ['german-box'];
 try {
-  HOSTS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'hosts.json'), 'utf8'));
+  // Entries are "name" or {name, kind?, ssh?} — the same shape server.js reads (server.js:22).
+  HOSTS = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', 'hosts.json'), 'utf8')).map(
+    (h) => (typeof h === 'string' ? h : h.name)
+  );
 } catch (e) {
   console.warn(`[stub] WARNING: cannot read hosts.json (${e.message}); falling back to ${JSON.stringify(HOSTS)}`);
 }

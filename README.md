@@ -116,6 +116,15 @@ session names must match `/^[A-Za-z0-9_-]+$/` or they are rejected.
 Vibe is running `wsl -e sleep infinity` — RDP in as Vibe, run it, then close the window
 (disconnect, never sign out). The header badge goes red when that holder is gone.
 
-**1Password trap.** A locked 1Password ssh agent makes every ssh fail with
-`communication with agent failed`; the header shows amber "1P LOCKED" — unlock the Mac's
-1Password, then Refresh/Reconnect.
+**Host entries.** `hosts.json` holds either `"name"` (a Windows+WSL box) or
+`{"name":…, "kind":"linux", "ssh":"<alias>"}`. `ssh` is the `~/.ssh/config` alias the deck
+dials, when that differs from the fleet name the UI shows. german-box carries
+`"ssh":"gb-deploy"` — an alias pinned to the short-lived deploy cert with
+`IdentityAgent none`, so the ~20s poll never wakes the operator's 1Password agent. `Host
+german-box` stays the operator's own route and is untouched. There is no fallback: when
+the cert expires the poll fails and the deck logs one line naming
+`deploy-keys/mint-deploy-cert.sh` as the fix. Mint a fresh cert, then Refresh.
+
+**1Password trap.** A locked 1Password ssh agent makes every ssh through a 1Password-backed
+alias fail with `communication with agent failed`; the header shows amber "1P LOCKED" —
+unlock the Mac's 1Password, then Refresh/Reconnect. The box polls no longer take this route.
