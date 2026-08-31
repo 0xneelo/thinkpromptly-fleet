@@ -417,6 +417,123 @@ function heartbeat(b) {
   };
 }
 
+// --- Release (XYZ-1890). The cascade guard's whole-host rule (server.js:1065) trips whenever
+// every leased row on a host is a reap candidate — which is exactly the shape a host whose
+// leases are ALL dead takes, since a reaped row is not counted as live. No value of
+// FLEET_CASCADE_K reaches that rule, so those rows livelock: never reaped, never killed, never
+// pruned. The guard is right and stays — it blocks an AUTOMATIC mass reap on a false liveness
+// signal (a partition, a sleeping Mac). This is the deliberate way out: an operator holding a
+// live seat, releasing one named lease at a time, which is categorically not that.
+//
+// Release is not a reap. It kills nothing, warns nobody and touches no tmux session: it drops
+// the LEASE, so the row leaves the reaper's world (leasedRows selects the three lease states
+// only) and stops counting on both sides of the guard. The row itself survives as a plain
+// registry row — a vanished worker must not silently disappear — and `epoch` is left exactly
+// as it was: a release is not a claim, so the stored number stays the fence the next claim
+// increments. A released holder that comes back is told to re-claim (server.js:391-392),
+// which is milder than the 410 a reap would have left it.
+const RELEASE_SET = 'lease_state = NULL, expires_at = NULL, suspect_at = NULL, warned_at = NULL, pinger_dead = NULL, updated_at = ?';
+// The drainable states are the ones the reaper has already judged non-live on its own evidence:
+// `suspect` is a lease whose TTL expired with no heartbeat (these are the rows the guard
+// livelocks on), and `reaped` is a tombstone whose kill an unreachable host can never confirm.
+const releaseStmt = db.prepare(
+  `UPDATE sessions SET ${RELEASE_SET}
+   WHERE host = ? AND name = ? AND epoch = ? AND lease_state IN ('suspect', 'reaped')`
+);
+// `force` widens it to `active`: a lease inside its TTL that may still be beating. Releasing
+// one is not destructive either, but it is a live session, so the operator has to say so.
+const releaseForceStmt = db.prepare(
+  `UPDATE sessions SET ${RELEASE_SET}
+   WHERE host = ? AND name = ? AND epoch = ? AND lease_state IN ('active', 'suspect', 'reaped')`
+);
+// Each row carries its own current epoch, because that epoch is the fence the release below
+// demands: an operator draining a dozen leases must not have to guess one. Loopback only
+// (see DRAIN_ROUTES) — /api/sessions already publishes these same columns there.
+const drainableList = db.prepare(
+  `SELECT host, name, epoch, lease_state, worker, expires_at, suspect_at, warned_at,
+     reaped_at, reap_reason, killed_at, pinger_dead
+   FROM sessions WHERE lease_state IN ('suspect', 'reaped') ORDER BY host, name`
+);
+
+function leaseRelease(b) {
+  const id = leaseIdent(b);
+  if (id.error) return { code: 400, body: { ok: false, error: id.error } };
+  if (b.force !== undefined && typeof b.force !== 'boolean')
+    return { code: 400, body: { ok: false, error: 'force must be true or false' } };
+  // fenceCheck (the caller's gate) proves a live SEAT exists; it never proves this caller holds
+  // THIS lease's current epoch. Without that, a `reaped` row that has since been re-claimed
+  // under a new epoch would be released out from under its new holder — the claim path mints a
+  // fresh epoch on every claim (server.js:305), so (host,name) alone names two incarnations.
+  // The epoch below, matched in the WHERE clause, is what makes those two distinguishable.
+  if (!Number.isInteger(b.epoch))
+    return { code: 400, body: { ok: false, error: "epoch required — release is fenced to the lease's own epoch, not just to a seat" } };
+  // The same window leaseClaim refuses on (server.js:324): while a kill is in flight the row is
+  // the only record of the obligation it is under, so nothing rewrites it until the ssh lands.
+  if (REAPER.killing.has(id.host + '\0' + id.name))
+    return { code: 409, body: { ok: false, error: 'a kill is in flight for this session — retry in a few seconds' } };
+
+  const t = now();
+  let changed;
+  let before;
+  let after;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    before = leaseRow.get(id.host, id.name);
+    changed = (b.force ? releaseForceStmt : releaseStmt).run(t, id.host, id.name, b.epoch).changes;
+    after = leaseRow.get(id.host, id.name);
+    db.exec('COMMIT');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    throw e;
+  }
+
+  // A CAS that matched nothing is three different situations, and an operator draining twelve
+  // leases needs to know which: a typo, a race they lost, or a lease that is simply still live.
+  if (!changed) {
+    if (!before) return { code: 404, body: { ok: false, error: 'no such session row' } };
+    if (before.lease_state === null || before.epoch === null)
+      return { code: 404, body: { ok: false, error: 'this session holds no lease — nothing to release' } };
+    // The current epoch is disclosed only past fenceCheck, so the reader already proved a live
+    // seat — unlike the heartbeat fence (server.js:365-366), which answers unauthenticated
+    // callers and therefore must not hand a stale one the number it just failed.
+    if (before.epoch !== b.epoch)
+      return {
+        code: 409,
+        body: {
+          ok: false,
+          error: 'stale epoch — this lease has been re-claimed since, and releasing it now would take the new holder with it',
+          current_epoch: before.epoch,
+        },
+      };
+    return {
+      code: 409,
+      body: {
+        ok: false,
+        error: "lease_state '" + before.lease_state + "' is not drainable — pass force:true to release a live lease",
+        lease_state: before.lease_state,
+      },
+    };
+  }
+
+  // Dropping a standing kill obligation is the one irreversible thing a release does: the row
+  // was the only record that a tmux session on an unreachable host is still owed a kill. The
+  // claim path says so out loud in the same situation (server.js:337-340) and a privileged
+  // manual override must not be quieter than it.
+  if (before.lease_state === 'reaped' && before.killed_at === null && before.host !== 'mac') {
+    lifecycleLog('kill-obligation-dropped', id.host, id.name, before.epoch, 'released before its kill was ever confirmed');
+    raiseAlert(id.host, id.name + ' was released while a kill for epoch ' + before.epoch + ' was still owed');
+  }
+  lifecycleLog(
+    'released', id.host, id.name, before.epoch,
+    'lease released from ' + before.lease_state + (b.force ? ' (force)' : '') + ' by ' +
+      (Number.isInteger(b.seat_epoch) ? 'seat_epoch=' + b.seat_epoch : 'deck origin or open bootstrap fence')
+  );
+  return {
+    code: 200,
+    body: { ok: true, host: id.host, name: id.name, epoch: after.epoch, released_from: before.lease_state },
+  };
+}
+
 // --- Seats. Two desktop roles on the operator's Mac. Loopback-only (M13): a tailnet peer that
 // could seize the orchestrator seat would fence the real orchestrator out of its own fleet.
 const seatRow = db.prepare('SELECT * FROM seats WHERE seat = ?');
@@ -1847,17 +1964,42 @@ async function registryRoute(req, res, p, viaTailnet) {
 
 // --- lease routes. Mounted on BOTH listeners: box pingers arrive over tailscale, and a
 // session cannot beat a lease it has no way to reach. Seats are deliberately not here (M13).
-async function leaseRoute(req, res, p) {
-  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+// The two XYZ-1890 drain routes are the exception to "mounted on both listeners": they are the
+// operator's manual override of a safety guard, and the seat that authorises them is
+// loopback-only by M13 — so a tailnet peer could never satisfy the fence anyway, and the route
+// is simply absent there, exactly as /api/kill is. The listing is loopback-only for a second
+// reason: it hands out lease epochs, and an epoch is the credential the lease fence trusts.
+const DRAIN_ROUTES = new Set(['/api/lease/release', '/api/lease/drainable']);
+
+async function leaseRoute(req, res, p, viaTailnet) {
+  if (viaTailnet && DRAIN_ROUTES.has(p)) return send(res, 404, 'text/plain', 'not found');
   const origin = req.headers.origin;
   if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
+  // Read-only, so it is the one lease route that is a GET; every other one stays POST-only.
+  if (p === '/api/lease/drainable') {
+    if (req.method !== 'GET') return send(res, 405, 'text/plain', 'method not allowed');
+    return json(res, { ok: true, leases: drainableList.all() });
+  }
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
   const b = await body(req).catch(() => null);
   if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+  if (p === '/api/lease/release') {
+    // Gated like the other privileged writes (server.js:1951, 1958, 2113) — necessary, but not
+    // sufficient on its own: this proves a live seat, and leaseRelease's CAS proves the epoch.
+    const f = fenceCheck(req, b, false);
+    if (f) return json(res, f.body, f.code);
+    const rel = leaseRelease(b);
+    return json(res, rel.body, rel.code);
+  }
   const r = p === '/api/lease/claim' ? leaseClaim(b) : heartbeat(b);
   return json(res, r.body, r.code);
 }
 
-const LEASE_ROUTES = new Set(['/api/lease/claim', '/api/heartbeat']);
+// isHomeRoute() reads this set, so a route added here is role-gated on both listeners the same
+// day rather than quietly dispatching on a satellite and writing fleet.db.
+const LEASE_ROUTES = new Set([
+  '/api/lease/claim', '/api/heartbeat', '/api/lease/release', '/api/lease/drainable',
+]);
 
 // --- credits push. Shared by both listeners, same gate as the registry: an off-fleet
 // machine (no ssh route from here) runs fleet-credits.sh push on a cron and carries no
@@ -2174,7 +2316,7 @@ async function tailnetHandler(req, res) {
     // S3 gate above already asked it for the shared key. The board itself stays unwritable.
     if (p.startsWith('/api/coordinator/'))
       return await coordinatorRoute(req, res, p, { send, json, body, url, allowedOrigins: ALLOWED_ORIGINS });
-    if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
+    if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p, true);
     if (p === '/api/credits') return await creditsRoute(req, res);
     if (BUS_ROUTES.has(p) && req.method === 'POST') {
       if (!busAuthorized(req)) return json(res, { ok: false, error: 'invalid message bus token' }, 401);
