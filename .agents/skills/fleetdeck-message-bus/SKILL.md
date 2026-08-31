@@ -15,7 +15,7 @@ FLEETDECK_ROOT=/Users/misterislez/remote-system
   --to claude-desktop:current \
   --from codex-desktop \
   --for "ORCHESTRATOR O30" \
-  "Reply exactly ACK BUS when received."
+  "[Codex · remote-system] Reply exactly ACK BUS when received."
 ```
 
 `--for RECIPIENT` names the intended recipient for `claude-desktop:current` sends. The bus
@@ -24,6 +24,14 @@ Fleetdeck's Bus panel. Always pass it when the recipient is known.
 
 A successful response has `"status":"delivered"`. This proves Fleetdeck submitted the
 message, not that the recipient understood it. Request an explicit ACK when confirmation matters.
+
+## Identify yourself
+
+Start every message body with `[<name> · <project>]` — your agent/seat name and the repo you
+work in. Examples: `[Sylvia · lowcap]`, `[O30 · remote-system]`. `--from` labels only the
+transport envelope; the recipient's pane shows the body alone, so an unprefixed message reads
+as anonymous ("ssh 1 pass" — from whom?). If you hold no claimed name, use your session badge
+or tmux session name.
 
 ## Targets
 
@@ -39,7 +47,7 @@ Mac, `tmux list-sessions -F '#{session_name}'` lists local tmux sessions and
 
 1. Confirm that contacting the named agent is authorized by the user or active orchestration task.
 2. Select one exact target; do not guess among similarly named sessions.
-3. Write a self-contained message: sender, requested action, relevant identifiers, and desired ACK.
+3. Write a self-contained message: the `[<name> · <project>]` prefix, requested action, relevant identifiers, and desired ACK.
 4. Send with `bin/fleet-message.js`. Add `--id SAFE_ID` when a workflow may repeat; reusing it prevents duplicate delivery.
 5. Read the JSON result. Report `failed` with its `error`; never claim delivery from exit status alone.
 
@@ -48,10 +56,10 @@ Examples:
 ```sh
 FLEETDECK_ROOT=/Users/misterislez/remote-system
 "$FLEETDECK_ROOT/bin/fleet-message.js" --to mac:local-agent --from claude-desktop \
-  --id handoff-local-001 "Read docs/HANDOFF.md and reply ACK HANDOFF."
+  --id handoff-local-001 "[O30 · remote-system] Read docs/HANDOFF.md and reply ACK HANDOFF."
 
 "$FLEETDECK_ROOT/bin/fleet-message.js" --to onboarding-box:ops --from codex-desktop \
-  "Check deployment health and reply with status only."
+  "[Codex · remote-system] Check deployment health and reply with status only."
 ```
 
 ## Remote senders
@@ -61,7 +69,7 @@ Remote machines use the Tailscale listener and bearer token:
 ```sh
 : "${FLEETDECK_URL:?set the Fleetdeck Tailscale URL}"
 : "${FLEETDECK_BUS_TOKEN:?inject the Fleetdeck token securely}"
-fleet-message --to onboarding-box:ops --from codex-remote "Reply ACK REMOTE."
+fleet-message --to onboarding-box:ops --from codex-remote "[Ada · lowcap] Reply ACK REMOTE."
 ```
 
 Read the Tailscale URL from Fleetdeck's deployment configuration; do not guess it. Deploy
