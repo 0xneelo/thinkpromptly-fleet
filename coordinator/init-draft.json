@@ -32,8 +32,8 @@
     "L4": "FAIL — no markers",
     "L5": "FAIL — has [count or threshold], sentence incomplete (threshold value missing)"
   },
+  "_ruling_final_cards": "OPERATOR FIRST-HAND in portal chat, 2026-09-01, verbatim: 'merge 7+8, 1849 to inbox, seat picks' — L78=one merged brain-pipeline lane; L1849=inbox item (ship XYZ-1849 once); 'seat picks' = informed delegation of pick-6 sequencing + remaining board fields (owners, milestone completions, cadence, lane_cap) to O34 seat + portal, DRAFTED elements flagged for operator review later. Given AFTER the portal explained the collect-only collision and options 1/2/3 — reading: option 2, constraint relaxed for this initiation. FINAL LANE SET (11): L1 L2 L3 L4 L5 L6 L78 L9 N1 N2 N3.",
   "_pending_inputs": [
-    "L78 + L1849 rulings (first-hand)",
     "L5 threshold value (Walter lookup) + owners/cadence for L5, L6, L9, N1, N2, N3 + their milestones",
     "milestone re-asks for L1-L4 (each needs a 2nd checkable marker)",
     "owner push-back: 'orchestrator lane(s)'/'Orchestrators' are not named seats (DESIGN §4) — one push-back, then record as given",
