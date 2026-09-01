@@ -25,6 +25,7 @@
     "operator 2026-08-31: 'all 9 plus 1849, set is complete' — R4 researcher sweep list no longer gating",
     "CONFLICT 2026-08-31: XYZ-1892 ballot ('go with your ⭐ on all 22', recorded @ lowcap-connector 1bb00e7d, branch claude/coordinator-lane-sweep-gaps-6f897a, verified by portal 8) defers lane 4, merges 7+8, splits 6, routes XYZ-1849 to inbox, adds 3 new lanes (delivery pipe, budget/metering, coordinator loop) — contradicts the flat 'all 9 plus 1849' chat answer; per-card ruling pending via charter sheet",
     "charter sheet issued to operator: artifact 470daeb3-073a-4f02-81a0-7ea5068be678 — 13 cards, per-lane fields, lane_cap, policy; operator pastes JSON back into portal chat",
+    "RELAYED RULING (UNCONFIRMED — secondhand via Walter/R7, 2026-09-01; DESIGN §2: not binding until first-hand): ballot stands wholesale, superseding 'all 9 plus 1849' — card answers verbatim: lane 4 'Defer (ballot ⭐)'; lanes 7+8 'Merge (ballot ⭐)'; XYZ-1849 'Inbox, ship once (ballot ⭐)'; pick-6 + owners/milestones/cadence/lane_cap 'Seat picks'. NOTE: 'Seat picks' collides with init hard-nevers (ritual may not invent milestone/owner/lane_cap) — needs operator resolution in portal chat",
     "seeded PROPOSED lanes L1-L4 + OQ1-3 get REPLACED at initiation (--replace-proposed) — operator has seen the list"
   ]
 }
