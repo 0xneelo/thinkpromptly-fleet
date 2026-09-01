@@ -1,5 +1,5 @@
 {
-  "_DRAFT": "coordinator-init interview IN PROGRESS (🧭 COORDINATOR 8 portal, 2026-08-31; resumed from 🧭 1, 2026-08-29). Q1 complete. Q2 lane SET CONFIRMED by operator 2026-08-31: all 9 candidates + XYZ-1849, 'set is complete' — but per-lane fields (done_milestone, owner, next_decision, cadence_hours) NOT yet collected for any lane. lane_cap and policy NOT yet asked. Do not initiate from this file as-is.",
+  "_DRAFT": "coordinator-init interview IN PROGRESS (🧭 COORDINATOR 8 portal; sheet JSON received FIRST-HAND 2026-09-01). Q1 complete. Q2: 10 cards ruled 'lane' (L1-L6, L9, N1-N3) — L4=lane FIRST-HAND, superseding the relayed 'defer'; L78 and L1849 UNRULED. Q4 policy accepted (24/3/3). Q3 lane_cap NOT answered. All 5 provided milestones FAIL board_lib capability-shape (details in _milestone_check). Owners given as 'orchestrator lane(s)' — not named seats, push-back pending. Do not initiate from this file as-is.",
   "northstar": {
     "text": "Pricing lowcaps accurately enough so that margin protocols can be built upon.",
     "ruling_id": "linear-doc coordinator-northstar-pricing-lowcaps-f0ed42edeea3 (https://linear.app/synchronicity/document/coordinator-northstar-pricing-lowcaps-f0ed42edeea3)",
@@ -8,24 +8,37 @@
     "_excludes_verbatim": "It excludes execution — we price, we don't trade or route orders."
   },
   "lane_cap": null,
-  "policy": null,
+  "policy": {"default_cadence_hours": 24, "unattested_done_days": 3, "queue_item_days": 3},
   "lanes": [
-    {"id": "L1", "goal": "cyclomatic audit came back terrible", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
-    {"id": "L2", "goal": "our solana, and evm had completly different services that created issues on every step", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
-    {"id": "L3", "goal": "our whole architecture was more like a swiss cheese with holes everywhere", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
-    {"id": "L4", "goal": "adding new chains like tron, aptos, sui and basically the top 20 of blockchains to adopt the exact same architecture as everything else", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
-    {"id": "L5", "goal": "getting our diffs to zero reliably, and i mean zero issues ever.", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L1", "goal": "cyclomatic audit came back terrible", "done_milestone": "All functions have an acceptable cyclomatic score, i think 10-20 is fine, but happy to be corrected if senseful.", "owner": "orchestrator lane", "next_decision": "none yet", "cadence_hours": 24},
+    {"id": "L2", "goal": "our solana, and evm had completly different services that created issues on every step", "done_milestone": "a service that is identical no matter what chain is underlying for the token.", "owner": "Orchestrators", "next_decision": "non yet", "cadence_hours": 24},
+    {"id": "L3", "goal": "our whole architecture was more like a swiss cheese with holes everywhere", "done_milestone": "cyclomatic audit and unified non-evm and evm software", "owner": "orchestrator lanes", "next_decision": "none", "cadence_hours": 24},
+    {"id": "L4", "goal": "adding new chains like tron, aptos, sui and basically the top 20 of blockchains to adopt the exact same architecture as everything else", "done_milestone": "lowcapsxyz pool ingestion, pool selection, price service and all frontend integrations, for all chains basically a layer below brain and price service that can ingest any chain and its just identical upstream only difference is that which is unique to each chain. \n\neverything that can be shared across chains should be shared.", "owner": "orchestrator lanes", "next_decision": "none yet", "cadence_hours": 24, "_ruling_note": "L4=LANE clicked first-hand on the sheet 2026-09-01, supersedes the relayed 'Defer (ballot ⭐)'"},
+    {"id": "L5", "goal": "getting our diffs to zero reliably, and i mean zero issues ever.", "done_milestone": "zero ours_wrong diffs above the threshold, current threshold is", "_milestone_incomplete": "operator stopped mid-sentence at the threshold value; lookup dispatched to R7/Walter 2026-09-01", "owner": null, "next_decision": null, "cadence_hours": null},
     {"id": "L6", "goal": "building the perfect consensus sweep system, with historical sweep data (its still a little unreliable)", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
-    {"id": "L7", "goal": "perfect our pool discovery and pool election system", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
-    {"id": "L8", "goal": "have an absolute perfect way of calculating the prices for assets, we probably need to test out 20 different methods till we found something that covers everything", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L7", "goal": "perfect our pool discovery and pool election system", "_ruling": "UNRULED — merge-vs-two-lanes (relay said merge; needs first-hand click or line)", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "L8", "goal": "have an absolute perfect way of calculating the prices for assets, we probably need to test out 20 different methods till we found something that covers everything", "_ruling": "UNRULED — see L7", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
     {"id": "L9", "goal": "a system that automatically clears diffs and rules issues like spaceX reliably", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
-    {"id": "L10", "goal": "lowcap price reliability / RSC mega-print cure (XYZ-1849)", "_goal_source": "portal2 sitrep proposal, accepted into the set by operator 2026-08-31; operator may restate the goal line when this lane's fields are collected", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null}
+    {"id": "L10", "goal": "lowcap price reliability / RSC mega-print cure (XYZ-1849)", "_ruling": "UNRULED — lane-vs-inbox (relay said inbox; needs first-hand click or line)", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "N1", "goal": "push-route / train delivery integrity; first epic C2: stranded-branch salvage (536 unmerged origin branches) — ballot wording; operator may restate", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "N2", "goal": "CU/CG/RPC budget + metering truth — meters lie both ways, unmetered spend paths, arbiter starvation, CG key over plan — ballot wording; operator may restate", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null},
+    {"id": "N3", "goal": "arm the boot gate, weekly reconcile, dead-man auto-UNKNOWN, operator-debt inbox — ballot wording; operator may restate", "done_milestone": null, "owner": null, "next_decision": null, "cadence_hours": null}
   ],
+  "_milestone_check": {
+    "checked_at": "2026-09-01, board_lib.milestone_is_capability_shaped, MILESTONE_MIN_MARKERS=2",
+    "L1": "FAIL — has [count or threshold], lacks a second marker",
+    "L2": "FAIL — no markers",
+    "L3": "FAIL — no markers",
+    "L4": "FAIL — no markers",
+    "L5": "FAIL — has [count or threshold], sentence incomplete (threshold value missing)"
+  },
   "_pending_inputs": [
-    "operator 2026-08-31: 'all 9 plus 1849, set is complete' — R4 researcher sweep list no longer gating",
-    "CONFLICT 2026-08-31: XYZ-1892 ballot ('go with your ⭐ on all 22', recorded @ lowcap-connector 1bb00e7d, branch claude/coordinator-lane-sweep-gaps-6f897a, verified by portal 8) defers lane 4, merges 7+8, splits 6, routes XYZ-1849 to inbox, adds 3 new lanes (delivery pipe, budget/metering, coordinator loop) — contradicts the flat 'all 9 plus 1849' chat answer; per-card ruling pending via charter sheet",
-    "charter sheet issued to operator: artifact 470daeb3-073a-4f02-81a0-7ea5068be678 — 13 cards, per-lane fields, lane_cap, policy; operator pastes JSON back into portal chat",
-    "RELAYED RULING (UNCONFIRMED — secondhand via Walter/R7, 2026-09-01; DESIGN §2: not binding until first-hand): ballot stands wholesale, superseding 'all 9 plus 1849' — card answers verbatim: lane 4 'Defer (ballot ⭐)'; lanes 7+8 'Merge (ballot ⭐)'; XYZ-1849 'Inbox, ship once (ballot ⭐)'; pick-6 + owners/milestones/cadence/lane_cap 'Seat picks'. NOTE: 'Seat picks' collides with init hard-nevers (ritual may not invent milestone/owner/lane_cap) — needs operator resolution in portal chat",
+    "L78 + L1849 rulings (first-hand)",
+    "L5 threshold value (Walter lookup) + owners/cadence for L5, L6, L9, N1, N2, N3 + their milestones",
+    "milestone re-asks for L1-L4 (each needs a 2nd checkable marker)",
+    "owner push-back: 'orchestrator lane(s)'/'Orchestrators' are not named seats (DESIGN §4) — one push-back, then record as given",
+    "lane_cap (Q3) — must be ≥ ruled-lane count (currently 10, may become 11-12 after L78/L1849)",
+    "RELAYED RULING 2026-09-01 via R7 — superseded by the first-hand sheet on L4; still the only signal on L78/L1849, UNCONFIRMED",
     "seeded PROPOSED lanes L1-L4 + OQ1-3 get REPLACED at initiation (--replace-proposed) — operator has seen the list"
   ]
 }
