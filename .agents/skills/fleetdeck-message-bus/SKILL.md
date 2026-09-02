@@ -5,6 +5,9 @@ description: Sends and inspects durable Fleetdeck messages between Claude Deskto
 
 # Fleetdeck Message Bus
 
+Prefer the `notify` skill (`bin/fleet-notify.js`) for alias-addressed sends that need a verified
+ACK. This skill is the raw bus layer underneath it.
+
 ## Quick start
 
 Use Fleetdeck's sender; do not type into another app or tmux pane manually.

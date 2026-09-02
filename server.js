@@ -185,6 +185,12 @@ db.exec(
   `CREATE TABLE IF NOT EXISTS seats (seat TEXT PRIMARY KEY, owner_host TEXT, owner_name TEXT, epoch INTEGER, expires_at INTEGER, suspect_at INTEGER)`
 );
 
+// A notify is one bus message plus the ACK the sender blocks on. The message itself stays in
+// the bus table — message_id is the join, so delivery state has exactly one owner.
+db.exec(
+  `CREATE TABLE IF NOT EXISTS notifies (id TEXT PRIMARY KEY, alias TEXT NOT NULL, resolved_target TEXT NOT NULL, sender TEXT NOT NULL, text TEXT NOT NULL, message_id TEXT NOT NULL, expect_ack INTEGER NOT NULL DEFAULT 1, ack_at TEXT, ack_from TEXT, ack_response TEXT, created_at TEXT NOT NULL)`
+);
+
 const STATUSES = new Set(['active', 'done', 'kill-requested', 'killed', 'hidden']);
 const REG_FIELDS = ['label', 'role', 'worker', 'status', 'note'];
 // A session carries exactly ONE Linear issue key — the lane's main task. Anchored, so a
@@ -529,6 +535,9 @@ function busAuthorized(req) {
 // The two routes busAuthorized() owns. Named once so the S3 exemption in tailnetHandler() and
 // the routes it exempts cannot drift apart.
 const BUS_ROUTES = new Set(['/api/messages', '/api/messages/retry']);
+// The notify routes carry an id segment, so they need a prefix test rather than set membership.
+// Same gate as BUS_ROUTES: a remote receiver has to be able to ACK over the tailnet.
+const notifyPath = (p) => p === '/api/notify' || p.startsWith('/api/notify/');
 
 // Quote-free rule: `ssh german-box <cmd>` traverses zsh -> Windows CMD -> wsl -> bash.
 // Nested quotes are mangled at some layer and there is no reliable escaping, so every
@@ -1924,6 +1933,204 @@ async function messageRoute(req, res, p, url) {
   }
 }
 
+// --- notify: alias -> target, delivery with auto-retry, and the ACK the sender waits on.
+
+// Desktop seats have no registry row of their own — Claude Desktop delivery always lands in
+// whichever chat is open — so the pretty seat name rides along as the message label and is how
+// the receiver knows the notify was meant for it.
+const NOTIFY_SEATS = [
+  [/^orchestrator[\s-]+(.+)$/i, (m) => '🎛 ORCHESTRATOR · ' + m[1].trim()],
+  [/^global$/i, () => '🌐 GLOBAL'],
+  [/^researcher[\s-]+(\d+)$/i, (m) => '🔬 RESEARCHER ' + m[1]],
+  [/^design[\s-]+(\d+)$/i, (m) => '🎨 DESIGN ' + m[1]],
+];
+
+// A worker is addressed by the human name the operator knows it by. Identity columns first
+// (worker, tmux session name, the agent-<name> convention); a label mention is only a fallback,
+// and only as a whole word — a label reading "waiting on Ivy" must never outrank, or stand in
+// for, a worker actually named Ivy.
+const notifyExact = db.prepare(
+  `SELECT host, name, worker, label FROM sessions
+   WHERE status = 'active'
+     AND (worker = ? COLLATE NOCASE OR name = ? OR name = 'agent-' || lower(?))`
+);
+const notifyByLabel = db.prepare(
+  `SELECT host, name, worker, label FROM sessions
+   WHERE status = 'active' AND label LIKE '%' || ? || '%' ESCAPE '\\'`
+);
+// An alias is operator input, so % and _ in it are letters, not wildcards — in LIKE and in the
+// word-boundary check alike.
+const likeLiteral = (s) => s.replace(/[\\%_]/g, '\\$&');
+const wordIn = (needle) =>
+  new RegExp('(^|[^\\p{L}\\p{N}_])' + needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[^\\p{L}\\p{N}_])', 'iu');
+// Candidates in an error reply: same cap as the audit list, so a typo never dumps the fleet.
+const notifyActive = db.prepare(
+  `SELECT host, name, worker, label FROM sessions WHERE status = 'active' ORDER BY host, name LIMIT 100`
+);
+const notifyInsert = db.prepare(
+  `INSERT INTO notifies (id, alias, resolved_target, sender, text, message_id, expect_ack, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+);
+const notifyGet = db.prepare('SELECT * FROM notifies WHERE id = ?');
+const notifyListStmt = db.prepare('SELECT * FROM notifies ORDER BY created_at DESC LIMIT ?');
+// AND ack_at IS NULL: first ACK wins, so a second one never overwrites the answer.
+const notifyAckStmt = db.prepare(
+  'UPDATE notifies SET ack_at = ?, ack_from = ?, ack_response = ? WHERE id = ? AND ack_at IS NULL'
+);
+
+function notifyCandidates(rows) {
+  return rows.map((r) => ({ host: r.host, name: r.name, worker: r.worker || '', label: r.label || '' }));
+}
+
+function resolveNotifyTarget(to) {
+  const alias = typeof to === 'string' ? to.trim() : '';
+  if (!alias) messageFailure(400, 'to must be a non-empty string');
+  for (const [pattern, seat] of NOTIFY_SEATS) {
+    const match = pattern.exec(alias);
+    if (match)
+      return {
+        target: validateMessageTarget({ type: 'claude-desktop', session: 'current', label: seat(match) }),
+        resolvedTarget: 'claude-desktop:current',
+        resolvedVia: 'seat',
+      };
+  }
+  if (alias.includes(':')) {
+    const split = alias.indexOf(':');
+    const host = alias.slice(0, split);
+    const session = alias.slice(split + 1);
+    const target =
+      host === 'claude-desktop'
+        ? validateMessageTarget({ type: 'claude-desktop', session })
+        : validateMessageTarget({ type: 'tmux', host, session });
+    return { target, resolvedTarget: alias, resolvedVia: 'address' };
+  }
+  const name = alias.replace(/^worker[\s-]+/i, '');
+  let resolvedVia = 'name';
+  let rows = notifyExact.all(name, name, name);
+  if (!rows.length) {
+    resolvedVia = 'label';
+    const word = wordIn(name);
+    rows = notifyByLabel.all(likeLiteral(name)).filter((r) => word.test(r.label || ''));
+  }
+  if (rows.length === 1)
+    return {
+      target: validateMessageTarget({ type: 'tmux', host: rows[0].host, session: rows[0].name }),
+      resolvedTarget: rows[0].host + ':' + rows[0].name,
+      resolvedVia,
+    };
+  const error = new Error(rows.length ? 'ambiguous' : 'unknown target');
+  error.code = rows.length ? 409 : 404;
+  error.candidates = notifyCandidates(rows.length ? rows : notifyActive.all());
+  throw error;
+}
+
+function notifyText(id, from, text, expectAck) {
+  const head = '[notify ' + id + '] from ' + from + '\n' + text;
+  if (!expectAck) return head;
+  return (
+    head +
+    '\n\nACK when handled (blocked sender is waiting):\n' +
+    'curl -s -X POST "$FLEETDECK_URL/api/notify/' + id + '/ack" -H "Authorization: Bearer $FLEETDECK_BUS_TOKEN"' +
+    ' -H \'content-type: application/json\' -d \'{"from":"<your name>","response":"<one line>"}\'\n' +
+    '(local: FLEETDECK_URL=http://127.0.0.1:3131, no auth header)'
+  );
+}
+
+// Detached on purpose: the POST answers with the first attempt's status, and the caller polls
+// GET /api/notify/<id> for the outcome. unref so a pending wait never holds the process open.
+function notifyRetry(messageId) {
+  let attempts = 0;
+  const again = () => {
+    setTimeout(async () => {
+      attempts++;
+      // Re-read first: a manual retry may have landed it in the meantime, and retry() only
+      // accepts a failed message. Anything but 'failed' ends the chain rather than arming it.
+      const current = messageBus.get(messageId);
+      if (!current || current.status !== 'failed') return;
+      const message = await messageBus.retry(messageId).catch(() => null);
+      if ((!message || message.status !== 'delivered') && attempts < 2) again();
+    }, 5000).unref();
+  };
+  again();
+}
+
+function notifyView(row) {
+  const message = messageBus.get(row.message_id);
+  return {
+    ...row,
+    expect_ack: !!row.expect_ack,
+    delivery: message ? message.status : null,
+    delivery_error: message ? message.error : null,
+  };
+}
+
+async function notifySend(b) {
+  const from = typeof b.from === 'string' ? b.from.trim() : '';
+  const text = typeof b.text === 'string' ? b.text.trim() : '';
+  if (!from) messageFailure(400, 'from must be a non-empty string');
+  if (!text) messageFailure(400, 'text must be a non-empty string');
+  // Hand-rolled callers send false as a string or a 0 as often as a boolean; all mean no ACK.
+  const expectAck = !(b.expectAck === false || b.expectAck === 0 || b.expectAck === 'false');
+  const { target, resolvedTarget, resolvedVia } = resolveNotifyTarget(b.to);
+  const id = 'n-' + crypto.randomBytes(8).toString('hex');
+  // The bus source is an identifier, not prose: a badge like "🎛 ORCHESTRATOR 13" would be
+  // rejected by it, so it is folded to safe characters here and kept verbatim in the header.
+  const source = from.replace(/[^A-Za-z0-9._:@/-]/g, '-').slice(0, 80) || 'notify';
+  const message = await messageBus.send({
+    id,
+    source,
+    target,
+    text: notifyText(id, from, text, expectAck),
+  });
+  notifyInsert.run(id, b.to.trim(), resolvedTarget, from, text, message.id, expectAck ? 1 : 0, now());
+  if (message.status === 'failed') notifyRetry(message.id);
+  return { id, messageId: message.id, resolvedTarget, resolvedVia, status: message.status };
+}
+
+function notifyAck(id, b) {
+  const row = notifyGet.get(id);
+  if (!row) messageFailure(404, 'unknown notify id');
+  if (row.ack_at)
+    return { ok: true, already: true, ackFrom: row.ack_from, ackResponse: row.ack_response };
+  const from = typeof b.from === 'string' ? b.from.trim() : '';
+  if (!from) messageFailure(400, 'from must be a non-empty string');
+  const response = typeof b.response === 'string' ? b.response.trim().slice(0, 2000) : '';
+  notifyAckStmt.run(now(), from.slice(0, 80), response, id);
+  return { ok: true };
+}
+
+async function notifyRoute(req, res, p, url) {
+  const origin = req.headers.origin;
+  if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
+  const id = /^\/api\/notify\/([A-Za-z0-9_-]{1,80})(\/ack)?$/.exec(p);
+  try {
+    if (req.method === 'GET') {
+      if (p === '/api/notify') {
+        const limit = Number(url.searchParams.get('limit')) || 20;
+        const n = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+        return json(res, { notifies: notifyListStmt.all(n).map(notifyView) });
+      }
+      if (!id || id[2]) return send(res, 404, 'text/plain', 'not found');
+      const row = notifyGet.get(id[1]);
+      if (!row) return json(res, { ok: false, error: 'unknown notify id' }, 404);
+      return json(res, notifyView(row));
+    }
+    if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+    if (p !== '/api/notify' && !(id && id[2])) return send(res, 404, 'text/plain', 'not found');
+    const b = await body(req, MAX_BODY_BYTES + 4096).catch(() => null);
+    if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+    if (id) return json(res, notifyAck(id[1], b));
+    return json(res, await notifySend(b));
+  } catch (error) {
+    const code = Number.isInteger(error.code) ? error.code : 500;
+    return json(
+      res,
+      { ok: false, error: error.message, ...(error.candidates ? { candidates: error.candidates } : {}) },
+      code
+    );
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
@@ -1973,6 +2180,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/credits') return await creditsRoute(req, res);
     if (p === '/api/messages' || p === '/api/messages/retry')
       return await messageRoute(req, res, p, url);
+    if (notifyPath(p)) return await notifyRoute(req, res, p, url);
     if (p === '/api/kill') {
       if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
       const origin = req.headers.origin;
@@ -2159,7 +2367,7 @@ async function tailnetHandler(req, res) {
   // satisfy neither gate and the worker->deck half of the bus was structurally dead. The bus
   // token is an equivalent-strength shared secret and busAuthorized() below still gates both
   // routes unconditionally, so this frees the header, never the authority.
-  if (req.method === 'POST' && !BUS_ROUTES.has(p) && !tailnetAuthed(req))
+  if (req.method === 'POST' && !BUS_ROUTES.has(p) && !notifyPath(p) && !tailnetAuthed(req))
     return send(res, 401, 'text/plain', 'unauthorized');
   try {
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, true);
@@ -2174,6 +2382,13 @@ async function tailnetHandler(req, res) {
     if (BUS_ROUTES.has(p) && req.method === 'POST') {
       if (!busAuthorized(req)) return json(res, { ok: false, error: 'invalid message bus token' }, 401);
       return await messageRoute(req, res, p, url);
+    }
+    // GET is carried too, unlike /api/messages: a remote sender polls its own notify for the ACK.
+    // The list route is the exception — a whole-fleet audit read stays loopback-only, so over the
+    // tailnet it falls through to 404 and only GET /api/notify/<id> and the POSTs are reachable.
+    if (notifyPath(p) && !(req.method === 'GET' && p === '/api/notify')) {
+      if (!busAuthorized(req)) return json(res, { ok: false, error: 'invalid message bus token' }, 401);
+      return await notifyRoute(req, res, p, url);
     }
     if (req.method === 'GET' && p === '/api/ghtoken') {
       const r = await trainProxy('GET', '/api/ghtoken', undefined, req);
@@ -2203,7 +2418,7 @@ if (!NO_REAPER) {
 }
 
 module.exports = {
-  tailnetHandler, db, server, tailnet, assertPragmas, migrationPending,
+  tailnetHandler, db, server, tailnet, assertPragmas, migrationPending, resolveNotifyTarget,
   // Test seams: a tick is a step, and REAPER is the observability the tick writes into.
   reaperTick, reaperLoop, REAPER,
 };
