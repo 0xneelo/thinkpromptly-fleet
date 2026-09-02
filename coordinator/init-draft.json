@@ -1,5 +1,5 @@
 {
-  "_DRAFT": "coordinator-init STAGED (🧭 COORDINATOR 8 portal, 2026-09-01). Q1 ✅ Q2 ✅ (all 12 cards ruled first-hand) Q4 ✅. Operator delegation verbatim: 'merge 7+8, 1849 to inbox, seat picks' (informed — given after the collect-only collision was explained; option 2, constraint relaxed for this initiation) + 'go ahead and initiate once the seat replies'. WAITING ON: O34 seat's owner-per-lane + pick-6 staffing order (portal msg 14992d61). On receipt: fill owners, run init_board.py --replace-proposed, check.py, write provenance doc, delete this file. All 11 milestones below PASS board_lib shape; portions beyond the operator's verbatim words are marked _drafted.",
+  "_DRAFT": "coordinator-init STAGED (🧭 COORDINATOR 8 portal, 2026-09-01). Q1 ✅ Q2 ✅ (all 12 cards ruled first-hand) Q4 ✅. Operator delegation verbatim: 'merge 7+8, 1849 to inbox, seat picks' (informed — given after the collect-only collision was explained; option 2, constraint relaxed for this initiation) + 'go ahead and initiate once the seat replies'. WAITING ON: LIVE SEAT 🎛 15 (O36) owner-per-lane + pick-6 staffing order (re-gated by 🧭 COORDINATOR 14 portal 2026-09-02; O34 retired unanswered, see _pending_inputs). On receipt: fill owners, run init_board.py --replace-proposed, check.py, write provenance doc, delete this file. All 11 milestones below PASS board_lib shape; portions beyond the operator's verbatim words are marked _drafted.",
   "northstar": {
     "text": "Pricing lowcaps accurately enough so that margin protocols can be built upon.",
     "ruling_id": "linear-doc coordinator-northstar-pricing-lowcaps-f0ed42edeea3 (https://linear.app/synchronicity/document/coordinator-northstar-pricing-lowcaps-f0ed42edeea3)",
@@ -9,26 +9,121 @@
   },
   "lane_cap": 11,
   "_lane_cap_note": "DRAFTED under seat-picks delegation: init_board.py requires cap >= open lanes (11). The operator's/sweep's '6' is the seat's concurrent STAFFING order, not a board field. Flagged for operator review.",
-  "policy": {"default_cadence_hours": 24, "unattested_done_days": 3, "queue_item_days": 3},
+  "policy": {
+    "default_cadence_hours": 24,
+    "unattested_done_days": 3,
+    "queue_item_days": 3
+  },
   "lanes": [
-    {"id": "L1", "goal": "cyclomatic audit came back terrible", "done_milestone": "All functions have an acceptable cyclomatic score, i think 10-20 is fine, but happy to be corrected if senseful. Verified by the repo cyclomatic audit passing.", "_drafted": "second sentence", "owner": null, "next_decision": "none yet", "cadence_hours": 24},
-    {"id": "L2", "goal": "our solana, and evm had completly different services that created issues on every step", "done_milestone": "a service that is identical no matter what chain is underlying for the token. One shared service serves every chain, verified by the same suite passing on solana and evm.", "_drafted": "second sentence", "owner": null, "next_decision": "non yet", "cadence_hours": 24},
-    {"id": "L3", "goal": "our whole architecture was more like a swiss cheese with holes everywhere", "done_milestone": "cyclomatic audit and unified non-evm and evm software — L1 and L2 milestones verified, plus zero open gap classes in the architecture audit.", "_drafted": "everything after the dash", "owner": null, "next_decision": "none", "cadence_hours": 24},
-    {"id": "L4", "goal": "adding new chains like tron, aptos, sui and basically the top 20 of blockchains to adopt the exact same architecture as everything else", "done_milestone": "lowcapsxyz pool ingestion, pool selection, price service and all frontend integrations, for all chains basically a layer below brain and price service that can ingest any chain and its just identical upstream only difference is that which is unique to each chain. everything that can be shared across chains should be shared. The chain-agnostic layer deployed and serving the top 20 chains.", "_drafted": "last sentence", "owner": null, "next_decision": "none yet", "cadence_hours": 24, "_ruling_note": "L4=LANE clicked first-hand 2026-09-01, supersedes relayed defer"},
-    {"id": "L5", "goal": "getting our diffs to zero reliably, and i mean zero issues ever.", "done_milestone": "zero ours_wrong diffs above the threshold — zero ours_wrong convictions on the consensus board, conviction bar per tools/consensus/engine.py (median gap > max(1.0%, venue fee); winning weight >= 3, families >= 2).", "_drafted": "everything after the dash (mechanism per R7 source lookup; no single % exists)", "owner": null, "next_decision": "none yet", "cadence_hours": 24},
-    {"id": "L6", "goal": "building the perfect consensus sweep system, with historical sweep data (its still a little unreliable)", "done_milestone": "sweep verdicts reliable: disposition-level attribution verified green across a full sweep cycle; storage safety tracked under XYZ-1893.", "_drafted": "entire milestone (ballot split: verdicts stay, storage → XYZ-1893)", "owner": null, "next_decision": "none yet", "cadence_hours": 24},
-    {"id": "L78", "goal": "perfect our pool discovery and pool election system + have an absolute perfect way of calculating the prices for assets, we probably need to test out 20 different methods till we found something that covers everything", "_goal_note": "merged per operator first-hand 'merge 7+8'; both halves verbatim", "done_milestone": "one brain pipeline serving triggers, candidates, qualification, election, method, plan; provider-health first concern closed (XYZ-1817).", "_drafted": "entire milestone (ballot re-scopes b+e)", "owner": null, "next_decision": "none yet", "cadence_hours": 24},
-    {"id": "L9", "goal": "a system that automatically clears diffs and rules issues like spaceX reliably", "done_milestone": "diff auto-clear loop running in production: new diffs attributed and ruled without operator intervention; zero manually-cleared diffs in a full cadence window.", "_drafted": "entire milestone", "owner": null, "next_decision": "none yet", "cadence_hours": 24},
-    {"id": "N1", "goal": "push-route / train delivery integrity; first epic C2: stranded-branch salvage (536 unmerged origin branches)", "done_milestone": "push-route integrity verified end-to-end; stranded-branch salvage epic closed — 536 unmerged origin branches triaged to zero.", "_drafted": "entire milestone (ballot C1+C2)", "owner": null, "next_decision": "none yet", "cadence_hours": 24},
-    {"id": "N2", "goal": "CU/CG/RPC budget + metering truth — meters lie both ways, unmetered spend paths, arbiter starvation, CG key over plan", "done_milestone": "every spend path metered at issuance and verified against provider dashboards; CG key back under plan (500000/month).", "_drafted": "entire milestone (ballot C3)", "owner": null, "next_decision": "none yet", "cadence_hours": 24},
-    {"id": "N3", "goal": "arm the boot gate, weekly reconcile, dead-man auto-UNKNOWN, operator-debt inbox", "done_milestone": "boot gate armed and verified; weekly reconcile running; dead-man auto-UNKNOWN live; operator-debt inbox serving items — per XYZ-1827.", "_drafted": "entire milestone (ballot C12)", "owner": null, "next_decision": "none yet", "cadence_hours": 24}
+    {
+      "id": "L1",
+      "goal": "cyclomatic audit came back terrible",
+      "done_milestone": "All functions have an acceptable cyclomatic score, i think 10-20 is fine, but happy to be corrected if senseful. Verified by the repo cyclomatic audit passing.",
+      "_drafted": "second sentence",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24
+    },
+    {
+      "id": "L2",
+      "goal": "our solana, and evm had completly different services that created issues on every step",
+      "done_milestone": "a service that is identical no matter what chain is underlying for the token. One shared service serves every chain, verified by the same suite passing on solana and evm.",
+      "_drafted": "second sentence",
+      "owner": null,
+      "next_decision": "non yet",
+      "cadence_hours": 24
+    },
+    {
+      "id": "L3",
+      "goal": "our whole architecture was more like a swiss cheese with holes everywhere",
+      "done_milestone": "cyclomatic audit and unified non-evm and evm software — L1 and L2 milestones verified, plus zero open gap classes in the architecture audit.",
+      "_drafted": "everything after the dash",
+      "owner": null,
+      "next_decision": "none",
+      "cadence_hours": 24
+    },
+    {
+      "id": "L4",
+      "goal": "adding new chains like tron, aptos, sui and basically the top 20 of blockchains to adopt the exact same architecture as everything else",
+      "done_milestone": "lowcapsxyz pool ingestion, pool selection, price service and all frontend integrations, for all chains basically a layer below brain and price service that can ingest any chain and its just identical upstream only difference is that which is unique to each chain. everything that can be shared across chains should be shared. The chain-agnostic layer deployed and serving the top 20 chains.",
+      "_drafted": "last sentence",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24,
+      "_ruling_note": "L4=LANE clicked first-hand 2026-09-01, supersedes relayed defer"
+    },
+    {
+      "id": "L5",
+      "goal": "getting our diffs to zero reliably, and i mean zero issues ever.",
+      "done_milestone": "zero ours_wrong diffs above the threshold — zero ours_wrong convictions on the consensus board, conviction bar per tools/consensus/engine.py (median gap > max(1.0%, venue fee); winning weight >= 3, families >= 2).",
+      "_drafted": "everything after the dash (mechanism per R7 source lookup; no single % exists)",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24
+    },
+    {
+      "id": "L6",
+      "goal": "building the perfect consensus sweep system, with historical sweep data (its still a little unreliable)",
+      "done_milestone": "sweep verdicts reliable: disposition-level attribution verified green across a full sweep cycle; storage safety tracked under XYZ-1893.",
+      "_drafted": "entire milestone (ballot split: verdicts stay, storage → XYZ-1893)",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24
+    },
+    {
+      "id": "L78",
+      "goal": "perfect our pool discovery and pool election system + have an absolute perfect way of calculating the prices for assets, we probably need to test out 20 different methods till we found something that covers everything",
+      "_goal_note": "merged per operator first-hand 'merge 7+8'; both halves verbatim",
+      "done_milestone": "one brain pipeline serving triggers, candidates, qualification, election, method, plan; provider-health first concern closed (XYZ-1817).",
+      "_drafted": "entire milestone (ballot re-scopes b+e)",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24
+    },
+    {
+      "id": "L9",
+      "goal": "a system that automatically clears diffs and rules issues like spaceX reliably",
+      "done_milestone": "diff auto-clear loop running in production: new diffs attributed and ruled without operator intervention; zero manually-cleared diffs in a full cadence window.",
+      "_drafted": "entire milestone",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24
+    },
+    {
+      "id": "N1",
+      "goal": "push-route / train delivery integrity; first epic C2: stranded-branch salvage (536 unmerged origin branches)",
+      "done_milestone": "push-route integrity verified end-to-end; stranded-branch salvage epic closed — 536 unmerged origin branches triaged to zero.",
+      "_drafted": "entire milestone (ballot C1+C2)",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24
+    },
+    {
+      "id": "N2",
+      "goal": "CU/CG/RPC budget + metering truth — meters lie both ways, unmetered spend paths, arbiter starvation, CG key over plan",
+      "done_milestone": "every spend path metered at issuance and verified against provider dashboards; CG key back under plan (500000/month).",
+      "_drafted": "entire milestone (ballot C3)",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24
+    },
+    {
+      "id": "N3",
+      "goal": "arm the boot gate, weekly reconcile, dead-man auto-UNKNOWN, operator-debt inbox",
+      "done_milestone": "boot gate armed and verified; weekly reconcile running; dead-man auto-UNKNOWN live; operator-debt inbox serving items — per XYZ-1827.",
+      "_drafted": "entire milestone (ballot C12)",
+      "owner": null,
+      "next_decision": "none yet",
+      "cadence_hours": 24
+    }
   ],
   "_inbox_on_init": [
     "XYZ-1849 Phoenix/Rasa rebuttal — operator first-hand: 'ship once', reopen only if they publish again",
     "ballot inbox items C5, C11, C13, C14 (urgent-tagged), C16, C17 — from docs/research/coordinator-lane-sweep-gaps.md @ 1bb00e7d"
   ],
   "_pending_inputs": [
-    "O34 seat: owner name per lane + pick-6 staffing order (msg 14992d61) — the ONLY gate to initiation",
-    "seeded PROPOSED lanes L1-L4 + OQ1-3 get REPLACED at initiation (--replace-proposed) — operator has seen the list"
+    "LIVE SEAT 🎛 15 (O36): owner name per lane + pick-6 staffing order — the ONLY gate to initiation. History: 🧭 8 asked O34 2026-09-01T19:10Z (msg 14992d61) but O34's handoff froze 17:50:52Z (lowcap bc9180fa) and never carried the commitment; no reply exists in O34's transcript. 🧭 14 re-issued the ask to 🎛 15 on 2026-09-02 (msg d4b1d160). Operator may short-circuit by naming owners in portal chat.",
+    "seeded PROPOSED lanes L1-L4 + OQ1-3 get REPLACED at initiation (--replace-proposed) — operator has seen the list",
+    "PLACEMENT FLAG (🧭 14, 2026-09-02): this draft targets ~/remote-system/coordinator/board.json, which coordinator/README.md, the XYZ-1889 closure and XYZ-1898 call the VENDOR fixture ('instances run in customer repos'); lowcap-connector main has no coordinator/ dir and the deck serves only this board. Assumption until the operator rules: initiate HERE (only served board, operator go-ahead 2026-09-01), move to lowcap-connector when XYZ-1898 lands (a file move, not a re-init). Operator word 'lowcap-local' overrides."
   ]
 }
