@@ -1252,6 +1252,21 @@ function claudeRow(c) {
     if (!/^(five_hour|seven_day)(_|$)/.test(name) && !v.pct && v.resets_at === null) continue;
     windows[String(name).slice(0, 40)] = v;
   }
+  // Per-model weekly limits ("Weekly · Fable" in the desktop app) are not top-level windows:
+  // they ride in the `limits` list as kind weekly_scoped, the model named in scope. Each
+  // becomes a seven_day_<model> window beside the top-level ones, so it ages and renders
+  // like seven_day.
+  for (const l of Array.isArray(limits.limits) ? limits.limits.slice(0, 20) : []) {
+    if (!l || typeof l !== 'object' || l.kind !== 'weekly_scoped') continue;
+    const scope = l.scope && typeof l.scope === 'object' ? l.scope : {};
+    const model = scope.model && typeof scope.model === 'object' ? scope.model : {};
+    const tag = [model.display_name, model.id, scope.surface].find((s) => typeof s === 'string' && s);
+    if (!tag) continue;
+    const name = 'seven_day_' + tag.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 20);
+    if (name === 'seven_day_' || windows[name]) continue;
+    const v = win({ pct: l.percent, resets_at: l.resets_at });
+    if (v) windows[name] = v;
+  }
   // extra_usage is the paid-credit pool: utilization is already 0-100, but the amounts are
   // in minor units — decimal_places 2 means 4142 is 41.42 EUR against a 40.00 limit, which
   // is why that pool reads as spent. Scaling is what makes used/limit agree with utilization.
@@ -1427,13 +1442,15 @@ function creditsWrite(rows) {
 // the ages within which the number is still worth asserting; past them the reading becomes
 // no reading, and only the trend line keeps it, which is honestly historical.
 const WINDOW_AGE = { five_hour: 2 * 3600, seven_day: 24 * 3600, extra: 7 * 86400 };
+// A model-scoped weekly (seven_day_fable) is a seven_day window and ages like one.
+const windowAge = (n) => WINDOW_AGE[n] ?? (n.startsWith('seven_day') ? WINDOW_AGE.seven_day : 7 * 86400);
 function agedOut(r, now) {
   if (!r.sample_ts) return r;
   const age = now - r.sample_ts;
   const windows = {};
   let any = false;
   for (const [n, w] of Object.entries(r.windows || {})) {
-    if (age > (WINDOW_AGE[n] ?? 7 * 86400)) {
+    if (age > windowAge(n)) {
       windows[n] = { ...w, pct: null, stale: true };
       any = true;
     } else windows[n] = w;
