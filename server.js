@@ -1883,17 +1883,27 @@ const NOTIFY_SEATS = [
   [/^design[\s-]+(\d+)$/i, (m) => '🎨 DESIGN ' + m[1]],
 ];
 
-// A worker is addressed by the human name the operator knows it by, which lands in any of four
-// columns depending on how the session was registered.
-const notifyLookup = db.prepare(
+// A worker is addressed by the human name the operator knows it by. Identity columns first
+// (worker, tmux session name, the agent-<name> convention); a label mention is only a fallback,
+// and only as a whole word — a label reading "waiting on Ivy" must never outrank, or stand in
+// for, a worker actually named Ivy.
+const notifyExact = db.prepare(
   `SELECT host, name, worker, label FROM sessions
    WHERE status = 'active'
-     AND (worker = ? COLLATE NOCASE OR name = ? OR name = 'agent-' || lower(?) OR label LIKE '%' || ? || '%' ESCAPE '\\')`
+     AND (worker = ? COLLATE NOCASE OR name = ? OR name = 'agent-' || lower(?))`
 );
-// An alias is operator input, so % and _ in it are letters, not wildcards.
+const notifyByLabel = db.prepare(
+  `SELECT host, name, worker, label FROM sessions
+   WHERE status = 'active' AND label LIKE '%' || ? || '%' ESCAPE '\\'`
+);
+// An alias is operator input, so % and _ in it are letters, not wildcards — in LIKE and in the
+// word-boundary check alike.
 const likeLiteral = (s) => s.replace(/[\\%_]/g, '\\$&');
+const wordIn = (needle) =>
+  new RegExp('(^|[^\\p{L}\\p{N}_])' + needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=$|[^\\p{L}\\p{N}_])', 'iu');
+// Candidates in an error reply: same cap as the audit list, so a typo never dumps the fleet.
 const notifyActive = db.prepare(
-  `SELECT host, name, worker, label FROM sessions WHERE status = 'active' ORDER BY host, name`
+  `SELECT host, name, worker, label FROM sessions WHERE status = 'active' ORDER BY host, name LIMIT 100`
 );
 const notifyInsert = db.prepare(
   `INSERT INTO notifies (id, alias, resolved_target, sender, text, message_id, expect_ack, created_at)
@@ -1919,6 +1929,7 @@ function resolveNotifyTarget(to) {
       return {
         target: validateMessageTarget({ type: 'claude-desktop', session: 'current', label: seat(match) }),
         resolvedTarget: 'claude-desktop:current',
+        resolvedVia: 'seat',
       };
   }
   if (alias.includes(':')) {
@@ -1929,14 +1940,21 @@ function resolveNotifyTarget(to) {
       host === 'claude-desktop'
         ? validateMessageTarget({ type: 'claude-desktop', session })
         : validateMessageTarget({ type: 'tmux', host, session });
-    return { target, resolvedTarget: alias };
+    return { target, resolvedTarget: alias, resolvedVia: 'address' };
   }
   const name = alias.replace(/^worker[\s-]+/i, '');
-  const rows = notifyLookup.all(name, name, name, likeLiteral(name));
+  let resolvedVia = 'name';
+  let rows = notifyExact.all(name, name, name);
+  if (!rows.length) {
+    resolvedVia = 'label';
+    const word = wordIn(name);
+    rows = notifyByLabel.all(likeLiteral(name)).filter((r) => word.test(r.label || ''));
+  }
   if (rows.length === 1)
     return {
       target: validateMessageTarget({ type: 'tmux', host: rows[0].host, session: rows[0].name }),
       resolvedTarget: rows[0].host + ':' + rows[0].name,
+      resolvedVia,
     };
   const error = new Error(rows.length ? 'ambiguous' : 'unknown target');
   error.code = rows.length ? 409 : 404;
@@ -1989,8 +2007,9 @@ async function notifySend(b) {
   const text = typeof b.text === 'string' ? b.text.trim() : '';
   if (!from) messageFailure(400, 'from must be a non-empty string');
   if (!text) messageFailure(400, 'text must be a non-empty string');
-  const expectAck = b.expectAck !== false;
-  const { target, resolvedTarget } = resolveNotifyTarget(b.to);
+  // Hand-rolled callers send false as a string or a 0 as often as a boolean; all mean no ACK.
+  const expectAck = !(b.expectAck === false || b.expectAck === 0 || b.expectAck === 'false');
+  const { target, resolvedTarget, resolvedVia } = resolveNotifyTarget(b.to);
   const id = 'n-' + crypto.randomBytes(8).toString('hex');
   // The bus source is an identifier, not prose: a badge like "🎛 ORCHESTRATOR 13" would be
   // rejected by it, so it is folded to safe characters here and kept verbatim in the header.
@@ -2003,7 +2022,7 @@ async function notifySend(b) {
   });
   notifyInsert.run(id, b.to.trim(), resolvedTarget, from, text, message.id, expectAck ? 1 : 0, now());
   if (message.status === 'failed') notifyRetry(message.id);
-  return { id, messageId: message.id, resolvedTarget, status: message.status };
+  return { id, messageId: message.id, resolvedTarget, resolvedVia, status: message.status };
 }
 
 function notifyAck(id, b) {

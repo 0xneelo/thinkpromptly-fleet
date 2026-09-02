@@ -8,11 +8,18 @@ description: One-verb fleet messaging with guaranteed delivery and an enforced A
 ## Quick start
 
 ```bash
+FLEETDECK_ROOT=/Users/misterislez/remote-system
 node "$FLEETDECK_ROOT/bin/fleet-notify.js" send --to "orchestrator lowcapconnector" --from "<your badge or worker name>" "Deploy window opens 14:00 — confirm."
 ```
 
+Preflight once per session: `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3131/api/notify?limit=1`.
+`404` means the running deck predates the notify layer (it needs an operator `./up.sh` restart) —
+say so in one line and fall back to the `fleetdeck-message-bus` skill for this send; do not
+retry `/api/notify` or hand-type into a pane.
+
 Blocks (default 120s) until the receiver ACKs. Prints one JSON line:
-`{"id","resolvedTarget","delivered","acked","ackFrom","ackResponse"}`.
+`{"id","resolvedTarget","resolvedVia","delivered","acked","ackFrom","ackResponse"}`.
+`resolvedVia` is `seat`, `address`, `name`, or `label` — `label` means no worker carries that name and a session label mentioned it as a whole word; check `resolvedTarget` before trusting it.
 
 ## Targets
 
@@ -22,7 +29,7 @@ Blocks (default 120s) until the receiver ACKs. Prints one JSON line:
 | `global` | 🌐 GLOBAL seat (Claude Desktop) |
 | `researcher <N>` | 🔬 RESEARCHER N (Claude Desktop) |
 | `design <N>` | 🎨 DESIGN N (Claude Desktop) |
-| `<WorkerName>` or `worker <name>` | registry lookup → `host:session` tmux worker |
+| `<WorkerName>` or `worker <name>` | registry lookup → `host:session` tmux worker (worker / session name first, label word-match as fallback) |
 | `host:session` | passed through unchanged |
 
 Ambiguous alias → HTTP 409 with candidates. Unknown → 404 with live sessions. Pick one, resend.
@@ -52,7 +59,7 @@ Always ACK — the sender is blocked on it.
 
 ## API (for scripts)
 
-- `POST /api/notify` `{to, from, text, expectAck?}` → `{id, messageId, resolvedTarget, status}`
+- `POST /api/notify` `{to, from, text, expectAck?}` → `{id, messageId, resolvedTarget, resolvedVia, status}`
 - `GET /api/notify/<id>` → notify row joined with bus delivery status
 - `GET /api/notify?limit=20` → recent audit list
 - `POST /api/notify/<id>/ack` `{from, response}` → `{ok}` (first ACK wins; repeats return `already:true`)

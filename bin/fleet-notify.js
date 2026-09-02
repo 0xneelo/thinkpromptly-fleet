@@ -64,7 +64,7 @@ async function send() {
     console.log(JSON.stringify(posted.result));
     return 2;
   }
-  const { id, resolvedTarget } = posted.result;
+  const { id, resolvedTarget, resolvedVia } = posted.result;
   let delivered = posted.result.status === 'delivered';
   let row = null;
   // Delivery may still be retrying after the POST answered, so poll for both facts at once.
@@ -85,6 +85,7 @@ async function send() {
     JSON.stringify({
       id,
       resolvedTarget,
+      resolvedVia,
       delivered,
       acked,
       ackFrom: (row && row.ack_from) || null,
