@@ -55,7 +55,7 @@ Table columns: `# · Session (🟢 = still running) · Project (repo ⎇ worktre
 | `--batch N` | 15 | sessions per pack = per reader |
 | `--first N` / `--tail N` | 2 / 6 | opening prompts / closing messages kept per session |
 | `--chars N` | 1000 | per-message cap; long messages keep head + tail |
-| `--min-turns N` | 2 | drop sessions with fewer prompts + replies |
+| `--min-turns N` | 1 | drop sessions with fewer prompts + text replies (tool-only turns count for time, not as replies) |
 | `--out DIR` | `~/.claude/session-exports/summary/<stamp>` | run dir |
 
 ## What it reads (local, read-only)

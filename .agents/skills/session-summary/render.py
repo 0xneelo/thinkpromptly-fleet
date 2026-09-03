@@ -39,11 +39,12 @@ def main():
         r = by_n.get(i) or by_id.get(s["id"][:8])
         if not r:
             missing.add("batch-%02d" % ((i - 1) // run["batch"] + 1))
-        status = str((r or {}).get("status", "")).lower()
+        status = str((r or {}).get("status", "")).strip().lower()
         counts[status] = counts.get(status, 0) + 1
         rows.append("| %d | %s%s | %s | %s | %s | %s |" % (
             i, cell(s["name"]), " 🟢" if s["live"] else "", cell(s["project"]), local(s["end"]),
-            cell(r.get("summary", "")) if r else "—", STATUS.get(status, "⚠ not summarized")))
+            cell(r.get("summary", "")) if r else "—",
+            STATUS.get(status) or ("⚠ " + (status or "no status") if r else "⚠ not summarized")))
     n_missing = len(rows) - sum(counts.get(k, 0) for k in STATUS)
     head = ["# Claude sessions — last %g days" % run["days"], "",
             "%s · %d sessions · %s%s" % (run["generated"], len(rows),

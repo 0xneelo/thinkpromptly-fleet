@@ -9,7 +9,7 @@ Writes one run directory (default ~/.claude/session-exports/summary/<stamp>/):
   batch-NN.md     excerpt packs of --batch sessions each, one per reader subagent
   summaries/      empty; each reader drops batch-NN.json here, render.py merges them
 """
-import argparse, glob, json, os, re, time
+import argparse, glob, json, os, re, subprocess, time
 from collections import deque
 from datetime import datetime, timezone
 
@@ -80,14 +80,14 @@ def scan_file(path, first_n, tail_n, chars):
             row = loads(raw)
             if not row or row.get("type") != role:
                 continue
-            text = text_of(row)
-            if text is None:
-                continue
             ts = row.get("timestamp", "")
             s["start"] = s["start"] or ts
             s["end"] = ts or s["end"]
             s["cwd"] = s["cwd"] or row.get("cwd", "")
             s["branch"] = row.get("gitBranch") or s["branch"]
+            text = text_of(row)
+            if text is None:
+                continue  # tool-only turn: counts for activity/time, not as a reply
             s["prompts" if role == "user" else "replies"] += 1
             msg = {"role": role, "ts": ts, "text": clip(text, chars)}
             if role == "user" and len(s["first"]) < first_n:
@@ -98,14 +98,16 @@ def scan_file(path, first_n, tail_n, chars):
 
 
 def live_ids():
+    """Session ids whose registry pid is alive AND still a claude process (pids get recycled)."""
     ids = set()
     for f in glob.glob(os.path.join(SESSIONS, "*.json")):
         try:
             s = json.load(open(f))
-            os.kill(int(s["pid"]), 0)
+            cmd = subprocess.run(["ps", "-o", "command=", "-p", str(int(s["pid"]))], capture_output=True, text=True).stdout
         except (OSError, ValueError, KeyError, TypeError):
             continue
-        ids.add(s.get("sessionId"))
+        if "claude" in cmd.lower():
+            ids.add(s.get("sessionId"))
     return ids
 
 
@@ -145,8 +147,9 @@ def pack(label, batch, start):
               "", "### opening prompts"]
         for m in s["first"]:
             L += ["**%s** %s:" % (m["role"], local(m["ts"])), m["text"], ""]
-        L += ["### closing messages"]
-        for m in s["last"]:
+        closing = [m for m in s["last"] if m not in s["first"]]
+        L += ["### closing messages" + ("" if closing else " (none beyond the prompts above)")]
+        for m in closing:
             L += ["**%s** %s:" % (m["role"], local(m["ts"])), m["text"], ""]
     return "\n".join(L) + "\n"
 
@@ -158,7 +161,7 @@ def main():
     p.add_argument("--first", type=int, default=2, help="opening prompts kept per session (default 2)")
     p.add_argument("--tail", type=int, default=6, help="closing messages kept per session (default 6)")
     p.add_argument("--chars", type=int, default=1000, help="max chars per message (default 1000)")
-    p.add_argument("--min-turns", type=int, default=2, help="drop sessions with fewer prompts+replies (default 2)")
+    p.add_argument("--min-turns", type=int, default=1, help="drop sessions with fewer prompts+replies (default 1)")
     p.add_argument("--out", help="run directory (default ~/.claude/session-exports/summary/<stamp>)")
     a = p.parse_args()
 
