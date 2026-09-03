@@ -4,7 +4,7 @@ const fs = require('fs');
 
 function usage(message) {
   if (message) console.error('error: ' + message);
-  console.error('usage: fleet-notify send --to ALIAS --from SENDER [--no-ack] [--timeout SEC] [TEXT]');
+  console.error('usage: fleet-notify send --to ALIAS --from SENDER [--open-chat] [--expect-ack|--no-ack] [--timeout SEC] [TEXT]');
   console.error('       fleet-notify ack ID --from NAME [RESPONSE]');
   process.exit(2);
 }
@@ -15,7 +15,9 @@ if (command !== 'send' && command !== 'ack') usage('first argument must be send 
 
 let to;
 let from;
-let expectAck = true;
+let openChat = false;
+let noAck = false;
+let forceExpectAck = false;
 let timeout = 120;
 const words = [];
 // A swallowed flag would silently become the value of the previous one — a notify sent --to
@@ -28,11 +30,15 @@ function value(i) {
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--to') to = value(++i);
   else if (args[i] === '--from') from = value(++i);
-  else if (args[i] === '--no-ack') expectAck = false;
+  else if (args[i] === '--open-chat') openChat = true;
+  else if (args[i] === '--expect-ack') forceExpectAck = true;
+  else if (args[i] === '--no-ack') noAck = true;
   else if (args[i] === '--timeout') timeout = Number(value(++i));
   else if (args[i] === '--help' || args[i] === '-h') usage();
   else words.push(args[i]);
 }
+if (noAck && forceExpectAck) usage('--no-ack and --expect-ack cannot be used together');
+const expectAck = forceExpectAck || (!openChat && !noAck);
 // Never defaulted: an ACK or a notify attributed to the wrong agent is worse than a failed send.
 if (!from) usage('--from is required');
 
@@ -59,7 +65,9 @@ async function send() {
   const text = words.length ? words.join(' ') : fs.readFileSync(0, 'utf8');
   if (!text.trim()) usage('message text is required as arguments or stdin');
 
-  const posted = await call('POST', '/api/notify', { to, from, text, expectAck });
+  if (openChat)
+    console.error('warning: --open-chat is best-effort: ' + to + ' delivers to whichever Claude Desktop chat is open');
+  const posted = await call('POST', '/api/notify', { to, from, text, expectAck, openChat });
   if (!posted.ok) {
     console.log(JSON.stringify(posted.result));
     return 2;

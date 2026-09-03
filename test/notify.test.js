@@ -1,15 +1,16 @@
-// The notify layer: alias -> target resolution, the ACK the sender blocks on, and the
-// loopback/tailnet auth split in front of both. Delivery itself is deliberately out of scope —
-// a test process has no Claude Desktop bridge and no fleet host — so every assertion here is
-// about resolution, storage and gating, never about `status: 'delivered'`.
+// The notify layer: seat aliases fail closed unless openChat opts into the desktop collapse;
+// worker/address resolution, ACK storage, and loopback/tailnet auth are also covered here.
 //
 // The load-bearing case is "exact beats label": a session whose label reads "waiting on Ivy"
 // must never stand in for, or ambiguate with, the worker actually named Ivy. Before the
 // resolver split that label was ORed into the same lookup and a notify to Ivy 409'd.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('crypto');
 const fs = require('fs');
 const http = require('http');
+const net = require('net');
+const os = require('os');
 const path = require('path');
 const { tmpdir, legacyDb } = require('./helpers');
 const { startServer } = require('./http');
@@ -28,10 +29,15 @@ async function deck(t, rows = []) {
   // notify fails its delivery in milliseconds rather than against a 15s real ssh timeout.
   const state = path.join(dir, 'ssh.json');
   fs.writeFileSync(state, JSON.stringify({ hosts: {} }));
+  // Pinned to a private dir: a run on the operator's Mac must resolve seats against fixtures,
+  // never against the desktop sessions actually open beside the test.
+  const sessions = path.join(dir, 'sessions');
+  fs.mkdirSync(sessions);
   const s = await startServer(
     {
       FLEETDECK_BUS_TOKEN: TOKEN,
       CLAUDE_BRIDGE: NO_BRIDGE,
+      CLAUDE_SESSIONS_DIR: sessions,
       FLEET_SSH_BIN: path.join(__dirname, 'fake-ssh.js'),
       FLEET_FAKE_SSH_STATE: state,
     },
@@ -41,8 +47,35 @@ async function deck(t, rows = []) {
   return s;
 }
 
+// A fake Claude Desktop session: the registry files a real one publishes (a live pid — this
+// process or its parent — a socket, and the 0600 key file named by the socket's sha256), plus a
+// listener that records the frames a sender writes. Socket paths must stay under the 104-byte
+// unix limit, so they live in the OS tmpdir, not the test dir.
+async function desktopSession(s, name, pid = process.pid) {
+  const sockDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-'));
+  const sock = path.join(sockDir, 'p.sock');
+  const frames = [];
+  const server = net.createServer((c) => c.on('data', (d) => frames.push(d.toString())));
+  await new Promise((r) => server.listen(sock, r));
+  const dir = path.join(s.dir, 'sessions');
+  fs.writeFileSync(path.join(dir, pid + '.json'), JSON.stringify({ pid, name, messagingSocketPath: sock }));
+  fs.writeFileSync(
+    path.join(dir, pid + '.' + crypto.createHash('sha256').update(sock).digest('hex') + '.key'),
+    JSON.stringify({ peerToken: 'peer-token-' + pid })
+  );
+  return {
+    frames,
+    close: () =>
+      new Promise((r) => {
+        server.close(r);
+        fs.rmSync(sockDir, { recursive: true, force: true });
+      }),
+  };
+}
+
 const send = (s, to, extra) =>
   s.post('/api/notify', { to, from: 'FD-test', text: 'ping', ...extra });
+const seatSend = (s, to = 'global', extra = {}) => send(s, to, { openChat: true, ...extra });
 
 const IVY = { host: 'german-box', name: 'agent-ivy', worker: 'Ivy' };
 const RUNE = { host: 'german-box', name: 'agent-rune', worker: 'Rune' };
@@ -73,15 +106,66 @@ function raw(s, p, payload) {
   });
 }
 
-test('a seat alias resolves to the desktop, and the seat name is what the receiver reads', async (t) => {
+test('a seat alias is refused without openChat and creates no notify', async (t) => {
   const s = await deck(t);
-  // Claude Desktop has no registry row — delivery always lands in whichever chat is open — so
-  // all four seats collapse to the same target and only resolvedVia says how they got there.
-  for (const to of ['orchestrator lowcapconnector', 'global', 'researcher 3', 'design 2']) {
+  const db = s.open();
+  db.prepare(
+    'INSERT INTO seats (seat, owner_host, owner_name, epoch) VALUES (?, ?, ?, ?)'
+  ).run('orchestrator', 'mac', 'O36-lowcap-orchestrator-15', 7);
+  db.close();
+  for (const [to, seat] of [
+    ['orchestrator lowcapconnector', '🎛 ORCHESTRATOR · lowcapconnector'],
+    ['global', '🌐 GLOBAL'],
+    ['researcher 3', '🔬 RESEARCHER 3'],
+    ['design 2', '🎨 DESIGN 2'],
+  ]) {
     const r = await send(s, to);
-    assert.equal(r.status, 200, to + ' -> ' + r.text);
-    assert.equal(r.body.resolvedTarget, 'claude-desktop:current', to);
-    assert.equal(r.body.resolvedVia, 'seat', to);
+    assert.equal(r.status, 409, to + ' -> ' + r.text);
+    assert.equal(r.body.error, 'seat_unaddressable', to);
+    assert.equal(r.body.seat, seat, to);
+    assert.match(r.body.hint, /--open-chat/, to);
+    if (to.startsWith('orchestrator')) {
+      assert.deepEqual(r.body.owner, { host: 'mac', name: 'O36-lowcap-orchestrator-15', fenced: true });
+      assert.doesNotMatch(r.text, /epoch/);
+    }
+    if (to === 'global') assert.equal(r.body.owner, null);
+    assert.deepEqual((await s.get('/api/notify?limit=5')).body.notifies, [], to);
+  }
+  // The seats read is loopback-only, so the refusal must not hand a tailnet peer the owner.
+  const remote = await s.tailPost(
+    '/api/notify',
+    { to: 'orchestrator lowcapconnector', from: 'FD-test', text: 'ping' },
+    { authorization: 'Bearer ' + TOKEN }
+  );
+  assert.equal(remote.status, 409, remote.text);
+  assert.equal(remote.body.error, 'seat_unaddressable');
+  assert.equal(remote.body.owner, null);
+  assert.doesNotMatch(remote.text, /O36-lowcap-orchestrator-15|"mac"/);
+});
+
+test('openChat true spellings opt a seat alias into the desktop collapse', async (t) => {
+  const s = await deck(t);
+  for (const openChat of [true, 1, 'true']) {
+    const r = await send(s, 'global', { openChat });
+    assert.equal(r.status, 200, String(openChat) + ' -> ' + r.text);
+    assert.equal(r.body.resolvedTarget, 'claude-desktop:current');
+    assert.equal(r.body.resolvedVia, 'seat');
+  }
+});
+
+test('a notify view exposes resolution, delivered, and ACK booleans', async (t) => {
+  const s = await deck(t);
+  for (const [sent, resolvedVia] of [
+    [await seatSend(s), 'seat'],
+    [await send(s, 'german-box:agent-zed'), 'address'],
+  ]) {
+    const before = await s.get('/api/notify/' + sent.body.id);
+    assert.equal(before.body.resolved_via, resolvedVia);
+    assert.equal(before.body.delivered, false);
+    assert.equal(typeof before.body.delivered, 'boolean');
+    assert.equal(before.body.acked, false);
+    assert.equal((await s.post('/api/notify/' + sent.body.id + '/ack', { from: 'Ivy' })).body.ok, true);
+    assert.equal((await s.get('/api/notify/' + sent.body.id)).body.acked, true);
   }
 });
 
@@ -164,7 +248,7 @@ test('% and _ in an alias are letters, not LIKE wildcards', async (t) => {
 
 test('the first ACK wins and is what the blocked sender reads back', async (t) => {
   const s = await deck(t);
-  const sent = await send(s, 'global');
+  const sent = await seatSend(s);
   const id = sent.body.id;
   assert.equal((await s.post('/api/notify/' + id + '/ack', { from: 'Ivy', response: 'handled' })).body.ok, true);
   const view = await s.get('/api/notify/' + id);
@@ -182,7 +266,7 @@ test('an ACK for an unknown id is a 404, and an unsigned one a 400', async (t) =
   const missing = await s.post('/api/notify/n-deadbeefdeadbeef/ack', { from: 'Ivy' });
   assert.equal(missing.status, 404, missing.text);
   assert.equal(missing.body.error, 'unknown notify id');
-  const sent = await send(s, 'global');
+  const sent = await seatSend(s);
   const unsigned = await s.post('/api/notify/' + sent.body.id + '/ack', { response: 'handled' });
   assert.equal(unsigned.status, 400, unsigned.text);
 });
@@ -190,17 +274,17 @@ test('an ACK for an unknown id is a 404, and an unsigned one a 400', async (t) =
 test('expectAck reads "false" and 0 the way a hand-rolled caller means them', async (t) => {
   const s = await deck(t);
   for (const expectAck of ['false', 0, false]) {
-    const sent = await send(s, 'global', { expectAck });
+    const sent = await seatSend(s, 'global', { expectAck });
     assert.equal((await s.get('/api/notify/' + sent.body.id)).body.expect_ack, false, String(expectAck));
   }
   // Omitted still means yes: the ACK is the point of the layer.
-  const stock = await send(s, 'global');
+  const stock = await seatSend(s);
   assert.equal((await s.get('/api/notify/' + stock.body.id)).body.expect_ack, true);
 });
 
 test('over the tailnet the bus token opens one notify, and the audit list not at all', async (t) => {
   const s = await deck(t);
-  const id = (await send(s, 'global')).body.id;
+  const id = (await seatSend(s)).body.id;
   const bearer = { authorization: 'Bearer ' + TOKEN };
 
   // A remote receiver polls its own notify and ACKs it, so both are carried — behind the token.
@@ -239,4 +323,68 @@ test('a send missing any of its three required fields is a 400', async (t) => {
   const bad = await raw(s, '/api/notify', '{not json');
   assert.equal(bad.status, 400, bad.text);
   assert.match(bad.text, /bad request body/);
+});
+
+test('a seat alias delivers to the live desktop session titled for it, over its peer socket', async (t) => {
+  const s = await deck(t);
+  const seat = await desktopSession(s, '🔬 RESEARCHER 3 · no_quorum residuals');
+  t.after(seat.close);
+  const r = await send(s, 'researcher 3');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.resolvedTarget, 'claude-desktop:🔬 RESEARCHER 3 · no_quorum residuals');
+  assert.equal(r.body.resolvedVia, 'seat');
+  assert.equal(r.body.status, 'delivered');
+  // Two JSON lines, as a Claude session writes them: the receiver's own token, then the turn.
+  const [auth, turn, rest] = seat.frames.join('').split('\n');
+  assert.deepEqual(JSON.parse(auth), { type: 'auth', token: 'peer-token-' + process.pid });
+  const m = JSON.parse(turn);
+  assert.equal(m.msgV, 1);
+  assert.equal(m.type, 'user');
+  assert.equal(m.from, 'fleetdeck:FD-test');
+  assert.match(m.message.content, /^<cross-session-message from="fleetdeck:FD-test" from-name="FD-test"/);
+  assert.match(m.message.content, new RegExp('\\[notify ' + r.body.id + '\\] from FD-test\\nping'));
+  assert.match(m.message.content, /\/api\/notify\/n-[0-9a-f]+\/ack/);
+  assert.equal(rest, '');
+});
+
+test('orchestrator <project> matches the seat title with spelling drift, else the lease owner', async (t) => {
+  const s = await deck(t);
+  const titled = await desktopSession(s, '🎛 ORCHESTRATOR 13 · lowcapconnector · notify');
+  t.after(titled.close);
+  const r = await send(s, 'orchestrator lowcap-connector');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.resolvedTarget, 'claude-desktop:🎛 ORCHESTRATOR 13 · lowcapconnector · notify');
+  // A never-renamed orchestrator is found through its fenced lease row instead.
+  const other = await send(s, 'orchestrator symm-treasury');
+  assert.equal(other.status, 409, other.text);
+  assert.equal(other.body.error, 'seat_unaddressable');
+  const lease = await desktopSession(s, 'O38-symm-orchestrator-4', process.ppid);
+  t.after(lease.close);
+  const db = s.open();
+  db.prepare('INSERT INTO seats (seat, owner_host, owner_name, epoch, expires_at) VALUES (?, ?, ?, ?, ?)')
+    .run('orchestrator', 'mac', 'O38-symm-orchestrator-4', 1, Date.now() + 60000);
+  db.close();
+  const viaLease = await send(s, 'orchestrator symm-treasury');
+  assert.equal(viaLease.status, 200, viaLease.text);
+  assert.equal(viaLease.body.resolvedTarget, 'claude-desktop:O38-symm-orchestrator-4');
+});
+
+test('two live sessions titled for one seat is a 409 naming both, and a dead pid is not live', async (t) => {
+  const s = await deck(t);
+  const a = await desktopSession(s, '🎨 DESIGN 2 · header');
+  const b = await desktopSession(s, '🎨 DESIGN 2 · footer', process.ppid);
+  t.after(a.close);
+  t.after(b.close);
+  const r = await send(s, 'design 2');
+  assert.equal(r.status, 409, r.text);
+  assert.deepEqual(r.body.candidates.map((c) => c.name).sort(), ['🎨 DESIGN 2 · footer', '🎨 DESIGN 2 · header']);
+  // DESIGN 21 must not match DESIGN 2.
+  assert.equal((await send(s, 'design 21')).status, 409);
+  fs.writeFileSync(
+    path.join(s.dir, 'sessions', '999999.json'),
+    JSON.stringify({ pid: 999999, name: '🌐 GLOBAL 1', messagingSocketPath: '/nonexistent.sock' })
+  );
+  const dead = await send(s, 'global');
+  assert.equal(dead.status, 409, dead.text);
+  assert.equal(dead.body.error, 'seat_unaddressable');
 });
