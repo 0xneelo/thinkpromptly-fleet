@@ -1,4 +1,5 @@
 const http = require('http');
+const net = require('net');
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -488,6 +489,34 @@ const CERTS_DIR = path.join(SSH_DIR, 'deploy-certs');
 const MINT_SH = path.join(__dirname, 'deploy-keys', 'mint-deploy-cert.sh');
 const OP_AGENT_SOCK = path.join(HOME, 'Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock');
 const CLAUDE_BRIDGE = process.env.CLAUDE_BRIDGE || path.join(__dirname, '.fleetdeck', 'claude-desktop-send');
+// Every Claude Code desktop session publishes itself here: <pid>.json (its ListAgents name and
+// unix socket) plus a 0600 <pid>.<sha256(socket path)>.key holding the peer token a sender
+// presents on that socket. Observed on 2.1.259 (peerProtocol 1); the .key is read only at
+// delivery and never leaves this process.
+const CLAUDE_SESSIONS_DIR = process.env.CLAUDE_SESSIONS_DIR || path.join(HOME, '.claude', 'sessions');
+
+// Live desktop sessions: a registry file whose pid is alive and whose socket exists. A stale
+// file from a crashed session is skipped, never an error.
+function desktopSessions() {
+  let files;
+  try {
+    files = fs.readdirSync(CLAUDE_SESSIONS_DIR);
+  } catch {
+    return [];
+  }
+  const live = [];
+  for (const f of files) {
+    if (!/^\d+\.json$/.test(f)) continue;
+    try {
+      const j = JSON.parse(fs.readFileSync(path.join(CLAUDE_SESSIONS_DIR, f), 'utf8'));
+      if (typeof j.name !== 'string' || typeof j.messagingSocketPath !== 'string') continue;
+      process.kill(j.pid, 0);
+      if (!fs.existsSync(j.messagingSocketPath)) continue;
+      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath });
+    } catch {}
+  }
+  return live;
+}
 const BUS_TOKEN_FILE = process.env.FLEETDECK_BUS_TOKEN_FILE || path.join(HOME, '.fleetdeck-bus-token');
 
 function loadBusToken() {
@@ -1681,10 +1710,13 @@ function messageFailure(code, message) {
 function validateMessageTarget(target) {
   if (!target || typeof target !== 'object') messageFailure(400, 'target must be an object');
   if (target.type === 'claude-desktop') {
-    if (target.session !== 'current')
-      messageFailure(400, 'Claude Desktop currently supports session "current" only');
+    // "current" is the fronted chat (AX bridge); anything else is a session's ListAgents name,
+    // resolved to its socket at delivery so a restarted session with a new pid still gets it.
+    const session = typeof target.session === 'string' ? target.session.trim() : '';
+    if (!session || session.length > 300 || /[\r\n]/.test(session))
+      messageFailure(400, 'Claude Desktop session must be "current" or a live session name');
     const label = typeof target.label === 'string' ? target.label.trim().slice(0, 60) : '';
-    return { type: 'claude-desktop', session: 'current', ...(label ? { label } : {}) };
+    return { type: 'claude-desktop', session, ...(label ? { label } : {}) };
   }
   if (target.type === 'tmux') {
     if (!(target.host === 'mac' || HOSTS().includes(target.host)) || !SAFE_NAME.test(target.session || ''))
@@ -1721,7 +1753,55 @@ async function deliverTmux(message) {
   deliveryError('tmux submit failed', submitted);
 }
 
+// The desktop's own cross-session channel, as a Claude session speaks it: two JSON lines on the
+// receiver's unix socket — an auth line carrying the receiver's published token, then the user
+// turn. The receiver answers nothing; a clean close is delivery. `from` is what the receiver
+// shows as the reply address, so it names the bus, not a socket it could SendMessage back to —
+// the ACK footer in the text is the way back.
+function deliverDesktopSession(message) {
+  const name = message.target.session;
+  const row = desktopSessions().find((s) => s.name === name);
+  if (!row) throw new Error('Claude Desktop session "' + name + '" is not live');
+  const key = fs.readdirSync(CLAUDE_SESSIONS_DIR).find((f) => f.startsWith(row.pid + '.') && f.endsWith('.key'));
+  if (!key) throw new Error('no peer key published for Claude Desktop session "' + name + '"');
+  const { peerToken } = JSON.parse(fs.readFileSync(path.join(CLAUDE_SESSIONS_DIR, key), 'utf8'));
+  const from = 'fleetdeck:' + message.source;
+  const content =
+    '<cross-session-message from="' + from + '" from-name="' + message.source + '" from-mode="bus">\n' +
+    message.text +
+    '\n</cross-session-message>';
+  const frames =
+    JSON.stringify({ type: 'auth', token: peerToken }) +
+    '\n' +
+    JSON.stringify({
+      msgV: 1,
+      msg_id: crypto.randomUUID(),
+      type: 'user',
+      message: { role: 'user', content },
+      priority: 'next',
+      from,
+    }) +
+    '\n';
+  return new Promise((resolve, reject) => {
+    const c = net.connect(row.sock);
+    const timer = setTimeout(() => {
+      c.destroy();
+      reject(new Error('Claude Desktop session "' + name + '" did not take the message in 5s'));
+    }, 5000);
+    c.on('connect', () => c.end(frames));
+    c.on('error', (e) => {
+      clearTimeout(timer);
+      reject(new Error('Claude Desktop session "' + name + '": ' + e.message));
+    });
+    c.on('close', () => {
+      clearTimeout(timer);
+      resolve();
+    });
+  });
+}
+
 async function deliverClaudeDesktop(message) {
+  if (message.target.session !== 'current') return deliverDesktopSession(message);
   if (process.platform !== 'darwin') throw new Error('Claude Desktop delivery requires macOS');
   if (!fs.existsSync(CLAUDE_BRIDGE))
     throw new Error('Claude bridge is not built; run npm run build:claude-bridge');
@@ -1746,6 +1826,7 @@ async function messageTargets() {
     : lines(result.stdout).map((name) => name.trim()).filter((name) => SAFE_NAME.test(name));
   return [
     { type: 'claude-desktop', session: 'current' },
+    ...desktopSessions().map((s) => ({ type: 'claude-desktop', session: s.name })),
     ...local.map((session) => ({ type: 'tmux', host: 'mac', session })),
   ];
 }
@@ -1879,13 +1960,36 @@ async function messageRoute(req, res, p, url) {
 // --- notify: alias -> target, delivery with auto-retry, and the ACK the sender waits on.
 
 // Desktop seats have no address of their own: delivery lands in whichever chat is open.
-// Seat aliases are refused unless openChat opts in; the label still tells the receiver who it was for.
+// A seat is a Claude Desktop session, found by the title the operator gave it (/rename
+// `🎛 ORCHESTRATOR <N> · <project> · <topic>` and kin). Each row: alias pattern, the seat name the
+// receiver reads, the seats-table key, and the title test. Project spelling drifts
+// (lowcap-connector / lowcapconnector / lowcap), so it is compared with punctuation stripped.
+// No live session → refused unless openChat opts into the fronted-chat collapse.
+const squash = (s) => s.toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+const numbered = (badge, n) => (name) => new RegExp('^' + badge + ' ' + n + '(?!\\d)', 'u').test(name);
 const NOTIFY_SEATS = [
-  [/^orchestrator[\s-]+(.+)$/i, (m) => '🎛 ORCHESTRATOR · ' + m[1].trim(), 'orchestrator'],
-  [/^global$/i, () => '🌐 GLOBAL', null],
-  [/^researcher[\s-]+(\d+)$/i, (m) => '🔬 RESEARCHER ' + m[1], null],
-  [/^design[\s-]+(\d+)$/i, (m) => '🎨 DESIGN ' + m[1], null],
+  [
+    /^orchestrator[\s-]+(.+)$/i,
+    (m) => '🎛 ORCHESTRATOR · ' + m[1].trim(),
+    'orchestrator',
+    (m) => (name) => name.startsWith('🎛 ORCHESTRATOR') && squash(name).includes(squash(m[1])),
+  ],
+  [/^global$/i, () => '🌐 GLOBAL', null, () => (name) => name.startsWith('🌐 GLOBAL')],
+  [/^researcher[\s-]+(\d+)$/i, (m) => '🔬 RESEARCHER ' + m[1], null, (m) => numbered('🔬 RESEARCHER', m[1])],
+  [/^design[\s-]+(\d+)$/i, (m) => '🎨 DESIGN ' + m[1], null, (m) => numbered('🎨 DESIGN', m[1])],
+  [/^coordinator[\s-]+(\d+)$/i, (m) => '🧭 COORDINATOR ' + m[1], null, (m) => numbered('🧭 COORDINATOR', m[1])],
 ];
+
+// The orchestrator seat also has a lease row whose owner_name is the session's ListAgents name
+// even when it was never renamed — the fallback when no title matches.
+function seatSessions(seatKey, matches) {
+  const live = desktopSessions();
+  const titled = live.filter((s) => matches(s.name));
+  if (titled.length || seatKey !== 'orchestrator') return titled;
+  const row = seatRow.get('orchestrator');
+  if (!row || row.epoch === null || row.suspect_at !== null || row.expires_at < msNow()) return [];
+  return live.filter((s) => s.name === row.owner_name);
+}
 
 // A worker is addressed by the human name the operator knows it by. Identity columns first
 // (worker, tmux session name, the agent-<name> convention); a label mention is only a fallback,
@@ -1927,18 +2031,26 @@ function notifyCandidates(rows) {
 function resolveNotifyTarget(to) {
   const alias = typeof to === 'string' ? to.trim() : '';
   if (!alias) messageFailure(400, 'to must be a non-empty string');
-  for (const [pattern, seatLabel, seatKey] of NOTIFY_SEATS) {
+  for (const [pattern, seatLabel, seatKey, matcher] of NOTIFY_SEATS) {
     const match = pattern.exec(alias);
-    if (match) {
-      const seat = seatLabel(match);
-      return {
-        target: validateMessageTarget({ type: 'claude-desktop', session: 'current', label: seat }),
-        resolvedTarget: 'claude-desktop:current',
-        resolvedVia: 'seat',
-        seat,
-        seatKey,
-      };
+    if (!match) continue;
+    const seat = seatLabel(match);
+    const live = seatSessions(seatKey, matcher(match));
+    if (live.length > 1) {
+      const error = new Error('ambiguous');
+      error.code = 409;
+      error.candidates = live.map((s) => ({ host: 'mac', name: s.name, worker: '', label: seat }));
+      throw error;
     }
+    const session = live.length ? live[0].name : 'current';
+    return {
+      target: validateMessageTarget({ type: 'claude-desktop', session, label: seat }),
+      resolvedTarget: 'claude-desktop:' + session,
+      resolvedVia: 'seat',
+      seat,
+      seatKey,
+      unaddressable: !live.length,
+    };
   }
   if (alias.includes(':')) {
     const split = alias.indexOf(':');
@@ -2020,8 +2132,8 @@ async function notifySend(b, remote) {
   // Hand-rolled callers send false as a string or a 0 as often as a boolean; all mean no ACK.
   const expectAck = !(b.expectAck === false || b.expectAck === 0 || b.expectAck === 'false');
   const openChat = b.openChat === true || b.openChat === 1 || b.openChat === 'true';
-  const { target, resolvedTarget, resolvedVia, seat, seatKey } = resolveNotifyTarget(b.to);
-  if (resolvedVia === 'seat' && !openChat) {
+  const { target, resolvedTarget, resolvedVia, seat, seatKey, unaddressable } = resolveNotifyTarget(b.to);
+  if (unaddressable && !openChat) {
     const row = seatKey ? seatRow.get(seatKey) : null;
     const error = new Error('seat_unaddressable');
     error.code = 409;
@@ -2030,7 +2142,7 @@ async function notifySend(b, remote) {
     error.detail = {
       seat,
       owner: row && !remote ? { host: row.owner_host, name: row.owner_name, fenced: row.epoch !== null } : null,
-      hint: "Claude Desktop delivers to whichever chat is open; open that seat's chat, then resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.",
+      hint: 'no live Claude Desktop session is titled for this seat (ListAgents name); start or /rename it, or open its chat and resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.',
     };
     throw error;
   }
