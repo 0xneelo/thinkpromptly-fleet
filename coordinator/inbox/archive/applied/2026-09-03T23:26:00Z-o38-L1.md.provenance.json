@@ -1,0 +1,10 @@
+{
+  "disposition": "applied",
+  "run": "2026-09-03T23:31:31Z",
+  "lane": "L1",
+  "seat": "o38",
+  "event_time": "2026-09-03T23:26:00Z",
+  "reason": null,
+  "archived_at": "2026-09-03T23:32:01Z",
+  "sha256": "c00ac689eadcf06299e21d152022f86d2fcc6d406412734392b9708940e95a42"
+}

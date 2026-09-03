@@ -1,0 +1,10 @@
+{
+  "disposition": "archived",
+  "run": "2026-09-03T23:31:31Z",
+  "lane": "L78",
+  "seat": "o38",
+  "event_time": "2026-09-03T23:25:20Z",
+  "reason": "wrong-owner: seat o38 is not owner 'Odilo (live, XYZ-1922)'",
+  "archived_at": "2026-09-03T23:32:01Z",
+  "sha256": "5f36cb27b929eb970ff52eaffd8ef5256a6b11398a116602fd9ece603382a2bf"
+}

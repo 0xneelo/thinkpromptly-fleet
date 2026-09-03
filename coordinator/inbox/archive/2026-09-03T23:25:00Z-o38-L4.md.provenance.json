@@ -1,0 +1,10 @@
+{
+  "disposition": "archived",
+  "run": "2026-09-03T23:31:31Z",
+  "lane": "L4",
+  "seat": "o38",
+  "event_time": "2026-09-03T23:25:00Z",
+  "reason": "wrong-owner: seat o38 is not owner 'Konstantin (live, XYZ-2009)'",
+  "archived_at": "2026-09-03T23:32:01Z",
+  "sha256": "df73dd8a3662b41a2ab7b1deaf20a1ec6c3b12ec27818867f9e4d55dc9ea8ff7"
+}

@@ -1,0 +1,10 @@
+{
+  "disposition": "archived",
+  "run": "2026-09-03T23:31:31Z",
+  "lane": "N1",
+  "seat": "o38",
+  "event_time": "2026-09-03T23:06:07Z",
+  "reason": "wrong-owner: seat o38 is not owner 'Jutta (live, git-workflow-manager, train weaver)'",
+  "archived_at": "2026-09-03T23:32:01Z",
+  "sha256": "202ff8a153da04f9c090b7e8b4b73645e0ef6c283c7dad351ba45b45880d41b7"
+}
