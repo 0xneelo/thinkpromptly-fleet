@@ -26,7 +26,9 @@ const MSG = {
 };
 
 async function deck(t, env = {}) {
-  const s = await startServer({ FLEETDECK_BUS_TOKEN: TOKEN, ...env });
+  // The bridge is pinned to a path that cannot exist: this is a gate test, and a run in the
+  // deck checkout (where the bridge is built) must never type its probe into a real chat.
+  const s = await startServer({ FLEETDECK_BUS_TOKEN: TOKEN, CLAUDE_BRIDGE: '/nonexistent/fleetdeck-claude-bridge', ...env });
   t.after(() => s.stop());
   return s;
 }
