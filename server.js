@@ -167,6 +167,11 @@ db.exec(
 db.exec(
   `CREATE TABLE IF NOT EXISTS notifies (id TEXT PRIMARY KEY, alias TEXT NOT NULL, resolved_target TEXT NOT NULL, sender TEXT NOT NULL, text TEXT NOT NULL, message_id TEXT NOT NULL, expect_ack INTEGER NOT NULL DEFAULT 1, ack_at TEXT, ack_from TEXT, ack_response TEXT, created_at TEXT NOT NULL)`
 );
+try {
+  db.exec('ALTER TABLE notifies ADD COLUMN resolved_via TEXT');
+} catch (e) {
+  if (!/duplicate column/i.test(e.message)) throw e;
+}
 
 const STATUSES = new Set(['active', 'done', 'kill-requested', 'killed', 'hidden']);
 const REG_FIELDS = ['label', 'role', 'worker', 'status', 'note'];
@@ -1873,14 +1878,13 @@ async function messageRoute(req, res, p, url) {
 
 // --- notify: alias -> target, delivery with auto-retry, and the ACK the sender waits on.
 
-// Desktop seats have no registry row of their own — Claude Desktop delivery always lands in
-// whichever chat is open — so the pretty seat name rides along as the message label and is how
-// the receiver knows the notify was meant for it.
+// Desktop seats have no address of their own: delivery lands in whichever chat is open.
+// Seat aliases are refused unless openChat opts in; the label still tells the receiver who it was for.
 const NOTIFY_SEATS = [
-  [/^orchestrator[\s-]+(.+)$/i, (m) => '🎛 ORCHESTRATOR · ' + m[1].trim()],
-  [/^global$/i, () => '🌐 GLOBAL'],
-  [/^researcher[\s-]+(\d+)$/i, (m) => '🔬 RESEARCHER ' + m[1]],
-  [/^design[\s-]+(\d+)$/i, (m) => '🎨 DESIGN ' + m[1]],
+  [/^orchestrator[\s-]+(.+)$/i, (m) => '🎛 ORCHESTRATOR · ' + m[1].trim(), 'orchestrator'],
+  [/^global$/i, () => '🌐 GLOBAL', null],
+  [/^researcher[\s-]+(\d+)$/i, (m) => '🔬 RESEARCHER ' + m[1], null],
+  [/^design[\s-]+(\d+)$/i, (m) => '🎨 DESIGN ' + m[1], null],
 ];
 
 // A worker is addressed by the human name the operator knows it by. Identity columns first
@@ -1906,8 +1910,8 @@ const notifyActive = db.prepare(
   `SELECT host, name, worker, label FROM sessions WHERE status = 'active' ORDER BY host, name LIMIT 100`
 );
 const notifyInsert = db.prepare(
-  `INSERT INTO notifies (id, alias, resolved_target, sender, text, message_id, expect_ack, created_at)
-   VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  `INSERT INTO notifies (id, alias, resolved_target, resolved_via, sender, text, message_id, expect_ack, created_at)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 );
 const notifyGet = db.prepare('SELECT * FROM notifies WHERE id = ?');
 const notifyListStmt = db.prepare('SELECT * FROM notifies ORDER BY created_at DESC LIMIT ?');
@@ -1923,14 +1927,18 @@ function notifyCandidates(rows) {
 function resolveNotifyTarget(to) {
   const alias = typeof to === 'string' ? to.trim() : '';
   if (!alias) messageFailure(400, 'to must be a non-empty string');
-  for (const [pattern, seat] of NOTIFY_SEATS) {
+  for (const [pattern, seatLabel, seatKey] of NOTIFY_SEATS) {
     const match = pattern.exec(alias);
-    if (match)
+    if (match) {
+      const seat = seatLabel(match);
       return {
-        target: validateMessageTarget({ type: 'claude-desktop', session: 'current', label: seat(match) }),
+        target: validateMessageTarget({ type: 'claude-desktop', session: 'current', label: seat }),
         resolvedTarget: 'claude-desktop:current',
         resolvedVia: 'seat',
+        seat,
+        seatKey,
       };
+    }
   }
   if (alias.includes(':')) {
     const split = alias.indexOf(':');
@@ -1997,19 +2005,35 @@ function notifyView(row) {
   return {
     ...row,
     expect_ack: !!row.expect_ack,
+    delivered: !!(message && message.status === 'delivered'),
+    acked: !!row.ack_at,
     delivery: message ? message.status : null,
     delivery_error: message ? message.error : null,
   };
 }
 
-async function notifySend(b) {
+async function notifySend(b, remote) {
   const from = typeof b.from === 'string' ? b.from.trim() : '';
   const text = typeof b.text === 'string' ? b.text.trim() : '';
   if (!from) messageFailure(400, 'from must be a non-empty string');
   if (!text) messageFailure(400, 'text must be a non-empty string');
   // Hand-rolled callers send false as a string or a 0 as often as a boolean; all mean no ACK.
   const expectAck = !(b.expectAck === false || b.expectAck === 0 || b.expectAck === 'false');
-  const { target, resolvedTarget, resolvedVia } = resolveNotifyTarget(b.to);
+  const openChat = b.openChat === true || b.openChat === 1 || b.openChat === 'true';
+  const { target, resolvedTarget, resolvedVia, seat, seatKey } = resolveNotifyTarget(b.to);
+  if (resolvedVia === 'seat' && !openChat) {
+    const row = seatKey ? seatRow.get(seatKey) : null;
+    const error = new Error('seat_unaddressable');
+    error.code = 409;
+    // Over the tailnet the owner is withheld: /api/seats is loopback-only (M13), and this reply
+    // must not become a side door to it.
+    error.detail = {
+      seat,
+      owner: row && !remote ? { host: row.owner_host, name: row.owner_name, fenced: row.epoch !== null } : null,
+      hint: "Claude Desktop delivers to whichever chat is open; open that seat's chat, then resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.",
+    };
+    throw error;
+  }
   const id = 'n-' + crypto.randomBytes(8).toString('hex');
   // The bus source is an identifier, not prose: a badge like "🎛 ORCHESTRATOR 13" would be
   // rejected by it, so it is folded to safe characters here and kept verbatim in the header.
@@ -2020,7 +2044,7 @@ async function notifySend(b) {
     target,
     text: notifyText(id, from, text, expectAck),
   });
-  notifyInsert.run(id, b.to.trim(), resolvedTarget, from, text, message.id, expectAck ? 1 : 0, now());
+  notifyInsert.run(id, b.to.trim(), resolvedTarget, resolvedVia, from, text, message.id, expectAck ? 1 : 0, now());
   if (message.status === 'failed') notifyRetry(message.id);
   return { id, messageId: message.id, resolvedTarget, resolvedVia, status: message.status };
 }
@@ -2037,7 +2061,7 @@ function notifyAck(id, b) {
   return { ok: true };
 }
 
-async function notifyRoute(req, res, p, url) {
+async function notifyRoute(req, res, p, url, remote = false) {
   const origin = req.headers.origin;
   if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
   const id = /^\/api\/notify\/([A-Za-z0-9_-]{1,80})(\/ack)?$/.exec(p);
@@ -2058,12 +2082,17 @@ async function notifyRoute(req, res, p, url) {
     const b = await body(req, MAX_BODY_BYTES + 4096).catch(() => null);
     if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
     if (id) return json(res, notifyAck(id[1], b));
-    return json(res, await notifySend(b));
+    return json(res, await notifySend(b, remote));
   } catch (error) {
     const code = Number.isInteger(error.code) ? error.code : 500;
     return json(
       res,
-      { ok: false, error: error.message, ...(error.candidates ? { candidates: error.candidates } : {}) },
+      {
+        ok: false,
+        error: error.message,
+        ...(error.candidates ? { candidates: error.candidates } : {}),
+        ...(error.detail || {}),
+      },
       code
     );
   }
@@ -2325,7 +2354,7 @@ async function tailnetHandler(req, res) {
     // tailnet it falls through to 404 and only GET /api/notify/<id> and the POSTs are reachable.
     if (notifyPath(p) && !(req.method === 'GET' && p === '/api/notify')) {
       if (!busAuthorized(req)) return json(res, { ok: false, error: 'invalid message bus token' }, 401);
-      return await notifyRoute(req, res, p, url);
+      return await notifyRoute(req, res, p, url, true);
     }
     if (req.method === 'GET' && p === '/api/ghtoken') {
       const r = await trainProxy('GET', '/api/ghtoken', undefined, req);

@@ -1,7 +1,5 @@
-// The notify layer: alias -> target resolution, the ACK the sender blocks on, and the
-// loopback/tailnet auth split in front of both. Delivery itself is deliberately out of scope —
-// a test process has no Claude Desktop bridge and no fleet host — so every assertion here is
-// about resolution, storage and gating, never about `status: 'delivered'`.
+// The notify layer: seat aliases fail closed unless openChat opts into the desktop collapse;
+// worker/address resolution, ACK storage, and loopback/tailnet auth are also covered here.
 //
 // The load-bearing case is "exact beats label": a session whose label reads "waiting on Ivy"
 // must never stand in for, or ambiguate with, the worker actually named Ivy. Before the
@@ -43,6 +41,7 @@ async function deck(t, rows = []) {
 
 const send = (s, to, extra) =>
   s.post('/api/notify', { to, from: 'FD-test', text: 'ping', ...extra });
+const seatSend = (s, to = 'global', extra = {}) => send(s, to, { openChat: true, ...extra });
 
 const IVY = { host: 'german-box', name: 'agent-ivy', worker: 'Ivy' };
 const RUNE = { host: 'german-box', name: 'agent-rune', worker: 'Rune' };
@@ -73,15 +72,66 @@ function raw(s, p, payload) {
   });
 }
 
-test('a seat alias resolves to the desktop, and the seat name is what the receiver reads', async (t) => {
+test('a seat alias is refused without openChat and creates no notify', async (t) => {
   const s = await deck(t);
-  // Claude Desktop has no registry row — delivery always lands in whichever chat is open — so
-  // all four seats collapse to the same target and only resolvedVia says how they got there.
-  for (const to of ['orchestrator lowcapconnector', 'global', 'researcher 3', 'design 2']) {
+  const db = s.open();
+  db.prepare(
+    'INSERT INTO seats (seat, owner_host, owner_name, epoch) VALUES (?, ?, ?, ?)'
+  ).run('orchestrator', 'mac', 'O36-lowcap-orchestrator-15', 7);
+  db.close();
+  for (const [to, seat] of [
+    ['orchestrator lowcapconnector', '🎛 ORCHESTRATOR · lowcapconnector'],
+    ['global', '🌐 GLOBAL'],
+    ['researcher 3', '🔬 RESEARCHER 3'],
+    ['design 2', '🎨 DESIGN 2'],
+  ]) {
     const r = await send(s, to);
-    assert.equal(r.status, 200, to + ' -> ' + r.text);
-    assert.equal(r.body.resolvedTarget, 'claude-desktop:current', to);
-    assert.equal(r.body.resolvedVia, 'seat', to);
+    assert.equal(r.status, 409, to + ' -> ' + r.text);
+    assert.equal(r.body.error, 'seat_unaddressable', to);
+    assert.equal(r.body.seat, seat, to);
+    assert.match(r.body.hint, /--open-chat/, to);
+    if (to.startsWith('orchestrator')) {
+      assert.deepEqual(r.body.owner, { host: 'mac', name: 'O36-lowcap-orchestrator-15', fenced: true });
+      assert.doesNotMatch(r.text, /epoch/);
+    }
+    if (to === 'global') assert.equal(r.body.owner, null);
+    assert.deepEqual((await s.get('/api/notify?limit=5')).body.notifies, [], to);
+  }
+  // The seats read is loopback-only, so the refusal must not hand a tailnet peer the owner.
+  const remote = await s.tailPost(
+    '/api/notify',
+    { to: 'orchestrator lowcapconnector', from: 'FD-test', text: 'ping' },
+    { authorization: 'Bearer ' + TOKEN }
+  );
+  assert.equal(remote.status, 409, remote.text);
+  assert.equal(remote.body.error, 'seat_unaddressable');
+  assert.equal(remote.body.owner, null);
+  assert.doesNotMatch(remote.text, /O36-lowcap-orchestrator-15|"mac"/);
+});
+
+test('openChat true spellings opt a seat alias into the desktop collapse', async (t) => {
+  const s = await deck(t);
+  for (const openChat of [true, 1, 'true']) {
+    const r = await send(s, 'global', { openChat });
+    assert.equal(r.status, 200, String(openChat) + ' -> ' + r.text);
+    assert.equal(r.body.resolvedTarget, 'claude-desktop:current');
+    assert.equal(r.body.resolvedVia, 'seat');
+  }
+});
+
+test('a notify view exposes resolution, delivered, and ACK booleans', async (t) => {
+  const s = await deck(t);
+  for (const [sent, resolvedVia] of [
+    [await seatSend(s), 'seat'],
+    [await send(s, 'german-box:agent-zed'), 'address'],
+  ]) {
+    const before = await s.get('/api/notify/' + sent.body.id);
+    assert.equal(before.body.resolved_via, resolvedVia);
+    assert.equal(before.body.delivered, false);
+    assert.equal(typeof before.body.delivered, 'boolean');
+    assert.equal(before.body.acked, false);
+    assert.equal((await s.post('/api/notify/' + sent.body.id + '/ack', { from: 'Ivy' })).body.ok, true);
+    assert.equal((await s.get('/api/notify/' + sent.body.id)).body.acked, true);
   }
 });
 
@@ -164,7 +214,7 @@ test('% and _ in an alias are letters, not LIKE wildcards', async (t) => {
 
 test('the first ACK wins and is what the blocked sender reads back', async (t) => {
   const s = await deck(t);
-  const sent = await send(s, 'global');
+  const sent = await seatSend(s);
   const id = sent.body.id;
   assert.equal((await s.post('/api/notify/' + id + '/ack', { from: 'Ivy', response: 'handled' })).body.ok, true);
   const view = await s.get('/api/notify/' + id);
@@ -182,7 +232,7 @@ test('an ACK for an unknown id is a 404, and an unsigned one a 400', async (t) =
   const missing = await s.post('/api/notify/n-deadbeefdeadbeef/ack', { from: 'Ivy' });
   assert.equal(missing.status, 404, missing.text);
   assert.equal(missing.body.error, 'unknown notify id');
-  const sent = await send(s, 'global');
+  const sent = await seatSend(s);
   const unsigned = await s.post('/api/notify/' + sent.body.id + '/ack', { response: 'handled' });
   assert.equal(unsigned.status, 400, unsigned.text);
 });
@@ -190,17 +240,17 @@ test('an ACK for an unknown id is a 404, and an unsigned one a 400', async (t) =
 test('expectAck reads "false" and 0 the way a hand-rolled caller means them', async (t) => {
   const s = await deck(t);
   for (const expectAck of ['false', 0, false]) {
-    const sent = await send(s, 'global', { expectAck });
+    const sent = await seatSend(s, 'global', { expectAck });
     assert.equal((await s.get('/api/notify/' + sent.body.id)).body.expect_ack, false, String(expectAck));
   }
   // Omitted still means yes: the ACK is the point of the layer.
-  const stock = await send(s, 'global');
+  const stock = await seatSend(s);
   assert.equal((await s.get('/api/notify/' + stock.body.id)).body.expect_ack, true);
 });
 
 test('over the tailnet the bus token opens one notify, and the audit list not at all', async (t) => {
   const s = await deck(t);
-  const id = (await send(s, 'global')).body.id;
+  const id = (await seatSend(s)).body.id;
   const bearer = { authorization: 'Bearer ' + TOKEN };
 
   // A remote receiver polls its own notify and ACKs it, so both are carried — behind the token.
