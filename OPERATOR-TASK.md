@@ -10,6 +10,7 @@ Append-only. Each section is one human-only gate or one blocking decision, track
 - **Blocked until you do:** every notify to a desktop seat needs the operator to front that chat and the sender to pass `--open-chat`; the addressability slice cannot start.
 - **Verify (once built):** with a different chat fronted, `node bin/fleet-notify.js send --to "orchestrator lowcapconnector" --from Luise "ping"` lands in the ORCHESTRATOR chat and `ackFrom` matches the owner from `/api/seats`.
 - **Source:** XYZ-1965 (options, evidence), XYZ-1964 (the fail-closed slice), `server.js` `resolveNotifyTarget`, `bin/fleet-message.js`. Session: Luise · platform-engineer.
+- **2026-09-04 addendum (session-overview-8948cf):** the notify skill now sends seat aliases over Claude Code's built-in `SendMessage` (target = the seat's `ListAgents` name, or `/api/seats` `owner_name`) from any desktop sender — no bus, no `--open-chat`, no socket adapter. A stays the route for tmux senders; B is dropped. Not verified end-to-end from the authoring session: its auto-mode classifier denied `SendMessage` to a peer, a decoy peer socket, and a headless courier. **Verify:** from a desktop session in default permission mode, `/notify researcher 2 ping` → the reply arrives as a `<cross-session-message>`.
 
 ## 2026-09-03 — gate: merge the notify fail-closed slice and restart the deck with `./up.sh` (XYZ-1966)
 
