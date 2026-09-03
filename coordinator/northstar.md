@@ -5,17 +5,19 @@ rewrite is a hard never (§6).
 
 | Slot | Value |
 |---|---|
-| Sentence | *(empty — awaiting the operator)* |
-| Ruling ID | *(empty)* |
-| Confirmed at | *(empty)* |
+| Sentence | Pricing lowcaps accurately enough so that margin protocols can be built upon. |
+| Ruling ID | linear-doc coordinator-northstar-pricing-lowcaps-f0ed42edeea3 (https://linear.app/synchronicity/document/coordinator-northstar-pricing-lowcaps-f0ed42edeea3) |
+| Confirmed at | 2026-08-29 |
 
-## PROPOSED (draft — NOT the northstar)
+## Follow-ups (operator's words, verbatim, under ruling f0ed42edeea3)
 
-PROPOSED: *no draft sentence is offered.* No operator statement of a fleet northstar appears in
-the seed sources (`DESIGN-v1.md`, `HANDOFF-2026-08-28-o30-to-o31.md`, `IMPORTED.md`), and inventing
-operator intent is forbidden by DESIGN §2 ("Operator intents — from the operator directly or an
-operator-authored tracker record only").
+**If that were achieved, what would be observably different?**
 
-**Operator action:** state the sentence, give it a ruling ID, and a coordinator run will
-fill the table above and `board.json.northstar`. Until then the board carries
-`northstar.text = "PROPOSED — not yet stated by the operator."` and lanes stand on their own.
+> so that in our consensus engine, our prices are always the ones with the most votes by other sources.
+
+**What does it explicitly exclude?**
+
+> It excludes execution — we price, we don't trade or route orders.
+
+Recorded by the 🧭 COORDINATOR 1 portal 2026-08-29 (Linear doc); written to this file at
+initiation by the 🧭 COORDINATOR 4 portal 2026-09-03.
