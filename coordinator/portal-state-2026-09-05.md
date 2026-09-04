@@ -22,4 +22,13 @@ A successor portal reads this after board.json + decisions-effective.md, then su
 - Next run due 2026-09-05T21:33:43Z. No timer exists — a portal runs it inline. Ledger on `agent-zachary`; push after every ledger session (broker recipe, `/how-to-fleet-git`).
 - 48 h roadmap artifact: https://claude.ai/code/artifact/9ed15709-86b0-4cd7-972d-86e425317830
 
+## XYZ-2026 cutover — fleet side A (state at 2026-09-04T21:27Z)
+- A1 push: done (agent-zachary at origin = 8b23661+).
+- A2 merge of `agent-alaric-xyz-2026` @ 4638804f into agent-zachary: **OPEN for the fleet orchestrator** — needs a merge commit (parent 93e1d49). The portal did not merge code. Diff reviewed: `COORDINATOR_INSTANCE_ROOT` env redirects board path + runlog inbox; fixture default unchanged; selftest PASS (59 assertions) from the worktree.
+- A3 arming recipe (no merge needed): detached tooling worktree `~/remote-system/.claude/worktrees/xyz-2026-tooling-4638804f`; run every tool as
+  `COORDINATOR_INSTANCE_ROOT=/Users/misterislez/projects/lowcap-connector/coordinator python3 <worktree>/coordinator/{check,bundle,runlog}.py`.
+  Verified against a scratch copy of the run-2 instance: check.py OK (7819 B, 95%), bundle --size OK, runlog inbox redirected.
+- A3 pre-conditions still open on the lowcap seat (O40): (a) lowcap main SHA with `coordinator/` landed (its B3); (b) that SHA fast-forwarded into the Mac main checkout `/Users/misterislez/projects/lowcap-connector` (on main at accd0264 2026-08-31, 6 dirty entries not ours). Then the portal runs check.py against the real root and sends "ARMED <sha>"; only then C (inbox move). Fleet inbox stays live until that line.
+- A4 fleet cleanup commit and A5 (DECK-11 / FLEET_COORDINATOR_DIR restart): after A3 is confirmed; fleet orchestrator + operator.
+
 ## Portal 7: open
