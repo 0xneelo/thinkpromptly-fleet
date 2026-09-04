@@ -1,208 +1,632 @@
-# WebSocket RPC provider practices and dead/silent-socket detection
+# WS RPC Provider Practices + Dead/Silent-Socket Detection
 
 **Research date:** 2026-09-04  
-**Scope:** ten EVM chains (Ethereum 1, Base 8453, BSC 56, Arbitrum 42161, Polygon 137, Avalanche 43114, Sonic 146, HyperEVM 999, Chiliz 88888, Robinhood 4663) plus Solana.  
-**Evidence labels:** **VERIFIED** means the claim is supported by the linked official provider documentation, status page, standard, or first-party source. **INFERRED** means the public documentation does not establish the claim; it is an engineering inference or an operator-supplied fact. “Undocumented” is not the same as “unlimited.”  
-**Cost labels:** **ZERO-COST** means RFC 6455 control frames, provider-pushed data that is contractually unmetered, or fields already present in delivered frames. **METERED** means any JSON-RPC request, subscription creation/renewal, or chargeable notification/byte under the provider plan. A vendor calling a method “0 CU” does not make it acceptable on the WS lane: the operator ruling bans application-level head/liveness polls.
+**Scope:** WebSocket RPC practices for the ten-chain EVM fleet (Ethereum 1, Base 8453, BNB Smart Chain 56, Arbitrum 42161, Polygon 137, Avalanche 43114, Sonic 146, HyperEVM 999, Chiliz 88888, Robinhood Chain 4663) plus Solana.  
+**System boundary:** The supplied “Our system” description is authoritative and is cited as **[SYS]**. Repository-dependent verification was intentionally dropped under the amendment.  
+**Evidence labels:** **VERIFIED** means a current official provider document or upstream source was found; **INFERRED** means the conclusion is indirect, an absence in the reviewed public documentation, a mathematical/architectural derivation, or a historical/empirical measurement not stated by the provider; **OPERATOR-OBSERVED** means authoritative ground truth supplied in the task.  
+**Cost labels:** **ZERO-COST** means no debit to the shared 800-CU/s budget: RFC 6455 control frames, unmetered provider-pushed data, or fields already present in delivered frames. **METERED** means a JSON-RPC request, subscription setup/renewal, delivered notification, byte allowance, credit, request unit, or provider-specific billable operation. A zero-dollar public service is called zero-cost only with respect to the shared CU budget; it is not an SLA.
 
-## (a) Executive summary — ten lines
+## (a) Executive summary
 
-1. **VERIFIED:** The primary transport detector should be RFC 6455 Ping/Pong; it costs no RPC CU and detects broken or half-open paths, but not an application data plane that still answers control frames ([RFC 6455 §5.5.2–5.5.3](https://www.rfc-editor.org/rfc/rfc6455#section-5.5.2)).
-2. **INFERRED:** Keep the existing session-owned 10-second heartbeat, but rename its meaning to “session task alive”; it does not prove that the provider is delivering subscribed data.
-3. **VERIFIED:** A subscription identifier is connection-scoped, not durable: Geth deletes all subscriptions when the connection closes, so every reconnect must create fresh server IDs ([Geth real-time events](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)).
-4. **INFERRED:** Treat each subscription ID as a lease with an expiry and a fresh-epoch acknowledgement; lease rotation bounds exposure to a silently lost provider-side registration, but subscription calls are **METERED**.
-5. **VERIFIED:** Read `blockNumber`, `blockHash`, `logIndex`, and `removed` from delivered log frames to detect regression, replay, reorg, and retrospective gaps at **ZERO-COST** ([Geth `logs` subscription](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)).
-6. **INFERRED:** Silence on a sparse log filter is not evidence of failure: with Poisson event rate λ, the healthy probability of no event for T is `exp(-λT)`; cadence may raise suspicion but must not convict alone.
-7. **INFERRED:** **The silent provider**—socket open, Pong responsive, subscription ID retained, no notifications—is information-theoretically indistinguishable from a healthy but empty filter without either pushed reference data from another provider or a metered probe.
-8. **VERIFIED:** No head poll belongs on the WS lane. `eth_blockNumber`, `net_version`-as-probe, and periodic `eth_getLogs` probes are **METERED/disqualified**, even where Alchemy currently prices `net_version` at 0 CU ([Alchemy CU table](https://www.alchemy.com/docs/reference/compute-unit-costs)).
-9. **INFERRED:** Circuit-breaker conviction must accept only transport failures, invalid/stale delivered data, lease failures after budget admission, or pushed cross-provider divergence; `BudgetDenied` is a neutral “not observed,” never a provider miss.
-10. **VERIFIED:** Rust alloy already supports Ping/Pong, capped exponential reconnect, replay, and subscription recreation; expose those state transitions and add jitter rather than layering a poll watchdog over them ([`WsConnect`](https://docs.rs/alloy/latest/alloy/providers/struct.WsConnect.html), [`alloy-pubsub`](https://docs.rs/alloy-pubsub/latest/alloy_pubsub/)).
+1. **No WS-lane head polling:** `eth_blockNumber`, `net_version`, periodic `eth_getLogs`, and any denied-poll-as-miss design are disqualified by the operator ruling. **[SYS]**
+2. **Primary transport liveness should be RFC 6455 ping/pong plus socket errors/close:** it is zero-cost and detects dead or half-open paths faster than default TCP keepalive, but it proves only that the peer’s WebSocket path is responsive. **VERIFIED [S1][S2][S3]**
+3. **The silent provider is the irreducible case:** a socket may stay open, answer pings, retain a locally known subscription id, and still stop dispatching notifications; transport liveness alone cannot detect that failure. **INFERRED**
+4. **Single-socket impossibility:** when no matching log arrives, “no qualifying chain event occurred” and “the provider dropped qualifying events” are observationally identical unless there is independent pushed reference data or a metered probe. **INFERRED**
+5. **The existing 10-second owning-session heartbeat is valuable only as local task liveness:** it must not stand in for remote transport or subscription-delivery health. **[SYS]; INFERRED**
+6. **Use block number, block hash, transaction/log index, and `removed` from delivered log frames:** these zero-cost fields detect regressions, duplicates, reorgs, stale delivery, and bounded gaps after the next event, but not a completely silent interval. **VERIFIED [S4]**
+7. **Bind every subscription id to a socket epoch and treat it as a lease:** reconnect success is not coverage until the new socket has acknowledged every required subscription; subscription ids die with their connection. **VERIFIED [S4][CL-G1]**
+8. **Budget denial is a separate state, never provider evidence:** only transport failure, lease failure, or independently corroborated pushed-data divergence may advance a provider circuit breaker. **[SYS]; INFERRED**
+9. **Provider economics vary radically:** Alchemy and NodeReal meter notifications by byte, dRPC charges every notification, Chainstack charges each push, PublicNode is keyless/free but best-effort, and Ankr’s current WSS tariff makes continuous paid heads uneconomic. **VERIFIED [A3][D2][C2][P1][N2][K2]**
+10. **Best-fit design:** add real protocol ping/pong, explicit socket/subscription epochs, zero-cost delivered-log invariants, budget-independent conviction, jittered reconnect visibility, and repair-only `eth_getLogs`; add a second free pushed reference only where its independence and non-metering are verified. **VERIFIED foundation [S1][S4]; INFERRED system policy**
 
 ## (b) Provider matrix
 
-Fleet abbreviations: **E**, **Base**, **BSC**, **Arb**, **Poly**, **Ava**, **Sonic**, **Hyper**, **Chiliz**, **RH**, **SOL**. “Catalog” means the provider advertises the chain, but a production WSS endpoint and the required subscription must still be contract-tested. The table is deliberately one table; numbered notes below carry the prose-heavy cells.
+**Fleet abbreviations:** ETH, BASE, BSC, ARB, POLY, AVAX, SONIC, HYPER, CHZ, RH, SOL. “Catalog/WSS” means the current official catalog exposes the network and the reviewed documentation supports WebSocket use; it does not promise identical methods or limits on every chain. “Not published” means no explicit current value was found in the reviewed official public documentation, not that no internal limit exists.
 
-| Provider | Fleet chains served over WSS | Subscription types | Documented WS limits | Keepalive policy | WS billing model | SLA and machine-readable status | Free/keyless WSS |
+| Provider | Fleet chains served over WSS | Requested subscription types | Documented WS limits | Keepalive policy | WS billing model | SLA and machine-readable status | Free/keyless WSS tier |
 |---|---|---|---|---|---|---|---|
-| **Alchemy** | **VERIFIED:** E, Poly, Arb, SOL are named on the subscription page; E, RH and SOL appear in the current chain catalog. Base/BSC/Ava are in Alchemy’s broader supported-chain catalog; exact WSS feature support must be checked per chain. Sonic/Hyper/Chiliz WSS not established here ([subscriptions](https://www.alchemy.com/docs/reference/subscription-api), [supported chains](https://www.alchemy.com/docs/reference/node-supported-chains)). | **VERIFIED:** EVM `newHeads`, `logs`, `newPendingTransactions`; SOL `logsSubscribe`, `slotSubscribe` and other standard methods. The current overview omits `blockSubscribe` from its short list, so verify it per SOL endpoint ([subscriptions](https://www.alchemy.com/docs/reference/subscription-api)). | **VERIFIED:** 100 concurrent sockets Free, 2,000 paid; 1,000 unique subscriptions/socket; 200 concurrent in-flight RPCs/socket; batch max 1,000. No public maximum socket lifetime is stated ([limits](https://www.alchemy.com/docs/reference/subscription-api)). | **VERIFIED:** server periodically sends protocol Ping; client must Pong. SDK additionally sends `net_version` every 30 s. No maximum lifetime is promised. For this system, use only protocol Ping/Pong; SDK RPC heartbeat is disqualified ([keepalive](https://www.alchemy.com/support/what-s-the-right-way-for-the-client-to-send-a-ping-to-alchemy)). | **VERIFIED:** non-Flashblocks EVM subscriptions are 0.04 CU/byte; SOL WS is 0.0002 CU/byte; `eth_subscribe`/`unsubscribe` are 10 CU. Current public docs do **not** state a fixed ~118-byte envelope, so that held number is **INFERRED/obsolete until contract evidence** ([CU costs](https://www.alchemy.com/docs/reference/compute-unit-costs)). | **INFERRED:** no public universal contractual percentage found. **VERIFIED:** hosted status and JSON endpoint ([status](https://status.alchemy.com/), [JSON](https://status.alchemy.com/api/v2/status.json)). | **VERIFIED:** free keyed tier, not keyless; 100 sockets. Public “demo” URLs are examples, not a production keyless entitlement ([subscriptions](https://www.alchemy.com/docs/reference/subscription-api)). |
-| **QuickNode** | **VERIFIED:** 79+ chains are advertised; E and SOL WSS docs are explicit. The fleet-by-fleet WSS feature set is endpoint/add-on dependent; do not infer all 79 ([Core API](https://www.quicknode.com/core-api), [EVM `eth_subscribe`](https://www.quicknode.com/docs/ethereum/eth_subscribe), [SOL WS methods](https://www.quicknode.com/docs/solana/blockSubscribe)). | **VERIFIED:** EVM `newHeads`, `logs`, `newPendingTransactions`; SOL `logsSubscribe`, `slotSubscribe`, `blockSubscribe` and extended methods ([EVM](https://www.quicknode.com/docs/ethereum/eth_subscribe), [SOL](https://www.quicknode.com/docs/solana/blockSubscribe)). | **INFERRED:** public docs reviewed do not establish one provider-wide idle timeout, lifetime, subscription/socket, message-rate, or socket-count cap; limits are plan/chain/add-on specific ([docs index](https://www.quicknode.com/docs)). | **INFERRED:** no provider-wide server-Ping/client interval contract found; use client RFC Ping/Pong and remain below the shortest observed intermediary idle reset. Protocol control frames are **ZERO-COST** unless a contract says otherwise ([QuickNode docs](https://www.quicknode.com/docs)). | **VERIFIED:** SOL WSS data is metered; from 2026-07-01, 0.1 MB = 15 credits and a ~4 MB `blockSubscribe` notification is ~600 credits. **INFERRED:** confirm current EVM notification accounting in the selected plan ([SOL billing](https://www.quicknode.com/docs/solana/blockSubscribe)). | **VERIFIED:** marketing states 99.99% SLA; hosted JSON status exists ([Core API](https://www.quicknode.com/core-api), [status](https://status.quicknode.com/), [JSON](https://status.quicknode.com/api/v2/status.json)). | **VERIFIED:** keyed free tier with WSS; not keyless ([builder guide](https://www.quicknode.com/builders-guide/tools/core-api-by-quicknode)). |
-| **Infura** | **VERIFIED:** E, Arb and Hyper WSS are explicit; the product supports additional EVM networks including Base/Poly/Ava, but validate method availability per network. BSC/Sonic/Chiliz/RH are not established by the reviewed WSS docs ([WebSockets](https://docs.infura.io/concepts/websockets/), [Arbitrum](https://docs.infura.io/reference/arbitrum/), [HyperEVM](https://docs.infura.io/reference/hyperevm/)). | **VERIFIED:** standard EVM `newHeads`, `logs`, `newPendingTransactions`; Infura also permits ordinary JSON-RPC on WSS, which this design should not use for liveness ([WebSockets](https://docs.infura.io/concepts/websockets/)). | **VERIFIED:** closes a connection after one hour of inactivity. **INFERRED:** no public global maximum lifetime, subscription/socket, or socket-count cap found ([Infura keepalive](https://support.metamask.io/develop/building-with-infura/javascript-typescript/how-to-keep-websocket-alive/)). | **VERIFIED:** recommends Web3.js keepalive at 60 s and reconnect; a pushed new-block subscription also creates traffic. This report recommends RFC Ping, not a head subscription unless its notifications are free ([keepalive](https://support.metamask.io/develop/building-with-infura/javascript-typescript/how-to-keep-websocket-alive/)). | **VERIFIED:** account-wide daily and per-second credit quotas apply and quota exhaustion can sever WS. **INFERRED:** public docs reviewed do not define notification-per-byte versus notification-per-call accounting ([rate limits](https://docs.infura.io/how-to/avoid-rate-limiting/)). | **INFERRED:** contractual SLA is plan-specific. **VERIFIED:** hosted status and JSON endpoint ([status](https://status.infura.io/), [JSON](https://status.infura.io/api/v2/status.json)). | **VERIFIED:** keyed free tier; not keyless ([getting started](https://docs.infura.io/get-started/infura/)). |
-| **Ankr** | **VERIFIED:** 75+ chains are advertised and EVM/SOL subscriptions are priced. Exact fleet WSS availability is chain/plan dependent; Chiliz is operational context, not a guarantee for free WSS ([RPC overview](https://www.ankr.com/rpc/), [pricing](https://www.ankr.com/docs/rpc-service/pricing/)). | **VERIFIED:** EVM/SOL subscription and notification categories are supported; exact method support follows the underlying chain. Treat `newHeads`, `logs`, pending transactions and SOL PubSub as per-chain, not universal ([pricing](https://www.ankr.com/docs/rpc-service/pricing/)). | **INFERRED:** no public cross-plan idle/lifetime/subscription/socket/message cap found. Free-plan WSS returning HTTP 401 “WebSocket is disabled” is an **operator-supplied fact**, not generalized to Premium ([RPC docs](https://www.ankr.com/docs/rpc-service/)). | **INFERRED:** no public Ping interval contract found. RFC Ping/Pong is **ZERO-COST**; do not use an RPC method as keepalive ([RPC docs](https://www.ankr.com/docs/rpc-service/)). | **VERIFIED:** Premium charges EVM subscription 200 credits and each notification 100; SOL 500/500. At one notification every 3 s, `newHeads` is 28,800 × 100 = **2.88M credits/day**, explaining why Chiliz heads stay off ([pricing](https://www.ankr.com/docs/rpc-service/pricing/)). | **VERIFIED:** Public and PAYG have no individual SLA; Enterprise standard 99.9%, negotiable to 99.99. Health UI is available; a machine-readable public status contract was not found ([SLA](https://www.ankr.com/docs/rpc-service/sla/), [health](https://www.ankr.com/rpc/health/)). | **VERIFIED:** public/freemium HTTP exists. **INFERRED/operator-observed:** free-tier WSS is disabled with 401; therefore no usable free/keyless WSS for this workload ([public RPC](https://www.ankr.com/web3-api/)). |
-| **dRPC** | **VERIFIED:** multi-chain EVM plus SOL WSS are documented; the live network catalog must be checked for each fleet chain ([EVM subscriptions](https://drpc.org/docs/pricing/subscriptions/evm), [SOL subscriptions](https://drpc.org/docs/pricing/subscriptions/solana)). | **VERIFIED:** EVM `newHeads`, `logs`, `newPendingTransactions`/`drpc_pendingTransactions`; SOL account, signature, slot and logs; `blockSubscribe` is not explicitly established in the reviewed summary ([EVM](https://drpc.org/docs/pricing/subscriptions/evm), [SOL](https://drpc.org/docs/pricing/subscriptions/solana)). | **INFERRED:** no provider-wide public idle/lifetime/subscription/socket/message cap found ([dRPC docs](https://drpc.org/docs)). | **INFERRED:** no public Ping interval contract found; protocol Ping/Pong is **ZERO-COST** ([dRPC docs](https://drpc.org/docs)). | **VERIFIED:** subscription creation 20 CU and **each** EVM or SOL notification 20 CU ([EVM pricing](https://drpc.org/docs/pricing/subscriptions/evm), [SOL pricing](https://drpc.org/docs/pricing/subscriptions/solana)). | **INFERRED:** contractual SLA percentage not found. **VERIFIED:** hosted status with JSON endpoint ([status](https://status.drpc.org/), [JSON](https://status.drpc.org/api/v2/status.json)). | **VERIFIED:** free allowance/public nodes exist; WSS examples use a key, so not keyless ([free vs paid](https://drpc.org/pricing), [EVM subscriptions](https://drpc.org/docs/pricing/subscriptions/evm)). |
-| **Chainstack** | **VERIFIED:** docs explicitly list E, Base, BSC, Arb, Poly, Ava, Hyperliquid/HyperEVM tooling, Sonic and RH; confirm WSS feature support per deployed node. Chiliz is not listed in the reviewed catalog ([quotas/catalog](https://docs.chainstack.com/docs/quotas)). | **VERIFIED:** standard node subscriptions; billing examples explicitly cover EVM `newHeads`, `logs`, and `newPendingTransactions`. SOL tooling is documented elsewhere, but this cell does not assert `blockSubscribe` ([request units](https://docs.chainstack.com/docs/request-units)). | **VERIFIED:** quotas include plan-specific concurrent WSS counts. **INFERRED:** the public page does not expose a single stable numeric cap or universal idle/lifetime/subscription limit; consult the active plan ([quotas](https://docs.chainstack.com/docs/quotas)). | **INFERRED:** no public provider-wide Ping interval contract found; use RFC Ping/Pong ([Chainstack WS guide](https://docs.chainstack.com/docs/handle-real-time-data-using-websockets-with-javascript-and-python)). | **VERIFIED:** one request/RU to establish; every pushed notification is another request/RU. Unlimited Nodes replace per-request billing with RPS-tiered flat fee ([request units](https://docs.chainstack.com/docs/request-units)). | **VERIFIED:** Enterprise SLA is 99.9% quarterly; hosted JSON status exists ([SLA](https://chainstack.com/enterprise-support-sla/), [status](https://status.chainstack.com/), [JSON](https://status.chainstack.com/api/v2/status.json)). | **VERIFIED:** developer/free plan exists but requires account/key; no keyless WSS entitlement ([pricing](https://chainstack.com/pricing/)). |
-| **PublicNode** | **VERIFIED:** free keyless WSS pages exist for E, Base, BSC, Arb, Poly and Sonic; Chiliz docs explicitly list PublicNode WSS. Ava appears in the network directory. Hyper/RH were not established ([network list](https://www.publicnode.com/), [E](https://ethereum-rpc.publicnode.com/), [Base](https://base-rpc.publicnode.com/), [BSC](https://bsc-rpc.publicnode.com/), [Arb](https://arbitrum-one-rpc.publicnode.com/), [Poly](https://polygon-bor-rpc.publicnode.com/), [Sonic](https://sonic.publicnode.com/), [Chiliz RPC list](https://docs.chiliz.com/develop/basics/connect-to-chiliz-chain/connect-using-rpc)). | **INFERRED:** standard EVM node `newHeads`, `logs`, `newPendingTransactions`; PublicNode does not publish one cross-chain method guarantee ([network list](https://www.publicnode.com/), [Geth Pub/Sub semantics](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)). | **INFERRED:** no documented idle, lifetime, subscription/socket, message-rate, or concurrent-socket guarantee; public service may rate-limit or change ([PublicNode](https://www.publicnode.com/)). | **INFERRED:** no documented server/client Ping interval; use RFC Ping/Pong ([PublicNode](https://www.publicnode.com/)). | **VERIFIED:** flat free/keyless public access; no CU/per-notification tariff is published ([PublicNode](https://www.publicnode.com/)). | **INFERRED:** no contractual SLA or documented machine-readable status API; the site displays live endpoint health ([PublicNode](https://www.publicnode.com/)). | **VERIFIED:** yes, keyless WSS on listed chains. The specific official Chiliz endpoint `rpc.chiliz.com` is HTTP-only; Chiliz’s page separately lists PublicNode WSS ([Chiliz RPC list](https://docs.chiliz.com/develop/basics/connect-to-chiliz-chain/connect-using-rpc)). |
-| **Blast API / Bware Labs** | **INFERRED:** Bware’s current public documentation does not provide a dependable 2026 fleet-by-WSS matrix. Do not confuse **Bware Blast API** with the **Blast L2** network ([Bware docs](https://docs.bwarelabs.com/)). | **INFERRED:** historical service exposed chain-native subscriptions, but current supported methods are not sufficiently documented ([Bware docs](https://docs.bwarelabs.com/)). | **INFERRED:** historical plan limits are not safe procurement facts in 2026; idle/lifetime/subscription/message/socket limits unknown ([Bware docs](https://docs.bwarelabs.com/)). | **INFERRED:** no current keepalive contract found ([Bware docs](https://docs.bwarelabs.com/)). | **INFERRED:** current WS notification billing model not established ([Bware docs](https://docs.bwarelabs.com/)). | **INFERRED:** no current contractual SLA or machine-readable status API established ([Bware docs](https://docs.bwarelabs.com/)). | **INFERRED:** no current free/keyless WSS entitlement established ([Bware docs](https://docs.bwarelabs.com/)). |
-| **LlamaNodes** | **INFERRED:** no current official service catalog could be established; the remaining first-party GitHub organization describes a low-cost RPC project but is not a live WSS contract ([GitHub organization](https://github.com/llamanodes)). | **INFERRED:** unknown/currently unverifiable ([GitHub](https://github.com/llamanodes)). | **INFERRED:** unknown/currently unverifiable ([GitHub](https://github.com/llamanodes)). | **INFERRED:** unknown/currently unverifiable ([GitHub](https://github.com/llamanodes)). | **INFERRED:** unknown/currently unverifiable ([GitHub](https://github.com/llamanodes)). | **INFERRED:** no current SLA/status API established ([GitHub](https://github.com/llamanodes)). | **INFERRED:** no current free/keyless WSS established ([GitHub](https://github.com/llamanodes)). |
-| **GetBlock** | **VERIFIED:** advertises 50+ chains and WS/REST; current fleet coverage must be checked chain-by-chain ([platform](https://getblock.io/), [plans](https://docs.getblock.io/getting-started/plans-and-limits/choosing-your-plan)). | **INFERRED:** chain-native EVM/SOL subscriptions where the selected endpoint exposes WSS; no universal method matrix found ([GetBlock docs](https://docs.getblock.io/)). | **VERIFIED:** plans are throughput/RPS based. **INFERRED:** no universal idle/lifetime/subscription/socket/message cap found ([plans](https://docs.getblock.io/getting-started/plans-and-limits/choosing-your-plan)). | **INFERRED:** no public Ping interval contract found ([GetBlock docs](https://docs.getblock.io/)). | **VERIFIED:** fixed RPS/throughput plans advertise unlimited requests within the tier; whether every pushed notification consumes throughput is not clearly stated and is **INFERRED** ([plans](https://docs.getblock.io/getting-started/plans-and-limits/choosing-your-plan)). | **VERIFIED:** platform advertises 99.9% uptime; public status page exists. **INFERRED:** machine-readable schema is not contractually documented ([platform](https://getblock.io/), [status](https://getblock.instatus.com/)). | **VERIFIED:** free keyed access exists; not keyless ([plans](https://docs.getblock.io/getting-started/plans-and-limits/choosing-your-plan)). |
-| **NodeReal** | **VERIFIED:** E and BSC are explicit marketplace offerings; do not infer the rest of the fleet from “multi-chain” marketing ([BSC RPC](https://nodereal.io/api-marketplace/bsc-rpc), [marketplace](https://nodereal.io/api-marketplace)). | **INFERRED:** standard EVM subscriptions on WSS-capable endpoints; method-by-method public matrix not found ([NodeReal marketplace](https://nodereal.io/api-marketplace)). | **VERIFIED:** BSC free tier advertises 100M CU/month and 300 CUPS; paid CUPS vary. **INFERRED:** idle/lifetime/subscription/socket/message caps unknown ([BSC RPC](https://nodereal.io/api-marketplace/bsc-rpc)). | **INFERRED:** no Ping interval contract found ([NodeReal marketplace](https://nodereal.io/api-marketplace)). | **VERIFIED:** CU/CUPS plan model. **INFERRED:** exact subscription-notification debit is undocumented publicly ([BSC RPC](https://nodereal.io/api-marketplace/bsc-rpc)). | **VERIFIED:** marketplace advertises 99.9%+ uptime and a node health RPC (`nr_health`). **INFERRED:** no independent public machine-readable fleet status API found ([marketplace](https://nodereal.io/api-marketplace), [status API](https://nodereal.io/api-marketplace/status-api-eth)). | **VERIFIED:** keyed free tier; not keyless ([BSC RPC](https://nodereal.io/api-marketplace/bsc-rpc)). |
-| **Tenderly** | **VERIFIED:** Node RPC advertises 75+ EVM networks over JSON-RPC and WebSocket. Validate each fleet chain in the current dashboard; no SOL ([Node RPC](https://docs.tenderly.co/node-rpc/overview)). | **VERIFIED:** standard EVM subscriptions through WSS; method availability follows the supported network ([RPC reference](https://docs.tenderly.co/node-rpc/rpc-reference), [WSS launch](https://tenderly.co/blog/changelog/websockets-in-web3-gateway/)). | **INFERRED:** no public universal idle/lifetime/subscription/message/socket cap found; public endpoints are rate-limited ([Node RPC](https://docs.tenderly.co/node-rpc/overview)). | **INFERRED:** no public Ping interval contract found; use RFC Ping/Pong ([Tenderly Node RPC](https://docs.tenderly.co/node-rpc/overview)). | **INFERRED:** public docs reviewed do not state a per-notification/per-byte tariff; plan/rate limits apply ([Tenderly Node RPC](https://docs.tenderly.co/node-rpc/overview)). | **VERIFIED:** product advertises 99.99% uptime and public status. **INFERRED:** treat 99.99 as marketing unless present in the signed SLA; JSON endpoint available on hosted status ([Node](https://tenderly.co/products/node), [status](https://status.tenderly.co/), [JSON](https://status.tenderly.co/api/v2/status.json)). | **VERIFIED:** rate-limited public RPC endpoints allow an optional access key. **INFERRED:** confirm that the same no-key policy applies to WSS before relying on it ([Node RPC](https://docs.tenderly.co/node-rpc/overview)). |
-| **Helius (Solana)** | **VERIFIED:** SOL mainnet/devnet only for this matrix ([LaserStream WS](https://www.helius.dev/docs/rpc/websocket)). | **VERIFIED:** `logsSubscribe`, `slotSubscribe`, `blockSubscribe`, other standard Solana methods, plus Helius `transactionSubscribe`; current docs now state full standard-method support ([LaserStream WS](https://www.helius.dev/docs/rpc/websocket)). | **VERIFIED:** 10-minute inactivity timeout. **INFERRED:** no public universal subscriptions/socket, message-rate, maximum lifetime, or concurrent-socket count found ([LaserStream WS](https://www.helius.dev/docs/rpc/websocket)). | **VERIFIED:** send Ping at least once/minute; docs show Node RFC Ping every 30 s. Browser example’s JSON `ping` is application traffic and should not be copied into this system ([LaserStream WS](https://www.helius.dev/docs/rpc/websocket)). | **VERIFIED:** opening costs 1 credit; streamed uncompressed data costs 2 credits/0.1 MB; data add-ons offer fixed allowances. Standard methods available all plans ([LaserStream WS](https://www.helius.dev/docs/rpc/websocket), [pricing](https://www.helius.dev/pricing)). | **VERIFIED:** public status exists; enterprise plans can include SLA. **INFERRED:** exact contractual percentage depends on plan ([status](https://status.helius.dev/), [plans](https://www.helius.dev/docs/billing/plans)). | **VERIFIED:** keyed free plan supports standard WS methods; not keyless ([LaserStream WS](https://www.helius.dev/docs/rpc/websocket), [pricing](https://www.helius.dev/pricing)). |
-| **Triton One (Solana)** | **VERIFIED:** SOL ([Solana service](https://triton.one/chains/solana)). | **VERIFIED:** native WS compatibility including `blockSubscribe` and `transactionSubscribe`; standard `logsSubscribe`/`slotSubscribe` follow Solana compatibility ([Solana service](https://triton.one/chains/solana)). | **VERIFIED:** pricing advertises flexible connection/rate limits rather than one public cap. **INFERRED:** idle/lifetime/subscription/message limits are contract-specific ([pricing](https://triton.one/pricing)). | **INFERRED:** no public Ping interval contract found; use RFC Ping/Pong ([Triton Solana](https://triton.one/chains/solana)). | **VERIFIED:** pricing is based on actual use with configurable connection/rate limits, not a public CU bundle. Exact WS notification/byte rates require quote ([pricing](https://triton.one/pricing)). | **VERIFIED:** first-party FAQ states 99.9% uptime and health-based routing. **INFERRED:** no public machine-readable status API established ([FAQ](https://blog.triton.one/triton-faqs-your-reference-guide/)). | **INFERRED:** no keyless/free production WSS entitlement established ([pricing](https://triton.one/pricing)). |
+| **Alchemy** | **VERIFIED:** ETH, BASE, BSC, ARB, POLY, AVAX, SONIC, HYPER, RH, SOL; CHZ not in current supported-chain list. [A1][A2] | **VERIFIED EVM:** `newHeads`, `logs`, `newPendingTransactions`. **VERIFIED SOL:** `logsSubscribe`, `slotSubscribe`; current overview does not list `blockSubscribe`, so its availability is **INFERRED/unverified**. [A1] | **VERIFIED:** 100 concurrent sockets on Free; 2,000 on paid; 1,000 unique subscriptions/socket; 1,000 max JSON-RPC batch; 200 concurrent in-flight requests/socket. No public idle timeout, hard socket lifetime, or notification-rate cap found. [A1] | **VERIFIED:** Alchemy servers periodically send RFC 6455 pings and clients must pong. SDK additionally sends `net_version` every 30 s. No maximum lifetime is documented; SDK docs warn not to assume persistence. [A4][A6][A7] | **METERED:** `eth_subscribe`/`eth_unsubscribe` 10 CU; delivered EVM subscription bandwidth 0.04 CU/byte; `net_version` is 0 actual CU but 5 throughput CU. The held ~118-byte envelope is **INFERRED historical/empirical accounting**, not in current docs. [A3] | Enterprise SLA is custom/contractual; public status page exists. A provider-documented machine API was not found; a generic Statuspage endpoint would be **INFERRED**, not contractual. [A5][A8] | **VERIFIED keyed Free:** 30M CU/month, 300 CU/s, Smart WebSockets, up to 100 sockets. No keyless production tier. [A5][A1] |
+| **QuickNode** | **VERIFIED catalog/WSS:** ETH, BASE, BSC, ARB, POLY, AVAX, SONIC, HYPER, RH, SOL; CHZ not found in current catalog. [Q1][Q2] | **VERIFIED EVM:** `newHeads`, `logs`, `newPendingTransactions`. Native SOL subscriptions are documented across its Solana reference; exact `blockSubscribe` gating in the reviewed plan pages is **INFERRED/unverified**. [Q2] | Native WS idle timeout, max lifetime, subscriptions/socket, and sockets/project are not publicly specified. **VERIFIED plan throughput:** trial 15 RPS; paid published tiers 50/125/250 RPS; enterprise custom. Do not confuse QuickNode “Streams” active-stream limits with native WS subscriptions. [Q4] | Official guide demonstrates client RFC pings every 7.5 s and termination when no pong is seen for 15 s; treat those as example values, not a documented server requirement. [Q3] | Credit-based RPC plans are **VERIFIED**; public docs reviewed do not unambiguously state whether each native subscription notification debits credits, so notification billing is **INFERRED—contract-test before use as a free pushed reference**. [Q4] | Enterprise offers a contractual SLA/custom limits; public status and trust portals exist. A documented machine status API was not found. [Q4][Q5][Q6] | **VERIFIED keyed trial:** one month, 10M credits, 15 RPS, no overage. Not keyless. [Q4] |
+| **Infura** | **VERIFIED WSS/reference:** ETH, BASE, BSC, ARB, POLY, AVAX, HYPER. SOL appears in the product reference, but WSS support was not established in the reviewed current pages; SONIC, CHZ, RH were not found. [I1][I2][I3] | **VERIFIED EVM:** `newHeads` and `logs`; support varies by network for pending subscriptions, so `newPendingTransactions` is **INFERRED—verify per chain**. [I2][I3] | Public idle timeout, hard lifetime, subscriptions/socket, and concurrent-socket cap not found. Daily-credit and per-second throughput quotas apply; official support says quota exhaustion can sever a WebSocket. [I4][I5] | Official guidance requires client-side management of silent failures and reconnects; no universal server RFC-ping interval or client-ping mandate is published in the reviewed pages. [I2][I6] | **METERED:** subscribe/unsubscribe consume credits even with no events; returned events consume credits under credit pricing. Example: Base `eth_subscribe` costs 5 credits. Exact per-notification cost is method/network dependent. [I2][I3] | Enterprise commitments are contractual; public Statuspage exposes status plus RSS/Atom feeds. No provider-specific SLA number for self-serve was found. [I4][I7] | **VERIFIED keyed Free/Core**, but current pricing page is internally inconsistent: its comparison table says 3M credits/day and 500 credits/s, while lower FAQ text states 6M/day and 2,000/s. Use account-enforced values, not prose. [I4] |
+| **Ankr** | **VERIFIED catalog:** ETH, BASE, BSC, ARB, POLY, AVAX, SONIC, CHZ, SOL; HYPER and RH were not established. WSS is plan/chain dependent and free-tier WSS is disabled in the supplied observation. [K1][K2][K4][SYS] | Standard EVM subscriptions and Solana subscriptions are offered on supported premium WS endpoints; exact per-chain support for all requested types is **INFERRED—validate before deployment**. [K2][K4] | **VERIFIED headline throughput:** Public 20 RPS, Freemium 30 RPS, Premium up to 1,500 requests/s. No public idle timeout, socket lifetime, subscriptions/socket, or concurrent-socket cap found. [K1][K2] | No official server-ping/client-ping interval found. **INFERRED:** use standards-compliant client RFC ping/pong and reconnect. [K2][S1] | **METERED/VERIFIED:** EVM-compatible subscription setup is 200 credits; Solana setup is 500. Each Solana notification is 500 credits and each “Other” notification is 100 credits. At CHZ’s roughly 3.0 s cadence, about 28,800 heads/day × 100 = **2.88M credits/day**, explaining why paid CHZ `newHeads` stays off. [K2][P2] | **VERIFIED:** Public best-effort; Premium self-serve has no individual SLA; Enterprise standard 99.9% monthly with 10% credit, negotiable 99.99%. Live RPC health dashboard exists; machine API not found. [K3] | **OPERATOR-OBSERVED:** free-tier attempt returns HTTP 401 “WebSocket is disabled.” Public/free HTTP remains available subject to limits, but free WSS must not be assumed. [SYS][K1] |
+| **dRPC** | **VERIFIED catalog/WSS:** ETH, BASE, BSC, ARB, POLY, AVAX, SONIC, SOL. HYPER, CHZ, and RH mainnet were not found; Robinhood testnet references do not establish RH mainnet. [D1][D4] | **VERIFIED EVM:** `newHeads`, `logs`, `newPendingTransactions`. **VERIFIED SOL:** includes `logsSubscribe`, `slotSubscribe`, `blockSubscribe`. [D2][D3] | **VERIFIED free limits:** normally 120,000 CU/min/IP, dynamically reducible to 50,400; 2 s timeout; batch 3; filters disabled; `eth_getLogs` max 10,000 logs. Paid requests are balance-limited rather than a fixed public rate. No socket-count/lifetime limits published. [D4] | No official RFC ping interval or idle-reset rule found. Reconnect is recommended; keepalive details are **INFERRED/not published**. [D2][D3] | **METERED:** 20 CU to create an EVM or Solana subscription and 20 CU for every delivered notification. [D2][D3] | No public contractual SLA found. Status service exposes per-chain components plus JSON, webhook, and RSS outputs. [D5] | **VERIFIED free/public routing:** 210M CU per rolling 30 days, public nodes only, IP-based limits; keyless public endpoints exist. Notifications still consume the stated CU accounting even when no invoice is due. [D1][D4] |
+| **Chainstack** | **VERIFIED catalog/WSS:** ETH, BASE, BSC, ARB, POLY, AVAX, SONIC, HYPER, RH, SOL; CHZ not found. Some newer-network availability is plan/node dependent. [C1][C6] | **VERIFIED EVM:** standard `eth_subscribe` types including heads/logs/pending where the chain node supports them. **VERIFIED SOL:** standard PubSub including `logsSubscribe`, `slotSubscribe`, and `blockSubscribe`. [C1][C7] | **VERIFIED:** WebSocket disconnect after 3,600 s of inactivity; maximum 500 concurrent WebSocket connections. No public max socket age or subscriptions/socket found. Free tier publishes 25 RPS. [C1][C3] | Activity is required before the 1 h idle timer; official examples show reconnect handling, but no required RFC ping interval is specified. [C1] | **METERED:** subscription setup is a request unit and each pushed notification consumes one request unit. [C2][C7] | **VERIFIED Enterprise SLA:** 99.9% quarterly uptime. Public status page and documented machine summary JSON endpoint are available. [C4][C5] | **VERIFIED keyed Developer tier:** 3M requests/month, 25 RPS, one node, WSS included, no card. Not keyless. [C3] |
+| **PublicNode** | **VERIFIED keyless WSS:** ETH, BASE, BSC, ARB, POLY, AVAX, SONIC, CHZ, RH, SOL. HYPER not listed. [P1][P2][P3] | The public endpoints expose standard chain RPC; exact method-by-method guarantees are not aggregated. EVM requested types and SOL `logsSubscribe`/`slotSubscribe`/`blockSubscribe` are **INFERRED—run a non-secret capability test per chain**. [P1][P2][P3] | No documented idle timeout, hard lifetime, subscriptions/socket, message-rate cap, or concurrent-socket quota. Terms permit limits/service changes at any time. [P4] | No server-ping or client-ping policy published. **INFERRED:** client RFC ping/pong is required operationally even though it cannot create an SLA. [S1][P4] | **ZERO-COST to the shared CU budget:** no account or billing meter is advertised for public endpoints. This is shared best-effort capacity, not guaranteed unmetered throughput. [P1][P4] | No contractual SLA or provider status API found; service is offered “as is” without uninterrupted-availability warranty. [P4] | **VERIFIED free and keyless WSS.** This is the broadest currently verified keyless fit for the fleet, including CHZ and RH, but not HYPER. [P1][P2] |
+| **Blast / Bware** | **VERIFIED:** no current service matrix; Blast API is officially deprecated and directs migration to Alchemy. [B1] | N/A—deprecated. [B1] | N/A—deprecated. [B1] | N/A—deprecated. [B1] | N/A—deprecated. [B1] | Historical commitments no longer make it a current candidate. [B1] | No current tier. [B1] |
+| **LlamaNodes** | Current RPC fleet/WSS support is **INFERRED unavailable**: the former official domain no longer presents an RPC service, and no current official provider documentation was discoverable. [L1] | **INFERRED unavailable.** [L1] | **INFERRED not published/unavailable.** [L1] | **INFERRED not published/unavailable.** [L1] | **INFERRED not published/unavailable.** [L1] | No current official SLA/status service found. **INFERRED.** [L1] | No current RPC tier found. **INFERRED.** [L1] |
+| **GetBlock** | **VERIFIED catalog:** all ten EVM fleet chains plus SOL are listed with WebSocket availability across the node catalog. [G1] | Standard EVM and Solana subscriptions are available where the underlying node exposes them; the public catalog does not aggregate method-by-method guarantees, so exact requested-type coverage is **INFERRED—capability-test per chain**. [G1] | **VERIFIED plan examples:** shared Pro up to 800 RPS and 150 endpoints. Public idle timeout, max socket age, subscriptions/socket, and concurrent-socket quota not found. Dedicated service advertises no standard rate limit. [G2] | No public server/client ping interval or idle-reset policy found. **INFERRED:** implement RFC ping/pong. [S1][G1] | **METERED:** shared plans use CU; public docs do not state the exact cost of each native subscription notification. “Limitless” uses flat/RPS pricing without CU, and dedicated is contract-priced. [G2] | **VERIFIED paid SLA:** shared 99%, dedicated 99.9%, dedicated plus load balancer 99.99%; free excluded. Status service exposes machine feeds/API on the current/legacy status surfaces. [G3][G4] | **VERIFIED keyed free shared tier;** not keyless. Exact enforced allowance should be read from the current account dashboard. [G2] |
+| **NodeReal** | **VERIFIED explicit WSS:** ETH, BSC, POLY, ARB. Other fleet chains may exist over HTTP or other products, but current public docs reviewed did not establish WSS for BASE, AVAX, SONIC, HYPER, CHZ, RH, or SOL. [N3][N4] | Standard EVM `eth_subscribe`; exact type support per chain is **INFERRED** beyond documented examples. [N3][N4] | FAQ says no single-endpoint/application WSS connection limit “as of now.” Public shared access is limited to 2,000 CU/min/IP; Free plan publishes 150 CUPS. No idle/lifetime/subscription cap found. [N1][N3][N4] | No official ping interval or idle policy found. **INFERRED:** standards-based client ping/pong. [S1][N3] | **METERED:** `eth_subscribe` 10 CU; delivered subscription notifications 0.04 CU/byte. [N2] | Marketing states 99.8% uptime; no public contractual SLA or machine-readable status API was found. [N5] | **VERIFIED keyed Free:** 10M CU/month, 150 CUPS, three keys. A shareable public key has stricter IP limits; it is not truly keyless. [N1][N4] |
+| **Tenderly Node** | **VERIFIED broad catalog claim:** 80+/100+ networks, with ETH, BASE, BSC, ARB, POLY shown; exact WSS availability for every fleet chain is not publicly enumerated, so the remainder is **INFERRED/unverified**. [T2] | Standard EVM subscriptions are **INFERRED** from Node’s WebSocket positioning; a current public method matrix for `newHeads`/`logs`/pending was not found. [T2] | Public idle timeout, max lifetime, subscriptions/socket, rate cap, and socket cap not published. [T1][T2] | No public ping/keepalive requirement found. **INFERRED.** [T2] | Enterprise/custom pricing; no public per-notification/per-byte unit for Node WSS. **INFERRED—obtain contract schedule.** [T1] | **VERIFIED marketing/plan claim:** 99.99% uptime SLA; public status page exists. A provider-documented machine API was not found. [T2][T3] | Free plan covers product UI/dev tooling but public pricing says Node API is enterprise/custom; no free production Node WSS established. [T1] |
+| **Helius** | **VERIFIED:** SOL only. [H1] | **VERIFIED current docs:** full standard Solana set, including `logsSubscribe`, `slotSubscribe`, and `blockSubscribe`, plus Helius extensions. This corrects older Helius material that described `blockSubscribe` as unavailable/unstable. [H1] | **VERIFIED:** 10-minute inactivity timeout. Free plan 10 RPS. No public max socket lifetime, subscriptions/socket, or concurrent-socket cap found. [H1][H2] | Official docs say send a ping at least once per minute; examples include both application JSON `ping` and native RFC ping. Only the RFC control frame is guaranteed **ZERO-COST** under this report’s constraints; an application JSON ping is **METERED/unclear and disqualified** unless Helius contractually confirms otherwise. [H1][S1] | **METERED:** 1 credit to open a connection; 2 credits per 0.1 MB of uncompressed streamed data. [H1] | Enterprise SLA is sales/contract based; no public numeric commitment found. Official Statuspage exists; provider-specific machine API not documented. [H2][H3] | **VERIFIED keyed Free:** 1M credits, 10 RPS, standard WebSockets. Not keyless. [H2] |
+| **Triton One** | **VERIFIED:** SOL only. [R1][R2] | **VERIFIED Whirligig:** native Solana WebSockets including full `blockSubscribe`; standard log/slot subscriptions are part of the native RPC surface. [R2] | Flexible/custom limits; no public hard inactivity, max-lifetime, subscriptions/socket, message-rate, or socket-count values found. [R1] | No public RFC ping/client heartbeat interval found. **INFERRED:** negotiate and implement client protocol ping/pong. [R1][S1] | **METERED:** streaming at $0.08/GB; unary RPC adds $10/million calls plus $0.08/GB. Current PAYG requires a $125 minimum deposit. [R1] | Marketing states 99.99% reliability; contractual terms and a public machine-readable status API were not found. [R1][R3] | No free tier established; PAYG minimum deposit. [R1] |
 
-### Matrix footnotes and corrections
+### Matrix footnotes and held-fact adjudication
 
-1. **Alchemy envelope correction — VERIFIED/INFERRED.** Current documentation supports **0.04 CU/byte for EVM WS notifications**, but not the held ~118-byte fixed envelope. Use measured wire bytes for forecasting and obtain written confirmation before adding a fixed overhead ([Alchemy CU costs](https://www.alchemy.com/docs/reference/compute-unit-costs)).
-2. **Alchemy SDK heartbeat — VERIFIED but disqualified.** The SDK’s 30-second `net_version` heartbeat is priced at 0 CU by Alchemy, yet it is still an application RPC probe. It violates the operator’s “no head/liveness polls on WS” rule; rely on RFC Ping/Pong instead ([Alchemy keepalive](https://www.alchemy.com/support/what-s-the-right-way-for-the-client-to-send-a-ping-to-alchemy)).
-3. **Ankr arithmetic — VERIFIED.** EVM notifications cost 100 credits. A three-second head cadence yields `86,400 / 3 × 100 = 2,880,000` credits/day before other traffic; it remains economically unsuitable for a continuously pushed Chiliz head stream ([Ankr pricing](https://www.ankr.com/docs/rpc-service/pricing/)).
-4. **Chiliz endpoints — VERIFIED.** Chiliz’s official RPC page lists `rpc.chiliz.com` under HTTPS only, and lists a distinct PublicNode WSS endpoint. “Chiliz has no WSS” would be false; “`rpc.chiliz.com` does not upgrade to WS” is the precise fact ([Chiliz RPC list](https://docs.chiliz.com/develop/basics/connect-to-chiliz-chain/connect-using-rpc)).
-5. **Control-frame cost — INFERRED.** No reviewed provider tariff bills RFC 6455 Ping/Pong control frames as RPC calls or notifications. Treat them as **ZERO-COST** for the shared 800 CU/s ledger, while recognizing ordinary network egress may still be commercially chargeable.
-6. **Unknown limits — INFERRED.** A blank public contract is operational risk. Before onboarding, run non-destructive canaries for idle reset, maximum age, subscription count, message size/rate and concurrent sockets, and record the signed-plan limits; do not intentionally overload shared endpoints.
+1. **Alchemy notification accounting — partly verified, partly not.** Current docs verify 0.04 CU per delivered EVM subscription byte, 10 CU for subscribe/unsubscribe, and `net_version` at 0 actual CU but 5 throughput CU. The approximately 118-byte JSON-RPC envelope is not stated in current official documentation and remains **INFERRED historical/empirical payload accounting**. The SDK’s 30-second `net_version` heartbeat is real, but it is still a JSON-RPC probe, consumes throughput capacity, and is **disqualified for this WS lane** under the operator ruling. Alchemy documents no maximum socket lifetime and explicitly warns clients not to assume a socket remains open forever. **VERIFIED [A3][A4][A7]; INFERRED envelope**
+2. **Ankr economics — held fact verified and sharpened.** Current docs now publish WSS pricing: 200 credits to create an EVM-compatible subscription, 500 for Solana; each Solana notification is 500 credits and each “Other” notification is 100 credits. With CHZ’s documented roughly 2.99-second average block time, approximately 28,800 heads/day × 100 credits = **2.88M credits/day**. Free/Public/Freemium plans are HTTPS-only in the current feature table; the supplied 401 “WebSocket is disabled” response is consistent with that documentation. Paid CHZ heads therefore remain off unless a contract makes notifications unmetered. **VERIFIED [K2][P2]; OPERATOR-OBSERVED response [SYS]**
+3. **Chiliz endpoints are not interchangeable.** The supplied observation that the chain-operated `rpc.chiliz.com` endpoint is HTTP-only means it must not be treated as a WSS fallback. PublicNode separately and explicitly exposes free keyless Chiliz WSS. **OPERATOR-OBSERVED [SYS]; VERIFIED [P2]**
+4. **“Free” has three meanings.** A keyed free quota can still meter notifications and can be exhausted; an IP-limited keyless endpoint can still throttle or disappear; a contract can make pushed notifications unmetered without being free in dollars. For the 800-CU/s constraint, only traffic that does not debit the shared meter qualifies as **ZERO-COST**. **[SYS]; INFERRED**
+5. **Status APIs are evidence, not liveness.** dRPC and Chainstack explicitly expose machine-readable status outputs; Infura/GetBlock expose machine feeds through their status services. Status pages may be delayed, scoped more broadly than one endpoint, or green during a subscription-specific failure, so they may annotate incidents but may never convict or acquit a socket. **VERIFIED [D5][C5][I7][G4]; INFERRED operational use**
+6. **No-public-limit cells are not promises.** “Not published” records the result of reviewing the provider’s current official API, pricing, SLA, and WebSocket pages. Load balancers and private abuse controls may still impose undocumented limits. **INFERRED**
+7. **Provider-pushed does not automatically mean zero-cost.** Alchemy, dRPC, Chainstack, NodeReal, Helius, and Triton explicitly meter notifications/bytes/request units. `newHeads` from those products is not an admissible zero-cost liveness reference unless the commercial contract overrides public metering. **VERIFIED [A3][D2][C2][N2][H1][R1]**
+8. **Blast/Bware and LlamaNodes should not be silently recycled from historical provider lists.** Blast is officially deprecated; LlamaNodes lacks a current official RPC surface. Neither belongs in a new production failover set without new primary evidence. **VERIFIED [B1]; INFERRED [L1]**
+
 
 ## (c) Detection playbook
 
-### Ranked techniques
+### C.1 Required health decomposition
 
-| Rank | Technique | Mechanism | Catches | Cannot catch | Cost and admissibility | Evidence |
-|---:|---|---|---|---|---|---|
-| 1 | RFC 6455 Ping/Pong | Send Ping with nonce; require matching timely Pong; close and reconnect after two consecutive deadlines. A Pong may be unsolicited, but a solicited Pong must echo Ping application data. | Broken route, dead peer, half-open TCP, event-loop path that cannot service WS control frames, and many LB idle resets. | **The silent provider** when an edge/control loop answers while subscription delivery is stalled; semantic staleness; omitted matching logs. | **ZERO-COST; ADMISSIBLE.** | **VERIFIED:** [RFC 6455 §5.5.2–5.5.3](https://www.rfc-editor.org/rfc/rfc6455#section-5.5.2); alloy exposes a 10 s default keepalive and closes when Pong misses the next interval ([`WsConnect`](https://docs.rs/alloy/latest/alloy/providers/struct.WsConnect.html)). |
-| 2 | Separate session heartbeat | Owning session task stamps a monotonic local timestamp only while its receive/control loop makes progress. Monitor from an independent supervisor. | Deadlocked/aborted owner, scheduler stall, stale ownership, internal channel blockage if stamping follows the critical path. | Provider reachability or data delivery if timer can run independently of receive processing. | **ZERO-COST; ADMISSIBLE.** | **INFERRED**, based on the authoritative system fact that the current 10 s heartbeat is session-owned. |
-| 3 | Delivered-log block monotonicity and freshness | For each frame, validate `(blockNumber, blockHash, txIndex, logIndex, removed)`; retain high-water mark and detect jumps, regressions, impossible duplicates and reorg semantics. Compare frame receipt time to the block timestamp only as a stale-data signal. | Replay loops, stale backend, some missed ranges (once a later log arrives), malformed ordering, mishandled reorgs. | Silence before the next matching event; gaps containing no matching log; a provider that consistently omits all future matching logs. | **ZERO-COST; ADMISSIBLE.** Uses data already delivered. | **VERIFIED:** log notifications carry block identity and reorg removal semantics ([Geth Pub/Sub](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)). Threshold interpretation is **INFERRED**. |
-| 4 | Subscription epoch/lease | Record socket epoch, requested filter hash, acknowledgement time and current server ID. Never carry an ID across sockets. Rotate/resubscribe on a jittered maximum age; declare active only after fresh acknowledgement. | Lost server-side registration after reconnect; indefinitely old connections; clients that silently failed to resubscribe. Bounds, rather than proves, silent failure duration. | A fresh subscription that acknowledges and then silently drops notifications; healthy empty filters. | Renewal is **METERED**; ADMISSIBLE only as lifecycle, not a liveness poll. Budget denial postpones rotation and must not count as provider failure. | **VERIFIED:** Geth subscriptions are connection-coupled ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)); alloy re-creates active subscriptions with new server IDs ([alloy-pubsub](https://docs.rs/alloy-pubsub/latest/alloy_pubsub/)). Lease policy is **INFERRED**. |
-| 5 | Pushed same-chain reference | Compare the primary log stream with an already-running, provider-pushed `newHeads`/slot stream. If heads advance beyond a filter’s last delivered block, mark “no matching logs observed,” not automatically failed. Stronger evidence exists if a known-dense reference subscription advances while the target does not. | Stalled log delivery while pushed head delivery continues; chain advancement without RPC polling. | Whole-provider silence affecting both streams; sparse-filter ambiguity; provider-wide stale fork. | **ZERO-COST only when the pushed reference is already present and contractually unmetered. Otherwise notification/subscription traffic is METERED.** Allowed for Ethereum’s existing stream; for the other nine, add only where pushes are free of metering. | **VERIFIED:** subscriptions replace polling and emit current events ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)); provider billing varies as matrix shows. Conviction rule is **INFERRED**. |
-| 6 | Cross-provider pushed comparison | Use independently sourced, already-pushed heads/slots/logs. Convict primary data silence only after reference advances by a chain-specific block/time threshold and primary still Pongs but emits no expected dense signal. | Silent subscription/provider, stale fork, regional/provider-specific outage. | Correlated upstream failure, chain halt, sparse filters unless reference proves a specific omitted event. | **ZERO-COST at the detector when data already exists and is unmetered; otherwise METERED.** Never synthesize the reference with a poll. | **INFERRED** design; pushed-data semantics are **VERIFIED** by [Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub) and [Solana PubSub](https://solana.com/docs/rpc/websocket). |
-| 7 | Cadence watchdog | Maintain an EWMA/quantiles for inter-arrival times, separately by chain/filter/traffic regime. Raise suspicion at a high percentile; require another independent signal to convict. For a dense `newHeads` stream, compare against chain cadence; for sparse logs use the probability model below. | Gross stalls on dense streams; anomalous latency shifts. | Cannot prove failure for sparse filters, chain halts, traffic regime changes, or provider-filter differences. | **ZERO-COST** on delivered timestamps; **ADMISSIBLE only as suspicion**, never sole conviction. | **INFERRED.** |
-| 8 | TCP keepalive and transport timers | Enable OS keepalive/user timeout with deployment-specific values as a backstop; WebSocket Ping remains the primary fast detector. | Dead peer/path when no application traffic; some NAT state loss. | Application/provider silence; long kernel defaults are too slow; ACK only proves the peer TCP stack accepted bytes, not that JSON-RPC processed them. | **ZERO-COST** to the RPC/CU budget; ADMISSIBLE. | **VERIFIED:** RFC 1122 says keepalive defaults off and, if used, defaults to at least two hours ([RFC 1122 §4.2.3.6](https://www.rfc-editor.org/rfc/rfc1122#section-4.2.3.6)); Linux defaults include 7,200 s idle and nine probes ([Linux TCP](https://man7.org/linux/man-pages/man7/tcp.7.html)); TCP acknowledgements are transport-level acceptance ([RFC 9293](https://www.rfc-editor.org/rfc/rfc9293)). |
-| 9 | Budget-independent circuit breaker | Maintain separate counters: `transport_failure`, `invalid_data`, `lease_failure_after_admission`, `reference_divergence`, `budget_denied`. Open only on a threshold of eligible failures across time/epochs; use half-open reconnect canaries, not RPC probes. | Repeated real transport/data failures without letting resource contention masquerade as outage. | Silent healthy-empty ambiguity without reference; correlated failures. | **ZERO-COST** control logic. Lease creation may be METERED, but denial is neutral. | **INFERRED**, directly addressing the authoritative chain-146/88888 incident. |
-| 10 | Application RPC probe | `eth_blockNumber`, `net_version`, or periodic `eth_getLogs` over WS/HTTP. | May show that one RPC path answers and may expose a stale head; `eth_getLogs` can verify a known expected event. | A different backend/path may answer while subscription delivery is broken; success does not prove future delivery. | **METERED and DISQUALIFIED for WS-lane liveness.** `eth_getLogs` after reconnect is permitted only as repair/backfill. | **VERIFIED:** Alchemy prices `eth_blockNumber` 10 CU and `eth_getLogs` 60 CU, while `net_version` is nominally 0 CU but still an RPC request ([Alchemy costs](https://www.alchemy.com/docs/reference/compute-unit-costs)); operator ruling controls admissibility. |
+The present system reports coverage as `heartbeat_live && active_gap.is_none()`. Because the 10-second heartbeat is stamped by the owning WS session, it can remain fresh while the remote provider is silent, and a silent stream may create no known `active_gap`. That boolean therefore proves neither remote transport responsiveness nor active subscription delivery. **[SYS]; INFERRED**
 
-### Cadence and false-positive math
+A detector that respects both hard constraints should maintain separate facts rather than compressing them prematurely:
 
-**INFERRED:** If matching logs are approximately Poisson with rate λ events/second, a healthy filter produces no event in a window T with probability
+```text
+local_task_live     := owning task/session heartbeat is fresh
+transport_live      := socket is open AND an RFC 6455 pong is fresh
+socket_epoch        := increments on every physical connection
+lease_live          := every required subscription was acknowledged in socket_epoch
+known_gap           := a disconnect/reconnect or delivered-frame invariant bounds a repair interval
+budget_state        := available | starved | denied
+data_confidence     := observed_recent | sparse_unknown | independently_corroborated | suspected_stall
 
-`P(no event in T | healthy) = e^(-λT)`.
+transport_coverage  := local_task_live && transport_live && lease_live
+known_data_coverage := transport_coverage && !known_gap
+```
 
-To cap the single-window healthy false alarm at α, `T >= -ln(α)/λ`. Example: one matching event/hour and α = 1% requires about 4.6 hours of silence; a 30-second watchdog would be meaningless. Real contract activity is bursty and over-dispersed, so a negative-binomial/empirical survival model is safer; the Poisson result is optimistic. **INFERRED.** By contrast, a provider-pushed `newHeads` stream is intentionally dense, but chain production can pause and reorgs can repeat heights, so cadence still needs a pushed independent reference before conviction ([Geth `newHeads`](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)).
+`known_data_coverage=true` must not be advertised as proof that no notification was silently dropped. For a sparse filter, the honest state can be `known_data_coverage=true, data_confidence=sparse_unknown`. That distinction is essential to the silent-provider case. **INFERRED**
 
-### Conviction state machine
+### C.2 Ranked detection techniques
 
-**INFERRED:** Keep these dimensions independent:
+#### 1. RFC 6455 ping/pong owned by the WS session
 
-- `transport_live`: recent solicited Pong and no close/error.
-- `session_live`: owner heartbeat advanced through the receive/control critical path.
-- `lease_live`: current socket epoch has acknowledged each required subscription.
-- `data_observed`: last delivered event and its block identity; absence is not failure for sparse filters.
-- `reference_ahead`: an unmetered pushed independent source has advanced beyond a configured bound.
-- `budget_state`: admitted, delayed, or denied; denial never increments provider-failure counters.
+**Mechanism.** Send a WebSocket **control-frame Ping**, track exactly one outstanding challenge (optionally with an opaque nonce/timestamp), and require the matching or subsequent Pong within a deadline. RFC 6455 permits Ping at any time and requires a peer receiving it to send Pong as soon as practical. Ping/Pong control frames are separate from JSON-RPC messages. **VERIFIED [S1]**
 
-Coverage should no longer collapse to only `heartbeat_live && active_gap.is_none()`. A safe derived state is: **covered** when session + transport + leases are live and no proven delivered-data gap exists; **suspect** on cadence only; **failed** on close/Pong deadline, invalid delivered data, repeated admitted lease failure, or qualified pushed-reference divergence. This refinement is **INFERRED** from the supplied architecture.
+**Catches.** A dead peer, severed route, many NAT/load-balancer half-opens, a remote WS stack that no longer reads frames, and cases where the kernel has not yet surfaced a close. It also creates traffic that prevents documented inactivity timeouts such as Chainstack’s one-hour limit and Helius’s ten-minute limit, provided the provider counts control frames as activity; whether a particular load balancer does so is **INFERRED and should be tested**. **VERIFIED [C1][H1]; INFERRED activity semantics**
+
+**Cannot catch.** A provider whose TCP/WS front end answers Pings while the internal subscription dispatcher, chain backend, filter worker, or notification fan-out is stalled. It also cannot prove that a locally stored subscription id remains registered upstream. **INFERRED**
+
+**Cost.** **ZERO-COST** under the operator definition: RFC 6455 control frames do not invoke JSON-RPC or debit provider method/notification CU. **[SYS][S1]**
+
+**Recommended policy.** A starting policy of one Ping after 10 seconds of outbound idleness, a 10-second Pong deadline, and transport conviction only after two consecutive unanswered challenges is **INFERRED**, not a provider universal. Use monotonic time, suspend the watchdog during process stop-the-world/host sleep, and record `ping_sent_at`, `pong_at`, RTT, and close code. A close/error or unanswered Ping may trigger reconnect; it must not be translated into “provider dropped events” without later gap evidence. **INFERRED**
+
+#### 2. Local application/session heartbeat—retain, but narrow its meaning
+
+**Mechanism.** The existing owner stamps a heartbeat every 10 seconds. This proves that the task which owns the WS session is scheduled and making progress. **[SYS]**
+
+**Catches.** Local task deadlock, executor starvation, a stopped session loop, or failure to update shared health state. **INFERRED**
+
+**Cannot catch.** Any remote transport or provider failure if the task continues ticking. It specifically cannot detect the silent provider. **INFERRED**
+
+**Cost.** **ZERO-COST** because it is local state. **[SYS]**
+
+**Ruling.** Rename or expose it as `local_task_live`; do not call it socket liveness. An application **JSON-RPC** “heartbeat” such as Alchemy/viem `net_version` is a different technique: it is **METERED/disqualified** for this lane even if one provider charges 0 actual CU, because it is a poll/probe and can consume throughput CU. **VERIFIED [A3][A4][CL-V1]; [SYS]**
+
+#### 3. TCP keepalive as a slow backstop
+
+**Mechanism.** Enable OS TCP keepalive with explicit per-socket settings where supported. Linux defaults are commonly 7,200 seconds idle, 75 seconds between probes, and nine failed probes—far too slow for primary ingestion liveness unless tuned. **VERIFIED [S3]**
+
+**Catches.** A disappeared host/path when no WebSocket traffic is flowing and the TCP stack eventually exhausts probes. **VERIFIED [S3]**
+
+**Cannot catch.** A peer that continues acknowledging TCP segments while its application or subscription pipeline is not processing them. TCP acknowledgements establish receipt by the peer’s TCP implementation/receive path, not successful JSON-RPC dispatch or event delivery. **VERIFIED foundation [S2]; INFERRED application consequence**
+
+**Cost.** **ZERO-COST** to provider CU; it is transport traffic. **[SYS]**
+
+**Ruling.** Use tuned keepalive only as defense in depth behind RFC ping/pong. Keep its failure reason separate because it identifies path/peer failure, not necessarily provider-wide failure. **INFERRED**
+
+#### 4. Subscription-cadence watchdogs—suspicion, never standalone conviction
+
+**Mechanism.** Estimate expected inter-arrival from the actual stream. For a free pushed `newHeads` stream, compare elapsed time with a robust percentile of recent block intervals rather than a single nominal block time. For a log filter, estimate the filter’s own event rate; chain block time is not its event rate. **INFERRED**
+
+**Catches.** Gross stalls on dense, regular streams; a single subscription that becomes unusually quiet while transport still pongs; delayed batches that create a large observed inter-arrival. **INFERRED**
+
+**Cannot catch safely.** Sparse or bursty log streams. Under a Poisson approximation with event rate `λ`, the probability of legitimately seeing no matching event for window `T` is:
+
+```text
+P(no event in T) = exp(-λT)
+```
+
+At one event/hour, a five-minute watchdog is silent legitimately about `e^(-1/12) = 92.0%` of the time; even a 30-minute window is silent about `e^-0.5 = 60.7%`. At one event/minute, five minutes of silence is still legitimate about `e^-5 = 0.67%` of the time. The Poisson model itself is **INFERRED** and real on-chain activity is often more bursty, making naive thresholds worse. **INFERRED**
+
+**Cost.** **ZERO-COST** when calculated only from timestamps of already delivered frames. A cadence check that asks `eth_blockNumber`, `net_version`, or `eth_getLogs` is **METERED and disqualified**. **[SYS]**
+
+**Ruling.** Cadence may set `data_confidence=suspected_stall` and increase observability; it may not open the provider circuit for sparse filters. For freely pushed heads, it can contribute corroboration, but only if notification delivery is contractually or operationally unmetered. **INFERRED**
+
+#### 5. Block-number and identity invariants from delivered log frames
+
+**Mechanism.** On every delivered EVM log, record at minimum subscription/socket epoch, receive monotonic timestamp, `blockNumber`, `blockHash`, `transactionHash`, `transactionIndex`, `logIndex`, and `removed`. Standard Ethereum subscription payloads carry block identity and use `removed=true` for logs invalidated by a reorganization. **VERIFIED [S4][I3]**
+
+Apply zero-cost predicates:
+
+- block number must not regress unless the event is a valid reorg/removal path;
+- duplicates are keyed by chain + block hash + transaction hash + log index, not by block height alone;
+- first post-reconnect delivery bounds the end of the period requiring repair;
+- a jump between matching logs bounds elapsed chain height but does **not** prove that intervening blocks contained matching logs;
+- conflicting block hashes at the same height are reorg/fork evidence, not automatically provider corruption.
+
+These predicates are **INFERRED operational rules** built from verified payload fields. **VERIFIED fields [S4]; INFERRED predicates**
+
+**Catches.** Regressions, replay/duplicates, malformed ordering, post-reconnect stale delivery, reorg signals, and a bounded interval to inspect after an actual outage. **INFERRED**
+
+**Cannot catch.** Total silence before another event arrives. It cannot prove a missed matching log merely because block numbers jump, because a filter may legitimately match no logs in the skipped blocks. **INFERRED**
+
+**Cost.** **ZERO-COST**: all evidence is already in delivered frames. The eventual `eth_getLogs` repair is **METERED**, but repair is allowed after a confirmed reconnect/known gap and must not be used as a liveness canary. **[SYS]**
+
+#### 6. Subscription id as a socket-bound lease
+
+**Mechanism.** Assign each physical socket a monotonically increasing `socket_epoch`. Store every requested subscription as durable intent, but store the provider-returned id as `(socket_epoch, provider_subscription_id, acknowledged_at)`. A lease is live only after the current socket has returned a successful subscription acknowledgement. Ethereum subscription ids are tied to the connection; when the connection closes, subscriptions are removed. **VERIFIED [S4][CL-G1]**
+
+**Catches.** Silent client-library reconnects that create a new transport without restoring every subscription; stale ids from a previous connection; partial resubscription; subscribe errors/timeouts; accidental listener loss. **VERIFIED foundation [S4][CL-R1]; INFERRED lease model**
+
+**Cannot catch.** A provider that accepted the subscription and continues to acknowledge Pings but stopped delivering matching notifications. The id is evidence of past acknowledgement, not a continuously queryable lease token. **INFERRED**
+
+**Cost.** Local epoch bookkeeping is **ZERO-COST**. Initial subscribe, resubscribe, renewal, and unsubscribe are **METERED** according to the provider’s model; at Alchemy they are 10 CU each, at dRPC 20 CU to subscribe, and Chainstack charges a request unit. **VERIFIED [A3][D2][C2]**
+
+**Renewal policy.** Renew/rotate only on actual socket epoch change, failed lease acknowledgement, a documented provider lifetime/idle rule, or a low-frequency provider-specific policy justified by observed decay. A blind frequent renewal schedule burns CU and may create duplicates. “Subscribe new, atomically switch local routing after acknowledgement, then unsubscribe old” minimizes a gap when the provider permits overlapping subscriptions; this policy is **INFERRED**. 
+
+#### 7. Independent cross-provider comparison using pushed data only
+
+**Mechanism.** Consume an independent provider’s already-pushed, non-metered head/slot or matching-log stream and compare chain progression and delivery timestamps. Independence requires a different provider/control plane; two sockets behind the same provider/load balancer are useful for subscription-specific diagnosis but are not strong provider-wide corroboration. **INFERRED**
+
+**Catches.** A primary provider that pongs but stops advancing while the reference continues; chain-wide versus provider-specific stalls; some selective subscription failures when both streams carry the same filter. **INFERRED**
+
+**Cannot catch.** A common upstream/node failure shared by both services, synchronized filtering bugs, or a sparse primary filter when the reference only proves heads. Free public reference data can itself be throttled or wrong. **INFERRED**
+
+**Cost.** **ZERO-COST** only when the reference notifications do not debit the shared meter. PublicNode is a currently verified keyless candidate on most fleet chains, including CHZ and RH, but it has no SLA and lacks HYPER. dRPC, Alchemy, Chainstack, NodeReal, Helius, and Triton public schedules meter pushes, so their heads are **METERED** and inadmissible for WS-lane liveness under the ruling. **VERIFIED [P1][P4][D2][A3][C2][N2][H1][R1]**
+
+**Ruling.** A free pushed reference can raise or lower `data_confidence`; it should not suppress repair after the primary’s confirmed outage. Before production, verify method support, independence, and actual account billing with a short controlled test that does not expose keys. **INFERRED**
+
+#### 8. Budget-independent circuit breakers with explicit conviction evidence
+
+**Mechanism.** Maintain separate counters and causes:
+
+```text
+transport_failure:
+  socket close/error; RFC pong deadline exceeded; TCP failure
+
+lease_failure:
+  connect succeeded but required subscribe acknowledgement failed/timed out;
+  current socket_epoch lacks required subscription ids
+
+data_suspicion:
+  dense-stream cadence anomaly; delivered-frame regression/staleness
+
+corroborated_data_failure:
+  independent, pushed, unmetered reference advances while primary remains stalled
+
+budget_starvation:
+  CU acquisition denied; repair request deferred; never a provider miss
+```
+
+Only `transport_failure`, `lease_failure`, or `corroborated_data_failure` may advance endpoint conviction. `data_suspicion` may trigger logs/metrics or a planned low-frequency rotation, but not immediate provider conviction. `budget_starvation` changes repair availability and therefore confidence, but never the provider score. **[SYS]; INFERRED**
+
+**Catches.** Repeated objective path/endpoint failures without repeating the chain-146/88888 incident where denied polls were counted as missed responses. **[SYS]**
+
+**Cannot catch.** The information-theoretically silent provider when no independent pushed reference exists. **INFERRED**
+
+**Cost.** State transitions are **ZERO-COST**. Reconnect and subscription acknowledgements may be **METERED**; any post-outage backfill is **METERED**. No half-open state may issue a poll. **[SYS]**
+
+**Initial threshold policy.** Two consecutive unanswered protocol Pings may convict the **transport**; three failed connect-or-required-subscribe cycles inside a rolling minute may open the endpoint circuit; successful reconnect plus complete current-epoch lease acknowledgement may enter half-open. These numbers are **INFERRED starting values** and should be calibrated from RTT/incident distributions. They do not convict event loss.
+
+#### 9. Provider status feeds as out-of-band enrichment
+
+**Mechanism.** Read provider status JSON/RSS/webhook feeds in the control plane, not through the metered RPC lane. dRPC and Chainstack explicitly expose machine-readable outputs; Infura and GetBlock expose machine feeds through their status platforms. **VERIFIED [D5][C5][I7][G4]**
+
+**Catches.** Declared regional, network, maintenance, or provider-wide incidents; useful correlation across many local sockets. **VERIFIED availability [D5][C5][I7][G4]; INFERRED correlation**
+
+**Cannot catch.** A single subscription, account, endpoint, load-balancer shard, or selective silent data path; status can lag reality. Green status is not exculpatory. **INFERRED**
+
+**Cost.** **ZERO-COST to the shared CU budget** because it is out of band. It is not provider-pushed chain data and may never be part of liveness conviction by itself. **INFERRED**
+
+#### 10. Planned socket rotation as prevention, not detection
+
+**Mechanism.** Close and recreate a socket on a provider-specific schedule only when a documented max lifetime/idle behavior or measured age-related degradation warrants it. Re-establish all leases, then run repair over the bounded disconnect interval. **INFERRED**
+
+**Catches/prevents.** Long-lived state decay, stale load-balancer affinity, leaked client state, and providers that enforce an undisclosed lifetime—at the cost of self-created gaps. **INFERRED**
+
+**Cannot catch.** It does not prove the old socket was silent or that the new one is complete. Aggressive fleet-wide rotation can create a reconnect storm. **INFERRED**
+
+**Cost.** Socket control is **ZERO-COST**, but subscription recreation and repair are **METERED**. Therefore rotate gradually with jitter, never in lockstep, and never merely because a sparse filter was quiet. **[SYS]; INFERRED**
+
+### C.3 Failure-mode coverage
+
+The techniques deliberately prove different layers:
+
+- **Local task dead:** local heartbeat detects it; protocol ping may stop only as a consequence. **INFERRED**
+- **Cable/NAT/LB/peer dead:** RFC ping/pong is primary; TCP keepalive is secondary; close/error may arrive first. **VERIFIED foundation [S1][S3]**
+- **Automatic reconnect without restored listeners:** socket/subscription epochs and complete lease acknowledgement detect it. **VERIFIED foundation [S4][CL-R1]**
+- **Provider dispatcher silent but WS front end alive:** ping/TCP/local heartbeat do not detect it; dense cadence gives suspicion; independent free pushed data can corroborate. **INFERRED**
+- **Sparse filter legitimately quiet:** remain `sparse_unknown`; do not convict. **INFERRED**
+- **Delivered duplicate/reorg/regression:** frame identity and block invariants detect/classify after delivery. **VERIFIED foundation [S4]**
+- **CU starvation:** explicit budget state detects it locally; it must never increment transport/provider misses. **[SYS]**
+- **Known outage interval:** reconnect epoch plus delivered block bounds trigger metered repair; repair does not establish liveness. **[SYS]; INFERRED**
+
+### C.4 What real clients implement
+
+#### ethers.js v6
+
+The current `WebSocketProvider` source handles socket messages and close, but its close/reconnect block remains a TODO/commented path; it provides no built-in protocol Ping scheduler in that provider. Production users must wrap reconnection, subscription intent, resubscription acknowledgement, and gap repair themselves. **VERIFIED [CL-E]**
+
+**Fit:** safe from hidden `net_version` polling, but unsafe to assume automatic recovery. **INFERRED**
+
+#### viem
+
+Viem’s WebSocket RPC utility enables keepalive and reconnect by default. Its keepalive “ping” is a JSON-RPC `net_version` request, defaulting to a 30-second interval. Its reconnect configuration defaults to five attempts with a fixed 2-second delay, and its subscription plumbing replays subscriptions and captures replacement ids after reconnect. **VERIFIED [CL-V1][CL-V2]**
+
+**Fit:** the reconnect/resubscribe machinery is useful; the default liveness mechanism is **METERED/disqualified** on this lane and must be disabled or replaced with RFC control-frame ping/pong. Fixed-delay retries also lack jitter. **[SYS]; INFERRED**
+
+#### web3.js 4.x
+
+The archived 4.x source defaults socket auto-reconnect to enabled with five attempts and a 5-second delay; pending request queues are rejected around disconnects. The subscription layer exposes explicit `resubscribe()` behavior. Source inspection does not establish a reliable universal guarantee that every active subscription is transparently restored solely because the transport reconnected, so applications should retain and verify subscription intent themselves. **VERIFIED reconnect/settings [CL-W1]; VERIFIED explicit resubscribe [CL-W2]; INFERRED guarantee boundary**
+
+**Fit:** do not treat transport “connected” as lease coverage; add current-epoch acknowledgements. **INFERRED**
+
+#### Alchemy SDK
+
+The Alchemy SDK sends `net_version` every 30 seconds, waits for liveness failure, reconnects, maps logical subscriptions onto replacement physical ids, and offers resilient event delivery/backfill for temporary outages; its public docs warn that outages beyond roughly 120 blocks can still lose events. **VERIFIED [A4][A7]**
+
+**Fit:** its resubscription and logical-id design are strong precedents. Its JSON-RPC heartbeat is disqualified here even though Alchemy labels it 0 actual CU, because it is a WS-lane probe and carries 5 throughput CU in the current table. Its proprietary backfill limit is not a substitute for the system’s own exact repair policy. **VERIFIED [A3][A7]; [SYS]**
+
+#### Geth
+
+Geth’s RPC client can reconnect the underlying connection for requests after transport failure, but subscriptions are connection-coupled: the Pub/Sub documentation says a connection close removes its subscriptions, and `ClientSubscription.Err()` is the application signal for an unexpected end and resubscription workflow. Current Geth WebSocket transport source sends idle protocol Pings and maintains Pong/read deadlines; current constants use a 30-second ping interval, a 5-second write deadline, and a 30-second Pong timeout. **VERIFIED [S4][CL-G1][CL-G2][CL-G3]**
+
+**Fit:** Geth validates the separation between transport reconnect and subscription lifecycle. Its server/client codec behavior also demonstrates that RFC ping/pong is normal production transport practice. **INFERRED**
+
+#### Rust alloy 2.1.1
+
+Upstream alloy 2.1.1’s pubsub service reconnects, reissues pending requests, and restarts active subscriptions, with reconnect details logged at debug level. Its native WebSocket transport defaults to RFC ping after 10 seconds of outbound idleness and treats a missing Pong before the next ping interval as dead; the connector also has retry settings. **VERIFIED [CL-R1][CL-R2][CL-R3]**
+
+The supplied deployment ground truth nevertheless says the running client sends **no protocol Pings**, while alloy silently auto-reconnects at debug and the system uses 1-second exponential backoff capped at 30 seconds. Both can be true if the deployment disables/bypasses the upstream native default, wraps a different transport, or uses configuration not visible here. This report does not choose among those explanations. **[SYS]; INFERRED**
+
+**Fit:** instrument the effective runtime path. Emit socket epoch, Ping/Pong timestamps, reconnect reason, retry number, and each replacement subscription id at metrics/info level; do not assume a crate default is active merely because upstream source contains it. **INFERRED**
+
+### C.5 Brief best practices and comparison to the supplied system
+
+1. **Lifecycle state machine.** Model `Disconnected → Connecting → TransportLive → Subscribing → Covered → Suspect → Reconnecting/Repairing`; only `Covered` has a fresh Pong and complete current-epoch leases. The present heartbeat/gap boolean should remain as compatibility output but be backed by the decomposed facts. **INFERRED; [SYS]**
+2. **Resubscribe after every physical reconnect.** Persist subscription *intent*, not provider ids. Await every new acknowledgement; subscription ids from the old socket are invalid. **VERIFIED [S4][CL-G1]**
+3. **Exponential backoff with jitter.** Retain the supplied 1-second exponential schedule capped at 30 seconds, add full/decorrelated jitter, and reset only after a stable transport plus complete leases—not immediately on TCP open. This avoids synchronized storms like 88888. **VERIFIED pattern [H1]; system values [SYS]; INFERRED reset policy**
+4. **Moderate multiplexing.** Reuse a socket to avoid needless connection/subscription setup, but cap subscriptions per socket below provider limits and divide critical streams into small failure domains. One socket per subscription maximizes reconnect/setup load; one socket for an entire fleet maximizes blast radius. Exact grouping is **INFERRED** and should reflect chain/provider caps such as Alchemy’s 1,000 subscriptions/socket and Chainstack’s 500 concurrent sockets. **VERIFIED limits [A1][C1]; INFERRED topology**
+5. **Gap backfill only as repair.** After a confirmed transport/lease transition or known interval, use `eth_getLogs` in bounded ranges, deduplicate by immutable log identity, and handle reorg removals. The supplied max-50-block, one-per-second, CU-gated fallback is correctly categorized as repair; it must not be scheduled merely to prove liveness. **[SYS]; VERIFIED payload/reorg basis [S4]**
+6. **Cross-provider redundancy.** Prefer a genuinely independent secondary and avoid assuming two branded endpoints have independent upstreams. A secondary stream is admissible for liveness only when pushed notifications are verified unmetered; otherwise it is paid redundancy/repair evidence, not zero-cost liveness. **INFERRED; [SYS]**
+7. **Observe hidden reconnects.** Alloy’s debug-only recovery can make the application appear continuously alive while creating a real subscription epoch and repair interval. Promote structured reconnect/subscription metrics without changing source semantics. **VERIFIED behavior [CL-R1]; INFERRED observability policy**
+
 
 ## (d) The silent provider
 
-### Definition
+### D.1 Definition
 
-**The silent provider** is a WebSocket that remains TCP-connected, returns timely RFC 6455 Pong frames, retains a client-visible/current subscription ID, and may even acknowledge a renewed subscription, yet emits no subscription notifications. The edge, TCP stack and control-frame handler can remain healthy while a backend fan-out, filter, queue, or provider-side registration is stalled. **INFERRED.** Alchemy itself warns that WebSocket handling has silent failure modes and discourages ordinary RPC requests over the WS channel ([Alchemy subscriptions](https://www.alchemy.com/docs/reference/subscription-api)).
+**The silent provider** is a failure state in which all of the following can be true at once:
 
-### Every detection option and its cost
+- the TCP connection remains established;
+- the WebSocket endpoint answers RFC 6455 Pings with Pongs;
+- the local owning session continues its heartbeat;
+- the client still holds the subscription id originally acknowledged for the current socket;
+- no close/error is raised;
+- no subscription notification arrives, either because no matching event occurred or because some provider-side data path silently stopped.
 
-| Option | Observation in the silent-provider case | Cost | Verdict |
-|---|---|---|---|
-| RFC Ping/Pong | Continues to say transport is alive; does **not** detect subscription silence. | **ZERO-COST** | Required, insufficient ([RFC 6455](https://www.rfc-editor.org/rfc/rfc6455#section-5.5.2)). |
-| TCP keepalive/ACK | Continues to say the remote TCP stack is reachable; does **not** prove application processing. | **ZERO-COST** | Backstop only ([RFC 9293](https://www.rfc-editor.org/rfc/rfc9293)). |
-| Current in-memory subscription ID | Proves only that an earlier response was received. Geth IDs are connection-scoped; an ID has no independent heartbeat. | **ZERO-COST** | No detection value by itself ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)). |
-| Lease rotation/resubscribe | Fresh acknowledgement proves registration RPC succeeded and bounds exposure to a lost registration; it still cannot prove the next notification will arrive. | **METERED** subscription/unsubscription calls | Allowed lifecycle action; never treat budget denial as provider failure. |
-| Sparse-log inter-arrival timer | Long silence is compatible with a healthy filter with probability `e^-λT`; burstiness worsens false positives. | **ZERO-COST** | Suspicion only; cannot convict. **INFERRED.** |
-| Delivered block-number analysis | Detects a gap retrospectively when a later matching log arrives, plus regression/replay immediately. | **ZERO-COST** | Strong evidence after delivery resumes; no real-time detection during total silence ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)). |
-| Same-provider pushed heads/slots | If heads advance while a known-dense log stream does not, isolates the log subscription; if both are silent, ambiguity remains. | **ZERO-COST only if already present/unmetered; otherwise METERED notifications** | Ethereum-only with the current architecture unless another provider makes pushes free. |
-| Second-provider pushed reference | If independent pushed heads advance and primary does not, detects a silent primary without polling. If a reference also observes an event matching the exact filter and primary omits it, that is direct proof. | **ZERO-COST only when the feed already exists and is unmetered; otherwise METERED** | Best semantic detector permitted by the ruling. **INFERRED.** |
-| Forced socket rotation | Ends the maximum silent exposure even if no detector can prove silence; resubscribe creates a new ID/epoch. | **METERED** setup/subscription; reconnect itself usually not CU-metered | Mitigation, not proof. **INFERRED.** |
-| `eth_blockNumber` / `net_version` probe | May answer through a healthy RPC handler while fan-out remains broken. | **METERED/disqualified** | Do not recommend. Alchemy’s 0-CU `net_version` exception does not override operator policy ([Alchemy costs](https://www.alchemy.com/docs/reference/compute-unit-costs)). |
-| Periodic `eth_getLogs` probe | Could prove a specific omission after querying a range, but consumes shared CU and turns repair into polling. | **METERED/disqualified for liveness** | Use only after reconnect/proven gap as bounded repair. |
+This is not merely a “dead socket.” It separates **transport availability** from **subscription-delivery availability**. **INFERRED**
 
-### The unavoidable blind spot
+### D.2 Indistinguishability result
 
-**INFERRED, stated plainly:** when (1) the socket Pongs, (2) its current-epoch subscription was acknowledged, (3) the filter is allowed to have no matching events, (4) no independently pushed reference proves chain/event progress, and (5) metered probes are forbidden, **no detector can distinguish a healthy empty stream from a provider silently discarding every notification**. Timeout values cannot manufacture missing information. The permissible responses are to remain `suspect`, rotate the lease/socket on a bounded schedule, or add an independent pushed reference whose marginal notifications are free; a metered probe would resolve some ambiguity but is explicitly not recommended.
+Consider two worlds observed from one sparse `logs` subscription:
 
-## (e) Ranked recommendations and fit
+- **World A:** the chain produced no log matching the filter during interval `T`.
+- **World B:** the chain produced one or more matching logs, but the provider’s subscription dispatcher dropped them; its WebSocket front end continued returning Pongs.
 
-### Recommendations
+The client’s observations in both worlds are identical: fresh local heartbeat, fresh Pongs, same locally stored subscription id, and no log frames. No algorithm using only those observations can distinguish A from B. This is an information limitation, not a threshold-tuning problem. **INFERRED**
 
-| Rank | Recommendation | Fit to no-poll ruling | Fit to 800 CU/s contention | Fit to current architecture | Status |
-|---:|---|---|---|---|---|
-| 1 | Enable alloy RFC Ping/Pong and expose `last_ping`, `last_pong`, deadline miss and forced-close metrics. Start from alloy’s 10 s default or 20–30 s with a 10 s deadline; convict after two misses, with provider-specific shorter settings where documented. | Exact fit; no head/application probe. | **ZERO-COST**. | Replaces the current absence of protocol pings while preserving the 10 s owner heartbeat. | **VERIFIED** capability ([`WsConnect`](https://docs.rs/alloy/latest/alloy/providers/struct.WsConnect.html)); threshold **INFERRED**. |
-| 2 | Split health into transport, session, lease, data and budget dimensions; make `BudgetDenied` neutral. | Exact fit. | **ZERO-COST** logic; cannot self-starve. | Prevents repetition of chain 146’s ~250 denied polls/5 min and chain 88888’s false connect storm (authoritative incident facts). | **INFERRED**. |
-| 3 | Make subscription epoch explicit and instrument alloy reconnect/replay: local ID, server ID, socket epoch, acknowledgement time, reconnect cause/backoff and resubscribe success. | Exact fit. | Observation is **ZERO-COST**; resubscribe itself is **METERED** by some vendors. | Alloy already hides reconnection at debug and recreates subscriptions; surfacing it closes an observability gap. | **VERIFIED** alloy behavior ([alloy-pubsub](https://docs.rs/alloy-pubsub/latest/alloy_pubsub/)); instrumentation **INFERRED**. |
-| 4 | Validate block identity on every delivered log and open `active_gap` only from delivered evidence (jump/replay/invalid reorg), not from an absent poll. | Exact fit. | **ZERO-COST**. | Directly uses the log lane on all ten chains and matches current `active_gap` coverage semantics. | **VERIFIED** frame fields/semantics ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)); policy **INFERRED**. |
-| 5 | Add a jittered maximum subscription/socket lease; rotate and resubscribe before expiry, with a dedicated low-rate lifecycle budget. A denied admission delays rotation and raises `budget_deferred`, never “provider failed.” | Lifecycle, not a head poll; compliant. | **METERED** and therefore deliberately infrequent/reserved. | Bounds silent-registration risk and provider max-age surprises; uses alloy replay but should create a visible new epoch. | **INFERRED**, grounded in connection-scoped subscriptions ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)). |
-| 6 | Use Ethereum’s existing pushed `newHeads` as a free reference only if its provider contract confirms notifications are unmetered. For the other nine chains, never replace their existing head polling with WS-lane liveness polls; add `newHeads` only when pushes are explicitly free of metering. | Exact fit. | **ZERO-COST only under the stated contract; otherwise reject as METERED.** | Matches `HeadSource=Stream` only on Ethereum and `Poll` on the other nine. | Architecture **INFERRED/operator-supplied**; subscription semantics **VERIFIED** ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)). |
-| 7 | Add independent pushed-provider comparison for the highest-risk chains where a genuinely unmetered feed already exists (PublicNode is the leading candidate); require reference advancement plus primary silence across multiple block/time thresholds. | No polls. | **ZERO-COST** only for unmetered feeds; otherwise do not enable under current budget. | Detects the silent provider that Ping/Pong cannot. | Provider availability **VERIFIED** ([PublicNode](https://www.publicnode.com/)); detector **INFERRED**. |
-| 8 | Keep exponential reconnect, add full jitter, cap at 30 s, reset only after a stability window, and shard retries per chain/provider to avoid herds. | No polls. | Reconnect is usually **ZERO-COST**, but recreated subscriptions may be **METERED**. | Refines the supplied 1 s→30 s backoff and prevents the 88888 storm. | Exponential reconnect **VERIFIED** in alloy ([`WsConnect`](https://docs.rs/alloy/latest/alloy/providers/struct.WsConnect.html)); jitter/stability rule **INFERRED**. |
-| 9 | After reconnect, run bounded `eth_getLogs` from last confirmed delivered block through the known repair boundary, deduplicate by block/tx/log identity, and honor reorg removals. Keep the 50-block maximum; rate-gate independently. | Allowed because it repairs a known outage/gap, not liveness. | **METERED**; must pass CU admission and may lag under starvation without causing reconnection. | Matches the current 1-second fallback and 50-block cap; fixes its semantics by decoupling denial from failure. | Backfill need **VERIFIED** because subscriptions do not replay history ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)); policy **INFERRED**. |
-| 10 | Multiplex modestly, not maximally: one socket per chain/provider or bounded subscription shards for high-volume chains. Isolate `newPendingTransactions` and large SOL blocks; never approach vendor subscription/message caps. | No polls. | Reduces socket overhead, but one failure has a larger blast radius; notification billing is unchanged. | Ten chains are already natural failure domains. | **INFERRED**, with vendor caps **VERIFIED** where published in the matrix. |
-| 11 | Retain TCP keepalive/user-timeout as a slow backstop and set values below known infrastructure idle limits, but never feed TCP ACKs into semantic coverage. | No polls. | **ZERO-COST**. | Complements Ping/Pong; does not replace it. | **VERIFIED** transport limitations ([RFC 1122](https://www.rfc-editor.org/rfc/rfc1122#section-4.2.3.6), [RFC 9293](https://www.rfc-editor.org/rfc/rfc9293)). |
-| 12 | Reject all `eth_blockNumber`, `net_version`-as-probe and periodic `eth_getLogs` liveness designs on the WS lane, even if a vendor prices one call at zero. | Mandatory. | Prevents self-induced CU starvation. | Direct lesson from the supplied false-conviction incident. | **VERIFIED** vendor costs ([Alchemy](https://www.alchemy.com/docs/reference/compute-unit-costs)); ruling **operator-supplied**. |
+Therefore a provider-wide or filter-specific silent failure is **undetectable with certainty** unless the client gains at least one additional informative observation:
 
-### What real clients implement
+1. **an independent pushed reference** that is itself known to advance or carries the same filtered events; or
+2. **a metered query/probe** that asks another data source what happened.
 
-| Client | WS liveness | Reconnect | Resubscribe | Operational conclusion |
-|---|---|---|---|---|
-| **ethers.js v6** | **INFERRED:** public API exposes the underlying WebSocket but documents no built-in Ping policy. | **VERIFIED:** `WebSocketCreator` is a factory “used to re-create a WebSocket connection on disconnect”; the docs do not promise a retry/backoff policy for a plain URL ([providers API](https://docs.ethers.org/v6/api/providers/)). | **INFERRED:** no explicit automatic subscription recreation guarantee appears in the public API reviewed. | Own the supervisor, backoff and resubscription contract; do not assume a URL constructor is production self-healing. |
-| **viem** | **VERIFIED:** WebSocket transport exposes `keepAlive` options. | **VERIFIED:** exposes reconnect configuration (`attempts`, `delay`) in the transport docs/source. | **INFERRED:** watcher recovery varies by API/version; contract-test subscription recreation and ID replacement. | Good configurable primitives, but expose actual reconnect and subscription epochs ([WebSocket transport](https://viem.sh/docs/clients/transports/websocket)). |
-| **web3.js v4** | **VERIFIED:** v1 examples expose client `keepalive`/60 s; v4 delegates socket behavior to WS client options. | **VERIFIED:** `autoReconnect=true`, 5,000 ms delay and 5 max attempts by default. | **INFERRED:** provider reconnect does not by itself establish that every higher-level subscription was recreated; test it. | Fixed delay without jitter is herd-prone; attach `disconnect`/`error` metrics ([migration guide](https://docs.web3js.org/guides/web3_upgrade_guide/providers_migration_guide/), [provider API](https://docs.web3js.org/api/web3-providers-ws/class/WebSocketProvider/)). |
-| **Alchemy SDK JS** | **VERIFIED:** sends `net_version` every 30 s; Alchemy server also sends protocol Ping. | **VERIFIED:** Alchemy directs users to SDK retry logic for disconnections. | **INFERRED:** implementation historically tracks logical subscriptions across physical IDs, but the SDK repository is deprecated and the public support page is not a full lifecycle specification. | Its application heartbeat is disqualified here; use protocol Ping and independently verify current SDK successor behavior ([keepalive](https://www.alchemy.com/support/what-s-the-right-way-for-the-client-to-send-a-ping-to-alchemy), [SDK repository](https://github.com/alchemyplatform/alchemy-sdk-js)). |
-| **Geth Go RPC client/server** | **INFERRED:** no universal client Ping policy is promised by the Pub/Sub doc. Server buffers up to 10k notifications then closes a slow connection. | **INFERRED:** callers must treat subscription error/connection loss explicitly; this report does not assert transparent retry. | **VERIFIED:** server subscriptions are removed on connection close, so fresh subscription IDs are mandatory. | Design to resubscribe and backfill; never expect server replay ([Geth real-time events](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub), [Go RPC package](https://pkg.go.dev/github.com/ethereum/go-ethereum/rpc)). |
-| **Rust alloy 2.x (system uses 2.1.1)** | **VERIFIED:** `WsConnect` sends a Ping after the keepalive interval (default 10 s) and closes if no Pong before the next Ping. | **VERIFIED:** retryable established-backend failures reconnect with capped exponential backoff; current docs show default base 3 s and max retries 10. The system’s configured 1 s/30 s behavior is authoritative. | **VERIFIED:** pending requests replay and active subscriptions are recreated; stable local IDs map to changing server IDs. | Best fit. Surface its otherwise-debug-level reconnects, add jitter, and preserve explicit epochs ([`WsConnect`](https://docs.rs/alloy/latest/alloy/providers/struct.WsConnect.html), [`alloy-pubsub`](https://docs.rs/alloy-pubsub/latest/alloy_pubsub/)). |
+Option 2 is forbidden as a WS-lane liveness recommendation. It remains permissible only as repair after a confirmed outage/gap. **[SYS]; INFERRED**
 
-### Brief lifecycle best practices
+### D.3 Every practical detection/mitigation option and its cost
 
-- **Connection lifecycle — VERIFIED/INFERRED:** connect → require protocol Pong → create subscriptions → require current-epoch acknowledgements → stream/validate → on close or Pong conviction stop claiming coverage → reconnect with exponential backoff + jitter → resubscribe → bounded backfill. Geth confirms subscriptions are current-only and connection-scoped ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)); the state policy is **INFERRED**.
-- **Backpressure — VERIFIED:** Geth closes the connection once its internal notification buffer reaches 10,000. Keep receive parsing non-blocking, hand off quickly to bounded queues and expose queue occupancy ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)).
-- **Resubscribe — VERIFIED:** never reuse a server subscription ID across sockets. Alloy’s stable local alias is an application convenience; the backend ID changes after reconnect ([alloy-pubsub](https://docs.rs/alloy-pubsub/latest/alloy_pubsub/)).
-- **Backfill — VERIFIED/INFERRED:** subscriptions do not provide past events, so `eth_getLogs` repair after a known disconnect is necessary and allowed. It must not run merely because a sparse subscription was quiet ([Geth](https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub)).
-- **Redundancy — INFERRED:** select providers with independent infrastructure and billing failure modes; cross-provider evidence is only independent if endpoints do not share the same upstream node/fan-out.
+1. **Local owning-session heartbeat — ZERO-COST.** Detects only local task progress. It cannot distinguish World A from World B. **[SYS]; INFERRED**
+2. **Socket-ready state / kernel “ESTABLISHED” — ZERO-COST.** Shows local transport state only. A half-open or application-silent peer can remain apparently established. Cannot detect the silent provider. **VERIFIED foundation [S2]; INFERRED**
+3. **TCP keepalive — ZERO-COST.** Eventually catches a missing network peer. A responsive TCP stack can ACK while the subscription application is stalled, so it cannot detect the canonical silent provider. **VERIFIED [S2][S3]**
+4. **RFC 6455 Ping/Pong — ZERO-COST.** Best dead-path detector and required transport signal; cannot detect a front end that pongs while its backend is silent. **VERIFIED [S1]; INFERRED boundary**
+5. **Close/error codes — ZERO-COST.** Conclusive transport evidence when received; the silent provider emits none by definition. **VERIFIED protocol basis [S1]**
+6. **Expected-cadence watchdog from delivered timestamps — ZERO-COST.** Can flag statistical suspicion for dense streams. For sparse logs, high legitimate no-event probability prevents conviction. **INFERRED**
+7. **Block/slot freshness already inside delivered logs — ZERO-COST.** Can prove a received event is stale and can reveal regressions or post-reconnect bounds. It provides no new observation until a frame arrives, so it cannot detect the final missed event followed by silence. **VERIFIED fields [S4]; INFERRED consequence**
+8. **Provider subscription id retained in memory — ZERO-COST.** Proves only that the provider acknowledged a subscription in the past. There is no standard continuously renewed EVM lease token or notification sequence embedded in ordinary `eth_subscription` frames. Cannot prove current dispatcher health. **VERIFIED connection coupling [S4]; INFERRED absence/meaning**
+9. **Forced resubscription/lease rotation — METERED.** May restore a lost registration and turns a latent problem into a new acknowledgement/failure, but it is remediation, not proof. A provider may acknowledge the replacement and remain silent. It can also create duplicates and a self-inflicted gap. **VERIFIED setup billing examples [A3][D2][C2]; INFERRED outcome**
+10. **Scheduled socket rotation — METERED.** Preventive against stale state; each new subscription and any repair consumes budget. It cannot establish whether the old socket missed data. **INFERRED**
+11. **Second subscription on another socket at the same provider — METERED unless contractually free.** If one receives the same event and the other does not, it detects a socket/subscription-specific failure. If both share the same stalled backend or both see no sparse event, it is inconclusive; it is not provider-independent. **INFERRED**
+12. **Same-provider `newHeads` side channel — ZERO-COST only if provider pushes it unmetered; otherwise METERED and disqualified.** It can prove that some provider chain path advances, but it cannot prove a sparse log filter had a matching event, and it can share the same failure domain. **[SYS]; INFERRED**
+13. **Independent provider’s free pushed heads/slots — ZERO-COST when truly unmetered.** Can prove that the chain advances while the primary is static. It detects provider-wide stalling but not exact missed sparse logs unless the primary’s expected event can be derived from pushed reference data. **INFERRED**
+14. **Independent provider’s free pushed copy of the same log filter — ZERO-COST when truly unmetered.** Strongest admissible detector: if the secondary delivers event identity `E` and the primary does not within an allowed delay, primary delivery failure is corroborated. Common-mode failures and secondary errors remain possible. **INFERRED**
+15. **Provider status JSON/RSS/webhook — ZERO-COST to shared CU.** Supports incident correlation but cannot prove per-socket or per-filter delivery and may lag. **VERIFIED availability for some providers [D5][C5][I7][G4]; INFERRED evidentiary weight**
+16. **Application JSON-RPC heartbeat (`net_version`, `eth_blockNumber`) — METERED/disqualified.** It may show that a request path responds but still does not prove subscription delivery; it also violates the operator’s no-poll ruling. **VERIFIED implementations/cost [A3][A4][CL-V1]; [SYS]**
+17. **Periodic `eth_getLogs` canary — METERED/disqualified as liveness.** It could reveal a log omitted from the stream, but using it periodically is exactly the forbidden poll. It is allowed only after a confirmed gap as repair. **[SYS]**
+18. **Metered second-provider heads/logs — METERED/disqualified as the zero-cost liveness centerpiece.** It can add evidence but competes for the chronically contended budget. It may be purchased as explicit paid redundancy outside the ruling, not smuggled into the WS detector. **[SYS]**
+19. **Provider-generated monotonic notification sequence/cursor included in each push — potentially ZERO-COST.** A gap in such a sequence would detect dropped notifications after the next push, but ordinary EVM `eth_subscription` does not standardize such a cursor and none of the reviewed providers documents one for standard logs. This is a future contract/product requirement, not a present technique. **INFERRED**
+20. **End-to-end acknowledged delivery/stream replay product — METERED or contract-priced.** Products such as managed streams/gRPC replay systems may provide cursors and retention, but they are not equivalent to standard WS RPC and fall outside the zero-cost standard-subscription lane. **INFERRED**
+
+### D.4 Cases that remain undetectable under the two hard constraints
+
+The following cannot be resolved with certainty from one standard WS subscription while polling is forbidden:
+
+- a provider-wide subscription fan-out stall where the WS edge continues to Pong;
+- a selective dropped event on a sparse filter followed by no later event;
+- a filter deregistered upstream while the old id remains only in client memory and the provider sends no error;
+- a long delivery delay versus a true loss before the allowed latency bound expires;
+- a common-mode failure affecting primary and “secondary” endpoints that share the same backend;
+- a chain event that neither admissible pushed reference nor the primary delivered.
+
+For these cases, the correct state is **unknown/suspected**, not “healthy” and not “provider convicted.” Certainty requires independent pushed evidence or a metered query. **INFERRED**
+
+### D.5 Operational answer
+
+The cheapest reliable stack is:
+
+1. RFC ping/pong to prove transport;
+2. current-socket subscription acknowledgements to prove registration;
+3. delivered-frame block/log invariants to bound and classify what is actually observed;
+4. an independent, unmetered pushed duplicate stream where certainty about silent loss is required;
+5. metered `eth_getLogs` only after a real reconnect/known gap to repair.
+
+Without step 4, the system can be highly reliable against dead sockets and honest about uncertainty, but it cannot be **sure** that a ponging sparse subscription did not miss an event. **VERIFIED foundations [S1][S4]; INFERRED conclusion**
+
+## (e) Ranked recommendations
+
+Each item is ranked by fit to **Constraint 1 (C1: no WS-lane polls)**, **Constraint 2 (C2: protect the 800-CU/s budget)**, and the supplied architecture.
+
+### 1. Activate and instrument effective RFC 6455 Ping/Pong in the owning WS session
+
+**Evidence:** **VERIFIED** protocol and upstream-client practice; interval/threshold policy **INFERRED**. [S1][CL-G3][CL-R2]  
+**Cost:** **ZERO-COST.**  
+**C1 fit:** Perfect—no JSON-RPC method.  
+**C2 fit:** Perfect—no CU debit.  
+**Architecture fit:** Highest. The current 10-second session heartbeat can schedule/observe the protocol watchdog, but the metrics must separately expose `local_task_live` and `transport_live`. Because upstream alloy 2.1.1 contains a default native Ping while the deployment ground truth says no Pings are sent, first instrument the effective runtime path rather than assuming the default is active. **[SYS]; INFERRED**
+
+### 2. Introduce socket epochs and explicit subscription-lease acknowledgements
+
+**Evidence:** **VERIFIED** that subscription ids are connection-bound and alloy/Alchemy rebuild subscriptions; lease abstraction **INFERRED**. [S4][A7][CL-R1]  
+**Cost:** Local epoch tracking **ZERO-COST**; subscribe/resubscribe **METERED**.  
+**C1 fit:** Perfect—no head poll.  
+**C2 fit:** Strong—spend occurs only on initial connection/recovery, not periodically.  
+**Architecture fit:** Highest. Coverage must wait until every required filter has a provider-returned id for the current physical socket. A silent alloy reconnect at debug level must create a visible epoch transition and repair boundary. **[SYS]; INFERRED**
+
+### 3. Split local, transport, lease, data-gap, and budget health
+
+**Evidence:** **INFERRED** architecture, compelled by the supplied failure history.  
+**Cost:** **ZERO-COST.**  
+**C1 fit:** Perfect.  
+**C2 fit:** Perfect.  
+**Architecture fit:** Highest. Replace the semantic overload of `heartbeat_live && active_gap.is_none()` with decomposed facts while preserving a compatibility aggregate. A budget denial changes `budget_state`, never transport or provider conviction. The prior chain-146/88888 failure becomes structurally impossible if counters are type-separated. **[SYS]**
+
+### 4. Make delivered-log identity/block invariants the only zero-cost data-gap evidence from the primary stream
+
+**Evidence:** **VERIFIED** payload fields; predicates **INFERRED**. [S4][I3]  
+**Cost:** **ZERO-COST.**  
+**C1 fit:** Perfect.  
+**C2 fit:** Perfect.  
+**Architecture fit:** Very high. Feed block number/hash/log identity into gap tracking. Treat block jumps on sparse filters as a repair bound or observation interval—not automatic proof of missing logs. Preserve `removed` handling for reorgs. **INFERRED**
+
+### 5. Make circuit-breaker conviction budget-independent and evidence-typed
+
+**Evidence:** **INFERRED**, directly motivated by supplied incidents.  
+**Cost:** Decision logic **ZERO-COST**; reconnect/subscription setup may be **METERED**.  
+**C1 fit:** Perfect when half-open uses connect + subscribe acknowledgement only.  
+**C2 fit:** Very high because denial cannot self-amplify into a reconnect storm.  
+**Architecture fit:** Very high. Only close/error, expired Pong, failed current-epoch lease, or independent pushed divergence can add conviction. Cadence anomaly is suspicion; `DENIED` is budget starvation. **[SYS]**
+
+### 6. Promote alloy reconnect/resubscribe events from hidden debug behavior to structured metrics
+
+**Evidence:** **VERIFIED** upstream reconnect/restart behavior; observability policy **INFERRED**. [CL-R1][CL-R2]  
+**Cost:** **ZERO-COST** except normal recovery setup.  
+**C1 fit:** Perfect.  
+**C2 fit:** Strong.  
+**Architecture fit:** Very high. Emit endpoint/chain, old/new socket epoch, close/error cause, retry, delay, subscription intent count, acknowledgement count, replacement ids (hashed/redacted if desired), first post-reconnect block, and repair range. No endpoint URL or key should enter logs. **INFERRED**
+
+### 7. Retain exponential reconnect, add full/decorrelated jitter, and reset only after complete leases
+
+**Evidence:** Backoff/reconnect practice **VERIFIED** in provider/client guidance; exact policy **INFERRED**. [H1][Q3][CL-R1]  
+**Cost:** Waiting is **ZERO-COST**; each reconnect/resubscribe can be **METERED**.  
+**C1 fit:** Perfect.  
+**C2 fit:** High—jitter reduces synchronized subscribe/backfill demand.  
+**Architecture fit:** High. Keep the supplied 1-second start and 30-second cap; randomize each delay and avoid resetting on a bare TCP open. Reset after a stable Pong and complete subscription acknowledgements. **[SYS]; INFERRED**
+
+### 8. Keep `eth_getLogs` strictly repair-only and prioritize it separately from liveness
+
+**Evidence:** **VERIFIED** standard recovery need/payload semantics; system policy **[SYS]**. [S4][A7]  
+**Cost:** **METERED.**  
+**C1 fit:** Compliant only after confirmed disconnect/reconnect or a known gap; disqualified as periodic health probe.  
+**C2 fit:** Moderate—necessary spend, already CU-gated.  
+**Architecture fit:** High. Continue bounded 50-block calls and one-per-second gating, but add a repair queue whose denial extends `repair_pending` without affecting provider health. Deduplicate and reorg-handle deterministically. **[SYS]; INFERRED queue semantics**
+
+### 9. Use cadence only as a statistically calibrated suspicion channel
+
+**Evidence:** **INFERRED**, including Poisson approximation.  
+**Cost:** **ZERO-COST** from delivered timestamps.  
+**C1 fit:** Perfect if it issues no query.  
+**C2 fit:** Perfect.  
+**Architecture fit:** Medium-high. Maintain per-filter empirical inter-arrival distributions and label sparse streams `sparse_unknown`. Never map two absent expected events to provider failure. The supplied two-missed-head scheme must not return in another form. **[SYS]**
+
+### 10. Add an independent unmetered pushed reference where the business requires silent-loss detection
+
+**Evidence:** Provider availability **VERIFIED** for PublicNode; independence/evidentiary design **INFERRED**. [P1][P2][P4]  
+**Cost:** **ZERO-COST to shared CU** only after verifying no notification meter; operational bandwidth remains.  
+**C1 fit:** Perfect—push only.  
+**C2 fit:** High—no shared CU, though a free service may throttle.  
+**Architecture fit:** Medium. PublicNode presently covers ETH, BASE, BSC, ARB, POLY, AVAX, SONIC, CHZ, RH, and SOL but not HYPER. Use its heads to corroborate progression or duplicate exact log filters where supported. Never treat it as an SLA or sole source. **VERIFIED coverage [P1][P2][P3]; INFERRED use**
+
+The existing Ethereum `head_source=stream` is admissible for liveness only if its notifications are genuinely unmetered. The other nine chains’ polled heads may continue for non-WS functions, but their success, denial, or absence must not convict the WS lane. **[SYS]; INFERRED**
+
+### 11. Use provider-specific lease/socket rotation only where justified
+
+**Evidence:** **VERIFIED** for documented inactivity limits; generic rotation policy **INFERRED**. [C1][H1]  
+**Cost:** **METERED** subscription recreation and possible repair.  
+**C1 fit:** Compliant—no polling.  
+**C2 fit:** Medium/low if frequent.  
+**Architecture fit:** Medium. Chainstack’s one-hour inactivity and Helius’s ten-minute inactivity should normally be handled by RFC control traffic; rotate only if tests show control frames do not reset the provider’s timer or if observed age-related failures justify it. Stagger rotations. **INFERRED**
+
+### 12. Use status feeds only to annotate and route incidents
+
+**Evidence:** **VERIFIED** availability for selected providers; evidentiary use **INFERRED**. [D5][C5][I7][G4]  
+**Cost:** **ZERO-COST to shared CU.**  
+**C1 fit:** Perfect.  
+**C2 fit:** Perfect.  
+**Architecture fit:** Medium. A red provider/chain component can accelerate failover or explain correlated failures; green status never clears a local transport/lease failure and never proves event completeness. **INFERRED**
+
+### 13. Choose socket grouping by blast radius, not a universal “one socket” rule
+
+**Evidence:** Provider caps **VERIFIED**; grouping recommendation **INFERRED**. [A1][C1]  
+**Cost:** More sockets are often **ZERO-COST** until caps, but each duplicated subscription/notification can be **METERED**.  
+**C1 fit:** Perfect.  
+**C2 fit:** Medium—over-sharding increases setup/duplicate costs; over-multiplexing increases correlated loss.  
+**Architecture fit:** Medium. Group a modest number of filters per chain/provider/socket, isolate very high-volume or critical filters, and stay well below documented caps. Do not open one socket per filter by default. **INFERRED**
+
+### Explicitly disqualified designs
+
+- `eth_blockNumber`, `net_version`, `net_listening`, `getSlot`, or any JSON-RPC call as a periodic WS heartbeat—**METERED/disqualified**. **[SYS]**
+- periodic `eth_getLogs` to discover whether the stream missed anything—**METERED/disqualified as liveness**; allowed only as repair. **[SYS]**
+- metered `newHeads` merely because it is push—**METERED/disqualified** unless a contract makes notifications unmetered. **[SYS]**
+- counting CU acquisition denial, rate-limit denial, queue timeout, or skipped poll as a provider miss—**disqualified**. **[SYS]**
+- convicting a sparse `logs` subscription after a fixed number of expected blocks with no event—**disqualified by false-positive ambiguity**. **INFERRED**
+- treating a fresh local heartbeat, open TCP state, successful Pong, old subscription id, or successful automatic reconnect as proof of delivered-event completeness—**disqualified**. **VERIFIED foundations [S1][S2][S4]; INFERRED conclusion**
+- relying on a status page’s green state as proof that one socket/filter works—**disqualified**. **INFERRED**
+- synchronized reconnect/rotation across chains/providers—**disqualified operationally** because it recreates storm risk and correlated CU demand. **[SYS]; INFERRED**
+
+### Final fit verdict
+
+The highest-value, lowest-cost change is not another chain query. It is to turn transport and subscription state into explicit evidence: **RFC Pong freshness + current-socket lease acknowledgements + delivered-frame invariants + a budget-independent breaker**. That stack catches dead sockets, half-open paths, failed resubscriptions, and known gaps without spending liveness CU. **VERIFIED foundations [S1][S4][CL-R1]; INFERRED system design**
+
+It still cannot guarantee that a ponging provider did not silently omit a sparse event. For that guarantee, mirror the same subscription through an independent, unmetered pushed source; where none exists, report `sparse_unknown` and reserve metered queries for repair. Any stronger claim would be false. **INFERRED**
+
 
 ## (f) Sources
 
-### Standards and reference clients
+All provider facts were checked against current official pages or upstream source available on 2026-09-04. URLs below intentionally omit API keys and keyed endpoint URLs.
 
-- RFC 6455, WebSocket Protocol: <https://www.rfc-editor.org/rfc/rfc6455>
-- RFC 1122, TCP keepalive requirements: <https://www.rfc-editor.org/rfc/rfc1122#section-4.2.3.6>
-- RFC 9293, TCP: <https://www.rfc-editor.org/rfc/rfc9293>
-- Linux `tcp(7)`: <https://man7.org/linux/man-pages/man7/tcp.7.html>
-- Geth real-time events/PubSub: <https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub>
-- Geth Go RPC package: <https://pkg.go.dev/github.com/ethereum/go-ethereum/rpc>
-- Solana WebSocket RPC: <https://solana.com/docs/rpc/websocket>
-- ethers.js v6 provider API: <https://docs.ethers.org/v6/api/providers/>
-- viem WebSocket transport: <https://viem.sh/docs/clients/transports/websocket>
-- web3.js provider migration guide: <https://docs.web3js.org/guides/web3_upgrade_guide/providers_migration_guide/>
-- web3.js WebSocketProvider API: <https://docs.web3js.org/api/web3-providers-ws/class/WebSocketProvider/>
-- alloy `WsConnect`: <https://docs.rs/alloy/latest/alloy/providers/struct.WsConnect.html>
-- alloy-pubsub lifecycle: <https://docs.rs/alloy-pubsub/latest/alloy_pubsub/>
+### System ground truth
 
-### Providers
+- **[SYS]** User-supplied authoritative “Our system” description and binding operator rulings, dated 2026-09-03/04. No external URL.
 
-- Alchemy subscriptions, limits and best practices: <https://www.alchemy.com/docs/reference/subscription-api>
-- Alchemy CU costs: <https://www.alchemy.com/docs/reference/compute-unit-costs>
-- Alchemy keepalive: <https://www.alchemy.com/support/what-s-the-right-way-for-the-client-to-send-a-ping-to-alchemy>
-- Alchemy supported chains: <https://www.alchemy.com/docs/reference/node-supported-chains>
-- Alchemy status: <https://status.alchemy.com/>
-- QuickNode Core API/SLA: <https://www.quicknode.com/core-api>
-- QuickNode Ethereum subscriptions: <https://www.quicknode.com/docs/ethereum/eth_subscribe>
-- QuickNode Solana `blockSubscribe` and billing: <https://www.quicknode.com/docs/solana/blockSubscribe>
-- QuickNode status: <https://status.quicknode.com/>
-- Infura WebSockets: <https://docs.infura.io/concepts/websockets/>
-- Infura keepalive: <https://support.metamask.io/develop/building-with-infura/javascript-typescript/how-to-keep-websocket-alive/>
-- Infura rate limits: <https://docs.infura.io/how-to/avoid-rate-limiting/>
-- Infura HyperEVM: <https://docs.infura.io/reference/hyperevm/>
-- Infura status: <https://status.infura.io/>
-- Ankr pricing: <https://www.ankr.com/docs/rpc-service/pricing/>
-- Ankr SLA: <https://www.ankr.com/docs/rpc-service/sla/>
-- Ankr RPC catalog/health: <https://www.ankr.com/rpc/> and <https://www.ankr.com/rpc/health/>
-- dRPC EVM subscription pricing: <https://drpc.org/docs/pricing/subscriptions/evm>
-- dRPC Solana subscription pricing: <https://drpc.org/docs/pricing/subscriptions/solana>
-- dRPC status: <https://status.drpc.org/>
-- Chainstack quotas: <https://docs.chainstack.com/docs/quotas>
-- Chainstack request units and WS notification billing: <https://docs.chainstack.com/docs/request-units>
-- Chainstack SLA/status: <https://chainstack.com/enterprise-support-sla/> and <https://status.chainstack.com/>
-- PublicNode: <https://www.publicnode.com/>
-- Chiliz official RPC list: <https://docs.chiliz.com/develop/basics/connect-to-chiliz-chain/connect-using-rpc>
-- Bware Labs documentation: <https://docs.bwarelabs.com/>
-- LlamaNodes first-party GitHub organization: <https://github.com/llamanodes>
-- GetBlock plans/status: <https://docs.getblock.io/getting-started/plans-and-limits/choosing-your-plan> and <https://getblock.instatus.com/>
-- NodeReal BSC RPC/marketplace: <https://nodereal.io/api-marketplace/bsc-rpc> and <https://nodereal.io/api-marketplace>
-- Tenderly Node RPC/reference/status: <https://docs.tenderly.co/node-rpc/overview>, <https://docs.tenderly.co/node-rpc/rpc-reference>, and <https://status.tenderly.co/>
-- Helius LaserStream WebSocket/pricing/status: <https://www.helius.dev/docs/rpc/websocket>, <https://www.helius.dev/pricing>, and <https://status.helius.dev/>
-- Triton One Solana/streaming/pricing/FAQ: <https://triton.one/chains/solana>, <https://triton.one/products/streaming>, <https://triton.one/pricing>, and <https://blog.triton.one/triton-faqs-your-reference-guide/>
+### Protocol and node semantics
+
+- **[S1]** IETF, *RFC 6455 — The WebSocket Protocol* (Ping/Pong control frames, close behavior): https://www.rfc-editor.org/rfc/rfc6455
+- **[S2]** IETF, *RFC 9293 — Transmission Control Protocol (TCP)* (TCP acknowledgement/transport semantics): https://www.rfc-editor.org/rfc/rfc9293
+- **[S3]** Linux kernel, *IP Sysctl — TCP keepalive settings*; supplementary `tcp(7)` manual: https://www.kernel.org/doc/html/latest/networking/ip-sysctl.html and https://man7.org/linux/man-pages/man7/tcp.7.html
+- **[S4]** Geth, *Real-time Events / JSON-RPC Pub/Sub* (connection-coupled subscriptions, buffers, log payload/reorg semantics): https://geth.ethereum.org/docs/interacting-with-geth/rpc/pubsub
+
+### Alchemy
+
+- **[A1]** *Subscription API Overview* (methods, billing basis, socket/subscription/request limits): https://www.alchemy.com/docs/reference/subscription-api
+- **[A2]** *Chain API supported chains* and subscription endpoints: https://www.alchemy.com/docs/reference/node-supported-chains and https://www.alchemy.com/docs/reference/subscription-api-endpoints
+- **[A3]** *Compute Unit Costs* (`net_version`, `eth_subscribe`, `eth_unsubscribe`, `eth_getLogs`, 0.04 CU/byte notifications): https://www.alchemy.com/docs/reference/compute-unit-costs
+- **[A4]** *Do WebSockets need a ping to stay alive with Alchemy?* (30-second SDK `net_version`; server-originated Pings): https://www.alchemy.com/support/what-s-the-right-way-for-the-client-to-send-a-ping-to-alchemy
+- **[A5]** *Pricing Plans*: https://www.alchemy.com/docs/reference/pricing-plans
+- **[A6]** *Best Practices for Using WebSockets in Web3*: https://www.alchemy.com/docs/reference/best-practices-for-using-websockets-in-web3
+- **[A7]** Alchemy SDK source and SDK documentation (heartbeat/reconnect/logical subscriptions/backfill): https://github.com/alchemyplatform/alchemy-sdk-js/blob/master/src/api/alchemy-websocket-provider.ts and https://github.com/alchemyplatform/alchemy-sdk-js/blob/master/docs-md/README.md
+- **[A8]** Alchemy public status: https://status.alchemy.com/
+
+### QuickNode
+
+- **[Q1]** QuickNode current documentation index / chain catalog: https://www.quicknode.com/docs/llms.txt
+- **[Q2]** Ethereum `eth_subscribe` reference: https://www.quicknode.com/docs/ethereum/eth_subscribe
+- **[Q3]** *How to Manage WebSocket Connections With Your Ethereum Node Endpoint* (client ping/reconnect example): https://www.quicknode.com/guides/infrastructure/how-to-manage-websocket-connections-on-ethereum-node-endpoint
+- **[Q4]** QuickNode pricing/plans: https://www.quicknode.com/pricing
+- **[Q5]** QuickNode public status: https://status.quicknode.com/
+- **[Q6]** QuickNode trust center: https://trust.quicknode.com/
+
+### Infura
+
+- **[I1]** Infura endpoint/network index: https://docs.infura.io/get-started/endpoints/
+- **[I2]** *Subscribe to events* (WSS, subscribe/unsubscribe billing, silent failures): https://docs.infura.io/how-to/subscribe-to-events/
+- **[I3]** Base `eth_subscribe` reference (types, ids, 5-credit example, reorg semantics): https://docs.infura.io/reference/base/json-rpc-methods/subscription-methods/eth_subscribe/
+- **[I4]** Infura pricing: https://www.infura.io/pricing
+- **[I5]** Infura rate-limit guidance: https://docs.infura.io/how-to/avoid-rate-limiting/
+- **[I6]** MetaMask/Infura, *How to keep WebSocket alive*: https://support.metamask.io/develop/building-with-infura/javascript-typescript/how-to-keep-websocket-alive/
+- **[I7]** Infura status, history, and feeds: https://status.infura.io/
+
+### Ankr
+
+- **[K1]** Ankr Web3 API overview and public/freemium/premium headline limits: https://www.ankr.com/web3-api/
+- **[K2]** Ankr *Service plans* (HTTPS-only free tiers; premium WSS; 200-credit EVM subscription, 100-credit non-Solana notification, 500-credit Solana notification): https://www.ankr.com/docs/rpc-service/service-plans/
+- **[K3]** Ankr *SLA & service reliability* (best-effort/Premium/Enterprise commitments): https://www.ankr.com/docs/rpc-service/sla/
+- **[K4]** Ankr chain catalog, including Chiliz and Sonic: https://www.ankr.com/rpc/ , https://www.ankr.com/rpc/chiliz/ , and https://www.ankr.com/rpc/sonic/
+
+### dRPC
+
+- **[D1]** dRPC architecture/service overview: https://drpc.org/docs/howitworks/overview
+- **[D2]** *Subscriptions for EVM Chains* (20 CU subscribe; 20 CU/notification; types): https://drpc.org/docs/pricing/subscriptions/evm
+- **[D3]** *Solana WebSocket Subscriptions* (methods and 20-CU accounting): https://drpc.org/docs/pricing/subscriptions/solana
+- **[D4]** dRPC rate limiting/free plan: https://drpc.org/docs/howitworks/ratelimiting
+- **[D5]** dRPC public status with JSON/webhook/RSS outputs: https://status.drpc.org/
+
+### Chainstack
+
+- **[C1]** *Handle real-time data using WebSockets* (one-hour inactivity, 500 concurrent WS, reconnect): https://docs.chainstack.com/docs/handle-real-time-data-using-websockets-with-javascript-and-python
+- **[C2]** *Request units*: https://docs.chainstack.com/docs/request-units
+- **[C3]** Chainstack pricing/plan limits: https://chainstack.com/pricing/
+- **[C4]** Chainstack Enterprise support/SLA: https://chainstack.com/enterprise-support-sla/
+- **[C5]** Chainstack status and documented public API: https://status.chainstack.com/ and https://status.chainstack.com/public-api
+- **[C6]** Chainstack protocol/tooling catalog: https://docs.chainstack.com/
+- **[C7]** Solana methods and `blockSubscribe` billing note: https://docs.chainstack.com/docs/solana-methods and https://docs.chainstack.com/docs/solana-blocksubscribe-1009-error-on-websocket
+
+### PublicNode
+
+- **[P1]** PublicNode chain directory and keyless HTTP/WSS endpoints: https://publicnode.com/
+- **[P2]** PublicNode Chiliz page (WSS and observed average block time): https://chiliz.publicnode.com/
+- **[P3]** PublicNode Solana page: https://solana.publicnode.com/
+- **[P4]** PublicNode terms (best-effort/as-is and mutable limits): https://www.publicnode.com/terms
+
+### Blast/Bware and LlamaNodes
+
+- **[B1]** Blast API official deprecation/migration notice: https://blastapi.io/
+- **[L1]** Former LlamaNodes domain, which no longer exposes a current RPC provider surface as of the research date: https://llamanodes.com/ — operational unavailability is **INFERRED** because no official shutdown notice was found.
+
+### GetBlock
+
+- **[G1]** GetBlock node/chain catalog, including protocol availability: https://getblock.io/nodes/
+- **[G2]** GetBlock pricing and current plan model: https://getblock.io/pricing/
+- **[G3]** GetBlock SLA (shared/dedicated/load-balanced commitments): https://getblock.io/sla/
+- **[G4]** GetBlock public status: https://status.getblock.io/
+
+### NodeReal
+
+- **[N1]** NodeReal pricing: https://nodereal.io/pricing
+- **[N2]** NodeReal compute-unit costs (`eth_subscribe`, notification bytes): https://docs.nodereal.io/docs/compute-units-cus
+- **[N3]** MegaNode FAQ and API FAQ (HTTPS/WSS; no stated WSS/app connection cap): https://docs.nodereal.io/docs/faq and https://docs.nodereal.io/docs/technical-questions
+- **[N4]** NodeReal API overview/public-key constraints and WSS network table: https://docs.nodereal.io/reference/getting-started-with-your-api
+- **[N5]** NodeReal MegaNode uptime marketing/custom SLA: https://nodereal.io/meganode
+
+### Tenderly
+
+- **[T1]** Tenderly pricing: https://tenderly.co/pricing
+- **[T2]** Tenderly Node product/network/SLA page: https://tenderly.co/products/node
+- **[T3]** Tenderly public status: https://status.tenderly.co/
+
+### Helius
+
+- **[H1]** Helius *LaserStream WebSocket* (full standard Solana methods, `blockSubscribe`, metering, inactivity, keepalive/reconnect examples): https://www.helius.dev/docs/rpc/websocket
+- **[H2]** Helius plans: https://www.helius.dev/docs/billing/plans
+- **[H3]** Helius status-page documentation: https://www.helius.dev/docs/support/status-page
+
+### Triton One
+
+- **[R1]** Triton One Solana RPC pricing/streaming model: https://triton.one/pricing
+- **[R2]** Triton open-source/Whirligig page: https://triton.one/open-source
+- **[R3]** Triton One service overview/reliability claims: https://triton.one/
+
+### Client-library and node source
+
+- **[CL-E]** ethers.js v6 `WebSocketProvider` source: https://github.com/ethers-io/ethers.js/blob/main/src.ts/providers/provider-websocket.ts
+- **[CL-V1]** viem WebSocket RPC source (`net_version` keepalive): https://github.com/wevm/viem/blob/main/src/utils/rpc/webSocket.ts
+- **[CL-V2]** viem socket/reconnect/resubscription source: https://github.com/wevm/viem/blob/main/src/utils/rpc/socket.ts
+- **[CL-W1]** web3.js 4.x socket-provider source (auto-reconnect settings): https://github.com/web3/web3.js/blob/4.x/packages/web3-utils/src/socket_provider.ts
+- **[CL-W2]** web3.js subscription source: https://github.com/web3/web3.js/blob/4.x/packages/web3-core/src/web3_subscriptions.ts
+- **[CL-G1]** Geth RPC subscription source: https://github.com/ethereum/go-ethereum/blob/master/rpc/subscription.go
+- **[CL-G2]** Geth RPC client source: https://github.com/ethereum/go-ethereum/blob/master/rpc/client.go
+- **[CL-G3]** Geth WebSocket transport source: https://github.com/ethereum/go-ethereum/blob/master/rpc/websocket.go
+- **[CL-R1]** alloy 2.1.1 pubsub service/reconnect source: https://github.com/alloy-rs/alloy/blob/v2.1.1/crates/pubsub/src/service.rs
+- **[CL-R2]** alloy 2.1.1 native WebSocket transport/Ping source: https://github.com/alloy-rs/alloy/blob/v2.1.1/crates/transport-ws/src/native.rs
+- **[CL-R3]** alloy 2.1.1 release tag/source tree: https://github.com/alloy-rs/alloy/tree/v2.1.1
 
 ---
 
-**Bottom line — INFERRED:** implement transport truth with protocol Ping/Pong, subscription truth with explicit epochs/leases, and data truth only from delivered frames or independently pushed reference data. When none of those can prove that a quiet sparse filter should have produced an event, preserve “unknown/suspect”; do not spend the contended CU budget to turn uncertainty into a misleading liveness poll.
+**Bottom line:** ping/pong can make dead-socket detection cheap and reliable; socket-bound subscription leases can make reconnect recovery explicit; delivered log metadata can make known gaps bounded. None of those can prove that a ponging provider did not silently omit a sparse event. That last guarantee requires an independent pushed duplicate or a metered query, and the latter is excluded from WS-lane liveness by design. **VERIFIED foundations [S1][S4]; INFERRED conclusion**
