@@ -39,6 +39,9 @@ Required keys: `seat`, `lane`, `event`, `event_time`, `state`, `blockers`, `next
 - Applied → deleted from `inbox/` by the run commit; the board carries the change.
 - Stale (`event_time` not newer than the lane's `reported_at`) or wrong owner (seat is not the
   lane's registered `owner`) → moved to `inbox/archive/` with a `<name>.flag` note. Never applied.
+  **D-20 exception (operator ruling 2026-09-04):** the live orchestrator seat (`o<N>`) may
+  proxy-report for a worker-owned lane — a seat-authored sitrep on such a lane is NOT wrong
+  owner; apply it. The worker stays the registered `owner`.
 - Malformed (missing a required key, unparseable, unknown lane, bad state) → moved to
   `inbox/rejected/` with a one-line reason. **Never best-effort parsed** (DESIGN §3).
 
