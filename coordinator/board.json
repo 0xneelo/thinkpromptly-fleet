@@ -17,56 +17,61 @@
       "id": "L1",
       "goal": "cyclomatic audit came back terrible",
       "done_milestone": "All functions have an acceptable cyclomatic score, i think 10-20 is fine, but happy to be corrected if senseful. Verified by the repo cyclomatic audit passing.",
-      "owner": "O38 seat (🎛 ORCHESTRATOR 28) — to staff: refactoring-specialist",
+      "owner": "o40 seat (🎛 ORCHESTRATOR 5) — to staff: refactoring-specialist",
       "state": "active",
-      "blockers": [],
-      "next_decision": "none yet",
-      "reported_at": "2026-09-03T23:26:00Z",
+      "blockers": [
+        "unstaffed"
+      ],
+      "next_decision": "staff after the XYZ-2027 / XYZ-2026 / D-26 / D-27 lanes (queue)",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
-      "evidence": [],
-      "next_report_due": "2026-09-04T21:33:43Z",
+      "evidence": [
+        "https://linear.app/synchronicity/issue/XYZ-2028"
+      ],
+      "next_report_due": "2026-09-05T21:33:43Z",
       "cadence_hours": 24,
-      "last_event": "no_change"
+      "last_event": "owner_changed"
     },
     {
       "id": "L2",
       "goal": "our solana, and evm had completly different services that created issues on every step",
       "done_milestone": "a service that is identical no matter what chain is underlying for the token. One shared service serves every chain, verified by the same suite passing on solana and evm.",
-      "owner": "O38 seat (🎛 ORCHESTRATOR 28) — epic XYZ-1936; first slice = node/WS cut step 1+2 pack",
+      "owner": "o40 seat (🎛 ORCHESTRATOR 5) — epic XYZ-1936; first slice = node/WS cut step 1+2 pack",
       "state": "active",
       "blockers": [
-        "XYZ-2007 (train 76.2 must land before the step-1+2 lane starts)",
-        "operator sign-off on docs/goals/node-ws-cut-step1/GOAL.md"
+        "XYZ-2029 R3 residual resets"
       ],
-      "next_decision": "operator: sign off docs/goals/node-ws-cut-step1/GOAL.md; lane starts after XYZ-2007 (train 76.2)",
-      "reported_at": "2026-09-03T23:26:10Z",
+      "next_decision": "operator: sign off docs/goals/node-ws-cut-step1/GOAL.md; XYZ-2029 round 2 → train 77.2 (word: deploy 77.2)",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
       "evidence": [
         "https://linear.app/synchronicity/issue/XYZ-1936",
         "https://github.com/0xneelo/lowcap-connector/commit/b7333ff5",
-        "https://github.com/0xneelo/lowcap-connector/commit/4b1808bb"
+        "https://github.com/0xneelo/lowcap-connector/commit/4b1808bb",
+        "https://linear.app/synchronicity/issue/XYZ-2029"
       ],
-      "next_report_due": "2026-09-04T21:33:43Z",
+      "next_report_due": "2026-09-05T21:33:43Z",
       "cadence_hours": 24,
-      "last_event": "operator_ruling"
+      "last_event": "train_deployed"
     },
     {
       "id": "L3",
       "goal": "our whole architecture was more like a swiss cheese with holes everywhere",
       "done_milestone": "cyclomatic audit and unified non-evm and evm software — L1 and L2 milestones verified, plus zero open gap classes in the architecture audit.",
-      "owner": "O38 seat (🎛 ORCHESTRATOR 28) — gated on L1 + L2; staffed last",
+      "owner": "o40 seat (🎛 ORCHESTRATOR 5) — gated on L1 + L2; staffed last",
       "state": "active",
       "blockers": [
-        "L1 unstaffed",
-        "L2 step-1+2 lane not launched"
+        "L1 unstaffed"
       ],
       "next_decision": "none",
-      "reported_at": "2026-09-03T23:26:20Z",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
-      "evidence": [],
-      "next_report_due": "2026-09-04T21:33:43Z",
+      "evidence": [
+        "https://linear.app/synchronicity/issue/XYZ-2028"
+      ],
+      "next_report_due": "2026-09-05T21:33:43Z",
       "cadence_hours": 24,
-      "last_event": "no_change"
+      "last_event": "owner_changed"
     },
     {
       "id": "L4",
@@ -76,11 +81,14 @@
       "state": "active",
       "blockers": [],
       "next_decision": "none yet",
-      "reported_at": "2026-09-03T21:33:43Z",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
-      "evidence": [],
-      "next_report_due": "2026-09-04T21:33:43Z",
-      "cadence_hours": 24
+      "evidence": [
+        "https://linear.app/synchronicity/issue/XYZ-2009"
+      ],
+      "next_report_due": "2026-09-05T21:33:43Z",
+      "cadence_hours": 24,
+      "last_event": "proxy_report"
     },
     {
       "id": "L5",
@@ -89,32 +97,35 @@
       "owner": "Lionel (live, XYZ-1924/1985/2012)",
       "state": "active",
       "blockers": [],
-      "next_decision": "none yet",
-      "reported_at": "2026-09-03T21:33:43Z",
+      "next_decision": "attribute the 6 post-boot ours_wrong rows",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
-      "evidence": [],
-      "next_report_due": "2026-09-04T21:33:43Z",
-      "cadence_hours": 24
+      "evidence": [
+        "https://linear.app/synchronicity/issue/XYZ-2028"
+      ],
+      "next_report_due": "2026-09-05T21:33:43Z",
+      "cadence_hours": 24,
+      "last_event": "proxy_report"
     },
     {
       "id": "L6",
       "goal": "building the perfect consensus sweep system, with historical sweep data (its still a little unreliable)",
       "done_milestone": "sweep verdicts reliable: disposition-level attribution verified green across a full sweep cycle; storage safety tracked under XYZ-1893.",
-      "owner": "O38 seat (🎛 ORCHESTRATOR 28) — XYZ-2010 + XYZ-2013 first",
+      "owner": "o40 seat (🎛 ORCHESTRATOR 5) — XYZ-2010 + XYZ-2013 first",
       "state": "active",
       "blockers": [
-        "unstaffed — waits on mint wave 1 (operator word)"
+        "operator cards (9)"
       ],
-      "next_decision": "operator word: mint wave 1",
-      "reported_at": "2026-09-03T23:26:30Z",
+      "next_decision": "operator: the 9 family-system cards (XYZ-2013)",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
       "evidence": [
         "https://linear.app/synchronicity/issue/XYZ-2013",
         "https://linear.app/synchronicity/issue/XYZ-2010"
       ],
-      "next_report_due": "2026-09-04T21:33:43Z",
+      "next_report_due": "2026-09-05T21:33:43Z",
       "cadence_hours": 24,
-      "last_event": "blocker_changed"
+      "last_event": "owner_changed"
     },
     {
       "id": "L78",
@@ -124,30 +135,31 @@
       "state": "active",
       "blockers": [],
       "next_decision": "none yet",
-      "reported_at": "2026-09-03T21:33:43Z",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
-      "evidence": [],
-      "next_report_due": "2026-09-04T21:33:43Z",
-      "cadence_hours": 24
+      "evidence": [
+        "https://linear.app/synchronicity/issue/XYZ-2027"
+      ],
+      "next_report_due": "2026-09-05T21:33:43Z",
+      "cadence_hours": 24,
+      "last_event": "proxy_report"
     },
     {
       "id": "L9",
       "goal": "a system that automatically clears diffs and rules issues like spaceX reliably",
       "done_milestone": "diff auto-clear loop running in production: new diffs attributed and ruled without operator intervention; zero manually-cleared diffs in a full cadence window.",
-      "owner": "O38 seat (🎛 ORCHESTRATOR 28) — XYZ-2011 rider first",
+      "owner": "o40 seat (🎛 ORCHESTRATOR 5) — XYZ-2011 rider first",
       "state": "active",
-      "blockers": [
-        "unstaffed — waits on mint wave 1"
-      ],
-      "next_decision": "operator word: mint wave 1",
-      "reported_at": "2026-09-03T23:26:40Z",
+      "blockers": [],
+      "next_decision": "none",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
       "evidence": [
         "https://linear.app/synchronicity/issue/XYZ-2011"
       ],
-      "next_report_due": "2026-09-04T21:33:43Z",
+      "next_report_due": "2026-09-05T21:33:43Z",
       "cadence_hours": 24,
-      "last_event": "no_change"
+      "last_event": "owner_changed"
     },
     {
       "id": "N1",
@@ -157,11 +169,14 @@
       "state": "active",
       "blockers": [],
       "next_decision": "none yet",
-      "reported_at": "2026-09-03T21:33:43Z",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
-      "evidence": [],
-      "next_report_due": "2026-09-04T21:33:43Z",
-      "cadence_hours": 24
+      "evidence": [
+        "https://linear.app/synchronicity/issue/XYZ-2028"
+      ],
+      "next_report_due": "2026-09-05T21:33:43Z",
+      "cadence_hours": 24,
+      "last_event": "train_deployed"
     },
     {
       "id": "N2",
@@ -169,36 +184,41 @@
       "done_milestone": "every spend path metered at issuance and verified against provider dashboards; CG key back under plan (500000/month).",
       "owner": "Claus (live, XYZ-1567 + XYZ-2008)",
       "state": "active",
-      "blockers": [],
-      "next_decision": "none yet",
-      "reported_at": "2026-09-03T21:33:43Z",
+      "blockers": [
+        "XYZ-1697 operator /key"
+      ],
+      "next_decision": "operator: /key number → XYZ-1697",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
-      "evidence": [],
-      "next_report_due": "2026-09-04T21:33:43Z",
-      "cadence_hours": 24
+      "evidence": [
+        "https://linear.app/synchronicity/issue/XYZ-1697"
+      ],
+      "next_report_due": "2026-09-05T21:33:43Z",
+      "cadence_hours": 24,
+      "last_event": "proxy_report"
     },
     {
       "id": "N3",
       "goal": "arm the boot gate, weekly reconcile, dead-man auto-UNKNOWN, operator-debt inbox",
       "done_milestone": "boot gate armed and verified; weekly reconcile running; dead-man auto-UNKNOWN live; operator-debt inbox serving items — per XYZ-1827.",
-      "owner": "O38 seat (🎛 ORCHESTRATOR 28)",
+      "owner": "o40 seat (🎛 ORCHESTRATOR 5)",
       "state": "active",
       "blockers": [
-        "operator word: \"weave 76.2 on Katherine FINAL\"",
-        "operator word: mint wave 1 (10 ruled-but-never-minted + 15 KEEP lanes)",
-        "operator: XYZ-1697 CG governor ceiling PUT (read /key first)",
-        "operator: round-3 sheet (24 cards) unanswered"
+        "DECK-25",
+        "XYZ-1697",
+        "operator cards"
       ],
-      "next_decision": "operator words: weave 76.2 on Katherine FINAL · mint wave 1 · XYZ-1697 CG governor ceiling PUT (read /key first) · round-3 sheet (24 cards)",
-      "reported_at": "2026-09-03T23:26:50Z",
+      "next_decision": "operator: DECK-25 (A/B/C) · XYZ-1697 /key · 12 cards (Fridolin 9, Lioba 3)",
+      "reported_at": "2026-09-04T21:12:00Z",
       "verified_at": null,
       "evidence": [
         "https://linear.app/synchronicity/issue/XYZ-2007 (comment 851a2cd5)",
-        "https://linear.app/synchronicity/issue/XYZ-1990"
+        "https://linear.app/synchronicity/issue/XYZ-1990",
+        "https://linear.app/synchronicity/issue/XYZ-2026"
       ],
-      "next_report_due": "2026-09-04T21:33:43Z",
+      "next_report_due": "2026-09-05T21:33:43Z",
       "cadence_hours": 24,
-      "last_event": "operator_ruling"
+      "last_event": "blocker_changed"
     }
   ],
   "operator_queue": [],
