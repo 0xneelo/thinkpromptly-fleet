@@ -1757,7 +1757,10 @@ async function deliverTmux(message) {
 // receiver's unix socket — an auth line carrying the receiver's published token, then the user
 // turn. The receiver answers nothing; a clean close is delivery. `from` is what the receiver
 // shows as the reply address, so it names the bus, not a socket it could SendMessage back to —
-// the ACK footer in the text is the way back.
+// the ACK footer in the text is the way back. from-mode MUST be "bypass": the receiver
+// auto-ingests peer turns only from a bypass-mode sender and silently drops every other value
+// ("bus", "default", "plan" all verified dropped by a live seat, 2026-09-04) — and a clean close
+// looks identical either way, so nothing downstream can tell a drop from a delivery.
 function deliverDesktopSession(message) {
   const name = message.target.session;
   const row = desktopSessions().find((s) => s.name === name);
@@ -1767,7 +1770,7 @@ function deliverDesktopSession(message) {
   const { peerToken } = JSON.parse(fs.readFileSync(path.join(CLAUDE_SESSIONS_DIR, key), 'utf8'));
   const from = 'fleetdeck:' + message.source;
   const content =
-    '<cross-session-message from="' + from + '" from-name="' + message.source + '" from-mode="bus">\n' +
+    '<cross-session-message from="' + from + '" from-name="' + message.source + '" from-mode="bypass">\n' +
     message.text +
     '\n</cross-session-message>';
   const frames =
