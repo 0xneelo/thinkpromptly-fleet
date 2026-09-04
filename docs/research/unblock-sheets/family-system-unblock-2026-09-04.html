@@ -1,0 +1,306 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Family System Sheet</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --fg:#1a1d21; --muted:#5c6470;
+    --line:#e2e5ea; --accent:#2563eb; --accent-soft:#eaf1fe;
+    --good:#16a34a; --good-soft:#e9f9ef; --star:#b45309; --star-soft:#fdf3d7;
+    --explain-bg:#f2f6fc; --code-bg:#0f172a; --code-fg:#d7e0ee;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#101318; --card:#181c23; --fg:#e8eaee; --muted:#9aa3b0;
+      --line:#2a303a; --accent:#60a5fa; --accent-soft:#1c2c45;
+      --good:#4ade80; --good-soft:#152b1c; --star:#fbbf24; --star-soft:#33290f;
+      --explain-bg:#1a2230; --code-bg:#0b0e13; --code-fg:#c7d1df;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#101318; --card:#181c23; --fg:#e8eaee; --muted:#9aa3b0;
+    --line:#2a303a; --accent:#60a5fa; --accent-soft:#1c2c45;
+    --good:#4ade80; --good-soft:#152b1c; --star:#fbbf24; --star-soft:#33290f;
+    --explain-bg:#1a2230; --code-bg:#0b0e13; --code-fg:#c7d1df;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg); color:var(--fg); margin:0;
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  code{background:var(--accent-soft); padding:0 4px; border-radius:4px; font-size:.9em}
+  .wrap{max-width:760px; margin:0 auto; padding:0 16px 64px}
+
+  /* sticky header: title + progress + copy */
+  .top{position:sticky; top:0; z-index:5; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:12px 0 10px; margin-bottom:20px}
+  .top h1{font-size:20px; margin:0 0 2px}
+  .top .intro{color:var(--muted); font-size:14px; margin:0 0 10px}
+  .toprow{display:flex; align-items:center; gap:12px}
+  .bar{flex:1; height:8px; background:var(--line); border-radius:4px; overflow:hidden}
+  .bar i{display:block; height:100%; width:100%; background:var(--good);
+    transform:scaleX(0); transform-origin:left; transition:transform .25s}
+  .count{font-size:13px; color:var(--muted); white-space:nowrap}
+  .copybtn{background:var(--accent); color:#fff; border:0; border-radius:8px;
+    padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer}
+  .copybtn.done{background:var(--good)}
+
+  /* card */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:18px 18px 14px; margin-bottom:18px; transition:border-color .2s}
+  .card.answered{border-color:var(--good)}
+  .chip{display:inline-block; font-size:12px; font-weight:600; color:var(--muted);
+    background:var(--bg); border:1px solid var(--line); border-radius:20px;
+    padding:2px 10px; margin-bottom:8px}
+  .card.answered .chip::after{content:" ✓"; color:var(--good)}
+  .decision{font-size:17px; font-weight:700; margin:0 0 4px}
+  .why{color:var(--muted); font-size:14px; margin:0 0 12px}
+  .explain{background:var(--explain-bg); border-radius:8px; padding:10px 12px;
+    font-size:14px; margin-bottom:12px}
+  .explain .tag{font-weight:700; font-size:12px; display:block; margin-bottom:4px}
+
+  /* options */
+  .opt{display:block; width:100%; text-align:left; background:var(--card);
+    border:1.5px solid var(--line); border-radius:8px; padding:9px 12px;
+    margin-bottom:8px; cursor:pointer; color:var(--fg); font:inherit}
+  .opt:hover{border-color:var(--accent)}
+  .opt .lab{font-weight:600; font-size:15px}
+  .opt .det{display:block; color:var(--muted); font-size:13px; margin-top:1px}
+  .opt.rec{border-color:var(--star); background:var(--star-soft)}
+  .opt.rec .lab::before{content:"⭐ "}
+  .opt.sel{border-color:var(--good); background:var(--good-soft)}
+  .opt.sel .lab::after{content:"  ✓"; color:var(--good)}
+  .card.answered .opt:not(.sel){opacity:.45}
+  .note{width:100%; border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+    font:14px/1.4 inherit; background:var(--bg); color:var(--fg); margin-top:4px}
+
+  /* json */
+  .jsonbox{margin-top:28px}
+  .jsonbox h2{font-size:15px; margin:0 0 6px}
+  .jsonbox textarea{width:100%; height:180px; background:var(--code-bg); color:var(--code-fg);
+    border:1px solid var(--line); border-radius:10px; padding:12px;
+    font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; resize:vertical}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <h1 id="t"></h1>
+    <p class="intro" id="i"></p>
+    <div class="toprow">
+      <div class="bar"><i id="fill"></i></div>
+      <span class="count" id="count"></span>
+      <button class="copybtn" id="copy">Copy JSON</button>
+    </div>
+  </div>
+  <div id="cards"></div>
+  <div class="jsonbox">
+    <h2>📋 JSON — updates as you click; Copy, then paste back in chat</h2>
+    <textarea id="json" readonly></textarea>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   AGENT: replace SHEET only. Do not touch anything below it.
+   Per question:
+     id       kebab-slug, stable
+     topic    short label ("Deploy route")
+     decision the actual question, one sentence
+     why      why it's blocked + what depends on it (1-2 sentences)
+     explain  from-zero background, <=120 words, define every term,
+              <b>bold the one sentence that matters</b>. Simple HTML ok.
+     options  2-4 of {key,label,detail,recommended?}; exactly one
+              recommended:true, its detail says WHY.
+   "You decide" / "Explain more" / note field are added automatically.
+   ============================================================ */
+const SHEET = {
+  title: "Family System Sheet",
+  intro: "Primer: for every token we collect prices from many sources, group sources that share an upstream into a family so one origin cannot vote twice, let each family vote 'our price is right' or 'CoinGecko is right', and only accuse a side when enough independent families agree. These 9 cards decide how that machine should work (Fridolin's XYZ-2013 review). Nothing here changes production directly: every change starts as a shadow replay. ⭐ = the review's recommendation, which I endorse unless the card says otherwise. ~10 min. Done: Copy JSON, paste in chat.",
+  questions: [
+    {
+      id: "carrier_identity",
+      topic: "New source identity",
+      decision: "What should a brand-new price source do before anyone has reviewed where its data comes from?",
+      why: "Today a new source automatically becomes its own voting family, so it counts as independent before anyone checked. DexTools once gained false corroborating authority this way. This card decides the registry the whole model is built on.",
+      explain: "A <i>source</i> is one feed of prices (CoinGecko, a DEX router, our own pool read). A <i>family</i> groups sources that share the same upstream data so one origin cannot vote twice; each family casts one vote. The current rule guesses families from the source's name, and a name with a colon (like openocean:jupiter) silently inherits the part after the colon. Fridolin proposes an explicit per-network <i>registry</i> recording who produced the price, its upstream, which pool or market, and its units. <b>Until a source is in that registry, the safe behaviour is to show it but not let it vote.</b>",
+      options: [
+        { key: "fail_closed", label: "Show it, don't let it vote", detail: "Unknown sources stay visible as evidence and gain a vote only once registered; no family is ever inferred from punctuation. Recommended: the only option that cannot manufacture fake independence.", recommended: true },
+        { key: "current_default", label: "Keep today's guess", detail: "A new source is its own family. Coverage is preserved, but a new adapter can fake independence before anyone looks." },
+        { key: "allowlist_sources", label: "Allowlist by name", detail: "Safer than today, but still mixes producer, upstream, market and network into one string." },
+      ],
+    },
+    {
+      id: "divided_family",
+      topic: "Rule A",
+      decision: "When the members of one family disagree with each other, what should the family do?",
+      why: "Rule A makes a divided family abstain, which cured 24 of 28 divided rows after train 76. But OPENAI and SPACEX show a family can look divided only because two members report in different units, turning a formatting defect into lost coverage.",
+      explain: "<i>Rule A</i>: if the sources inside one family point at opposite answers (one says our price is right, another says CoinGecko is), the family casts no vote, because its median would be a price nobody reported. <i>Normalize</i> means converting members to the same units first, e.g. display units vs raw token units, using what each source declares about its own format. Never infer a conversion factor from the prices themselves or from which verdict it would produce. <b>Normalize on declared units first, then apply Rule A to what remains.</b>",
+      options: [
+        { key: "normalize_then_abstain", label: "Normalize first, abstain if still divided", detail: "Cures unit-caused splits like OPENAI and SPACEX, keeps Rule A's safety, and publishes the conflict with every member visible. Recommended.", recommended: true },
+        { key: "abstain_raw", label: "Keep Rule A as is", detail: "Safe against invented medians, but known unit faults keep producing avoidable ties." },
+        { key: "median_anyway", label: "Let the median vote", detail: "Restores coverage by letting a price no member endorsed carry the family's full authority. Not recommended." },
+      ],
+    },
+    {
+      id: "ballot_authority",
+      topic: "Voting weight",
+      decision: "Should the kind of source change how many votes it gets, or only how much we trust it?",
+      why: "Today an execution source (a real swap quote) has weight 3, an oracle or CEX 2, an aggregator 1. One weight-3 family (Raydium) is what creates the live exact-tie class. Fridolin's equal-vote shadow replay changes 408 of 1,135 row occurrences, a delta that must be measured before it goes live.",
+      explain: "Every final voting unit (Fridolin's word: <i>carrier</i>) votes 'ours is right' or 'CoinGecko is right'. <i>Weight</i> is how much that vote counts. Under 3/2/1 one execution source outvotes three aggregators, and one such family can exactly balance the other side, producing ties. The proposal: one carrier, one vote; the kind of source, fill quality, age, spread and liquidity feed a <i>confidence</i> score instead. Two agreeing carriers stay required before anyone is accused. <b>Run it as a shadow first: a 408-row delta is too large to switch on blind.</b>",
+      options: [
+        { key: "equal_shadow", label: "Equal votes, in shadow first", detail: "Two full board rotations (about two hours each) before any activation. Recommended: removes the tie machinery at the root and is measured before it is trusted.", recommended: true },
+        { key: "keep_kind_weights", label: "Keep 3/2/1", detail: "Nothing changes; the kind of source stays a source of voting power." },
+        { key: "capped_weights", label: "Cap weights at 2", detail: "Less execution dominance, but still not one carrier, one vote." },
+      ],
+    },
+    {
+      id: "agreement_floor",
+      topic: "Green verdicts",
+      decision: "Should a green 'settled_agree' need the same two independent sources that an accusation needs?",
+      why: "Agreement is declared before the weight and family floors are checked. Replay finds 10 of 366 old settled_agree rows where the winning side had only one real carrier. Nobody is accused, so the risk is lower, but 'settled' reads as corroborated.",
+      explain: "<i>settled_agree</i> is the green verdict: our price and CoinGecko's agree. To accuse a side (cg_wrong or ours_wrong) the engine demands winning weight 3 across at least 2 families. Agreement skips that check, so one lone source can produce a green row. Fridolin proposes keeping the behaviour for now but adding a visible <i>single_carrier_agreement</i> marker so those rows are honest, then ruling on the floor after two shadow rotations show how many rows it touches. <b>Green should mean corroborated; the question is whether to enforce that now or after measuring.</b>",
+      options: [
+        { key: "shadow_disclosure", label: "Mark it now, set the floor after shadow", detail: "Keeps today's output, adds the marker, and rules on data from two full rotations. Recommended.", recommended: true },
+        { key: "require_two", label: "Require two carriers now", detail: "Settled always means corroborated, but the 10 known rows turn thin immediately." },
+        { key: "keep_current", label: "Keep as is", detail: "No marker; a one-source green stays indistinguishable from a corroborated one." },
+      ],
+    },
+    {
+      id: "chain_shadow_role",
+      topic: "Our own pool read",
+      decision: "May our own on-chain read of the pool we picked both vote on the price and judge whether that pick was right?",
+      why: "chain-shadow read the elected pool and cast an oracle-weight vote in 1,409 row occurrences while also taking part in 25 published witness vetoes. A source that reads our own choice is not independent evidence for that choice.",
+      explain: "<i>chain-shadow</i> is our service reading the pool we <i>elected</i> (chose) for a token straight from the chain. Today it plays two roles: it votes in the price tally like any source, and it acts as a <i>witness</i> that can veto an ours_wrong verdict or ask for a new pool election. Because it reads the pool we already chose, its vote mostly echoes our own decision. The proposal keeps it as diagnostic evidence, still flagging stale references and requesting re-election, but removes its vote from the tally. <b>A self-read can challenge our consistency; it cannot corroborate our own election.</b>",
+      options: [
+        { key: "diagnostic_only", label: "Witness only, no vote", detail: "Removes the circularity while keeping the useful stale-reference and re-election signals. Recommended.", recommended: true },
+        { key: "vote_and_veto", label: "Keep both roles", detail: "Output unchanged; one self-read source shapes both the tally and the appeal." },
+        { key: "remove_witness", label: "Remove it entirely", detail: "No circularity, but the stale-reference and re-election evidence is lost." },
+      ],
+    },
+    {
+      id: "breaker_role",
+      topic: "Tie-breaker venue",
+      decision: "Which venue should sit out the normal vote and only be asked when the vote ties exactly?",
+      why: "Today OpenOcean or Raydium can vote and then also break the tie. The current Raydium fallback changes 8 later-snapshot rows beyond the primary alone; of the four-row class from 20:28Z only ZBCN clears it.",
+      explain: "A <i>tie-breaker</i> is a venue asked only when the weighted vote is an exact tie; it names a side but adds no vote. On Solana the breaker today is openocean:jupiter first, then Raydium (your D-13), and both also vote in the ordinary tally, so a venue can create the tie and then resolve it. Fridolin proposes one <i>held-out</i> breaker per network that never votes: Raydium on Solana, OpenOcean on the EVM chains that have it. It must be usable, in normalized units, not our elected pool, and not an echo of a voting source. One venue, one attempt, no fallback chain. <b>A breaker that also votes is judging its own tie.</b>",
+      options: [
+        { key: "reserve_by_network", label: "Hold out Raydium (Solana) / OpenOcean (EVM)", detail: "The breaker becomes independent of the tally; openocean:jupiter stays a Jupiter-family voter only. Refines D-13. Recommended.", recommended: true },
+        { key: "keep_ordered_fallback", label: "Keep today's order", detail: "openocean:jupiter then Raydium, both voting and breaking." },
+        { key: "no_breaker", label: "No breaker, ties stand", detail: "Most conservative; discards 44 successful historical breaker outcomes." },
+      ],
+    },
+    {
+      id: "breaker_evidence",
+      topic: "Breaker evidence (after 77)",
+      decision: "After train 77: may a buy-only breaker decide a tie when its answer flips once you strip the buy lean?",
+      why: "You ruled 'ship it' on Raimund's raw_second_breaker for train 77, reversible. This card sets the standing policy after that. Fridolin's review says the raw buy must not decide when the de-leaned buy disagrees. Affects Ban, FARTBOY, WOLF (stay split) and ZBCN (settles).",
+      explain: "A <i>buy quote</i> is what you would pay to buy now; it includes the fee and price impact, so it <i>leans</i> above the true mid price. The <i>lean-robust</i> test strips one bar of that lean and asks whether the breaker still picks the same side. If raw and de-leaned disagree, the quote does not tell us which candidate the real market mid supports. Raimund's branch, shipping in 77, lets the raw buy decide anyway and cures 3 to 4 rows. Fridolin's model keeps the test: a breaker may say inconclusive. <b>The choice is whether curing those rows is worth letting fee-and-impact-leaning evidence break ties.</b>",
+      options: [
+        { key: "keep_lean_robust", label: "Keep the lean-robust test; retire Raimund's after 77", detail: "An inconclusive breaker is honest; the family lane removes raw_second_breaker once its model lands. The review's recommendation, and mine.", recommended: true },
+        { key: "admit_raw_second", label: "Keep raw_second_breaker as policy", detail: "Matches what ships in 77 and resolves more rows; ties can be decided by leaning evidence." },
+        { key: "require_round_trip", label: "Require buy and sell", detail: "Strongest de-leaning, but Raydium has no captured sell path today, so it would decide none of these rows." },
+      ],
+    },
+    {
+      id: "final_envelope",
+      topic: "Final checks",
+      decision: "Where should the final checks (staleness, validity, same-time measurement, witness, hysteresis) run?",
+      why: "The sweep runs those checks on the first verdict, then replaces it with the tie-break verdict without re-running them (XYZ-2010). No row has been bitten yet, but the bypass is exact and the later boards had 268 staleness fires. Must land before any new family behaviour is switched on.",
+      explain: "After the vote, a set of <i>final gates</i> can withhold a verdict: is the comparator (CoinGecko's price) stale? valid? measured at the same time as ours? does the witness object? has the row flipped too recently (<i>hysteresis</i>)? Today the gates run once, then a second judgement for ties overwrites the result unchecked. Fridolin proposes building the post-breaker result first and then applying every gate once, in a fixed order, with regression tests that fail before the fix and pass after. <b>One result, gated once, or the two paths drift apart again.</b>",
+      options: [
+        { key: "single_final_envelope", label: "Build the final result, then gate it once", detail: "The shared repair for XYZ-2010 and XYZ-1915 and the seam for XYZ-1919/1925. Recommended: one assembly path.", recommended: true },
+        { key: "regate_second_judge", label: "Re-run the gates on the tie verdict", detail: "Narrow fix for today's bypass; keeps two paths that can drift again." },
+        { key: "leave_default_off", label: "Rely on the flags being off", detail: "No live harm today, but activation stays unsafe and the validity bypass remains." },
+      ],
+    },
+    {
+      id: "activation_gate",
+      topic: "Rollout bar",
+      decision: "What proof is required before the new family model may change live verdicts?",
+      why: "The full model changes 35.9% of old-corpus row occurrences. One full board rotation (all four shards) takes about two hours, and a half-rotated board mixes two engines.",
+      explain: "A <i>shadow</i> run computes the new verdicts beside the live ones without publishing them. The board is judged in four <i>shards</i>; a full <i>rotation</i> is every shard judged once under one engine version. Shadow output must carry a policy version, the carrier identities, coverage counters and per-bucket transition rows, so a board judged half by the old engine and half by the new cannot pass as a finished rollout. <b>Two clean rotations with zero unexplained accusations is the bar the review proposes.</b>",
+      options: [
+        { key: "two_rotations", label: "Two full rotations", detail: "Complete policy-version coverage, zero unexplained accusatory transitions, bucket deltas reviewed. Recommended given the 408-row blast radius.", recommended: true },
+        { key: "one_rotation", label: "One full rotation", detail: "Faster; a single market state can hide oscillation between families and breakers." },
+        { key: "activate_directly", label: "Activate after tests", detail: "Fastest; inconsistent with the measured delta." },
+      ],
+    },
+  ],
+};
+
+const STANDARD = [
+  { key: "you-decide", label: "🤷 You decide", detail: "Go with the ⭐ recommendation." },
+  { key: "more-info", label: "❓ Explain more", detail: "The agent explains in chat before this gets decided." },
+];
+
+const state = {};   // id -> {choice, choiceLabel, note}
+const $ = (s) => document.querySelector(s);
+$("#t").textContent = SHEET.title;
+document.title = SHEET.title;
+$("#i").textContent = SHEET.intro;
+
+const cardsEl = $("#cards");
+SHEET.questions.forEach((q, n) => {
+  state[q.id] = { choice: null, choiceLabel: null, note: "" };
+  const card = document.createElement("div");
+  card.className = "card";
+  card.id = "card-" + q.id;
+  const opts = q.options.concat(STANDARD);
+  card.innerHTML =
+    '<span class="chip">' + (n + 1) + "/" + SHEET.questions.length + " · " + esc(q.topic) + "</span>" +
+    '<p class="decision">' + esc(q.decision) + "</p>" +
+    '<p class="why">' + esc(q.why) + "</p>" +
+    '<div class="explain"><span class="tag">🧠 Need to know</span>' + q.explain + "</div>" +
+    opts.map((o) =>
+      '<button class="opt' + (o.recommended ? " rec" : "") + '" data-q="' + q.id + '" data-k="' + esc(o.key) + '">' +
+      '<span class="lab">' + esc(o.label) + '</span><span class="det">' + esc(o.detail) + "</span></button>"
+    ).join("") +
+    '<input class="note" data-q="' + q.id + '" placeholder="Optional note for the agent…">';
+  cardsEl.appendChild(card);
+});
+
+cardsEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".opt");
+  if (!btn) return;
+  const id = btn.dataset.q;
+  state[id].choice = btn.dataset.k;
+  state[id].choiceLabel = btn.querySelector(".lab").textContent;
+  const card = $("#card-" + id);
+  card.classList.add("answered");
+  card.querySelectorAll(".opt").forEach((b) => b.classList.toggle("sel", b === btn));
+  sync();
+});
+cardsEl.addEventListener("input", (e) => {
+  if (!e.target.classList.contains("note")) return;
+  state[e.target.dataset.q].note = e.target.value;
+  sync();
+});
+
+function sync() {
+  const total = SHEET.questions.length;
+  const done = Object.values(state).filter((s) => s.choice).length;
+  $("#fill").style.transform = "scaleX(" + done / total + ")";
+  $("#count").textContent = done + "/" + total;
+  $("#json").value = JSON.stringify({
+    sheet: "adhd-unblock",
+    title: SHEET.title,
+    answered: done + "/" + total,
+    answers: SHEET.questions.map((q) => ({
+      id: q.id, decision: q.decision,
+      choice: state[q.id].choice, choiceLabel: state[q.id].choiceLabel,
+      note: state[q.id].note,
+    })),
+  }, null, 2);
+}
+
+$("#copy").addEventListener("click", async () => {
+  const ta = $("#json");
+  try { await navigator.clipboard.writeText(ta.value); }
+  catch (_) { ta.focus(); ta.select(); try { document.execCommand("copy"); } catch (_) {} }
+  const btn = $("#copy");
+  btn.textContent = "Copied ✓"; btn.classList.add("done");
+  setTimeout(() => { btn.textContent = "Copy JSON"; btn.classList.remove("done"); }, 1600);
+});
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+sync();
+</script>
