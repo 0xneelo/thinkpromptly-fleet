@@ -622,6 +622,23 @@ def selftest_deadman(now, checked):
                 "deadman: idempotent"]
 
 
+def selftest_instance_root(root, checked):
+    """The product tools can point at state in a customer repository (XYZ-2026)."""
+    original = os.environ.get(bl.INSTANCE_ROOT_ENV)
+    try:
+        os.environ[bl.INSTANCE_ROOT_ENV] = root
+        check(bl.default_board_path() == os.path.join(os.path.abspath(root), "board.json"),
+              "%s did not redirect the default board" % bl.INSTANCE_ROOT_ENV)
+        check(runlog.default_inbox() == os.path.join(os.path.abspath(root), "inbox"),
+              "%s did not redirect the runlog inbox" % bl.INSTANCE_ROOT_ENV)
+    finally:
+        if original is None:
+            os.environ.pop(bl.INSTANCE_ROOT_ENV, None)
+        else:
+            os.environ[bl.INSTANCE_ROOT_ENV] = original
+    checked += ["instance root: board redirected", "instance root: runlog inbox redirected"]
+
+
 def selftest():
     now = bl.parse_iso(FROZEN)
     root = tempfile.mkdtemp(prefix="coordinator-check-selftest-")
@@ -635,6 +652,7 @@ def selftest():
         selftest_snapshot_cannot_mask(now, checked)
         selftest_runlog(root, checked)
         selftest_deadman(now, checked)
+        selftest_instance_root(root, checked)
     except SelftestFailure as exc:
         print("SELFTEST FAIL: %s" % exc)
         return 1

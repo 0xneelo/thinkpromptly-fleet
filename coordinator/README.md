@@ -15,3 +15,21 @@ Operator ruling 2026-08-30 (O13 seat, recorded on XYZ-1889 at closure):
 - Known product gap: the deck serves this fixture at `/api/coordinator/*` instead of a
   customer instance's board — instance-aware board root is seam 8 of
   `docs/goals/gb-home-migration/goal.md` (XYZ-1890).
+
+## Point the tooling at a customer instance
+
+The Python tooling stays in this product repo. To operate on a state directory in
+another repo, set `COORDINATOR_INSTANCE_ROOT` for the process to the directory that
+contains `board.json`, `northstar.md`, `decisions-effective.md`, and `inbox/`:
+
+```sh
+COORDINATOR_INSTANCE_ROOT=/absolute/path/to/customer/coordinator \
+  python3 coordinator/check.py
+COORDINATOR_INSTANCE_ROOT=/absolute/path/to/customer/coordinator \
+  python3 coordinator/bundle.py --size
+```
+
+All state-aware CLIs that use the default board path follow that root. `runlog.py`
+also defaults its inbox to `<root>/inbox`. An explicit board, inbox, or output path
+still wins where a CLI already accepts one. With the variable unset, behavior is
+unchanged: the dev fixture beside the tooling is used.

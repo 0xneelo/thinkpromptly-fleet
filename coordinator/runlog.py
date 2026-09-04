@@ -38,7 +38,7 @@ SIDECAR_SUFFIX = ".provenance.json"
 
 
 def default_inbox():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "inbox")
+    return bl.default_instance_path("inbox")
 
 
 def sha256_of(path):

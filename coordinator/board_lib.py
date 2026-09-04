@@ -15,6 +15,8 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 
+INSTANCE_ROOT_ENV = "COORDINATOR_INSTANCE_ROOT"
+
 # --- board defaults -------------------------------------------------------
 # Written explicitly into board.json by the initiation ritual (M6); these
 # values apply to a board that predates the policy block.
@@ -39,8 +41,25 @@ def board_dir(board_path):
     return os.path.dirname(os.path.abspath(board_path))
 
 
+def default_instance_root():
+    """The state directory used by CLIs when no explicit board path is supplied.
+
+    The product checkout keeps its historical default (this module's directory).
+    A customer instance can live in another repository and opt in per process via
+    COORDINATOR_INSTANCE_ROOT; no cwd or product-checkout layout is then assumed.
+    """
+    configured = os.environ.get(INSTANCE_ROOT_ENV, "").strip()
+    if configured:
+        return os.path.abspath(os.path.expanduser(configured))
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def default_instance_path(*parts):
+    return os.path.join(default_instance_root(), *parts)
+
+
 def default_board_path():
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "board.json")
+    return default_instance_path("board.json")
 
 
 def load(path):
