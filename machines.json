@@ -1,0 +1,11 @@
+{
+  "_comment": "Machines page. route local = run on the deck's own mac; ssh = pipe box/fleet-logins.sh over `ssh <ssh> [wsl] sh -s` (no install on the box); push = the machine runs `sh fleet-logins.sh push http://<tailnet-ip>:3131/api/machines <id>` on a cron.",
+  "machines": [
+    { "id": "macbook", "label": "MacBook Pro", "os": "macos", "route": "local" },
+    { "id": "german-box", "label": "german-box", "os": "windows+wsl", "route": "ssh", "ssh": "german-box", "wsl": true },
+    { "id": "onboarding-vps", "label": "onboarding-vps", "os": "linux", "route": "ssh", "ssh": "onboarding-box" },
+    { "id": "thinkpromptly-vps", "label": "thinkpromptly-vps", "os": "linux", "route": "ssh", "ssh": "vps-deploy" },
+    { "id": "ivy-vps", "label": "ivy-vps", "os": "linux", "route": "ssh", "ssh": "ivybox-deploy" },
+    { "id": "rog-strix", "label": "ROG Strix", "os": "windows", "route": "push" }
+  ]
+}
