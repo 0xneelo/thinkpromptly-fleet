@@ -1651,11 +1651,12 @@ function machinesUsage(rows, now = Math.floor(Date.now() / 1000)) {
     if (r.secondary) w.secondary = r.secondary;
     return w;
   };
-  // agedOut() bails on a row with no sample_ts and only walks r.windows, so a Codex row —
-  // which has neither, carrying weekly/secondary siblings dated by updated_at — comes back
-  // unaged and a week-old weekly bar would draw as a current figure. Same rule, same shape,
-  // applied to the normalized windows so the front end's stale handling still works.
-  const ageCodex = (windows, sampleTs) => {
+  // agedOut() bails on a row with no sample_ts, and only a desktop sample is ever stamped
+  // with one. Everything else dates itself by updated_at — a Codex row, whose weekly and
+  // secondary siblings it never walks either, and an oauth Claude row — so both came back
+  // unaged and a week-old bar drew as a current figure. Same rule, same shape, applied to
+  // the normalized windows so the front end's stale handling still works.
+  const ageUnstamped = (windows, sampleTs) => {
     if (!sampleTs) return null;
     const age = now - sampleTs;
     const aged = {};
@@ -1678,9 +1679,10 @@ function machinesUsage(rows, now = Math.floor(Date.now() / 1000)) {
     const sampleTs = r.sample_ts ?? r.updated_at ?? null;
     let windows = windowsOf(r);
     let staleWindows = !!r.stale_windows;
-    // Claude rows already came through agedOut(); ageing them twice would be a no-op at best.
-    if (r.kind === 'codex') {
-      const aged = ageCodex(windows, sampleTs);
+    // Exactly the set agedOut() skipped: a stamped row was already aged, against its own
+    // sample date, and re-ageing it here on updated_at would answer a different question.
+    if (!r.sample_ts) {
+      const aged = ageUnstamped(windows, r.updated_at);
       if (aged) {
         windows = aged;
         staleWindows = true;
