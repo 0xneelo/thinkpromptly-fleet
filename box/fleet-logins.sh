@@ -221,6 +221,16 @@ CODEX_APP_DIRS = ("Codex*", "codex*", "OpenAI/Codex*", "com.openai.codex*")
 CODEX_DB_FILES = ("Login Data For Account", "Account Web Data")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
 
+# The app's own Electron userData directory. Validated on the Mac 2026-09-06: the bundle
+# checks missed and ~/Library/Application Support/Codex/ was there, so this is the evidence
+# that stops a present app being reported as absent.
+def codex_app_dirs(home):
+    base, out = os.path.join(home, "Library", "Application Support"), []
+    for d in CODEX_APP_DIRS:
+        for q in sorted(glob.glob(os.path.join(base, d))):
+            if os.path.isdir(q) and q not in out: out.append(q)
+    return out
+
 def codex_profile_dbs(home):
     base, out = os.path.join(home, "Library", "Application Support"), []
     for d in CODEX_APP_DIRS:
@@ -232,7 +242,9 @@ def codex_profile_dbs(home):
 
 # ONE column, from a private copy, opened read-only: the account name. password_value, any
 # token_service table and every cookie store are never selected, so no secret can be reached.
-# Returns (email, note) and the copy is removed in `finally`, so a hang-up leaves nothing.
+# Returns (email, note, kind) where kind is ok / no_email / unreadable — "the file holds no
+# email" and "the file cannot be read" are different answers and must not share a state.
+# The copy is removed in `finally`, so a hang-up leaves nothing.
 def codex_db_email(path):
     # mkdtemp inside the try, so a SIGHUP between creating the directory and entering the
     # block cannot unwind past a scope that was never entered and strand the copy.
@@ -249,17 +261,22 @@ def codex_db_email(path):
         con = sqlite3.connect("file:" + dst + "?mode=ro", uri=True)
         try:
             if not con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='logins'").fetchall():
-                return None, name + " has no logins table"
+                return None, name + " has no logins table", "unreadable"
             if "username_value" not in [c[1] for c in con.execute("PRAGMA table_info(logins)")]:
-                return None, name + " logins table has no username_value column"
+                return None, name + " logins table has no username_value column", "unreadable"
             for row in con.execute("SELECT username_value FROM logins"):
                 v = row[0].strip() if isinstance(row[0], str) else ""
-                if EMAIL_RE.match(v): return v, None
-            return None, name + " has no email-shaped username_value"
+                if EMAIL_RE.match(v): return v, None, "ok"
+            # Probed on the Mac 2026-09-06: the account IS in this profile, but Codex desktop
+            # keeps it under Chromium safeStorage / IndexedDB rather than in the logins table.
+            # Naming that is the point — it tells the next reader where to look instead of
+            # leaving them to rediscover that this table is the wrong place.
+            return None, (name + " has no email-shaped username_value; Codex desktop keeps the"
+                          " account under safeStorage/IndexedDB, which this reader cannot read"), "no_email"
         finally:
             con.close()
     except Exception as e:
-        return None, name + " could not be read: " + type(e).__name__
+        return None, name + " could not be read: " + type(e).__name__, "unreadable"
     finally:
         # ignore_errors swallows OSError, not the TypeError rmtree(None) would raise if the
         # import above failed before there was ever a directory to remove.
@@ -270,10 +287,15 @@ def codex_desktop(home, where, cli):
     if where == "local":
         found = OS == "darwin" and (os.path.isdir("/Applications/Codex.app")
                                     or os.path.isdir(os.path.join(home, "Applications", "Codex.app")))
-        # The app is not always installed as Codex.app; dictation is a desktop-only feature,
-        # so its history directory is the fallback evidence — said out loud, not assumed.
-        if not found and OS == "darwin" and os.path.isdir(os.path.join(home, ".codex", "dictation-history")):
-            found, note = True, "no Codex.app bundle; detected by ~/.codex/dictation-history"
+        # The bundle is not always where those two look. The app's own userData directory is
+        # the stronger evidence and carries no caveat, so it is tried before the dictation
+        # directory — the Mac run of 2026-09-06 had the userData dir and no bundle, and said
+        # "no Codex.app bundle", which was a false negative worth not repeating.
+        if not found and OS == "darwin":
+            if codex_app_dirs(home):
+                found = True
+            elif os.path.isdir(os.path.join(home, ".codex", "dictation-history")):
+                found, note = True, "no Codex.app bundle; detected by ~/.codex/dictation-history"
     else:
         found = any(glob.glob(p) for p in (os.path.join(home, "AppData/Local/Programs/Codex*"),
                                            os.path.join(home, "AppData/Local/Codex*"),
@@ -281,23 +303,28 @@ def codex_desktop(home, where, cli):
     if not found:
         return entry("codex_desktop", where, installed=False, state="not_installed")
     if where == "local" and OS == "darwin":
-        email = dbnote = None
+        email = dbnote = kind = None
         try:
             for q in codex_profile_dbs(home):
-                email, why = codex_db_email(q)
+                email, why, k = codex_db_email(q)
                 if email: break
-                if dbnote is None: dbnote = why      # the first candidate's answer is the honest one
+                if dbnote is None: dbnote, kind = why, k  # the first candidate's answer is the honest one
         except Exception:
-            email = dbnote = None                    # nothing here may kill the collector
+            email = dbnote = kind = None             # nothing here may kill the collector
         if email:
             return entry("codex_desktop", where, installed=True, signed_in=True, state="ok",
                          proof="app_profile", email=email, note=note)
+        # Either way a profile is there and this reader could not get an identity out of it.
+        # `unknown_source` is the honest state for BOTH: the Mac probe of 2026-09-06 found the
+        # account really is in that profile, encrypted under safeStorage/IndexedDB — so this
+        # is a source this reader cannot read, not a source with nothing in it. Borrowing the
+        # CLI's identity here would assert the app is signed in as the CLI's account, which
+        # nothing has established. `kind` still separates the two causes in the note.
         if dbnote:
-            # A profile is there and it is not what this reader knows how to read. Say so
-            # rather than borrowing the CLI's identity, which would be a guess.
             return entry("codex_desktop", where, installed=True, state="unknown_source",
                          note="; ".join(x for x in (note, dbnote) if x))
-    # No Chromium profile at all: the app is assumed to share ~/.codex/auth.json with the CLI.
+    # No Chromium profile at all: the app is assumed to share ~/.codex/auth.json with the CLI,
+    # and `shares` says that identity is borrowed rather than proved by this client.
     cli = cli or {}
     return entry("codex_desktop", where, installed=True, signed_in=cli.get("signed_in"), note=note,
                  state=cli.get("state") or "signed_out", shares="codex_cli",
