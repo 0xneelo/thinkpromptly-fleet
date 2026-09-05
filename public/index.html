@@ -44,6 +44,14 @@
         <button id="tab-overview" class="ghost">Overview</button>
         <button id="tab-details" class="ghost">Details</button>
       </div>
+      <!-- Mass actions over the checked rows. Kill takes only live rows, Forget only gone
+           ones — the same split the per-row buttons make. -->
+      <div id="fleet-bulk" class="bulk" hidden>
+        <span id="bulk-count"></span>
+        <button id="bulk-kill" class="ghost">Kill selected</button>
+        <button id="bulk-forget" class="ghost">Forget selected</button>
+        <button id="bulk-clear" class="ghost">Clear</button>
+      </div>
       <table>
         <!-- Header cells are built from the active tab's column list, so the sort
              mapping can never drift from the columns on screen. -->

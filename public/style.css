@@ -260,6 +260,11 @@ tr.gone td { opacity: 0.5; }
 .age-amber { color: #f59e0b; }
 .age-red { color: #ef4444; }
 .acts { display: flex; gap: 6px; }
+.bulk { display: flex; align-items: center; gap: 6px; padding: 4px 0; }
+.bulk[hidden] { display: none; }
+.bulk .ghost { padding: 2px 8px; font-size: 11px; }
+#bulk-count { color: var(--muted); font-size: 11px; margin-right: 6px; }
+td.sel, th.sel { width: 1%; }
 .acts .ghost { padding: 2px 8px; font-size: 11px; }
 .spill {
   display: inline-block;
