@@ -16,7 +16,8 @@ with all logins and the usage"*. Read `context.md` first — it is what the earl
 ## Scope
 
 **In**
-- Land the existing identity page against the real fleet (Lane 1, `lane-rhoda-land.md`).
+- Land the existing identity page: collector, routes, a real run on the box, the Mac-only paths written
+  defensively and validated by the orchestrator from the Mac (Lane 1, `lane-rhoda-land.md`).
 - Usage per login cell + live sessions per machine (Lane 2, `lane-valentin-usage.md`).
 - Tests for every new join and for the ssh/wsl argv wiring. README `Machines view` stays true.
 
@@ -60,7 +61,7 @@ with all logins and the usage"*. Read `context.md` first — it is what the earl
 
 | lane | worker | host | tmux | branch | owns |
 |---|---|---|---|---|---|
-| 1 | Rhoda · platform-engineer | Mac (deck host) | `FD-rhoda-machines` | `agent-rhoda/machines-land` | `box/fleet-logins.sh`, `machines.json`, `machinesCollect`/`machinesRoute`/`machinePayload`, collector + route tests, README §Machines |
+| 1 | Rhoda · platform-engineer | german-box | `FD-rhoda-machines` | `agent-rhoda/machines-land` | `box/fleet-logins.sh`, `machines.json`, `machinesCollect`/`machinesRoute`/`machinePayload`, collector + route tests, README §Machines |
 | 2 | Valentin · fullstack-developer | german-box | `FD-valentin-machines` | `agent-valentin/machines-usage` | `public/machines.js|html`, machines CSS, `machinesUsage`/`machinesSessions` helpers, their tests |
 
 Shared seam: `machinesView()` — Rhoda adds `collecting`; Valentin adds `usage` and `sessions`.
@@ -68,6 +69,9 @@ Valentin rebases onto Rhoda's pushed tip before his final push. Both add the sam
 `machines.json` entries (`macbook→"mac"`, `german-box→"german-box"`, `onboarding-vps→"onboarding-box"`).
 
 ## Run mode
+
+Operator ruling 2026-09-06: **all workers run on the german-box**. The box has no ssh route to the Mac or
+the VPSes, so the fleet-wide sweep is verified by the orchestrator from the Mac after the weave.
 
 Claude breed, fast mode on, `/goal` mode (remote-system precedent 4/4, O12 handoff). Stop condition
 and standing abort are in each lane's launch prompt. Registry group `machines-page`.
