@@ -590,11 +590,28 @@ const agoCell = (iso) => {
   return el('td', a.cls, a.text);
 };
 
+// Checked registry rows, keyed host\0name so a re-render after an action keeps the ticks.
+const selected = new Set();
+const selCell = (s) => {
+  const td = el('td', 'sel');
+  const cb = el('input');
+  cb.type = 'checkbox';
+  const k = key(s.host, s.name);
+  cb.checked = selected.has(k);
+  cb.onchange = () => {
+    cb.checked ? selected.add(k) : selected.delete(k);
+    renderBulk();
+  };
+  td.append(cb);
+  return td;
+};
+
 // Registry columns. `get` is the sort accessor (a column without one is not sortable);
 // time columns sort on the raw ISO stamps, not the "3m ago" text the cell shows.
 // Last msg = last assistant turn in the worker's Claude Code transcript; pane activity
 // (Active) also moves for scrollback and input, so this is the truer idle signal.
 const COL = {
+  sel: { label: '', cell: selCell },
   name: { key: 'name', label: 'Session', get: (s) => s.name, cell: (s) => el('td', 'mono', s.name) },
   host: { key: 'host', label: 'Host', get: (s) => s.host, cell: (s) => el('td', 'muted', s.host) },
   label: { key: 'label', label: 'Label', get: (s) => s.label, cell: (s) => editCell(s, 'label') },
@@ -622,8 +639,8 @@ const COL = {
 
 // Sub-tabs: the same rows, narrow triage columns vs. the wide classification ones.
 const TABS = {
-  overview: [COL.name, COL.group, COL.task, COL.status, COL.active, COL.msg, COL.seen, COL.actions],
-  details: [COL.name, COL.host, COL.label, COL.role, COL.group, COL.task, COL.note, COL.status, COL.actions],
+  overview: [COL.sel, COL.name, COL.group, COL.task, COL.status, COL.active, COL.msg, COL.seen, COL.actions],
+  details: [COL.sel, COL.name, COL.host, COL.label, COL.role, COL.group, COL.task, COL.note, COL.status, COL.actions],
 };
 
 const fleetHead = document.getElementById('fleet-head');
@@ -656,8 +673,26 @@ function renderFleet(sessions) {
   fleetSessions = sessions;
   const cols = TABS[fleetTab];
   const sort = fleetSort[fleetTab];
+  const list = sortSessions(sessions, cols, sort);
+  // A row that left the registry must not stay silently ticked for the next bulk run.
+  const keys = new Set(list.map((s) => key(s.host, s.name)));
+  for (const k of selected) if (!keys.has(k)) selected.delete(k);
   fleetHead.replaceChildren();
   for (const c of cols) {
+    if (c === COL.sel) {
+      const th = el('th', 'sel');
+      const all = el('input');
+      all.type = 'checkbox';
+      all.title = 'Select every row';
+      all.checked = list.length > 0 && list.every((s) => selected.has(key(s.host, s.name)));
+      all.onchange = () => {
+        for (const s of list) all.checked ? selected.add(key(s.host, s.name)) : selected.delete(key(s.host, s.name));
+        renderFleet(fleetSessions);
+      };
+      th.append(all);
+      fleetHead.append(th);
+      continue;
+    }
     const th = el(
       'th',
       c.get ? 'sortable' : null,
@@ -677,12 +712,70 @@ function renderFleet(sessions) {
     fleetHead.append(th);
   }
   fleetRows.replaceChildren();
-  for (const s of sortSessions(sessions, cols, sort)) {
+  for (const s of list) {
     const tr = el('tr', s.live ? null : 'gone');
     for (const c of cols) tr.append(c.cell(s));
     fleetRows.append(tr);
   }
+  renderBulk();
 }
+
+// Bulk bar: shows while anything is ticked. Kill applies to live ticked rows, Forget to gone
+// ones — a tmux kill on a gone session can only fail, and Forget on a live one is a per-row no.
+const bulkBar = document.getElementById('fleet-bulk');
+const bulkCount = document.getElementById('bulk-count');
+const bulkKill = document.getElementById('bulk-kill');
+const bulkForget = document.getElementById('bulk-forget');
+const pickSelected = (live) =>
+  fleetSessions.filter((s) => selected.has(key(s.host, s.name)) && Boolean(s.live) === live);
+function renderBulk() {
+  const live = pickSelected(true).length;
+  const gone = pickSelected(false).length;
+  bulkBar.hidden = !(live + gone);
+  bulkCount.textContent = live + gone + ' selected';
+  bulkKill.textContent = 'Kill ' + live + ' live';
+  bulkKill.disabled = !live;
+  bulkForget.textContent = 'Forget ' + gone + ' gone';
+  bulkForget.disabled = !gone;
+}
+// Sequential on purpose: each kill is its own ssh process on the deck, so a parallel fan-out
+// over thirty rows would open thirty connections at once. The toast counts progress.
+async function bulk(verb, ing, ed, list, req) {
+  for (const b of bulkBar.querySelectorAll('button')) b.disabled = true;
+  const done = toast(ing + ' 0/' + list.length + '…', 'pending');
+  const failed = [];
+  for (const [i, s] of list.entries()) {
+    done(ing + ' ' + (i + 1) + '/' + list.length + ' · ' + s.name, 'pending');
+    const r = await req(s).catch((e) => ({ ok: false, error: e.message }));
+    if (r.ok) selected.delete(key(s.host, s.name));
+    else failed.push(s.name + ': ' + (r.stderr || r.error || 'unknown error'));
+  }
+  done(
+    failed.length ? verb + ' failed for ' + failed.length + ' — ' + failed.join('; ') : ed + ' ' + list.length,
+    failed.length ? 'err' : 'ok'
+  );
+  await loadSessions(); // re-renders the bar, re-enabling its buttons from the fresh state
+}
+bulkKill.onclick = () => {
+  const list = pickSelected(true);
+  if (
+    !confirm(
+      'Kill ' + list.length + ' tmux session(s)?\n\n' + list.map((s) => s.host + ':' + s.name).join('\n') +
+        '\n\nIrreversible — everything running in them dies.'
+    )
+  )
+    return;
+  bulk('Kill', 'Killing', 'Killed', list, (s) => post('/api/kill', { host: s.host, name: s.name }));
+};
+bulkForget.onclick = () => {
+  const list = pickSelected(false);
+  if (!confirm('Forget ' + list.length + ' registry row(s)?')) return;
+  bulk('Forget', 'Forgetting', 'Forgot', list, (s) => post('/api/registry/delete', { host: s.host, name: s.name }));
+};
+document.getElementById('bulk-clear').onclick = () => {
+  selected.clear();
+  renderFleet(fleetSessions);
+};
 
 function setTab(tab) {
   fleetTab = tab;
