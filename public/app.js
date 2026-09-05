@@ -669,12 +669,55 @@ function sortSessions(list, cols, sort) {
   });
 }
 
+// Registry filters. An age filter also matches a row with no stamp at all: "last msg older
+// than a day" is asked to find stale workers, and one that never spoke is the stalest.
+const AGE = { '': 0, '1h': 36e5, '6h': 216e5, '1d': 864e5, '3d': 2592e5, '7d': 6048e5 };
+const FILTER0 = { q: '', live: '', status: '', msg: '', active: '' };
+let filter = { ...FILTER0 };
+try {
+  filter = { ...filter, ...JSON.parse(localStorage.getItem('fleetFilter')) };
+} catch {} // a hand-mangled key must not take the table down
+const olderThan = (iso, age) => !age || !iso || Date.now() - Date.parse(iso) > age;
+function filterSessions(list) {
+  const q = filter.q.trim().toLowerCase();
+  const text = (s) => [s.name, s.host, s.label, s.group, s.task, s.note, s.role, s.worker];
+  return list.filter(
+    (s) =>
+      (!q || text(s).some((v) => v && v.toLowerCase().includes(q))) &&
+      (!filter.live || (filter.live === 'live') === Boolean(s.live)) &&
+      (!filter.status || s.status === filter.status) &&
+      olderThan(s.msg_at, AGE[filter.msg]) &&
+      olderThan(s.active_at, AGE[filter.active])
+  );
+}
+const filterEls = { q: 'f-q', live: 'f-live', status: 'f-status', msg: 'f-msg', active: 'f-active' };
+for (const [k, id] of Object.entries(filterEls)) {
+  const c = document.getElementById(id);
+  if (c.classList.contains('age'))
+    for (const a of Object.keys(AGE)) c.append(Object.assign(el('option', null, a || 'any'), { value: a }));
+  c.value = filter[k];
+  c.oninput = () => {
+    filter[k] = c.value;
+    localStorage.setItem('fleetFilter', JSON.stringify(filter));
+    renderFleet(fleetSessions);
+  };
+}
+document.getElementById('f-reset').onclick = () => {
+  filter = { ...FILTER0 };
+  localStorage.removeItem('fleetFilter');
+  for (const [k, id] of Object.entries(filterEls)) document.getElementById(id).value = filter[k];
+  renderFleet(fleetSessions);
+};
+
 function renderFleet(sessions) {
   fleetSessions = sessions;
   const cols = TABS[fleetTab];
   const sort = fleetSort[fleetTab];
-  const list = sortSessions(sessions, cols, sort);
-  // A row that left the registry must not stay silently ticked for the next bulk run.
+  const list = sortSessions(filterSessions(sessions), cols, sort);
+  document.getElementById('f-count').textContent =
+    list.length === sessions.length ? sessions.length + ' rows' : list.length + ' of ' + sessions.length + ' rows';
+  // A row that left the registry — or that the filter now hides — must not stay silently
+  // ticked for the next bulk run: what you see is exactly what a bulk button acts on.
   const keys = new Set(list.map((s) => key(s.host, s.name)));
   for (const k of selected) if (!keys.has(k)) selected.delete(k);
   fleetHead.replaceChildren();

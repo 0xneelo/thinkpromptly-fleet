@@ -264,6 +264,11 @@ tr.gone td { opacity: 0.5; }
 .bulk[hidden] { display: none; }
 .bulk .ghost { padding: 2px 8px; font-size: 11px; }
 #bulk-count { color: var(--muted); font-size: 11px; margin-right: 6px; }
+#fleet-filter { flex-wrap: wrap; }
+#fleet-filter input, #fleet-filter select { min-width: 0; padding: 3px 8px; font-size: 12px; }
+#fleet-filter input { width: 160px; }
+#fleet-filter label { color: var(--muted); font-size: 11px; display: flex; align-items: center; gap: 4px; }
+#f-count { color: var(--muted); font-size: 11px; margin-left: auto; }
 td.sel, th.sel { width: 1%; }
 .acts .ghost { padding: 2px 8px; font-size: 11px; }
 .spill {

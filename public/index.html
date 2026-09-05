@@ -44,6 +44,28 @@
         <button id="tab-overview" class="ghost">Overview</button>
         <button id="tab-details" class="ghost">Details</button>
       </div>
+      <!-- Filters narrow the table and what the header checkbox ticks, so "gone, last msg
+           older than a day, select all, forget" is a handful of clicks. -->
+      <div id="fleet-filter" class="bulk">
+        <input id="f-q" placeholder="search" />
+        <select id="f-live">
+          <option value="">live + gone</option>
+          <option value="live">live</option>
+          <option value="gone">gone</option>
+        </select>
+        <select id="f-status">
+          <option value="">any status</option>
+          <option>active</option>
+          <option>done</option>
+          <option>kill-requested</option>
+          <option>killed</option>
+          <option>hidden</option>
+        </select>
+        <label>Last msg older than <select id="f-msg" class="age"></select></label>
+        <label>Active older than <select id="f-active" class="age"></select></label>
+        <span id="f-count"></span>
+        <button id="f-reset" class="ghost">Reset</button>
+      </div>
       <!-- Mass actions over the checked rows. Kill takes only live rows, Forget only gone
            ones — the same split the per-row buttons make. -->
       <div id="fleet-bulk" class="bulk" hidden>
