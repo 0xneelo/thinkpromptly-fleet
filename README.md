@@ -125,8 +125,18 @@ collector crashed) shows as the row's error, not as "nothing installed":
     sh fleet-logins.sh push http://<tailnet-ip>:3131/api/machines rog-strix
 
 Rows are keyed by the `machines.json` id, never by the hostname a machine reports: the Mac
-answers `hostname -s` with an rfc1918 address that names nobody. A machine that is down keeps
+answers `hostname -s` with an rfc1918 address that names nobody — that answer travels as
+`reported_host` and is shown as a fact, not used as a key. A machine that is down keeps
 its last known logins on screen with the ssh error beside them.
+
+**ssh aliases are deploy certs.** `machines.json` names `gb-deploy`, `ob-deploy`,
+`vps-deploy` and `ivybox-deploy` — the certificate aliases under `~/.ssh/deploy-certs/current`.
+The older `german-box` / `onboarding-box` aliases go through the 1Password agent or a static
+key, so a sweep that used them would fail whenever 1Password happened to be locked; the deck
+must not depend on that. An expired cert is an operator gate, never something the deck mints.
+Where a machine is also one of the deck's own hosts it carries `host` — the `hosts.json` key,
+plus `mac` for the deck itself. That is the key a machines row would be joined to its sessions
+and leases by; nothing joins on it yet, it is carried so the join has a key to use.
 
 **Identity only.** The Claude access token and the Codex tokens are read into python memory
 on the machine that owns them, used for that machine's one profile call, and never printed,

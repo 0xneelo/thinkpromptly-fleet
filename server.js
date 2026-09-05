@@ -1650,6 +1650,10 @@ function machinesView() {
       os: str(m.os, 20),
       route: str(m.route, 10),
       ssh: str(m.ssh, 60),
+      // The deck's own host key for this machine (hosts.json, plus `mac` for the deck
+      // itself), so a row can be joined to that host's sessions and leases. Distinct from
+      // `reported_host`, which is whatever the machine answered `hostname -s` with.
+      host: str(m.host, 60),
       error: machinesErrors.get(m.id) || null,
     };
     const d = stored.get(m.id);
@@ -1672,7 +1676,9 @@ function machinesView() {
       for (const client of MACHINE_CLIENTS)
         if (!clients.some((c) => c.client === client && c.where === where))
           clients.push({ client, where, state: 'not_installed', installed: false, signed_in: null, label: null });
-    return { ...base, state: 'ok', reported_at: d.collected_at || d.ts || null, host: d.host || null, clients };
+    // `reported_host` is the machine's own answer and names nobody in particular (the Mac
+    // says an rfc1918 address); the configured `host` on `base` is the joinable key.
+    return { ...base, state: 'ok', reported_at: d.collected_at || d.ts || null, reported_host: d.host || null, clients };
   });
   return {
     machines,
