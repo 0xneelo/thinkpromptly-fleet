@@ -1,6 +1,6 @@
 {
  "project": "remote-system",
- "updated": "2026-09-05",
+ "updated": "2026-09-06",
  "goals": [
   {
    "id": "G1",
@@ -19,15 +19,15 @@
      "ref": "XYZ-2112",
      "who": "Rhoda",
      "lane": "agent-rhoda/machines-land",
-     "state": "Backlog",
-     "emoji": "🚀"
+     "state": "In Progress",
+     "emoji": "🔨"
     },
     {
      "ref": "XYZ-2113",
      "who": "Valentin",
-     "lane": "agent-valentin/machines-usage",
-     "state": "Backlog",
-     "emoji": "🚀"
+     "lane": "agent-valentin/machines-usage@1c563ec",
+     "state": "Done",
+     "emoji": "✅"
     },
     {
      "ref": "XYZ-2111",
@@ -39,7 +39,7 @@
    "sources": [
     "session 0efd1f19 (ORCHESTRATOR 32)"
    ],
-   "updated": "2026-09-05",
+   "updated": "2026-09-06",
    "log": [
     {
      "at": "2026-09-05",
