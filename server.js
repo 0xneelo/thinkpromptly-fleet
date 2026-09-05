@@ -1655,6 +1655,118 @@ function machineLabeler() {
   };
 }
 
+// The usage numbers already live on the credits rows; the Machines page shows them next to
+// the account each client is signed in as. Pure and read-only — a page render must never
+// trigger a collect. Codex rows carry their two windows as siblings rather than a windows
+// object, so they are normalized here and the front end sees one shape for both kinds.
+function machinesUsage(rows, now = Math.floor(Date.now() / 1000)) {
+  const out = { claude: new Map(), codex: new Map() };
+  const windowsOf = (r) => {
+    if (r.kind !== 'codex') return r.windows || {};
+    const w = {};
+    if (r.weekly) w.weekly = r.weekly;
+    if (r.secondary) w.secondary = r.secondary;
+    return w;
+  };
+  // agedOut() bails on a row with no sample_ts, and only a desktop sample is ever stamped
+  // with one. Everything else dates itself by updated_at — a Codex row, whose weekly and
+  // secondary siblings it never walks either, and an oauth Claude row — so both came back
+  // unaged and a week-old bar drew as a current figure. Same rule, same shape, applied to
+  // the normalized windows so the front end's stale handling still works.
+  const ageUnstamped = (windows, sampleTs) => {
+    if (!sampleTs) return null;
+    const age = now - sampleTs;
+    const aged = {};
+    let any = false;
+    for (const [n, w] of Object.entries(windows)) {
+      // Two independent rules, either one enough. The age table has no entry for the Codex
+      // window names, and rather than guess their length we also read the reset stamp the
+      // window itself carries: a reset time already in the past is proof the window rolled
+      // over, whatever its length, where the age default is only inference. A window with
+      // no reset stamp is left to the age rule alone.
+      const reset = typeof w.resets_at === 'number' && w.resets_at < now;
+      if (reset || age > (WINDOW_AGE[n] ?? 7 * 86400)) {
+        aged[n] = { ...w, pct: null, stale: true };
+        any = true;
+      } else aged[n] = w;
+    }
+    return any ? aged : null;
+  };
+  for (const r of rows || []) {
+    if (!r || (r.kind !== 'claude' && r.kind !== 'codex')) continue;
+    const key = r.kind === 'claude' ? r.org : String(r.email || r.id || '').toLowerCase();
+    if (!key) continue;
+    // Only a desktop-sourced Claude row is stamped with sample_ts; an oauth or codex row
+    // dates itself with updated_at, and a row with neither is the configured-but-unreported
+    // blank, which is still a legitimate entry.
+    const sampleTs = r.sample_ts ?? r.updated_at ?? null;
+    let windows = windowsOf(r);
+    let staleWindows = !!r.stale_windows;
+    // Exactly the set agedOut() skipped: a stamped row was already aged, against its own
+    // sample date, and re-ageing it here on updated_at would answer a different question.
+    if (!r.sample_ts) {
+      const aged = ageUnstamped(windows, r.updated_at);
+      if (aged) {
+        windows = aged;
+        staleWindows = true;
+      }
+    }
+    const v = {
+      windows,
+      state: r.state || null,
+      sample_ts: sampleTs,
+      stale_windows: staleWindows,
+    };
+    const map = out[r.kind];
+    const prev = map.get(key);
+    // Two rows can name the same account (a blank row and a reported one, or two sources).
+    // Anything that reports windows beats one that reports none, then the newer sample wins.
+    if (prev) {
+      const has = (x) => Object.keys(x.windows).length > 0;
+      if (has(prev) !== has(v) ? has(prev) : (prev.sample_ts ?? 0) >= (v.sample_ts ?? 0)) continue;
+    }
+    map.set(key, v);
+  }
+  return out;
+}
+
+// Which clients on a machine map to which credits row: a Claude client is known by its org
+// uuid, a Codex one only by its email. The config org stands in only when the token could
+// not be asked, so no org was proved. A config org that disagrees with a proved one is
+// never used as a fallback: the row it finds belongs to the other account, and quoting its
+// numbers under this login's name and email is worse than showing no numbers at all.
+function clientUsage(c, usage) {
+  if (c.client === 'claude_cli' || c.client === 'claude_desktop') {
+    const k = c.org || c.config_org;
+    return (k && usage.claude.get(k)) || null;
+  }
+  if (c.client === 'codex_cli' || c.client === 'codex_desktop')
+    return usage.codex.get(String(c.email || '').toLowerCase()) || null;
+  return null;
+}
+
+const sessionsAll = db.prepare('SELECT * FROM sessions');
+
+// Who is working on each machine, keyed by the deck-side host in machines.json. lease_state
+// is the registry's own liveness signal, so this answers without an ssh sweep — sessions()
+// fans out to every host and must never be called to render a page. A row that is not live
+// is dropped: the question here is who is on the box now, not who ever was.
+function machinesSessions(rows) {
+  const out = new Map();
+  // Empty string is the registry's default for these columns, and an empty label renders as
+  // a gap; null is what lets the front end skip it.
+  const s = (v) => (typeof v === 'string' && v ? v : null);
+  for (const r of rows || []) {
+    const live = r.lease_state === 'active';
+    if (!live || !r.host) continue;
+    const list = out.get(r.host) || [];
+    list.push({ name: r.name, worker: s(r.worker), role: s(r.role), label: s(r.label), status: s(r.status), live });
+    out.set(r.host, list);
+  }
+  for (const list of out.values()) list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return out;
+}
+
 // Every configured machine appears, in file order, whether or not it has ever reported —
 // a silent machine reads as "no report yet" rather than vanishing.
 function machinesView() {
@@ -1672,6 +1784,9 @@ function machinesView() {
     console.error('machines: hosts.json unreadable, host join keys dropped: ' + e.message);
     hostKeys = new Set();
   }
+  // Both lookups are built once per call: a pure SQLite read each, no collect and no ssh.
+  const usage = machinesUsage(creditsRows());
+  const bySessionHost = machinesSessions(sessionsAll.all());
   const machines = machinesConfig().map((m) => {
     const hostKey = str(m.host, 60);
     const base = {
@@ -1688,6 +1803,9 @@ function machinesView() {
       // joinable key that joins to nothing — a promise the field would not be keeping.
       host: hostKeys.has(hostKey) ? hostKey : null,
       error: machinesErrors.get(m.id) || null,
+      // machines.json's `host` is the deck-side key for this join only. It is never served:
+      // the payload's `host` is the hostname the collector reported, a different fact.
+      sessions: bySessionHost.get(m.host) || [],
     };
     const d = stored.get(m.id);
     if (!d) return { ...base, state: 'no_report', reported_at: null, clients: [] };
@@ -1701,14 +1819,14 @@ function machinesView() {
         reported_at: d.collected_at || d.ts || null,
         clients: [],
       };
-    const clients = (d.clients || []).map((c) => ({ ...c, label: label(c) }));
+    const clients = (d.clients || []).map((c) => ({ ...c, label: label(c), usage: clientUsage(c, usage) }));
     // A machine that reported names every client it could see; the ones it did not name are
     // absent from that side, which is a fact worth showing rather than a gap.
     const wheres = [...new Set(clients.map((c) => c.where))];
     for (const where of wheres.length ? wheres : ['local'])
       for (const client of MACHINE_CLIENTS)
         if (!clients.some((c) => c.client === client && c.where === where))
-          clients.push({ client, where, state: 'not_installed', installed: false, signed_in: null, label: null });
+          clients.push({ client, where, state: 'not_installed', installed: false, signed_in: null, label: null, usage: null });
     // `reported_host` is the machine's own answer and names nobody in particular (the Mac
     // says an rfc1918 address); the configured `host` on `base` is the joinable key.
     return { ...base, state: 'ok', reported_at: d.collected_at || d.ts || null, reported_host: d.host || null, clients };
@@ -2761,4 +2879,6 @@ module.exports = {
   tailnetHandler, db, server, tailnet, assertPragmas, migrationPending, resolveNotifyTarget,
   // Test seams: a tick is a step, and REAPER is the observability the tick writes into.
   reaperTick, reaperLoop, REAPER,
+  // Test seams: the pure joins the Machines view renders from, no I/O of their own.
+  machinesUsage, machinesSessions, clientUsage,
 };
