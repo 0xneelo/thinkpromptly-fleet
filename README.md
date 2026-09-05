@@ -107,6 +107,43 @@ A machine outside the fleet pushes instead of being polled — on a cron:
 A desktop-app sample only refreshes while that account is actually being used, so the view
 shows each sample's age; an org sampled days ago is stale data, not idle usage.
 
+**Machines view.** `/machines.html` lists every machine in `machines.json` and, per machine,
+which account each of the four AI clients is signed in as: Claude CLI, Codex CLI, Claude
+desktop, Codex desktop. Each cell names the person (via `credits-accounts.json`), the
+address, and how the identity was proved — `token-proved` when the machine asked its own
+token who it belongs to, `config only` when it could only read a config file, `last active`
+when the fact comes from the Claude desktop app's own history. A WSL box reports both sides,
+tagged `WSL` and `Windows`.
+
+**Nothing is installed on a polled machine.** `box/fleet-logins.sh` is piped over
+`ssh <host> [wsl] sh -s`, so the master copy in this repo is the only copy. A machine with no
+ssh route from here (rog-strix) pushes instead, on a cron — the page prints the exact line.
+Only a `route: push` machine is accepted there; a polled machine's row is what the deck read
+over ssh, never what a tailnet peer claims about it. A wrapper fallback line (no python3,
+collector crashed) shows as the row's error, not as "nothing installed":
+
+    sh fleet-logins.sh push http://<tailnet-ip>:3131/api/machines rog-strix
+
+Rows are keyed by the `machines.json` id, never by the hostname a machine reports: the Mac
+answers `hostname -s` with an rfc1918 address that names nobody — that answer travels as
+`reported_host` and is shown as a fact, not used as a key. A machine that is down keeps
+its last known logins on screen with the ssh error beside them.
+
+**ssh aliases are deploy certs.** `machines.json` names `gb-deploy`, `ob-deploy`,
+`vps-deploy` and `ivybox-deploy` — the certificate aliases under `~/.ssh/deploy-certs/current`.
+The older `german-box` / `onboarding-box` aliases go through the 1Password agent or a static
+key, so a sweep that used them would fail whenever 1Password happened to be locked; the deck
+must not depend on that. An expired cert is an operator gate, never something the deck mints.
+Where a machine is also one of the deck's own hosts it carries `host` — the `hosts.json` key,
+plus `mac` for the deck itself. That is the key a machines row would be joined to its sessions
+and leases by; nothing joins on it yet, it is carried so the join has a key to use.
+
+**Identity only.** The Claude access token and the Codex tokens are read into python memory
+on the machine that owns them, used for that machine's one profile call, and never printed,
+stored in `fleet.db`, logged, or sent to a browser — the request headers go through a 0600
+temp file, so no token appears in `ps`. `~/.claude.json` can name a *different* account than
+the token in use, so the token's own answer wins and the config is shown as a fallback.
+
 **Quote-free rule.** `ssh german-box <cmd>` traverses zsh → Windows CMD → wsl → bash.
 Nested quotes get mangled and there is no reliable escaping, so every remote command
 string contains ZERO quotes; commands go through `execFile`/`pty.spawn` arg arrays and

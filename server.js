@@ -603,8 +603,8 @@ function runInput(cmd, args, input, opts = {}) {
 const SSH_BIN = process.env.FLEET_SSH_BIN || 'ssh';
 const ssh = (host, remoteCmd, opts) =>
   run(SSH_BIN, ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], { ...SSH_OPTS, ...opts });
-const sshInput = (host, remoteCmd, input) =>
-  runInput(SSH_BIN, ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], input, SSH_OPTS);
+const sshInput = (host, remoteCmd, input, opts) =>
+  runInput(SSH_BIN, ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', host, remoteCmd], input, { ...SSH_OPTS, ...opts });
 
 const AGENT_LOCKED = 'communication with agent failed';
 
@@ -1496,6 +1496,259 @@ async function creditsCollect(force) {
   return { rows: creditsRows(), errors };
 }
 
+// --- Machines: which account each AI client on each machine is signed in as. The same
+// shape of collector as Credits, asking a different question — identity, not usage.
+// box/fleet-logins.sh runs on the machine and reports only identities (email, org uuid,
+// plan, account id) plus how each was proved. A polled machine needs no install: the script
+// is piped over `ssh <host> [wsl] sh -s`. A machine with no ssh route pushes here instead.
+// No token is ever read here, stored in fleet.db, or sent to a browser — each machine uses
+// its own token locally for one profile call and emits only what it names.
+db.exec(`CREATE TABLE IF NOT EXISTS machines (id TEXT PRIMARY KEY, payload TEXT, updated_at INTEGER)`);
+
+const MACHINES_FILE = process.env.FLEET_MACHINES_FILE || path.join(__dirname, 'machines.json');
+// Overridable so a test can drive the collector with a stub instead of a real login scan.
+const LOGINS_SH = process.env.FLEET_LOGINS_SH || path.join(__dirname, 'box', 'fleet-logins.sh');
+const MACHINES_TTL =
+  (Number(process.env.FLEET_MACHINES_TTL_SECS) > 0 ? Number(process.env.FLEET_MACHINES_TTL_SECS) : 300) * 1000;
+const MACHINE_CLIENTS = ['claude_cli', 'codex_cli', 'claude_desktop', 'codex_desktop'];
+// Kept per machine until that machine reports again, so a box that is down shows why while
+// its last known logins stay on screen.
+const machinesErrors = new Map();
+
+const machinesUpsert = db.prepare(
+  `INSERT INTO machines (id, payload, updated_at) VALUES (?, ?, ?)
+   ON CONFLICT(id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`
+);
+const machinesAll = db.prepare('SELECT id, payload, updated_at FROM machines');
+
+// Operator-editable, read per request so an edit needs no restart; a malformed file leaves
+// the page empty rather than taking the deck down.
+function machinesConfig() {
+  try {
+    const d = JSON.parse(fs.readFileSync(MACHINES_FILE, 'utf8'));
+    return (Array.isArray(d.machines) ? d.machines : []).filter((m) => m && typeof m.id === 'string');
+  } catch (e) {
+    return [];
+  }
+}
+
+const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
+const int = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null);
+
+// /api/machines takes pushes from machines off the fleet, so nothing outside this whitelist
+// is ever stored or served — a field a future collector adds cannot leak through.
+function clientRow(c) {
+  if (!c || typeof c !== 'object' || !MACHINE_CLIENTS.includes(c.client)) return null;
+  return {
+    client: c.client,
+    where: c.where === 'windows' ? 'windows' : 'local',
+    installed: !!c.installed,
+    signed_in: typeof c.signed_in === 'boolean' ? c.signed_in : null,
+    state: str(c.state, 24) || 'error',
+    email: str(c.email, 254),
+    org: str(c.org, 64),
+    account_id: str(c.account_id, 64),
+    plan: str(c.plan, 40),
+    tier: str(c.tier, 40),
+    proof: str(c.proof, 16),
+    expires_at: int(c.expires_at),
+    last_refresh: str(c.last_refresh, 40),
+    last_active: int(c.last_active),
+    config_email: str(c.config_email, 254),
+    config_org: str(c.config_org, 64),
+    orgs_seen: Array.isArray(c.orgs_seen) ? c.orgs_seen.filter((o) => typeof o === 'string').slice(0, 25) : null,
+    shares: c.shares === 'codex_cli' ? 'codex_cli' : null,
+    note: str(c.note, 200),
+  };
+}
+
+// Four clients, two sides at most: the cap is what stops a push from growing a row without
+// bound, the same promise the collector already keeps.
+const machinePayload = (d) => ({
+  host: str(d.host, 64),
+  os: str(d.os, 16),
+  ts: int(d.ts),
+  // The wrapper's fallback line carries no clients and says why (no python3, collector
+  // crashed); the note is the only evidence of that and must survive to the row.
+  note: str(d.note, 200),
+  clients: (Array.isArray(d.clients) ? d.clients : []).slice(0, 16).map(clientRow).filter(Boolean),
+});
+
+let machinesAt = 0; // last live collect, ms
+// A GET inside the TTL early-returns and would otherwise render the stale rows as if they
+// were fresh, with no sign a sweep is running. A counter, not a flag: two forced sweeps can
+// overlap, and the first to finish must not clear a signal the second still owns.
+// Each in-flight sweep keeps its own start time, so "collecting since" names the oldest
+// sweep STILL running. A single shared timestamp would keep naming the first sweep's start
+// after that sweep had finished — two forced refreshes can overlap, and the older one is
+// usually the one to finish first.
+let machinesSeq = 0;
+const machinesInflight = new Map(); // token -> ms that sweep started
+
+async function machinesCollect(force) {
+  if (!force && Date.now() - machinesAt <= MACHINES_TTL) return;
+  machinesAt = Date.now(); // claimed before the awaits, so parallel loads don't stampede
+  const sweep = ++machinesSeq; // a token, not the clock: two sweeps can start the same ms
+  machinesInflight.set(sweep, Date.now());
+  try {
+    let script = null;
+    try {
+      script = fs.readFileSync(LOGINS_SH, 'utf8');
+    } catch (e) {
+      script = null;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    await Promise.allSettled(
+      machinesConfig().map(async (m) => {
+        if (m.route === 'push') return; // nothing to poll: that machine calls us
+        try {
+          if (m.route === 'ssh' && !script) throw new Error('cannot read ' + LOGINS_SH);
+          // Longer than the session poll: a Claude login costs one HTTPS round trip on the
+          // far side, and a slow endpoint must not read as an unreachable machine.
+          const r =
+            m.route === 'local'
+              ? await run('sh', [LOGINS_SH], { timeout: 25000 })
+              : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', script, { timeout: 25000 });
+          const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
+          // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
+          // blaming a script that never got to run.
+          if (!line)
+            throw new Error(
+              r.stderr.trim() ||
+                (r.err
+                  ? 'fleet-logins.sh did not answer: ' + (r.err.killed ? 'timed out' : r.err.message)
+                  : 'no output from fleet-logins.sh')
+            );
+          // Keyed by the config id, never the hostname: a machine can report a name that
+          // belongs to nobody (the Mac answers with an rfc1918 address).
+          machinesUpsert.run(m.id, JSON.stringify({ ...machinePayload(JSON.parse(line)), collected_at: now }), now);
+          machinesErrors.delete(m.id);
+        } catch (e) {
+          // The stored row stands: last known logins beat none while a box is unreachable.
+          machinesErrors.set(m.id, e.message.slice(0, 500));
+        }
+      })
+    );
+  } finally {
+    // In a finally so a throw above cannot strand the counter above zero, which would leave
+    // the page saying "collecting" for as long as the deck runs.
+    machinesInflight.delete(sweep);
+  }
+}
+
+// Person names come from credits-accounts.json on the way out, so renaming someone shows on
+// the next page load rather than the next collect.
+function machineLabeler() {
+  const cfg = creditsAccounts();
+  const byEmail = new Map();
+  for (const m of Object.values(cfg.orgs))
+    if (typeof m.email === 'string') byEmail.set(m.email.toLowerCase(), m.label || null);
+  for (const [email, m] of Object.entries(cfg.codex)) byEmail.set(String(email).toLowerCase(), m.label || null);
+  const orgLabel = (org) => (org && cfg.orgs[org] ? cfg.orgs[org].label || null : null);
+  return (c) => {
+    const email = typeof c.email === 'string' ? c.email.toLowerCase() : null;
+    // The desktop app knows only the org uuid; a Claude login knows both and the config org
+    // is the fallback when the token could not be asked.
+    if (c.client === 'claude_desktop') return orgLabel(c.org);
+    if (c.client === 'claude_cli') return orgLabel(c.org) || orgLabel(c.config_org) || (email && byEmail.get(email)) || null;
+    return (email && byEmail.get(email)) || null;
+  };
+}
+
+// Every configured machine appears, in file order, whether or not it has ever reported —
+// a silent machine reads as "no report yet" rather than vanishing.
+function machinesView() {
+  const stored = new Map(machinesAll.all().map((r) => [r.id, safeParse(r.payload)]));
+  const label = machineLabeler();
+  // hosts.json plus `mac`, the deck's own key — the same set the leases use, read per
+  // request so an edit to either file needs no restart.
+  let hostKeys;
+  try {
+    hostKeys = LEASE_HOSTS();
+  } catch (e) {
+    // The page still renders — but say so. Silently emptying this set nulls the join key on
+    // EVERY row, which is a bigger and far less visible fault than the stale single entry
+    // the validation exists to catch.
+    console.error('machines: hosts.json unreadable, host join keys dropped: ' + e.message);
+    hostKeys = new Set();
+  }
+  const machines = machinesConfig().map((m) => {
+    const hostKey = str(m.host, 60);
+    const base = {
+      id: m.id,
+      label: str(m.label, 60) || m.id,
+      os: str(m.os, 20),
+      route: str(m.route, 10),
+      ssh: str(m.ssh, 60),
+      // The deck's own host key for this machine (hosts.json, plus `mac` for the deck
+      // itself), so a row can be joined to that host's sessions and leases. Distinct from
+      // `reported_host`, which is whatever the machine answered `hostname -s` with.
+      // Only if it names a host this deck actually has. A typo, or a host dropped from
+      // hosts.json while machines.json still points at it, would otherwise be served as a
+      // joinable key that joins to nothing — a promise the field would not be keeping.
+      host: hostKeys.has(hostKey) ? hostKey : null,
+      error: machinesErrors.get(m.id) || null,
+    };
+    const d = stored.get(m.id);
+    if (!d) return { ...base, state: 'no_report', reported_at: null, clients: [] };
+    // A collector that could not run reports no clients at all. That is a failed read shown
+    // as the row's error, never a machine with nothing installed.
+    if (!(d.clients || []).length)
+      return {
+        ...base,
+        state: 'no_report',
+        error: base.error || d.note || 'collector reported no clients',
+        reported_at: d.collected_at || d.ts || null,
+        clients: [],
+      };
+    const clients = (d.clients || []).map((c) => ({ ...c, label: label(c) }));
+    // A machine that reported names every client it could see; the ones it did not name are
+    // absent from that side, which is a fact worth showing rather than a gap.
+    const wheres = [...new Set(clients.map((c) => c.where))];
+    for (const where of wheres.length ? wheres : ['local'])
+      for (const client of MACHINE_CLIENTS)
+        if (!clients.some((c) => c.client === client && c.where === where))
+          clients.push({ client, where, state: 'not_installed', installed: false, signed_in: null, label: null });
+    // `reported_host` is the machine's own answer and names nobody in particular (the Mac
+    // says an rfc1918 address); the configured `host` on `base` is the joinable key.
+    return { ...base, state: 'ok', reported_at: d.collected_at || d.ts || null, reported_host: d.host || null, clients };
+  });
+  return {
+    machines,
+    collected_at: machinesAt ? Math.floor(machinesAt / 1000) : null,
+    // Told, not guessed: `collected_at` already moved when the sweep was claimed, so without
+    // these a load during a sweep shows rows that are still the previous sweep's.
+    collecting: machinesInflight.size > 0,
+    collect_started_at: machinesInflight.size
+      ? Math.floor(Math.min(...machinesInflight.values()) / 1000)
+      : null,
+    // What a routeless machine puts in its cron; the deck is the only thing that knows it.
+    push_url: 'http://' + TAILNET_HOST + '/api/machines',
+  };
+}
+
+// --- Machines push. Shared by both listeners, same gate as the credits push: a machine with
+// no ssh route from here (rog-strix) runs fleet-logins.sh push on a cron and carries no
+// Origin, so a *foreign* origin is rejected rather than a missing one. The body is one
+// fleet-logins.sh line, and it names a machine this deck knows AND does not poll itself —
+// a polled machine's row is only ever what the deck read over ssh, never what a tailnet
+// peer claims about it.
+async function machinesRoute(req, res) {
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  const origin = req.headers.origin;
+  if (origin && !ALLOWED_ORIGINS.has(origin)) return send(res, 403, 'text/plain', 'forbidden');
+  const b = await body(req, 262144).catch(() => null);
+  if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+  const m = typeof b.id === 'string' ? machinesConfig().find((x) => x.id === b.id) : null;
+  if (!m) return json(res, { ok: false, error: 'unknown_machine' }, 400);
+  if (m.route !== 'push') return json(res, { ok: false, error: 'not_a_push_machine' }, 400);
+  const id = m.id;
+  const now = Math.floor(Date.now() / 1000);
+  machinesUpsert.run(id, JSON.stringify({ ...machinePayload(b), collected_at: now }), now);
+  machinesErrors.delete(id);
+  return json(res, { ok: true, id });
+}
+
 // ssh-keygen -Lf prints one indented block per cert; every field is optional on a
 // hand-made cert, so a miss is null rather than a throw.
 function parseCert(dir, out) {
@@ -2260,6 +2513,11 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/credits' && req.method === 'GET')
       return json(res, await creditsCollect(url.searchParams.get('refresh') === '1'));
     if (p === '/api/credits') return await creditsRoute(req, res);
+    if (p === '/api/machines' && req.method === 'GET') {
+      await machinesCollect(url.searchParams.get('refresh') === '1');
+      return json(res, machinesView());
+    }
+    if (p === '/api/machines') return await machinesRoute(req, res);
     if (p === '/api/messages' || p === '/api/messages/retry')
       return await messageRoute(req, res, p, url);
     if (notifyPath(p)) return await notifyRoute(req, res, p, url);
@@ -2460,6 +2718,7 @@ async function tailnetHandler(req, res) {
       return await coordinatorRoute(req, res, p, { send, json, body, allowedOrigins: ALLOWED_ORIGINS });
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     if (p === '/api/credits') return await creditsRoute(req, res);
+    if (p === '/api/machines' && req.method === 'POST') return await machinesRoute(req, res);
     if (BUS_ROUTES.has(p) && req.method === 'POST') {
       if (!busAuthorized(req)) return json(res, { ok: false, error: 'invalid message bus token' }, 401);
       return await messageRoute(req, res, p, url);
