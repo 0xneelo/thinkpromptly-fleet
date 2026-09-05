@@ -1638,11 +1638,113 @@ function machineLabeler() {
   };
 }
 
+// The usage numbers already live on the credits rows; the Machines page shows them next to
+// the account each client is signed in as. Pure and read-only — a page render must never
+// trigger a collect. Codex rows carry their two windows as siblings rather than a windows
+// object, so they are normalized here and the front end sees one shape for both kinds.
+function machinesUsage(rows, now = Math.floor(Date.now() / 1000)) {
+  const out = { claude: new Map(), codex: new Map() };
+  const windowsOf = (r) => {
+    if (r.kind !== 'codex') return r.windows || {};
+    const w = {};
+    if (r.weekly) w.weekly = r.weekly;
+    if (r.secondary) w.secondary = r.secondary;
+    return w;
+  };
+  // agedOut() bails on a row with no sample_ts and only walks r.windows, so a Codex row —
+  // which has neither, carrying weekly/secondary siblings dated by updated_at — comes back
+  // unaged and a week-old weekly bar would draw as a current figure. Same rule, same shape,
+  // applied to the normalized windows so the front end's stale handling still works.
+  const ageCodex = (windows, sampleTs) => {
+    if (!sampleTs) return null;
+    const age = now - sampleTs;
+    const aged = {};
+    let any = false;
+    for (const [n, w] of Object.entries(windows)) {
+      if (age > (WINDOW_AGE[n] ?? 7 * 86400)) {
+        aged[n] = { ...w, pct: null, stale: true };
+        any = true;
+      } else aged[n] = w;
+    }
+    return any ? aged : null;
+  };
+  for (const r of rows || []) {
+    if (!r || (r.kind !== 'claude' && r.kind !== 'codex')) continue;
+    const key = r.kind === 'claude' ? r.org : String(r.email || r.id || '').toLowerCase();
+    if (!key) continue;
+    // Only a desktop-sourced Claude row is stamped with sample_ts; an oauth or codex row
+    // dates itself with updated_at, and a row with neither is the configured-but-unreported
+    // blank, which is still a legitimate entry.
+    const sampleTs = r.sample_ts ?? r.updated_at ?? null;
+    let windows = windowsOf(r);
+    let staleWindows = !!r.stale_windows;
+    // Claude rows already came through agedOut(); ageing them twice would be a no-op at best.
+    if (r.kind === 'codex') {
+      const aged = ageCodex(windows, sampleTs);
+      if (aged) {
+        windows = aged;
+        staleWindows = true;
+      }
+    }
+    const v = {
+      windows,
+      state: r.state || null,
+      sample_ts: sampleTs,
+      stale_windows: staleWindows,
+    };
+    const map = out[r.kind];
+    const prev = map.get(key);
+    // Two rows can name the same account (a blank row and a reported one, or two sources).
+    // Anything that reports windows beats one that reports none, then the newer sample wins.
+    if (prev) {
+      const has = (x) => Object.keys(x.windows).length > 0;
+      if (has(prev) !== has(v) ? has(prev) : (prev.sample_ts ?? 0) >= (v.sample_ts ?? 0)) continue;
+    }
+    map.set(key, v);
+  }
+  return out;
+}
+
+// Which clients on a machine map to which credits row: a Claude client is known by its org
+// uuid (the config org when the token could not be asked), a Codex one only by its email.
+function clientUsage(c, usage) {
+  if (c.client === 'claude_cli' || c.client === 'claude_desktop')
+    return usage.claude.get(c.org) || usage.claude.get(c.config_org) || null;
+  if (c.client === 'codex_cli' || c.client === 'codex_desktop')
+    return usage.codex.get(String(c.email || '').toLowerCase()) || null;
+  return null;
+}
+
+const sessionsAll = db.prepare('SELECT * FROM sessions');
+
+// Who is working on each machine, keyed by the deck-side host in machines.json. lease_state
+// is the registry's own liveness signal, so this answers without an ssh sweep — sessions()
+// fans out to every host and must never be called to render a page. A row that is not live
+// is dropped: the question here is who is on the box now, not who ever was.
+function machinesSessions(rows) {
+  const out = new Map();
+  // Empty string is the registry's default for these columns, and an empty label renders as
+  // a gap; null is what lets the front end skip it.
+  const s = (v) => (typeof v === 'string' && v ? v : null);
+  for (const r of rows || []) {
+    const live = r.lease_state === 'active';
+    if (!live || !r.host) continue;
+    const list = out.get(r.host) || [];
+    list.push({ name: r.name, worker: s(r.worker), role: s(r.role), label: s(r.label), status: s(r.status), live });
+    out.set(r.host, list);
+  }
+  for (const list of out.values()) list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+  return out;
+}
+
 // Every configured machine appears, in file order, whether or not it has ever reported —
 // a silent machine reads as "no report yet" rather than vanishing.
 function machinesView() {
   const stored = new Map(machinesAll.all().map((r) => [r.id, safeParse(r.payload)]));
   const label = machineLabeler();
+  // Both lookups are built once per call: a pure SQLite read each, no collect and no ssh.
+  const usage = machinesUsage(creditsRows());
+  const bySessionHost = machinesSessions(sessionsAll.all());
   const machines = machinesConfig().map((m) => {
     const base = {
       id: m.id,
@@ -1651,6 +1753,9 @@ function machinesView() {
       route: str(m.route, 10),
       ssh: str(m.ssh, 60),
       error: machinesErrors.get(m.id) || null,
+      // machines.json's `host` is the deck-side key for this join only. It is never served:
+      // the payload's `host` is the hostname the collector reported, a different fact.
+      sessions: bySessionHost.get(m.host) || [],
     };
     const d = stored.get(m.id);
     if (!d) return { ...base, state: 'no_report', reported_at: null, clients: [] };
@@ -1664,14 +1769,14 @@ function machinesView() {
         reported_at: d.collected_at || d.ts || null,
         clients: [],
       };
-    const clients = (d.clients || []).map((c) => ({ ...c, label: label(c) }));
+    const clients = (d.clients || []).map((c) => ({ ...c, label: label(c), usage: clientUsage(c, usage) }));
     // A machine that reported names every client it could see; the ones it did not name are
     // absent from that side, which is a fact worth showing rather than a gap.
     const wheres = [...new Set(clients.map((c) => c.where))];
     for (const where of wheres.length ? wheres : ['local'])
       for (const client of MACHINE_CLIENTS)
         if (!clients.some((c) => c.client === client && c.where === where))
-          clients.push({ client, where, state: 'not_installed', installed: false, signed_in: null, label: null });
+          clients.push({ client, where, state: 'not_installed', installed: false, signed_in: null, label: null, usage: null });
     return { ...base, state: 'ok', reported_at: d.collected_at || d.ts || null, host: d.host || null, clients };
   });
   return {
@@ -2716,4 +2821,6 @@ module.exports = {
   tailnetHandler, db, server, tailnet, assertPragmas, migrationPending, resolveNotifyTarget,
   // Test seams: a tick is a step, and REAPER is the observability the tick writes into.
   reaperTick, reaperLoop, REAPER,
+  // Test seams: the two pure joins the Machines view renders from, no I/O of their own.
+  machinesUsage, machinesSessions,
 };

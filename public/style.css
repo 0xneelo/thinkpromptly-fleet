@@ -774,6 +774,12 @@ table.machines td.machine { min-width: 190px; }
 .login .who { color: var(--text-strong); font-weight: 600; }
 .login .addr { overflow-wrap: anywhere; }
 .login .dim { opacity: 0.5; }
+/* Usage bars inside a login cell. The credits-page .bar-row grid spends 76px + 120px on
+   text, far more than a client column has, so the columns shrink and the reset/stale tail
+   drops to its own line under the track instead of squeezing the bar to nothing. */
+.login .bar-row { grid-template-columns: 44px 1fr 30px; gap: 6px; font-size: 11px; }
+.login .bar-track { height: 5px; }
+.login .bar-row .reset { grid-column: 2 / -1; }
 .fresh { font-size: 11px; }
 .chips { gap: 5px; }
 .chip {
