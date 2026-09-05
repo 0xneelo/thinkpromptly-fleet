@@ -1575,48 +1575,65 @@ const machinePayload = (d) => ({
 });
 
 let machinesAt = 0; // last live collect, ms
+// A GET inside the TTL early-returns and would otherwise render the stale rows as if they
+// were fresh, with no sign a sweep is running. A counter, not a flag: two forced sweeps can
+// overlap, and the first to finish must not clear a signal the second still owns.
+// Each in-flight sweep keeps its own start time, so "collecting since" names the oldest
+// sweep STILL running. A single shared timestamp would keep naming the first sweep's start
+// after that sweep had finished — two forced refreshes can overlap, and the older one is
+// usually the one to finish first.
+let machinesSeq = 0;
+const machinesInflight = new Map(); // token -> ms that sweep started
 
 async function machinesCollect(force) {
   if (!force && Date.now() - machinesAt <= MACHINES_TTL) return;
   machinesAt = Date.now(); // claimed before the awaits, so parallel loads don't stampede
-  let script = null;
+  const sweep = ++machinesSeq; // a token, not the clock: two sweeps can start the same ms
+  machinesInflight.set(sweep, Date.now());
   try {
-    script = fs.readFileSync(LOGINS_SH, 'utf8');
-  } catch (e) {
-    script = null;
+    let script = null;
+    try {
+      script = fs.readFileSync(LOGINS_SH, 'utf8');
+    } catch (e) {
+      script = null;
+    }
+    const now = Math.floor(Date.now() / 1000);
+    await Promise.allSettled(
+      machinesConfig().map(async (m) => {
+        if (m.route === 'push') return; // nothing to poll: that machine calls us
+        try {
+          if (m.route === 'ssh' && !script) throw new Error('cannot read ' + LOGINS_SH);
+          // Longer than the session poll: a Claude login costs one HTTPS round trip on the
+          // far side, and a slow endpoint must not read as an unreachable machine.
+          const r =
+            m.route === 'local'
+              ? await run('sh', [LOGINS_SH], { timeout: 25000 })
+              : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', script, { timeout: 25000 });
+          const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
+          // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
+          // blaming a script that never got to run.
+          if (!line)
+            throw new Error(
+              r.stderr.trim() ||
+                (r.err
+                  ? 'fleet-logins.sh did not answer: ' + (r.err.killed ? 'timed out' : r.err.message)
+                  : 'no output from fleet-logins.sh')
+            );
+          // Keyed by the config id, never the hostname: a machine can report a name that
+          // belongs to nobody (the Mac answers with an rfc1918 address).
+          machinesUpsert.run(m.id, JSON.stringify({ ...machinePayload(JSON.parse(line)), collected_at: now }), now);
+          machinesErrors.delete(m.id);
+        } catch (e) {
+          // The stored row stands: last known logins beat none while a box is unreachable.
+          machinesErrors.set(m.id, e.message.slice(0, 500));
+        }
+      })
+    );
+  } finally {
+    // In a finally so a throw above cannot strand the counter above zero, which would leave
+    // the page saying "collecting" for as long as the deck runs.
+    machinesInflight.delete(sweep);
   }
-  const now = Math.floor(Date.now() / 1000);
-  await Promise.allSettled(
-    machinesConfig().map(async (m) => {
-      if (m.route === 'push') return; // nothing to poll: that machine calls us
-      try {
-        if (m.route === 'ssh' && !script) throw new Error('cannot read ' + LOGINS_SH);
-        // Longer than the session poll: a Claude login costs one HTTPS round trip on the
-        // far side, and a slow endpoint must not read as an unreachable machine.
-        const r =
-          m.route === 'local'
-            ? await run('sh', [LOGINS_SH], { timeout: 25000 })
-            : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', script, { timeout: 25000 });
-        const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
-        // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
-        // blaming a script that never got to run.
-        if (!line)
-          throw new Error(
-            r.stderr.trim() ||
-              (r.err
-                ? 'fleet-logins.sh did not answer: ' + (r.err.killed ? 'timed out' : r.err.message)
-                : 'no output from fleet-logins.sh')
-          );
-        // Keyed by the config id, never the hostname: a machine can report a name that
-        // belongs to nobody (the Mac answers with an rfc1918 address).
-        machinesUpsert.run(m.id, JSON.stringify({ ...machinePayload(JSON.parse(line)), collected_at: now }), now);
-        machinesErrors.delete(m.id);
-      } catch (e) {
-        // The stored row stands: last known logins beat none while a box is unreachable.
-        machinesErrors.set(m.id, e.message.slice(0, 500));
-      }
-    })
-  );
 }
 
 // Person names come from credits-accounts.json on the way out, so renaming someone shows on
@@ -1643,7 +1660,20 @@ function machineLabeler() {
 function machinesView() {
   const stored = new Map(machinesAll.all().map((r) => [r.id, safeParse(r.payload)]));
   const label = machineLabeler();
+  // hosts.json plus `mac`, the deck's own key — the same set the leases use, read per
+  // request so an edit to either file needs no restart.
+  let hostKeys;
+  try {
+    hostKeys = LEASE_HOSTS();
+  } catch (e) {
+    // The page still renders — but say so. Silently emptying this set nulls the join key on
+    // EVERY row, which is a bigger and far less visible fault than the stale single entry
+    // the validation exists to catch.
+    console.error('machines: hosts.json unreadable, host join keys dropped: ' + e.message);
+    hostKeys = new Set();
+  }
   const machines = machinesConfig().map((m) => {
+    const hostKey = str(m.host, 60);
     const base = {
       id: m.id,
       label: str(m.label, 60) || m.id,
@@ -1653,7 +1683,10 @@ function machinesView() {
       // The deck's own host key for this machine (hosts.json, plus `mac` for the deck
       // itself), so a row can be joined to that host's sessions and leases. Distinct from
       // `reported_host`, which is whatever the machine answered `hostname -s` with.
-      host: str(m.host, 60),
+      // Only if it names a host this deck actually has. A typo, or a host dropped from
+      // hosts.json while machines.json still points at it, would otherwise be served as a
+      // joinable key that joins to nothing — a promise the field would not be keeping.
+      host: hostKeys.has(hostKey) ? hostKey : null,
       error: machinesErrors.get(m.id) || null,
     };
     const d = stored.get(m.id);
@@ -1683,6 +1716,12 @@ function machinesView() {
   return {
     machines,
     collected_at: machinesAt ? Math.floor(machinesAt / 1000) : null,
+    // Told, not guessed: `collected_at` already moved when the sweep was claimed, so without
+    // these a load during a sweep shows rows that are still the previous sweep's.
+    collecting: machinesInflight.size > 0,
+    collect_started_at: machinesInflight.size
+      ? Math.floor(Math.min(...machinesInflight.values()) / 1000)
+      : null,
     // What a routeless machine puts in its cron; the deck is the only thing that knows it.
     push_url: 'http://' + TAILNET_HOST + '/api/machines',
   };

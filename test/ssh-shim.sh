@@ -12,9 +12,12 @@
 #   FLEET_SHIM_UNREACH    space-separated hosts that answer like an unreachable box
 #   FLEET_SHIM_MAP_WSL    1 = run `wsl sh -s` as plain `sh -s` (no WSL interop available)
 
+# The deck polls machines concurrently, so several shims append to this log at once. One
+# `printf` reuses its format for every argument, so a whole record is a single small write
+# to an O_APPEND descriptor opened once — which is what keeps two racing shims from
+# interleaving a record. A loop of one printf per element would not be.
 if [ -n "$FLEET_SHIM_ARGV_LOG" ]; then
-  for a in "$@"; do printf '%s\0' "$a"; done >> "$FLEET_SHIM_ARGV_LOG"
-  printf '\n' >> "$FLEET_SHIM_ARGV_LOG"
+  { printf '%s\0' "$@"; printf '\n'; } >> "$FLEET_SHIM_ARGV_LOG"
 fi
 
 # Walk off the option pairs the deck always sends; whatever is left is host then command.

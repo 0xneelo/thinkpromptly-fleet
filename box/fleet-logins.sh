@@ -24,7 +24,12 @@ case $ID in '' | *[!A-Za-z0-9._-]*) ID='' ;; *) IDJ=\"$ID\" ;; esac
 
 LINE=""
 [ -n "$PY" ] && LINE=$(FLEET_LOGIN_ID="$ID" FLEET_LOGIN_HOST="$HOST" "$PY" - <<'PY'
-import base64, glob, json, os, shutil, signal, subprocess, tempfile, time
+import base64, glob, json, os, re, shutil, signal, subprocess, tempfile, time
+# sqlite3 is imported where it is used, never here. It is the only import in this file that
+# a python3 build can lack (musl and other minimal builds ship without libsqlite3), and it
+# serves ONE mac-only client. Imported up here, its absence would abort the whole heredoc
+# before a single client was read — the wrapper would then emit the empty fallback line and
+# a machine would report nothing at all because a feature it does not use is unavailable.
 
 # SIGHUP/SIGTERM as an exception, not a death: `finally` then unlinks the header file.
 def _bail(*a): raise SystemExit(1)
@@ -61,14 +66,27 @@ def secs(v):
     return int(v / 1000) if v > 1e11 else int(v)
 
 # The Mac keeps the Claude credentials in the login Keychain, not on disk. Read through
-# subprocess so the token is a python string and never a shell word.
+# subprocess so the token is a python string and never a shell word. Returns
+# (creds, why) where why is (state, note): a locked, denied or GUI-less Keychain must not
+# read as a signed-out CLI. Only stderr is ever quoted back — stdout is the secret.
 def keychain():
     try:
         r = subprocess.run(["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
                            capture_output=True, text=True, timeout=10)
-        return json.loads(r.stdout) if r.returncode == 0 and r.stdout.strip() else None
+    except Exception as e:
+        return None, ("keychain_denied", "security could not be run: " + type(e).__name__)
+    if r.returncode != 0:
+        err = " ".join((r.stderr or "").split())[:120]
+        if "could not be found" in err.lower():
+            return None, ("absent", "the login Keychain has no Claude Code-credentials item")
+        return None, ("keychain_denied", err or ("security exited %d with no message" % r.returncode))
+    try:
+        d = json.loads(r.stdout)
     except Exception:
-        return None
+        d = None
+    if not isinstance(d, dict):
+        return None, ("unknown_source", "the Keychain Claude Code-credentials item is not the JSON object expected")
+    return d, None
 
 # The token's own identity, which is the truth: ~/.claude.json can name a different account
 # than the token in use. Returns (status, body) and never the body of a failed call.
@@ -101,16 +119,28 @@ def jwt(tok):
     except Exception:
         return {}
 
+def base_of(ce, co, exp=None):
+    return dict(installed=True, config_email=ce, config_org=co, expires_at=secs(exp))
+
 def claude_cli(home, where):
     cfg = jload(os.path.join(home, ".claude.json")) or {}
     acct = cfg.get("oauthAccount") or {}
     ce, co = acct.get("emailAddress") or None, acct.get("organizationUuid") or None
     cred = jload(os.path.join(home, ".claude", ".credentials.json"))
-    if cred is None and where == "local" and OS == "darwin": cred = keychain()
+    note = None
+    if cred is None and where == "local" and OS == "darwin":
+        cred, why = keychain()
+        # A Keychain that refused, or holds something else, is its own state — but only when
+        # it is the reason there is no token, so a working on-disk credential still wins.
+        if cred is None and why and why[0] != "absent":
+            fallback = why[0] == "keychain_denied"
+            return entry("claude_cli", where, state=why[0], proof="config" if fallback else None,
+                         email=ce if fallback else None, org=co if fallback else None,
+                         note=why[1], **base_of(ce, co))
+        if why: note = why[1]
     o = (cred or {}).get("claudeAiOauth") or cred or {}
     token = o.get("accessToken") if isinstance(o, dict) else None
-    base = dict(installed=True, config_email=ce, config_org=co,
-                expires_at=secs(o.get("expiresAt") if isinstance(o, dict) else None))
+    base = base_of(ce, co, o.get("expiresAt") if isinstance(o, dict) else None)
     if token:
         code, body = profile(token)
         if code == 200 and isinstance(body, dict):
@@ -124,10 +154,10 @@ def claude_cli(home, where):
         return entry("claude_cli", where, state=state, signed_in=False if state == "token_expired" else None,
                      proof="config", email=ce, org=co, **base)
     if ce or co:
-        return entry("claude_cli", where, state="config_only", proof="config", email=ce, org=co, **base)
+        return entry("claude_cli", where, state="config_only", proof="config", email=ce, org=co, note=note, **base)
     installed = os.path.isdir(os.path.join(home, ".claude")) or (where == "local" and bool(shutil.which("claude")))
     return entry("claude_cli", where, installed=installed, signed_in=False if installed else None,
-                 state="signed_out" if installed else "not_installed")
+                 state="signed_out" if installed else "not_installed", note=note)
 
 def codex_cli(home, where):
     auth = jload(os.path.join(home, ".codex", "auth.json"))
@@ -160,7 +190,18 @@ def claude_desktop(home, where):
     else:
         paths = glob.glob(os.path.join(home, "AppData/Local/Packages/Claude_*/LocalCache/Roaming/Claude/plan-usage-history.json"))
         if not paths: return None
-    samples = (jload(paths[0]) or {}).get("samples") or []
+    hist = jload(paths[0])
+    # Three different truths, and only the third is a broken file. Missing or unreadable, and
+    # a dict that simply has no samples key yet, both mean "installed, nothing sampled" — the
+    # app writes the key when it first samples, so a fresh install legitimately lacks it.
+    # A samples key holding something that is not a list is the only real shape violation.
+    if isinstance(hist, dict) and "samples" in hist and not isinstance(hist["samples"], list):
+        return entry("claude_desktop", where, installed=True, state="unknown_source",
+                     note="plan-usage-history.json is not the shape expected: samples is not a list")
+    if hist is not None and not isinstance(hist, dict):
+        return entry("claude_desktop", where, installed=True, state="unknown_source",
+                     note="plan-usage-history.json is not the shape expected: not a JSON object")
+    samples = (hist or {}).get("samples") or []
     orgs, last = [], None
     for s in samples:
         if not isinstance(s, dict): continue
@@ -172,7 +213,58 @@ def claude_desktop(home, where):
     return entry("claude_desktop", where, installed=True, signed_in=True, state="ok", proof="history",
                  org=last.get("org"), last_active=secs(last["t"]), orgs_seen=orgs[:25])
 
-# The Codex app shares ~/.codex/auth.json with the CLI, so it has no identity of its own.
+# The Codex app is Electron, so its signed-in account lives in the Chromium profile under
+# the app's own userData directory — not in ~/.codex/auth.json. The exact directory name is
+# not contractual, so it is globbed (app dir, optionally one profile level down) rather than
+# hardcoded, and finding nothing is a normal outcome.
+CODEX_APP_DIRS = ("Codex*", "codex*", "OpenAI/Codex*", "com.openai.codex*")
+CODEX_DB_FILES = ("Login Data For Account", "Account Web Data")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[A-Za-z]{2,}$")
+
+def codex_profile_dbs(home):
+    base, out = os.path.join(home, "Library", "Application Support"), []
+    for d in CODEX_APP_DIRS:
+        for f in CODEX_DB_FILES:                     # Login Data For Account is tried first
+            for pat in (os.path.join(base, d, f), os.path.join(base, d, "*", f)):
+                for q in sorted(glob.glob(pat)):
+                    if os.path.isfile(q) and q not in out: out.append(q)
+    return out
+
+# ONE column, from a private copy, opened read-only: the account name. password_value, any
+# token_service table and every cookie store are never selected, so no secret can be reached.
+# Returns (email, note) and the copy is removed in `finally`, so a hang-up leaves nothing.
+def codex_db_email(path):
+    # mkdtemp inside the try, so a SIGHUP between creating the directory and entering the
+    # block cannot unwind past a scope that was never entered and strand the copy.
+    name, tmp = os.path.basename(path), None
+    try:
+        import sqlite3   # here, not at the top: a python3 without it must not cost the
+                         # other three clients their reading. See the import comment above.
+        tmp = tempfile.mkdtemp()   # 0700 by default
+        dst = os.path.join(tmp, "db")
+        shutil.copyfile(path, dst)
+        # The sidecars travel too, or the copy would be a torn read of a live database.
+        for sfx in ("-wal", "-shm", "-journal"):
+            if os.path.isfile(path + sfx): shutil.copyfile(path + sfx, dst + sfx)
+        con = sqlite3.connect("file:" + dst + "?mode=ro", uri=True)
+        try:
+            if not con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='logins'").fetchall():
+                return None, name + " has no logins table"
+            if "username_value" not in [c[1] for c in con.execute("PRAGMA table_info(logins)")]:
+                return None, name + " logins table has no username_value column"
+            for row in con.execute("SELECT username_value FROM logins"):
+                v = row[0].strip() if isinstance(row[0], str) else ""
+                if EMAIL_RE.match(v): return v, None
+            return None, name + " has no email-shaped username_value"
+        finally:
+            con.close()
+    except Exception as e:
+        return None, name + " could not be read: " + type(e).__name__
+    finally:
+        # ignore_errors swallows OSError, not the TypeError rmtree(None) would raise if the
+        # import above failed before there was ever a directory to remove.
+        if tmp: shutil.rmtree(tmp, ignore_errors=True)
+
 def codex_desktop(home, where, cli):
     note = None
     if where == "local":
@@ -188,6 +280,24 @@ def codex_desktop(home, where, cli):
                                            "/mnt/c/Program Files*/Codex*"))
     if not found:
         return entry("codex_desktop", where, installed=False, state="not_installed")
+    if where == "local" and OS == "darwin":
+        email = dbnote = None
+        try:
+            for q in codex_profile_dbs(home):
+                email, why = codex_db_email(q)
+                if email: break
+                if dbnote is None: dbnote = why      # the first candidate's answer is the honest one
+        except Exception:
+            email = dbnote = None                    # nothing here may kill the collector
+        if email:
+            return entry("codex_desktop", where, installed=True, signed_in=True, state="ok",
+                         proof="app_profile", email=email, note=note)
+        if dbnote:
+            # A profile is there and it is not what this reader knows how to read. Say so
+            # rather than borrowing the CLI's identity, which would be a guess.
+            return entry("codex_desktop", where, installed=True, state="unknown_source",
+                         note="; ".join(x for x in (note, dbnote) if x))
+    # No Chromium profile at all: the app is assumed to share ~/.codex/auth.json with the CLI.
     cli = cli or {}
     return entry("codex_desktop", where, installed=True, signed_in=cli.get("signed_in"), note=note,
                  state=cli.get("state") or "signed_out", shares="codex_cli",

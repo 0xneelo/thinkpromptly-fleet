@@ -115,15 +115,17 @@ test('fleet-logins.sh — a rejected token falls back to the config, labelled as
   assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
 });
 
-// A stub collector: the deck's side is under test here, not the login scan.
-function fixture(dir, line) {
+// A stub collector: the deck's side is under test here, not the login scan. The stub is both
+// run directly (route local) and piped over the ssh shim's stdin (route ssh), so one script
+// covers both paths.
+function fixture(dir, line, machines) {
   const stub = path.join(dir, 'stub-logins.sh');
   fs.writeFileSync(stub, "#!/bin/sh\nprintf '%s\\n' '" + JSON.stringify(line) + "'\n");
   const cfg = path.join(dir, 'machines.json');
   fs.writeFileSync(
     cfg,
     JSON.stringify({
-      machines: [
+      machines: machines || [
         { id: 'macbook', label: 'MacBook Pro', os: 'macos', route: 'local' },
         { id: 'rog-strix', label: 'ROG Strix', os: 'windows', route: 'push' },
       ],
@@ -131,6 +133,165 @@ function fixture(dir, line) {
   );
   return { FLEET_LOGINS_SH: stub, FLEET_MACHINES_FILE: cfg };
 }
+
+// test/ssh-shim.sh stands in for ssh: it drops the option pairs and the host and runs the
+// remote command here, so the deck's real fan-out, stdin piping and error handling run.
+const SHIM = path.join(__dirname, 'ssh-shim.sh');
+const SSH_OPTS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8'];
+const LINE = {
+  v: 1,
+  host: 'DESKTOP-XYZ',
+  os: 'linux',
+  ts: 1757000000,
+  clients: [{ client: 'claude_cli', where: 'local', installed: true, signed_in: true, state: 'ok', proof: 'profile', email: 'aylianator@gmail.com', org: ORG }],
+};
+
+// One record per ssh call: every argv element NUL-terminated, then a newline.
+const argvLog = (f) =>
+  fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((r) => r.split('\0').slice(0, -1));
+
+test('/api/machines — the ssh argv per route, and no ssh at all for local or push', async (t) => {
+  const dir = tmpdir('machines-ssh');
+  const log = path.join(dir, 'argv.log');
+  const env = {
+    ...fixture(dir, LINE, [
+      { id: 'german-box', label: 'German Box', os: 'windows', route: 'ssh', ssh: 'gb-deploy', wsl: true, host: 'german-box' },
+      { id: 'vps', label: 'VPS', os: 'linux', route: 'ssh', ssh: 'vps-deploy', host: 'vps' },
+      { id: 'macbook', label: 'MacBook Pro', os: 'macos', route: 'local' },
+      { id: 'rog-strix', label: 'ROG Strix', os: 'windows', route: 'push' },
+    ]),
+    FLEET_SSH_BIN: SHIM,
+    FLEET_SHIM_ARGV_LOG: log,
+    FLEET_SHIM_MAP_WSL: '1', // `wsl` resolves only as wsl.exe inside WSL, so run the payload plainly
+  };
+  const s = await startServer(env, { dir });
+  t.after(() => s.stop());
+
+  const r = await s.get('/api/machines?refresh=1');
+  assert.equal(r.status, 200);
+  const rows = new Map(r.body.machines.map((m) => [m.id, m]));
+
+  // Both boxes are polled at once, so the log order is whichever shim wrote first: find the
+  // record by its host rather than assuming one.
+  const calls = argvLog(log);
+  const call = (host) => calls.find((c) => c[4] === host);
+  // A Windows box is reached through WSL; a Linux one is not, and the deck must not send
+  // `wsl` to a machine that has no such command.
+  assert.deepStrictEqual(call('gb-deploy'), [...SSH_OPTS, 'gb-deploy', 'wsl sh -s']);
+  assert.deepStrictEqual(call('vps-deploy'), [...SSH_OPTS, 'vps-deploy', 'sh -s']);
+  // The local machine runs the script itself and the push machine calls us: neither is ssh'd.
+  assert.equal(calls.length, 2, 'unexpected ssh calls: ' + JSON.stringify(calls));
+
+  assert.equal(rows.get('german-box').state, 'ok');
+  assert.equal(rows.get('vps').state, 'ok');
+  // Not merely skipped: the local path ran and reported.
+  assert.equal(rows.get('macbook').state, 'ok');
+  assert.equal(rows.get('macbook').error, null);
+  assert.equal(rows.get('rog-strix').state, 'no_report');
+
+  // The sweep is over by the time the GET answers, so the page must not be told otherwise.
+  assert.equal(r.body.collecting, false);
+  assert.equal(r.body.collect_started_at, null);
+});
+
+// The true case of the sweep signal: a GET that lands inside the TTL while a sweep is still
+// running early-returns and renders the *stored* rows, so `collecting` is the only sign they
+// are stale. The stub blocks on a release file, which makes the overlap a fact rather than a
+// race: the second GET is issued once the collector has provably started, and the sweep
+// cannot finish until this test releases it.
+test('/api/machines — a GET during an in-flight sweep is told so, in seconds', async (t) => {
+  const dir = tmpdir('machines-inflight');
+  const started = path.join(dir, 'sweep-started');
+  const release = path.join(dir, 'sweep-release');
+  const stub = path.join(dir, 'slow-logins.sh');
+  // Bounded on purpose: a wait nobody releases still ends, so a failure cannot hang the suite.
+  fs.writeFileSync(
+    stub,
+    '#!/bin/sh\n' +
+      ": > '" + started + "'\n" +
+      'i=0\n' +
+      "while [ ! -f '" + release + "' ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i+1)); done\n" +
+      "printf '%s\\n' '" + JSON.stringify(LINE) + "'\n"
+  );
+  const cfg = path.join(dir, 'machines.json');
+  fs.writeFileSync(
+    cfg,
+    JSON.stringify({ machines: [{ id: 'macbook', label: 'MacBook Pro', os: 'macos', route: 'local' }] })
+  );
+  const s = await startServer({ FLEET_LOGINS_SH: stub, FLEET_MACHINES_FILE: cfg }, { dir });
+  // Released here too, so an assertion that throws early still lets the stub exit at once.
+  t.after(() => {
+    fs.writeFileSync(release, '');
+    return s.stop();
+  });
+
+  const inFlight = s.get('/api/machines?refresh=1'); // held open by the stub; deliberately not awaited
+  for (let i = 0; !fs.existsSync(started); i++) {
+    assert.ok(i < 1000, 'the collector never started');
+    await new Promise((r) => setTimeout(r, 10));
+  }
+
+  // No refresh=1: this is the request that early-returns on the TTL and renders stale rows.
+  const during = await s.get('/api/machines');
+  assert.equal(during.status, 200);
+  assert.equal(during.body.collecting, true);
+  const at = during.body.collect_started_at;
+  const now = Math.floor(Date.now() / 1000);
+  assert.equal(typeof at, 'number', 'collect_started_at: ' + JSON.stringify(at));
+  // Seconds, not milliseconds: the page renders an age from this, and a ms value would read
+  // as a sweep that started tens of thousands of years from now.
+  assert.ok(at < 1e11, 'collect_started_at looks like milliseconds: ' + at);
+  assert.ok(Math.abs(now - at) <= 5, 'collect_started_at ' + at + ' is not near ' + now);
+
+  fs.writeFileSync(release, '');
+  const done = await inFlight;
+  assert.equal(done.status, 200);
+  assert.equal(done.body.machines[0].state, 'ok'); // the held sweep really collected
+  // The counter came back down: the next page load is told the rows are settled.
+  assert.equal(done.body.collecting, false);
+  const after = await s.get('/api/machines');
+  assert.equal(after.body.collecting, false);
+  assert.equal(after.body.collect_started_at, null);
+});
+
+test('/api/machines — an unreachable box carries its own error and does not poison the fan-out', async (t) => {
+  const dir = tmpdir('machines-unreach');
+  const env = {
+    ...fixture(dir, LINE, [
+      { id: 'german-box', label: 'German Box', os: 'windows', route: 'ssh', ssh: 'gb-deploy', wsl: true },
+      { id: 'vps', label: 'VPS', os: 'linux', route: 'ssh', ssh: 'vps-deploy' },
+    ]),
+    FLEET_SSH_BIN: SHIM,
+    FLEET_SHIM_UNREACH: 'gb-deploy',
+    FLEET_SHIM_MAP_WSL: '1',
+  };
+  const s = await startServer(env, { dir });
+  t.after(() => s.stop());
+
+  const rows = new Map((await s.get('/api/machines?refresh=1')).body.machines.map((m) => [m.id, m]));
+  const down = rows.get('german-box');
+  // ssh's own words, so the row says why rather than blaming the collector.
+  assert.ok(down.error && down.error.includes('Connection timed out'), JSON.stringify(down.error));
+  assert.notEqual(down.state, 'ok');
+  assert.equal(rows.get('vps').state, 'ok');
+  assert.equal(rows.get('vps').error, null);
+});
+
+test('/api/machines — the row is keyed by the configured host, the machine reports its own', async (t) => {
+  const dir = tmpdir('machines-host');
+  const env = fixture(dir, LINE, [
+    { id: 'german-box', label: 'German Box', os: 'linux', route: 'local', host: 'german-box' },
+  ]);
+  const s = await startServer(env, { dir });
+  t.after(() => s.stop());
+
+  const row = (await s.get('/api/machines?refresh=1')).body.machines[0];
+  assert.equal(row.state, 'ok');
+  // `host` joins the row to that host's sessions and leases, so it stays the configured key
+  // even when the machine answers with a name the deck knows nothing about.
+  assert.equal(row.host, 'german-box');
+  assert.equal(row.reported_host, 'DESKTOP-XYZ');
+});
 
 test('/api/machines — every configured machine listed, pushes accepted only for known ids', async (t) => {
   const dir = tmpdir('machines');
