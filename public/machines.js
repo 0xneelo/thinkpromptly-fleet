@@ -90,9 +90,11 @@ function bar(name, w) {
 // it says so quietly rather than leaving the cell looking broken.
 function usageNodes(u) {
   if (!u) return [el('div', 'muted dim fresh', 'no usage data')];
-  const names = Object.keys(u.windows || {}).sort(
-    (a, b) => (WIN_ORDER.indexOf(a) + 1 || 99) - (WIN_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b)
-  );
+  const names = Object.keys(u.windows || {})
+    .sort((a, b) => (WIN_ORDER.indexOf(a) + 1 || 99) - (WIN_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b))
+    // A window that is not an object throws in bar(), and a throw in render() loses every
+    // machine on the page to the catch in load(). One bad row costs one bar, not the page.
+    .filter((n) => u.windows[n] && typeof u.windows[n] === 'object');
   const out = names.length ? names.map((n) => bar(n, u.windows[n])) : [el('div', 'muted dim fresh', 'no usage windows reported')];
   if (u.sample_ts) {
     const a = sampleAge(u.sample_ts);

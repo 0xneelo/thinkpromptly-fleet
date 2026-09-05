@@ -1662,7 +1662,13 @@ function machinesUsage(rows, now = Math.floor(Date.now() / 1000)) {
     const aged = {};
     let any = false;
     for (const [n, w] of Object.entries(windows)) {
-      if (age > (WINDOW_AGE[n] ?? 7 * 86400)) {
+      // Two independent rules, either one enough. The age table has no entry for the Codex
+      // window names, and rather than guess their length we also read the reset stamp the
+      // window itself carries: a reset time already in the past is proof the window rolled
+      // over, whatever its length, where the age default is only inference. A window with
+      // no reset stamp is left to the age rule alone.
+      const reset = typeof w.resets_at === 'number' && w.resets_at < now;
+      if (reset || age > (WINDOW_AGE[n] ?? 7 * 86400)) {
         aged[n] = { ...w, pct: null, stale: true };
         any = true;
       } else aged[n] = w;
@@ -1708,10 +1714,15 @@ function machinesUsage(rows, now = Math.floor(Date.now() / 1000)) {
 }
 
 // Which clients on a machine map to which credits row: a Claude client is known by its org
-// uuid (the config org when the token could not be asked), a Codex one only by its email.
+// uuid, a Codex one only by its email. The config org stands in only when the token could
+// not be asked, so no org was proved. A config org that disagrees with a proved one is
+// never used as a fallback: the row it finds belongs to the other account, and quoting its
+// numbers under this login's name and email is worse than showing no numbers at all.
 function clientUsage(c, usage) {
-  if (c.client === 'claude_cli' || c.client === 'claude_desktop')
-    return usage.claude.get(c.org) || usage.claude.get(c.config_org) || null;
+  if (c.client === 'claude_cli' || c.client === 'claude_desktop') {
+    const k = c.org || c.config_org;
+    return (k && usage.claude.get(k)) || null;
+  }
   if (c.client === 'codex_cli' || c.client === 'codex_desktop')
     return usage.codex.get(String(c.email || '').toLowerCase()) || null;
   return null;
@@ -2823,6 +2834,6 @@ module.exports = {
   tailnetHandler, db, server, tailnet, assertPragmas, migrationPending, resolveNotifyTarget,
   // Test seams: a tick is a step, and REAPER is the observability the tick writes into.
   reaperTick, reaperLoop, REAPER,
-  // Test seams: the two pure joins the Machines view renders from, no I/O of their own.
-  machinesUsage, machinesSessions,
+  // Test seams: the pure joins the Machines view renders from, no I/O of their own.
+  machinesUsage, machinesSessions, clientUsage,
 };

@@ -441,6 +441,50 @@ test('machinesUsage — a stamped row already aged by agedOut() keeps its flag a
   assert.equal(v.sample_ts, NOW - 3 * 3600);
 });
 
+test('machinesUsage — a window whose reset time has passed is stale whatever its length', (t) => {
+  const { machinesUsage } = seams(t);
+  const u = machinesUsage(
+    [
+      // Sampled an hour ago, so the age rule fires on neither window: WINDOW_AGE has no entry
+      // for the Codex names and both fall to the seven-day default. The reset stamp is the
+      // only evidence that `secondary` has rolled over since it was read.
+      {
+        kind: 'codex', id: 'reset@example.invalid', email: 'reset@example.invalid', state: 'ok',
+        updated_at: NOW - 3600,
+        secondary: { pct: 95, resets_at: NOW - 60 },
+        weekly: { pct: 44, resets_at: NOW + 3600 },
+      },
+    ],
+    NOW
+  );
+
+  const v = u.codex.get('reset@example.invalid');
+  assert.equal(v.stale_windows, true);
+  assert.deepEqual(v.windows.secondary, { pct: null, resets_at: NOW - 60, stale: true });
+  assert.deepEqual(v.windows.weekly, { pct: 44, resets_at: NOW + 3600 }, 'a window still open lost its number');
+});
+
+// --- clientUsage(): which credits row a client's cell quotes. Exported as a seam alongside
+// the two joins, for the same reason — pure, and the wrong answer here is a number under
+// someone else's name rather than a missing one.
+test('clientUsage — a config org that disagrees with the proved one is never quoted', (t) => {
+  const { clientUsage } = seams(t);
+  const usage = { claude: new Map([[CONFIG_ORG, { windows: { five_hour: { pct: 88 } } }]]), codex: new Map() };
+
+  // The token proved ORG and ~/.claude.json names CONFIG_ORG: two different accounts. ORG has
+  // no credits row, and CONFIG_ORG's bars under ORG's name and email would be a lie.
+  assert.equal(clientUsage({ client: 'claude_cli', org: ORG, config_org: CONFIG_ORG }, usage), null);
+
+  // The fallback's actual case: the token could not be asked, so the config org is all there
+  // is and nothing contradicts it.
+  const fell = clientUsage({ client: 'claude_cli', org: null, config_org: CONFIG_ORG }, usage);
+  assert.equal(fell.windows.five_hour.pct, 88);
+
+  // A proved org with a row of its own is unaffected by any of this.
+  const proved = { claude: new Map([[ORG, { windows: { five_hour: { pct: 7 } } }]]), codex: new Map() };
+  assert.equal(clientUsage({ client: 'claude_cli', org: ORG, config_org: CONFIG_ORG }, proved).windows.five_hour.pct, 7);
+});
+
 test('machinesSessions — live rows only, keyed by host, blanks nulled and sorted by name', (t) => {
   const { machinesSessions } = seams(t);
   const by = machinesSessions([
