@@ -1,0 +1,51 @@
+{
+ "project": "remote-system",
+ "updated": "2026-09-05",
+ "goals": [
+  {
+   "id": "G1",
+   "goal": "Machines page live on fleetdeck (localhost:3131/machines.html): every machine, which Claude/Codex account each CLI + desktop client is signed in as, the live sessions on it, and its usage",
+   "why": "operator 2026-09-05: build out the localhost:3131/machines page where we have an overview of all of our machines and what claude / codex session they are logged in; earlier ask: machine overview with all logins and the usage",
+   "asked": "2026-09-05",
+   "status": "active",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "claude/account-usage-cronjob-29e68a@505d53a"
+    },
+    {
+     "ref": "XYZ-2112",
+     "who": "Rhoda",
+     "lane": "agent-rhoda/machines-land",
+     "state": "Backlog",
+     "emoji": "🚀"
+    },
+    {
+     "ref": "XYZ-2113",
+     "who": "Valentin",
+     "lane": "agent-valentin/machines-usage",
+     "state": "Backlog",
+     "emoji": "🚀"
+    },
+    {
+     "ref": "XYZ-2111",
+     "who": "O32",
+     "state": "Backlog",
+     "emoji": "🗂"
+    }
+   ],
+   "sources": [
+    "session 0efd1f19 (ORCHESTRATOR 32)"
+   ],
+   "updated": "2026-09-05",
+   "log": [
+    {
+     "at": "2026-09-05",
+     "note": "added"
+    }
+   ]
+  }
+ ]
+}
