@@ -8,7 +8,7 @@ const http = require('http');
 const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { tmpdir, ROOT } = require('./helpers');
+const { tmpdir, hostsFile, load, unload, ROOT } = require('./helpers');
 const { startServer } = require('./http');
 
 const SCRIPT = path.join(ROOT, 'box', 'fleet-logins.sh');
@@ -205,4 +205,367 @@ test('/api/machines — every configured machine listed, pushes accepted only fo
   assert.equal(broken.state, 'no_report');
   assert.equal(broken.error, 'no python3 or collector failed');
   assert.deepEqual(broken.clients, []);
+});
+
+// --- The two joins behind the Machines page. machinesUsage() and machinesSessions() are pure
+// seams off machinesView(), so they are driven straight here: no collect, no ssh, and the
+// clock passed in rather than read, which is what makes the ageing assertions repeatable.
+// The instance exists only to export them; its db is a throwaway and is never written.
+function seams(t) {
+  const dir = tmpdir('machines-seams');
+  const m = load({ FLEET_DB: path.join(dir, 'fleet.db'), FLEET_HOSTS_FILE: hostsFile(dir) });
+  // load() binds nothing by setting FLEET_NO_LISTEN on this process, and startServer inherits
+  // the whole env: left standing, it makes the child below exit at boot instead of listening.
+  t.after(async () => {
+    await unload(m);
+    delete process.env.FLEET_NO_LISTEN;
+  });
+  return m;
+}
+
+const NOW = 1757000000;
+
+test('machinesUsage — Claude keys by org, Codex by lowercased email, and only four fields travel', (t) => {
+  const { machinesUsage } = seams(t);
+  const u = machinesUsage(
+    [
+      {
+        kind: 'claude', id: 'aylianator@gmail.com', email: 'aylianator@gmail.com', org: ORG,
+        state: 'ok', source: 'desktop', sample_ts: NOW - 60, label: 'Aylin Yeter',
+        windows: { five_hour: { pct: 42 }, seven_day: { pct: 7 } },
+      },
+      // Shouted on purpose: the lookup side only ever has a lowercased email to ask with.
+      {
+        kind: 'codex', id: 'ADMIN@Deus.Finance', email: 'ADMIN@Deus.Finance', state: 'ok',
+        updated_at: NOW - 60, weekly: { pct: 55 }, secondary: { pct: 3 },
+      },
+    ],
+    NOW
+  );
+
+  assert.deepEqual([...u.claude.keys()], [ORG]);
+  const claude = u.claude.get(ORG);
+  assert.deepEqual(Object.keys(claude).sort(), ['sample_ts', 'stale_windows', 'state', 'windows']);
+  assert.equal(claude.windows.five_hour.pct, 42);
+  assert.equal(claude.state, 'ok');
+  assert.equal(claude.sample_ts, NOW - 60);
+  assert.equal(claude.stale_windows, false);
+
+  assert.deepEqual([...u.codex.keys()], ['admin@deus.finance']);
+  const codex = u.codex.get('admin@deus.finance');
+  assert.deepEqual(Object.keys(codex).sort(), ['sample_ts', 'stale_windows', 'state', 'windows']);
+  // The two Codex siblings become one windows object, so the front end sees one shape.
+  assert.deepEqual(Object.keys(codex.windows).sort(), ['secondary', 'weekly']);
+  assert.equal(codex.windows.weekly.pct, 55);
+  assert.equal(codex.windows.secondary.pct, 3);
+  assert.equal(codex.sample_ts, NOW - 60);
+  assert.equal(codex.stale_windows, false);
+});
+
+test('machinesUsage — an account with no credits row gets no entry, and a row naming nobody is dropped', (t) => {
+  const { machinesUsage } = seams(t);
+  const u = machinesUsage(
+    [
+      { kind: 'claude', id: 'aylianator@gmail.com', org: ORG, state: 'ok', sample_ts: NOW, windows: {} },
+      // No org and no email: keying these on undefined or '' would invent an account that
+      // some client with an equally blank org would then match.
+      { kind: 'claude', id: 'nameless', sample_ts: NOW, windows: { five_hour: { pct: 99 } } },
+      { kind: 'codex', updated_at: NOW, weekly: { pct: 99 } },
+      { kind: 'seats', id: 'x', org: CONFIG_ORG, windows: { five_hour: { pct: 99 } } },
+      null,
+    ],
+    NOW
+  );
+
+  assert.deepEqual([...u.claude.keys()], [ORG]);
+  // Lafayette's org is real and configured, but nothing reported it here, so there is no
+  // entry at all — machinesView turns that miss into usage: null (see the route test below).
+  assert.equal(u.claude.get(CONFIG_ORG), undefined);
+  assert.equal(u.claude.has(undefined), false);
+  assert.equal(u.codex.size, 0);
+});
+
+test('machinesUsage — a Codex sample past its window ages out, a fresh one keeps its number', (t) => {
+  const { machinesUsage } = seams(t);
+  const u = machinesUsage(
+    [
+      // Codex rows carry no sample_ts: updated_at is the only date they have, and a weekly
+      // bar eight days old must not draw as a current figure.
+      {
+        kind: 'codex', id: 'old@example.invalid', email: 'old@example.invalid', state: 'ok',
+        updated_at: NOW - 8 * 86400, weekly: { pct: 91 }, secondary: { pct: 12 },
+      },
+      {
+        kind: 'codex', id: 'new@example.invalid', email: 'new@example.invalid', state: 'ok',
+        updated_at: NOW - 300, weekly: { pct: 44 },
+      },
+    ],
+    NOW
+  );
+
+  const old = u.codex.get('old@example.invalid');
+  assert.equal(old.stale_windows, true);
+  assert.deepEqual(old.windows.weekly, { pct: null, stale: true });
+  assert.equal(old.sample_ts, NOW - 8 * 86400, 'updated_at dates a row that has no sample_ts');
+
+  const fresh = u.codex.get('new@example.invalid');
+  assert.equal(fresh.stale_windows, false);
+  assert.equal(fresh.windows.weekly.pct, 44);
+  assert.equal(fresh.sample_ts, NOW - 300);
+});
+
+test('machinesUsage — an oauth Claude row ages on updated_at, a stamped one is not aged twice', (t) => {
+  const { machinesUsage } = seams(t);
+  const u = machinesUsage(
+    [
+      // Known only through a CLI login: no sample_ts, so agedOut() left it alone and the
+      // five-hour bar of a box that went quiet eight days ago is this page's to age.
+      {
+        kind: 'claude', id: 'oauth@example.invalid', email: 'oauth@example.invalid', org: ORG,
+        state: 'ok', source: 'oauth', updated_at: NOW - 8 * 86400,
+        windows: { five_hour: { pct: 88 }, seven_day: { pct: 61 } },
+      },
+      // Desktop-sourced and stamped inside the five-hour limit: agedOut() has already had
+      // its say, and re-ageing on the older updated_at would blank a number that is current.
+      {
+        kind: 'claude', id: 'desktop@example.invalid', email: 'desktop@example.invalid', org: CONFIG_ORG,
+        state: 'ok', source: 'desktop', sample_ts: NOW - 600, updated_at: NOW - 8 * 86400,
+        windows: { five_hour: { pct: 33 } },
+      },
+    ],
+    NOW
+  );
+
+  const oauth = u.claude.get(ORG);
+  assert.equal(oauth.stale_windows, true);
+  assert.deepEqual(oauth.windows.five_hour, { pct: null, stale: true });
+  assert.deepEqual(oauth.windows.seven_day, { pct: null, stale: true });
+  assert.equal(oauth.sample_ts, NOW - 8 * 86400, 'updated_at dates a row that has no sample_ts');
+
+  const desktop = u.claude.get(CONFIG_ORG);
+  assert.equal(desktop.stale_windows, false);
+  assert.equal(desktop.windows.five_hour.pct, 33);
+  assert.equal(desktop.sample_ts, NOW - 600);
+});
+
+test('machinesUsage — a fresh oauth Claude row keeps its number', (t) => {
+  const { machinesUsage } = seams(t);
+  const u = machinesUsage(
+    [
+      {
+        kind: 'claude', id: 'oauth@example.invalid', email: 'oauth@example.invalid', org: ORG,
+        state: 'ok', source: 'oauth', updated_at: NOW - 300,
+        windows: { five_hour: { pct: 88 } },
+      },
+    ],
+    NOW
+  );
+
+  const fresh = u.claude.get(ORG);
+  assert.equal(fresh.stale_windows, false);
+  assert.equal(fresh.windows.five_hour.pct, 88);
+  assert.equal(fresh.sample_ts, NOW - 300);
+});
+
+test('machinesUsage — the collision tie-break: windows beat none, then the newer sample, whichever order they arrive in', (t) => {
+  const { machinesUsage } = seams(t);
+  // Order-independence is the whole point: a first-writer-wins or last-writer-wins bug shows
+  // in exactly one of the two orderings, so every pair is fed both ways round.
+  const both = (a, b) => [machinesUsage([a, b], NOW).claude.get(ORG), machinesUsage([b, a], NOW).claude.get(ORG)];
+
+  // The configured-but-unreported blank: a legitimate row that knows an account exists and
+  // nothing about its usage. It must never displace the row that has the numbers.
+  const blank = { kind: 'claude', id: 'blank', org: ORG, state: 'absent', windows: {} };
+  const reported = {
+    kind: 'claude', id: 'desktop@example.invalid', email: 'desktop@example.invalid', org: ORG,
+    state: 'ok', source: 'desktop', sample_ts: NOW - 600, windows: { five_hour: { pct: 33 } },
+  };
+  for (const v of both(blank, reported)) {
+    assert.equal(v.state, 'ok');
+    assert.equal(v.windows.five_hour.pct, 33);
+    assert.equal(v.sample_ts, NOW - 600);
+  }
+
+  // Both report windows, so the tie-break falls through to the date and the newer sample wins.
+  const older = {
+    kind: 'claude', id: 'old@example.invalid', org: ORG, state: 'ok', source: 'desktop',
+    sample_ts: NOW - 3600, windows: { five_hour: { pct: 11 } },
+  };
+  const newer = {
+    kind: 'claude', id: 'new@example.invalid', org: ORG, state: 'ok', source: 'desktop',
+    sample_ts: NOW - 60, windows: { five_hour: { pct: 77 } },
+  };
+  for (const v of both(older, newer)) {
+    assert.equal(v.windows.five_hour.pct, 77);
+    assert.equal(v.sample_ts, NOW - 60);
+  }
+
+  // The subtle one: eight days unstamped, so ageUnstamped blanks every pct and the row has
+  // nothing left to show — but it still has window keys, and window keys are what the
+  // tie-break asks about. Reading pct instead would hand the account to the blank row, whose
+  // updated_at is newer here so it would win the date leg too.
+  const aged = {
+    kind: 'claude', id: 'oauth@example.invalid', org: ORG, state: 'ok', source: 'oauth',
+    updated_at: NOW - 8 * 86400, windows: { five_hour: { pct: 88 }, seven_day: { pct: 61 } },
+  };
+  const freshBlank = { ...blank, updated_at: NOW };
+  for (const v of both(freshBlank, aged)) {
+    assert.equal(v.stale_windows, true);
+    assert.deepEqual(Object.keys(v.windows).sort(), ['five_hour', 'seven_day']);
+    assert.deepEqual(v.windows.five_hour, { pct: null, stale: true });
+    assert.equal(v.sample_ts, NOW - 8 * 86400, 'the aged row lost to the blank one');
+  }
+});
+
+test('machinesUsage — a stamped row already aged by agedOut() keeps its flag and is not aged again', (t) => {
+  const { machinesUsage } = seams(t);
+  const u = machinesUsage(
+    [
+      // What agedOut() hands over: stamped, five_hour past its two hours and already blanked,
+      // the flag already set. updated_at is eight days back on purpose — re-ageing on it would
+      // blank seven_day too, and dropping the flag would draw the blanked bar as a real zero.
+      {
+        kind: 'claude', id: 'desktop@example.invalid', email: 'desktop@example.invalid', org: ORG,
+        state: 'ok', source: 'desktop', sample_ts: NOW - 3 * 3600, updated_at: NOW - 8 * 86400,
+        stale_windows: true,
+        windows: { five_hour: { pct: null, stale: true }, seven_day: { pct: 61 } },
+      },
+    ],
+    NOW
+  );
+
+  const v = u.claude.get(ORG);
+  assert.equal(v.stale_windows, true);
+  assert.deepEqual(v.windows.five_hour, { pct: null, stale: true });
+  assert.deepEqual(v.windows.seven_day, { pct: 61 }, 'a stamped row was aged a second time');
+  assert.equal(v.sample_ts, NOW - 3 * 3600);
+});
+
+test('machinesSessions — live rows only, keyed by host, blanks nulled and sorted by name', (t) => {
+  const { machinesSessions } = seams(t);
+  const by = machinesSessions([
+    { host: 'mac', name: 'Valentin', worker: 'agent-valentin', role: 'backend-developer', label: 'machines usage', status: 'active', note: 'private', lease_state: 'active' },
+    { host: 'mac', name: 'Alba', worker: '', role: '', label: '', status: '', lease_state: 'active' },
+    { host: 'mac', name: 'Ghost', worker: 'agent-ghost', role: '', label: '', status: 'active', lease_state: 'reaped' },
+    { host: 'german-box', name: 'Rhoda', worker: '', role: '', label: '', status: 'active', lease_state: 'suspect' },
+    { host: 'nowhere-box', name: 'Nomad', worker: '', role: '', label: '', status: 'active', lease_state: 'active' },
+    { host: '', name: 'Hostless', status: 'active', lease_state: 'active' },
+  ]);
+
+  // Reaped and suspect are both gone for this question, and a row with no host has no
+  // machine to sit under: german-box and the hostless row leave no key behind.
+  assert.deepEqual([...by.keys()].sort(), ['mac', 'nowhere-box']);
+  assert.deepEqual(by.get('mac').map((x) => x.name), ['Alba', 'Valentin']);
+
+  const v = by.get('mac')[1];
+  assert.deepEqual(Object.keys(v).sort(), ['label', 'live', 'name', 'role', 'status', 'worker']);
+  assert.equal(v.worker, 'agent-valentin');
+  assert.equal(v.live, true);
+  // Empty string is the registry's default for these columns; null is what lets the front
+  // end skip the field instead of rendering a gap.
+  assert.deepEqual(by.get('mac')[0], { name: 'Alba', worker: null, role: null, label: null, status: null, live: true });
+
+  // A host no machine maps to still gets its own key — nothing ever asks for it, which is
+  // what the route test asserts from the other side.
+  assert.deepEqual(by.get('nowhere-box').map((x) => x.name), ['Nomad']);
+});
+
+// The same stub collector as fixture(), plus the deck-side `host` key the sessions join
+// reads — and one machine deliberately without it.
+function hostFixture(dir, line) {
+  const stub = path.join(dir, 'stub-logins.sh');
+  fs.writeFileSync(stub, "#!/bin/sh\nprintf '%s\\n' '" + JSON.stringify(line) + "'\n");
+  const cfg = path.join(dir, 'machines.json');
+  fs.writeFileSync(
+    cfg,
+    JSON.stringify({
+      machines: [
+        { id: 'macbook', host: 'mac', label: 'MacBook Pro', os: 'macos', route: 'local' },
+        { id: 'rog-strix', label: 'ROG Strix', os: 'windows', route: 'push' },
+      ],
+    })
+  );
+  return { FLEET_LOGINS_SH: stub, FLEET_MACHINES_FILE: cfg };
+}
+
+const SECRET = 'sk-SHOULD-NEVER-APPEAR';
+const SECRET_SESSION = SECRET + '-SESSION';
+
+test('/api/machines — usage and sessions join onto the row, and no credential rides along', async (t) => {
+  const dir = tmpdir('machines-join');
+  const now = Math.floor(Date.now() / 1000);
+  const env = hostFixture(dir, {
+    v: 1,
+    id: 'macbook',
+    host: 'rfc1918-internal',
+    os: 'darwin',
+    ts: now,
+    clients: [
+      // access_token is a decoy: clientRow's whitelist is what has to drop it.
+      { client: 'claude_cli', where: 'local', installed: true, signed_in: true, state: 'ok', proof: 'profile', email: 'aylianator@gmail.com', org: ORG, access_token: SECRET },
+      { client: 'codex_cli', where: 'local', installed: true, signed_in: true, state: 'ok', proof: 'jwt', email: 'nobody@example.invalid' },
+    ],
+  });
+  const s = await startServer(env, { dir });
+  t.after(() => s.stop());
+
+  const db = s.open();
+  t.after(() => db.close());
+  // Seeded straight into the tables the join reads, so the route has real data to find and
+  // the decoys are genuinely stored rather than filtered before they were ever written.
+  db.prepare('INSERT INTO credits (kind, id, email, org, host, payload, updated_at) VALUES (?,?,?,?,?,?,?)').run(
+    'claude', 'aylianator@gmail.com', 'aylianator@gmail.com', ORG, 'mac',
+    JSON.stringify({
+      kind: 'claude', id: 'aylianator@gmail.com', email: 'aylianator@gmail.com', org: ORG,
+      host: 'mac', state: 'ok', source: 'desktop', updated_at: now - 120, sample_ts: now - 120,
+      windows: { five_hour: { pct: 42 }, seven_day: { pct: 7 } },
+      access_token: SECRET,
+    }),
+    now - 120
+  );
+  const ins = db.prepare(
+    'INSERT INTO sessions (host, name, label, role, worker, status, note, lease_state) VALUES (?,?,?,?,?,?,?,?)'
+  );
+  ins.run('mac', 'Valentin', 'machines usage', 'backend-developer', 'agent-valentin', 'active', SECRET_SESSION, 'active');
+  ins.run('nowhere-box', 'Nomad', '', '', '', 'active', SECRET_SESSION, 'active');
+  ins.run('mac', 'Ghost', '', '', '', 'active', SECRET_SESSION, 'reaped');
+  assert.match(db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?').get('claude', 'aylianator@gmail.com').payload, /SHOULD-NEVER-APPEAR/);
+  assert.equal(db.prepare('SELECT note FROM sessions WHERE host = ? AND name = ?').get('mac', 'Valentin').note, SECRET_SESSION);
+
+  const r = await s.get('/api/machines');
+  assert.equal(r.status, 200);
+  const mac = r.body.machines.find((m) => m.id === 'macbook');
+  const rog = r.body.machines.find((m) => m.id === 'rog-strix');
+
+  // machines.json's `host` is the join key: mac has one, ROG has none.
+  assert.deepEqual(mac.sessions.map((x) => x.name), ['Valentin']);
+  assert.equal(mac.sessions[0].worker, 'agent-valentin');
+  assert.equal(mac.sessions[0].live, true);
+  assert.deepEqual(rog.sessions, []);
+  // Nomad is live, but nowhere-box is nobody's machine, so it reaches no row.
+  assert.ok(!r.body.machines.some((m) => m.sessions.some((x) => x.name === 'Nomad')), 'a session on an unmapped host reached a machine');
+
+  const claude = mac.clients.find((c) => c.client === 'claude_cli' && c.where === 'local');
+  assert.equal(claude.usage.windows.five_hour.pct, 42);
+  assert.equal(claude.usage.windows.seven_day.pct, 7);
+  assert.equal(claude.usage.stale_windows, false);
+  // No credits row names this email, so the client shows an identity and no numbers.
+  assert.equal(mac.clients.find((c) => c.client === 'codex_cli' && c.where === 'local').usage, null);
+
+  // The whole payload, at every depth: a credential-shaped key or a seeded secret anywhere
+  // in it is the failure, not just one at the top level.
+  const BANNED = new Set(['token', 'access_token', 'refresh_token', 'cookie', 'authorization']);
+  const SECRETS = new Set([SECRET, SECRET_SESSION]);
+  const bad = [];
+  (function walk(v, at) {
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, at + '[' + i + ']'));
+    if (v && typeof v === 'object')
+      return Object.entries(v).forEach(([k, x]) => {
+        if (BANNED.has(k.toLowerCase())) bad.push('key ' + at + '.' + k);
+        walk(x, at + '.' + k);
+      });
+    if (typeof v === 'string' && SECRETS.has(v)) bad.push('value ' + at + ' = ' + v);
+  })(r.body, '$');
+  assert.deepEqual(bad, [], 'credential-shaped keys or seeded secrets reached /api/machines');
+  assert.ok(!r.text.includes(SECRET), 'a seeded secret appeared in the raw response body');
 });
