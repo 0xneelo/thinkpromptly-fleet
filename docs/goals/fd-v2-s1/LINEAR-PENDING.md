@@ -265,7 +265,7 @@ Signed Waldemar.
 - Intended state: Todo
 - Mirror status: pending
 
-Real-browser evidence in verify/S1/network.json shows the initial parser requests `/v2/%7B%7B%20A_videoUrl%20%7D%7D` from the preserved `src="{ A_videoUrl }"` at mock line145 (local404), and reports invalid polyline points for the preserved `{ a.trendPts }` binding. Each occurs once per theme, totaling four console errors and zero JavaScript page exceptions. All50 interactions pass, all final videos decode with no media errors, and zero external hosts load. Ten canceled repeated video requests remain recorded, not filtered out.
+Real-browser evidence in verify/S1/network.json shows the initial parser requests `/v2/%7B%7B%20A_videoUrl%20%7D%7D` from the preserved `src="{{ A_videoUrl }}"` at mock line145 (local404), and reports invalid polyline points for the preserved `{{ a.trendPts }}` binding. Each occurs once per theme, totaling four console errors and zero JavaScript page exceptions. All50 interactions pass, all final videos decode with no media errors, and zero external hosts load. Ten canceled repeated video requests remain recorded, not filtered out.
 
 Options: preserve the template exactly for S1 and handle parser timing during the planned compilation/integration phase (recommended under D15), or amend the artboard specification separately before a future regenerated port. S1 makes no mock or shipped markup fix.
 
@@ -279,5 +279,16 @@ Signed Waldemar.
 - Mirror status: pending
 
 Independent review clean: 58HTTP requests plus2inline data resources; zero external hosts/origins;50/50 recorded checks cover both themes, eightnavscreens,fullscreen,deck5,video toggles. No request interception/state injection. Preserved parser diagnostics/canceled requests remain visible and are carded as S1-MOCK-PARSER. MIME milestone Linear retry remains oauth_token_invalid_grant.
+
+Signed Waldemar.
+
+## S1-07 — comment
+
+- Timestamp: 2026-09-06T23:22:29.730741+00:00
+- Title: Gate dependency milestone complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Imported exactly3 S0 devDependencies from47dbabb20855242bc7e0b421e52b0fbbab801df1 and4dev-only lock entries. Reviewer confirms7/7 existing lock entries unchanged and zero productiondependency changes; npm checks/module imports pass. Script and36-screen result remain pending. Network milestone Linear retry remains oauth_token_invalid_grant.
 
 Signed Waldemar.
