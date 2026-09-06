@@ -4,6 +4,12 @@
     {
       "name": "fleetdeck",
       "url": "http://localhost:3131"
+    },
+    {
+      "name": "mock",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4173", "--directory", "docs/design/fleetdeck-v2/mock"],
+      "port": 4173
     }
   ]
 }
