@@ -94,3 +94,16 @@ source badge text, principal chips, anything else discovered while wiring logic.
 | L8s (new, Claude, size S) | server: `usage_snapshots` table in `fleet.db` (account, ts, windows/pct), written on every credits collect, pruned after 8 days; `GET /api/credits` returns `trend[]` per account. Blocked on the tracker audit result. |
 | S2 (new, size M, Claude high) | pass-2: mechanical compile of `public/v2/index.html` (template + DCLogic script) into plain HTML + JS (`public/v2/app.js`, `landing.js`, `deck.js`), no React/Babel at runtime; parity suite ported from lowcap (`tools/f2-parity.mjs`, `hook-inventory.js`) → normalized DOM byte-identical to pass 1; pixel gate green on 36 screens; pass-1 files kept under `public/v2/pass1/` until L11 deletes them |
 | L11 | + update README / launch.json / skills for `/` → landing, `/app` → app; delete `public/v2/pass1/` and the vendored React/Babel |
+
+## Timeline (estimate given to the operator 2026-09-07, one wave per day, no rerun loops)
+
+| Date | Milestone |
+|---|---|
+| 2026-09-08 | pixel-identical static preview at `/v2/` on the worker branch (wave A: S0 + S1) |
+| 2026-09-09 | same preview as plain JS, engine removed (S2) |
+| 2026-09-11 | terminals, sidebar, registry live in the new design (waves C + D) |
+| 2026-09-13 | bus, org chart, keys, accounts, machines, desktop sessions (waves E + F) |
+| 2026-09-14 | cut-over: `/` = landing, `/app` = deck, old UI deleted (L11); merged to main; operator runs `./up.sh` |
+
+Stretch factors: GitHub train window must be open for every worker push; a red pixel gate returns a slice
+(one rerun, then escalate); the weave into main needs a live remote-system 🎛 ORCHESTRATOR (none at plan time).
