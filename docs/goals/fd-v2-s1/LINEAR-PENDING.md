@@ -51,7 +51,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Copy the source SVG and download both exact hero video URLs and both exact provider logo URLs; record sizes and hashes.
@@ -209,5 +209,16 @@ Signed Waldemar.
 - Mirror status: pending
 
 Reviewer clean: 3/3 file hashes and sizes, 4/4 Latin CSS faces identical except local URLs, weights400/500/600/700. SIL OFL1.1 included. Runtime milestone Linear retry returned oauth_token_invalid_grant; never-block ledger remains in use.
+
+Signed Waldemar.
+
+## S1-03 — comment
+
+- Timestamp: 2026-09-06T23:18:09.667624+00:00
+- Title: Media vendoring and manifest complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Both exact hero videos and provider PNGs downloaded HTTP200, SVG copied verbatim. Independent reviewer verified 15/15 manifest hashes/sizes (19,151,780 bytes), 4/4 PNG/MP4 signatures and license provenance. Font milestone Linear retry remains oauth_token_invalid_grant.
 
 Signed Waldemar.
