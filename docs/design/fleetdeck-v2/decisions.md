@@ -50,3 +50,34 @@ Launch stall 2026-09-07: both GPT workers stopped on `oauth_token_invalid_grant`
 (the prompt said "a blocker that is not a Linear issue does not exist"). Fixed by a bus nudge (never-block rule,
 `LINEAR-PENDING.md`) and by amending the packs + the introduce-goal skill references. Operator action pending:
 re-auth Linear on the box over RDP (german-box-workers skill §9).
+
+## 2026-09-07 · launch log (wave A + early S2/L1, operator: "I want it ASAP")
+
+| Session | Worker | Slice | Breed | Base | Launched (Mac local) |
+|---|---|---|---|---|---|
+| `FD-v2-s0` | Gisbert | S0 gate harness | GPT Astra xhigh | docs branch @ `76c859c` | ~01:00 |
+| `FD-v2-s1` | Waldemar | S1 verbatim port | GPT Astra xhigh | docs branch @ `76c859c` | ~01:00 |
+| `FD-v2-s2` | Julius | S2 compile to plain JS | Claude high | `origin/agent-v2-s1` @ `39ae4ad` (before S1's gate report; rebases if S1 changes) | ~02:25 |
+| `FD-v2-l1` | Juergen | L1 data layer + fixture + v2 routing | Claude high | docs branch @ `226f02c` | ~02:40 |
+
+S1 independent review (design seat, 2026-09-07 ~02:30): T1/T2-only YES; MANIFEST hashes verified; MIME lines exact.
+Two findings sent back: align `package.json`/lock with S0's; prove the vendored Inter woff2 is variable.
+
+## 2026-09-07 · S0 accepted; S0.1 follow-up
+
+Independent review of `origin/agent-v2-s0` @ `cf88d29`: harness trustworthy YES (exit codes, screen map by text/key
+actions, numbers traceable to committed artifacts, scope clean). Findings routed to Gisbert as goal **S0.1** on the
+same branch: `networkidle` hangs against a live app with WebSockets → bounded in-flight-request settle; blur after
+clicks + hide focus-visible outlines and scrollbars on both sides; mock side served with `page.route` mapping CDN
+URLs to S1's vendored files when present; rename `verify/S0-baseline-failed` → `verify/baseline-failed`.
+Kept as designed: pixelmatch threshold 0.1 with `includeAA:false` (per pack; same Chromium on the same box on both sides).
+Rule for later slices: every gate report records the script sha it ran with; S1's report is valid against the S0
+script version it names.
+
+## 2026-09-07 · S1 accepted
+
+`origin/agent-v2-s1` @ `70c32bb`: independent review T1/T2-only YES; both findings fixed (package.json/lock identical to
+S0's; Inter = one variable woff2 covering 400-700, documented in MANIFEST); gate `verify/S1/report.json` allPass 36/36,
+max 0.033 % (registry dark); `network.json` zero external hosts; design-seat spot check of registry-dark and
+message-bus-light screenshots against the baselines: identical to the eye. Ledger: D01/D02/D07 ✅, P1 half of D03–D19 ✅.
+Waldemar released. Julius (S2) told to merge `70c32bb` before his final gate run.
