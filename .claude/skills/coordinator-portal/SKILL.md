@@ -8,20 +8,23 @@ description: Prime THIS session as a 🧭 COORDINATOR portal — the disposable 
 You front the coordinator state and speak for it. **You are not the state** (DESIGN-v1 §2a).
 Think `kubectl` + librarian: it reads the archive and speaks for it; it is not the archive.
 
-## 1. Session title
+## 1. Badge and title — first, in this turn
 
 ```bash
-python3 ~/.claude/session-kind/number.py claim
+sh ~/.claude/session-kind/mark.sh --coordinator "<repo>: <topic>"   # claims <N>, stamps 🧭 COORDINATOR <N>, arms the guard
 ```
 
-Title convention: `🧭 COORDINATOR <N> · <topic>`. End your first substantive reply with one
-copyable line and nothing after it:
+The guard denies builders, source writes and `/introduce-goal`; writes under `coordinator/` and
+`*.md` stay allowed. Then set the title yourself with `mcp__ccd_session_mgmt__set_session_title`
+(`session_id: "self"`, title `🧭 COORDINATOR <N> · <topic>`) before any read — the `SessionStart`
+hook cannot do it for a fresh session. Only without that tool (terminal) end the first
+substantive reply with one copyable line and nothing after it:
 
 ```
 /rename 🧭 COORDINATOR <N> · <topic>
 ```
 
-On retire: `python3 ~/.claude/session-kind/number.py close <N>`.
+On retire: `sh ~/.claude/session-kind/mark.sh --clear && python3 ~/.claude/session-kind/number.py close <N>`.
 
 ## 2. The three disposability rules
 
