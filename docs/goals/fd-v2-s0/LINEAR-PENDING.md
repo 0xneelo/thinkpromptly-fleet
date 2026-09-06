@@ -297,7 +297,7 @@ Gisbert
 
 Body:
 
-Mock-as-app CLI exit 0, allPass true, 36 comparisons <=0.05%, maximum 0.03294753086419753% (registry dark); other35 pairs zero. Committing all36 app screenshots,36 diff PNGs, both baseline manifests and signed checks. Negative scratch CLI correctly exits1 with30 numeric mismatches (max1.483719135802469%) and6 expected errors. Missing Chromium replaces stale green with36failed entries. Root and reviewer recomputed positive PNG hashes/diffs. Linear milestone retry still requires reauthentication; mirror later.
+Mock-as-app CLI exit 0, allPass true, 36 comparisons <=0.05%, maximum 0.03294753086419753% (registry dark); other 35 pairs zero. Committing all 36 app screenshots, 36 diff PNGs, both baseline manifests and signed checks. Negative scratch CLI correctly exits 1 with 30 numeric mismatches (max1.483719135802469%) and 6 expected errors. Missing Chromium replaces stale green with 36 failed entries. Root and reviewer recomputed positive PNG hashes/diffs. Linear milestone retry still requires reauthentication; mirror later.
 
 Gisbert
 
@@ -312,6 +312,21 @@ Gisbert
 
 Body:
 
-Independent final reviewer verdict: no findings. All four earlier findings fixed and rechecked. Verified36positive pairs and diffs,72hashlinks,36baseline replay pairs,30negative pairs and diffs,6explicit errors and36launch-failure rows. Zero public/server/mock edits; REPORT numbers and links accurate. Final delivery actions remain with Gisbert.
+Independent final reviewer verdict: no findings. All four earlier findings fixed and rechecked. Verified 36 positive pairs and diffs,72 hash links,36 baseline replay pairs,30 negative pairs and diffs,6 explicit errors and 36 launch-failure rows. Zero public/server/mock edits; REPORT numbers and links accurate. Final delivery actions remain with Gisbert.
+
+Gisbert
+
+## S0-MAIN-C02 — completion comment and state update
+
+- Timestamp: 2026-09-06T23:26:34.177405+00:00
+- Title: S0 gate complete, reviewed and delivered
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-MAIN
+- State: Done
+- Mirror status: pending
+
+Body:
+
+All S0 Acceptance checkboxes checked. 36 baselines committed; two baseline runs compare at max 0.04737654320987654%; mock-as-app self-test allPass true, 36/36 <=0.05%, max 0.03294753086419753%. Reviewer final pass clean and all findings fixed. Positive 36comparisons/diffs and negative 30comparisons/diffs independently recomputed; injected failure cases fail closed. Full proof commit 8ccb7d8a04eae2169be390b29abe3e2bd5657a7d pushed and separately authenticated ls-remote matched. Registry own-row status done POST returned HTTP 200/ok true at 2026-09-06T23:26:01Z. Signed REPORT.md and delivery receipt record scope, commands, numbers, review and the authorized Linear mirror follow-up. Final Linear retry still returned oauth_token_invalid_grant; per DESIGN-35 this completion state is queued for mirroring and does not block. No actual Linear issue creation or state transition is claimed.
 
 Gisbert

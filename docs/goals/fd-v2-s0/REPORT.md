@@ -4,8 +4,8 @@ Worker: **Gisbert** (`qa-engineer`, `agent-gisbert`).
 Project: `remote-system` / `fleetdeck-v2`. Branch: `agent-v2-s0`.
 Date: 2026-09-07 (Europe/Berlin; capture timestamps are UTC).
 
-Status: implementation, numeric proof and final review complete; delivery
-completion receipt pending.
+Status: **complete** under DESIGN-35's pending-ledger authorization. Every
+Acceptance checkbox is checked.
 
 ## Built
 
@@ -107,8 +107,12 @@ records the verdict and tested script hash.
 
 ## Tracking and delivery
 
-Milestones pushed so far: `47dbabb` dependencies; `f94b5f2` script/documentation;
-`f17f1b5` baselines. Self-test artifacts and final completion documentation follow.
+Milestones pushed: `47dbabb` dependencies; `f94b5f2` script/documentation;
+`f17f1b5` baselines; `8ccb7d8a04eae2169be390b29abe3e2bd5657a7d` self-test
+proof and reviewed artifacts. Fresh broker credentials were passed in the process
+environment for each push. A separately authenticated `git ls-remote` matched the
+full proof commit SHA. The final documentation head receipt accompanies the
+completion response.
 Each milestone references its local pending ID, without inventing a Linear key.
 
 DESIGN-35 explicitly authorized [LINEAR-PENDING.md](LINEAR-PENDING.md) as the
@@ -120,8 +124,11 @@ transition is claimed. This is an authorized tracking follow-up, not a blocker.
 Registry metadata registration returned HTTP 200 with the documented provisioned
 tailnet key. The API rejected literal `task: PENDING` with HTTP 400 because task
 must be an issue key; a note points to the pending ledger and no fake key was
-supplied. The design seat can set the real main key when mirroring. Registry
-completion and final authenticated remote-SHA verification are pending.
+supplied. The design seat can set the real main key when mirroring. The authorized
+registry completion POST (`german-box`, `FD-v2-s0`, `status: done`) returned
+HTTP 200 / `{"ok":true}` at 2026-09-06T23:26:01Z. The signed
+[delivery receipt](../../design/fleetdeck-v2/verify/S0-selftest/checks/delivery.json)
+records the exact request body and the authenticated proof-commit verification.
 
 Open implementation issues: none. Live S1 integration is outside this slice.
 

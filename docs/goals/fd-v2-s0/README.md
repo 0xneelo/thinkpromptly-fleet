@@ -60,7 +60,7 @@ machine-checked**. This script is the check. Every later slice (S1, L1…L11) co
 - [x] A second baseline run reproduces the first within 0.05 % (run it twice, diff the two reports; note the max delta in your report).
 - [x] `reviewer` subagent pass on the diff, findings fixed.
 - [x] README section + script header explain install, flags, thresholds, and the determinism hacks.
-- [ ] Branch pushed; final report at `docs/goals/fd-v2-s0/REPORT.md` signed **Gisbert**; registry row set `done`.
+- [x] Branch pushed; final report at `docs/goals/fd-v2-s0/REPORT.md` signed **Gisbert**; registry row set `done`.
 
 ## Constraints
 
@@ -74,3 +74,12 @@ machine-checked**. This script is the check. Every later slice (S1, L1…L11) co
 `PROTOCOL.md` in this directory (Linear issues per subtask, tag `agent-gisbert`, labels
 `project:remote-system`, `subproject:fleetdeck-v2`, `session:cli-worker`; commit per milestone; report on
 finish). You execute; you never orchestrate.
+
+## Operator tracking update (2026-09-07)
+
+DESIGN-35 authorized committed `LINEAR-PENDING.md` entries for all would-be Linear
+issues/comments while box OAuth is expired. Retry once per milestone; never block
+for Linear. Entries use local pending IDs until the design seat mirrors them.
+The registry rejected literal `task: PENDING`; the own-row note points to this
+ledger instead. Registry `status: done` was accepted with HTTP 200; the signed
+REPORT links the receipt.
