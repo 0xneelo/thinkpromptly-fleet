@@ -81,3 +81,11 @@ S0's; Inter = one variable woff2 covering 400-700, documented in MANIFEST); gate
 max 0.033 % (registry dark); `network.json` zero external hosts; design-seat spot check of registry-dark and
 message-bus-light screenshots against the baselines: identical to the eye. Ledger: D01/D02/D07 ✅, P1 half of D03–D19 ✅.
 Waldemar released. Julius (S2) told to merge `70c32bb` before his final gate run.
+
+## 2026-09-07 (evening) · OPERATOR RULING — done by 2026-09-08 evening
+
+Recorded verbatim in `plan.md` §"OPERATOR RULING 2026-09-07 (evening)". Consequences applied the same night:
+T3 sent to Julius and amended in `docs/goals/fd-v2-s2/README.md`; fixture-naming contract sent to Juergen;
+six behaviour inventories (L5–L10) commissioned; ten worker names claimed; packs L2–L11 written; polling of
+S2/L1 every 20 min with launch-on-land of all nine L-slices from `origin/agent-v2-s2`. Reviews run in parallel
+and never gate a launch. Weave into a local `weave/fd-v2` branch by the design seat; operator runs the ff-merge + `./up.sh`.
