@@ -115,6 +115,39 @@ token who it belongs to, `config only` when it could only read a config file, `l
 when the fact comes from the Claude desktop app's own history. A WSL box reports both sides,
 tagged `WSL` and `Windows`.
 
+**Desktop sessions.** `/sessions.html` merges Claude Desktop Code tabs across accounts and
+machines, with account, machine, live-status, archive, and text filters. Its read-only
+`GET /api/desktop-sessions` returns `groups` keyed by account UUID, org UUID, and machine,
+plus per-machine collection status. Org labels come from `credits-accounts.json`.
+Enable a machine with `"desktop_sessions": true` on its existing `machines.json` entry;
+the Mac and german-box are enabled, while rog-strix remains deferred. The same local/SSH
+routing used by Machines pipes `box/desktop-sessions.sh` to the configured deploy alias.
+
+The collector opens only `<accountUuid>/<orgUuid>/local_<id>.json` beneath the Mac
+`~/Library/Application Support/Claude/claude-code-sessions` directory or Windows users'
+`AppData/Local/Packages/Claude_*/LocalCache/Roaming/Claude/claude-code-sessions` directory
+(also `AppData/Roaming/Claude/claude-code-sessions`). It reads no Claude config, credential,
+transcript, or peer-key files. Only the named session metadata fields enter SQLite.
+
+Collection has a five-minute TTL; `?refresh=1` requests a new sweep, and concurrent loads
+share a sweep. Failed or partial scans retain cached sessions with visible status. A
+complete empty scan removes old rows for that machine. Local live badges join
+`cliSessionId` to `sessionId` in the deck's existing live process/socket registry on every
+GET. Remote liveness is `unknown`, since a remote process cannot be proved by the Mac's
+registry. Live local rows send through the existing message bus using a stable `id:<UUID>`
+target, resolved again at delivery; they never fall back to the frontmost chat.
+
+Fixture overrides: `FLEET_DESKTOP_SESSIONS_SH`, `FLEET_DESKTOP_SESSIONS_TTL_SECS`, and
+`FLEET_DESKTOP_WINDOWS_USERS`, alongside the existing Machines and isolated database
+knobs. All API collection timestamps are Unix milliseconds; session timestamps are ISO UTC.
+`npm test` covers the collector, cache, route, and message-ID join. Optional browser
+acceptance uses an external Playwright install and only a fixture HTTP server:
+
+    PLAYWRIGHT_MODULE=/path/to/playwright node scripts/verify-desktop-sessions-ui.js
+
+Set `CHROMIUM_PATH` if the browser is installed separately, and `DESKTOP_SCREENSHOT_DIR`
+to retain dark, light, and mobile screenshots. This script never starts the live deck.
+
 **Nothing is installed on a polled machine.** `box/fleet-logins.sh` is piped over
 `ssh <host> [wsl] sh -s`, so the master copy in this repo is the only copy. A machine with no
 ssh route from here (rog-strix) pushes instead, on a cron — the page prints the exact line.
