@@ -116,7 +116,9 @@ when the fact comes from the Claude desktop app's own history. A WSL box reports
 tagged `WSL` and `Windows`.
 
 **Desktop sessions.** `/sessions.html` merges Claude Desktop Code tabs across accounts and
-machines, with account, machine, live-status, archive, and text filters. Its read-only
+machines, with account, machine, live-status, archive, and text filters. Each row's
+Session details panel has a Copy session context button that puts the row's metadata
+on the clipboard as `Label: value` lines. Its read-only
 `GET /api/desktop-sessions` returns `groups` keyed by account UUID, org UUID, and machine,
 plus per-machine collection status. Org labels come from `credits-accounts.json`.
 Enable a machine with `"desktop_sessions": true` on its existing `machines.json` entry;

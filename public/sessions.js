@@ -165,6 +165,39 @@
     }
   };
 
+  function sessionContext(group, session) {
+    const machine = data.machines.find((m) => m.id === group.machine);
+    const lines = [
+      ['Title', session.title || 'Untitled session'],
+      ['Account', [group.label, group.email, group.accountUuid].filter(Boolean).join(' \u00b7 ')],
+      ['Machine', machine?.label || group.machine],
+      ['Directory', session.cwd], ['Worktree', session.worktree], ['Branch', session.branch], ['Model', session.model],
+      ['Created', session.createdAt], ['Last activity', session.lastActivityAt], ['Turns', session.completedTurns],
+      ['Status', session.liveState + (session.isArchived ? ', archived' : '')],
+      ['CLI session', session.cliSessionId], ['Session', session.id],
+    ];
+    return lines.filter(([, value]) => value !== null && value !== undefined && value !== '')
+      .map(([label, value]) => label + ': ' + value).join('\n') + '\n';
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard?.writeText) {
+      try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
+    }
+    // The deck is plain http on its Tailscale address, where navigator.clipboard is absent.
+    const area = el('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { /* unsupported */ }
+    area.remove();
+    return ok;
+  }
+
   function sessionElement(group, session) {
     const tr = el('tr');
     const title = el('td', 'desktop-title-cell');
@@ -177,7 +210,19 @@
       ['CLI session', session.cliSessionId], ['Session', session.id]]) {
       if (value) list.append(el('dt', 'muted', label), el('dd', 'mono', value));
     }
-    details.append(list);
+    const copy = el('button', 'ghost desktop-copy', 'Copy session context');
+    copy.type = 'button';
+    copy.setAttribute('aria-label', 'Copy session context for ' + (session.title || 'Untitled session'));
+    copy.onclick = async () => {
+      // Not disabled while busy: a disabled button drops keyboard focus.
+      if (copy.dataset.busy) return;
+      copy.dataset.busy = '1';
+      const ok = await copyText(sessionContext(group, session));
+      copy.textContent = ok ? 'Copied' : 'Copy failed';
+      copy.focus();
+      setTimeout(() => { copy.textContent = 'Copy session context'; delete copy.dataset.busy; }, 1500);
+    };
+    details.append(list, copy);
     title.append(details);
     const context = el('td', 'desktop-context-cell');
     context.append(el('div', 'mono', session.branch || 'No branch'), el('div', 'muted', session.model || 'Model unknown'));

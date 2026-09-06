@@ -815,6 +815,7 @@ table.machines td.machine { min-width: 190px; }
 .desktop-details summary { color: var(--muted); cursor: pointer; }
 .desktop-details dl { margin: 8px 0 0; }
 .desktop-details dd { margin: 0 0 6px; font-size: 11px; overflow-wrap: anywhere; }
+.desktop-details .desktop-copy { margin: 2px 0 4px; padding: 3px 9px; font-size: 11px; }
 .desktop-badges { display: flex; flex-wrap: wrap; align-items: start; gap: 5px; }
 .desktop-badges .desktop-live { color: var(--text-strong); border-color: var(--coral); }
 .desktop-live::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--coral); margin-right: 5px; }
