@@ -21,6 +21,7 @@ WORK RULES:
     tok=$(curl -sf http://100.125.231.25:3131/api/ghtoken | python3 -c 'import json,sys;print(json.load(sys.stdin)["token"])')
     GH_TOKEN=$tok git push origin agent-v2-s0
   curl 503 = no GitHub train open: file a Linear issue labeled operator:gate ("start a GitHub train on the fleetdeck keys page") and block on that step only; keep committing locally.
+- Linear unreachable (oauth_token_invalid_grant or any MCP error) is NEVER a blocker: write the would-be issue or comment into docs/goals/fd-v2-s0/LINEAR-PENDING.md (title, labels, body, timestamp), commit it, register with task PENDING, keep working. Retry Linear once per milestone; file the pending entries when it is back. Never stop for Linear.
 - Blocked or out of scope? A Linear issue (operator:gate for a teed-up push/credential, operator:decision for a real decision with options + recommendation, needs:general, needs:agent:<name>). A blocker that is not a Linear issue does not exist.
 - You EXECUTE, you do not orchestrate: never run /introduce-goal, never start another worker session, never open a new lane, never re-scope. Out-of-scope work you spot becomes a Linear issue for the operator.
 - Report honestly: a failing self-test is reported as failing, with numbers.

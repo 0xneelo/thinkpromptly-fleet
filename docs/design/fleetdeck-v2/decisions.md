@@ -21,7 +21,7 @@ Rules and tools worth reusing:
 **Sequencing question raised by the precedent.** Richmond compiled to plain JS *before* wiring logic. The
 sheet ruling was "vendor first, pre-compile at the end (L11)". Proposal: insert **S2 = pass-2 compile**
 right after S1, so L1–L10 are written against plain JS (our stack, like today's `app.js`) instead of
-against the dc-runtime template. Default if the operator does not rule: keep the sheet ruling (L11).
+against the dc-runtime template. **Operator ruling (same day, after a from-zero explainer): compile EARLY.** S2 follows S1; L1–L10 are written in plain JS; L11 no longer compiles.
 
 ## 2026-09-07 · Accounts trend: history already exists (reader audit)
 
@@ -35,3 +35,18 @@ against the dc-runtime template. Default if the operator does not rule: keep the
 - Project `remote-system` / sub-project `fleetdeck-v2`.
 - S0 → **Gisbert** (`qa-engineer`), GPT Astra xhigh, `/goal`. S1 → **Waldemar** (`frontend-developer`), GPT Astra xhigh, `/goal`. Both on the german-box, in parallel.
 - S1 stays inside `public/v2/` (vendored runtime under `public/v2/vendor/`, media under `public/v2/media/`) so no `server.js` change is needed for pass 1 and the gate can run against a plain static server.
+
+## 2026-09-07 · S2 method (design-seat decision after the tools audit)
+
+Precedent pass 2 dumped rendered DOM to static HTML and hand-wrote behaviour (fits marketing pages). Fleetdeck
+is an app whose tabs/menus/toggles/composer/lists are the design, so **S2 compiles the template into plain-JS
+render functions and keeps the mock's logic class running on a ≤300-line shim**; React/Babel/dc-runtime are
+dropped; the template stays in the repo as the source (`public/v2/template.dc.html`, `npm run v2:compile`,
+`v2:check`). Gates: F2 normalized-DOM parity 36/36, interaction parity after a scripted click-through, pixel gate,
+no-engine network proof. Fallback = the precedent's DOM-dump method, only via `operator:decision`. Precedent
+tools copied to `docs/design/fleetdeck-v2/precedent/`. Pack: `docs/goals/fd-v2-s2/`.
+
+Launch stall 2026-09-07: both GPT workers stopped on `oauth_token_invalid_grant` from the box's Linear MCP
+(the prompt said "a blocker that is not a Linear issue does not exist"). Fixed by a bus nudge (never-block rule,
+`LINEAR-PENDING.md`) and by amending the packs + the introduce-goal skill references. Operator action pending:
+re-auth Linear on the box over RDP (german-box-workers skill §9).

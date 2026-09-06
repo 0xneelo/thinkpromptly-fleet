@@ -46,7 +46,9 @@ Closes ledger D01, D02, D07 and the P1 half of D03-D19.
 | L11 | frontend-developer | cut-over | `/` serves v2; delete `app.js`, `style.css`, old pages; README + tests updated; final full gate run | S |
 
 Waves (all slices edit `public/v2/index.html`, so keep concurrent workers on disjoint screen line ranges):
-**A** S0 ∥ S1 → **B** L1 → **C** L2 ∥ L3 ∥ L4 → **D** L5 ∥ L6 ∥ L7 → **E** L8 ∥ L9 ∥ L10 → **F** L11.
+**A** S0 ∥ S1 → **B** S2 (pass-2 compile) → **C** L1 → **D** L2 ∥ L3 ∥ L4 → **E** L5 ∥ L6 ∥ L7 → **F** L8 ∥ L9 ∥ L10 → **G** L11.
+
+**Operator ruling 2026-09-07 (after the precedent search): compile EARLY.** S2 turns the pass-1 port into plain HTML + JS with a parity check (Richmond's method, lowcap `editorial-clean-port`); every logic slice L1–L10 is then written in plain JS like today's `app.js`, and the product never ships React/Babel. The fixture-mode pixel gate stays the acceptance for every slice.
 
 ## Verification per slice (design seat)
 
@@ -65,7 +67,7 @@ Waves (all slices edit `public/v2/index.html`, so keep concurrent workers on dis
 
 | # | Decision | Ruling | Consequence in the plan |
 |---|---|---|---|
-| 1 | Runtime | **hybrid**: vendor dc-runtime + React + Babel for S1; pre-compile the template to plain JS at the end (L11) | S1 verbatim; L11 adds the pre-compile step. Operator recalls the same move in the onboarding-app v3 migration; precedent search in progress (see `decisions.md`). |
+| 1 | Runtime | vendor dc-runtime + React + Babel for S1; then **compile to plain JS EARLY (S2), before any logic** — ruling revised 2026-09-07 after the precedent search (`decisions.md`) | S1 verbatim; S2 = pass-2 compile + parity; L1–L10 in plain JS; L11 has no compile step. |
 | 2 | External assets | **vendor everything, videos included** | S1 downloads the two CloudFront videos, Inter woff2 and the two provider logos into `public/v2/media/`; no external URL remains. Repo grows ~30-40 MB. |
 | 3 | Routes | **Landing on `/`, App on `/app`** | L1: `/` = landing view, `/app` = app view (hash screens `#windows` …), `/deck` = investor deck; legacy `/keys.html` etc. → `/app#…`; README, `.claude/launch.json` and skills that open `/` get updated in L11. |
 | 4 | Workers | **mixed**: GPT Astra xhigh for the mechanical slices, Claude high for the logic slices; both `/goal` mode | Astra: S0, S1, L7, L8, L9, L11. Claude: L1, L2, L3, L4, L5, L6, L10. Reviewer on every diff. |
@@ -90,4 +92,18 @@ source badge text, principal chips, anything else discovered while wiring logic.
 | S1 | + vendor videos/fonts/logos (`public/v2/media/`), rewrite every external URL |
 | L1 | routes per decision 3; theme key migration; no asset work left |
 | L8s (new, Claude, size S) | server: `usage_snapshots` table in `fleet.db` (account, ts, windows/pct), written on every credits collect, pruned after 8 days; `GET /api/credits` returns `trend[]` per account. Blocked on the tracker audit result. |
-| L11 | + pre-compile the dc template to plain JS (drop runtime Babel), + update README / launch.json / skills for `/` → landing, `/app` → app |
+| S2 (new, size M, Claude high) | pass-2: mechanical compile of `public/v2/index.html` (template + DCLogic script) into plain HTML + JS (`public/v2/app.js`, `landing.js`, `deck.js`), no React/Babel at runtime; parity suite ported from lowcap (`tools/f2-parity.mjs`, `hook-inventory.js`) → normalized DOM byte-identical to pass 1; pixel gate green on 36 screens; pass-1 files kept under `public/v2/pass1/` until L11 deletes them |
+| L11 | + update README / launch.json / skills for `/` → landing, `/app` → app; delete `public/v2/pass1/` and the vendored React/Babel |
+
+## Timeline (estimate given to the operator 2026-09-07, one wave per day, no rerun loops)
+
+| Date | Milestone |
+|---|---|
+| 2026-09-08 | pixel-identical static preview at `/v2/` on the worker branch (wave A: S0 + S1) |
+| 2026-09-09 | same preview as plain JS, engine removed (S2) |
+| 2026-09-11 | terminals, sidebar, registry live in the new design (waves C + D) |
+| 2026-09-13 | bus, org chart, keys, accounts, machines, desktop sessions (waves E + F) |
+| 2026-09-14 | cut-over: `/` = landing, `/app` = deck, old UI deleted (L11); merged to main; operator runs `./up.sh` |
+
+Stretch factors: GitHub train window must be open for every worker push; a red pixel gate returns a slice
+(one rerun, then escalate); the weave into main needs a live remote-system 🎛 ORCHESTRATOR (none at plan time).
