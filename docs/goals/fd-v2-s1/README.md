@@ -12,7 +12,7 @@
 ## Goal (one line)
 
 Land the design mock **byte-verbatim** as `public/v2/index.html` with its runtime and every asset
-vendored, reachable at `/v2/`, and prove it with the pixel gate on all 18 screens × 2 themes.
+vendored, reachable at `/v2/index.html`, and prove it with the pixel gate on all 18 screens × 2 themes.
 
 ## The rule that governs this slice (D15, operator-ratified precedent)
 
@@ -47,7 +47,7 @@ in your commit, quote it, and continue.
 2. `public/v2/vendor/`: `dc-runtime.js` (= `support.js` after the three URL swaps), `react.production.min.js` 18.3.1, `react-dom.production.min.js` 18.3.1, `babel.min.js` 7.29.0 (exact versions, downloaded from unpkg, sha256 of each recorded in `public/v2/vendor/MANIFEST.md`), `inter.css` + `fonts/*.woff2` (weights 400/500/600/700, latin; source and license noted in the manifest).
 3. `public/v2/media/`: the svg, the two mp4 (download once; ~10–20 MB each — commit them, the operator ruled "vendor everything, videos included"), the two logo PNGs. Sizes in the manifest.
 4. Proof of verbatim: `docs/design/fleetdeck-v2/verify/S1/port-diff.txt` = output of `diff` between the mock and `public/v2/index.html` plus between `support.js` and `dc-runtime.js`; only T1/T2 lines may appear.
-5. Proof of no external loads: a Playwright run that visits `/v2/` (landing, app, deck) and records every request host → `verify/S1/network.json`; only your own origin may appear.
+5. Proof of no external loads: a Playwright run that visits `/v2/index.html` (landing, app, deck) and records every request host → `verify/S1/network.json`; only your own origin may appear.
 6. The gate: run S0's `scripts/design-diff.mjs --app <your static server>/v2/index.html --slice S1` → 36 screenshots ≤ 0.5 % → `verify/S1/report.json` + PNGs committed. Serve `public/` with a static server for this (no `server.js` needed for pass 1). If S0 has not landed yet: `git fetch origin agent-v2-s0` and run the script from that ref (checkout only `scripts/design-diff.mjs`); if it still does not exist, do the port, commit everything else, and poll every 30 min — the slice is not done without the report.
 7. `public/v2/README.md` (10 lines): what this is (pass-1 artifact, dc-runtime rendered), the D15 rule, how to run the gate.
 8. `server.js` MIME map (`server.js:2356`) knows only `.html .js .css`; add `.svg`, `.png`, `.woff2`, `.mp4`, `.webp` (image/svg+xml, image/png, font/woff2, video/mp4, image/webp) as a five-line change, quoted in the commit body. Nothing else in `server.js`. Verify each vendored file serves with the right `Content-Type` through `node server.js` on a scratch port (`PORT=3199 FLEET_TRAIN_PORT=3198 node server.js`, kill it afterwards) and note the curl results in your report.
@@ -62,9 +62,9 @@ in your commit, quote it, and continue.
 - [x] `port-diff.txt` shows only T1/T2 lines; every substitution quoted OUT → IN in the commit body.
 - [x] `/v2/index.html` renders the landing; "App" reaches the app view with all 8 nav screens + full screen; "Deck" reaches the 5 slides; dark and light both work; video toggle works.
 - [x] `network.json`: zero requests to hosts other than your own origin.
-- [ ] `verify/S1/report.json`: `allPass: true` on 36 screens; PNGs committed.
+- [x] `verify/S1/report.json`: `allPass: true` on 36 screens; PNGs committed.
 - [x] `MANIFEST.md` with versions, sha256, sizes, licenses.
-- [ ] `reviewer` subagent pass on the diff, findings fixed (it must confirm the diff is T1/T2-only).
+- [x] `reviewer` subagent pass on the diff, findings fixed (it must confirm the diff is T1/T2-only).
 - [ ] Branch pushed; final report at `docs/goals/fd-v2-s1/REPORT.md` signed **Waldemar**; registry row set `done`.
 
 ## Constraints
@@ -83,4 +83,4 @@ finish). You execute; you never orchestrate.
 
 ## DESIGN-35 execution amendment
 
-Linear OAuth expiry is non-blocking. Record every intended issue/comment in `LINEAR-PENDING.md` with title, labels, body, timestamp and Waldemar signature; commit local pending IDs and retry Linear once per milestone. The design seat mirrors later. Registration uses task `PENDING`; the actual HTTP 401 response is recorded in S1-REGISTRY and is not represented as success. This amendment does not waive pixel-gate or registry-completion acceptance.
+Linear OAuth expiry is non-blocking. Record every intended issue/comment in `LINEAR-PENDING.md` with title, labels, body, timestamp and Waldemar signature; commit local pending IDs and retry Linear once per milestone. The design seat mirrors later. The requested `PENDING` registration returned HTTP 401 unauthenticated, then HTTP 400 with the documented fleet authentication because the server requires a real Linear key. S1-REGISTRY records both responses; task registration is not represented as success. The separately authorized status-only done update is tracked independently. This amendment does not waive pixel-gate or registry-completion acceptance.

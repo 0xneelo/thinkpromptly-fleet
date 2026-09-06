@@ -1,9 +1,9 @@
 # fd-v2 S1 execution report
 
-Status: **implementation, network and MIME proof complete; pixel gate and registry completion pending**.
+Status: **all implementation and artifact checks pass; final delivery and registry receipt in progress**.
 
 Worker: **Waldemar** (`frontend-developer`, `agent:waldemar`). Project: `remote-system` / `fleetdeck-v2`.
-Updated: 2026-09-06T23:21:20.429743+00:00.
+Updated: 2026-09-06T23:27:54.699250+00:00.
 
 ## What landed
 
@@ -11,7 +11,15 @@ The source artboard is copied mechanically into `public/v2/index.html`. Reversin
 
 All runtime, fonts and media are vendored: React 18.3.1, ReactDOM 18.3.1, Babel 7.29.0, design dc-runtime, Inter Latin 400/500/600/700, the eye SVG, both videos and both provider PNG logos. `public/v2/vendor/MANIFEST.md` covers 15 files, 19,151,780 bytes, with SHA256, sizes, sources and licenses. All three runtime dependencies match the original SRI digests. The two videos are 5,328,811 and 10,321,675 bytes; neither was transcoded.
 
-The artifact README has exactly 10 lines. `server.js` contains only the five allowed MIME additions. The application server serves `/v2/index.html`; the specified static server resolves `/v2/`. Application directory routing is recorded separately as S1-ROUTING, with no out-of-scope edit.
+The artifact README has exactly 10 lines. `server.js` contains only the five allowed MIME additions. All verification URLs use `/v2/index.html`. DESIGN-35 decided S1-ROUTING on 2026-09-07: directory routing is deferred to L1; no S1 routing edit.
+
+## DESIGN-35 final review fixes
+
+Both `package.json` and `package-lock.json` were checked out verbatim from `origin/agent-v2-s0` again at `cf88d293b058fa87c4e43511393a4acbc365acad`, followed by a successful `npm ci` (10 packages added, zero vulnerabilities). Source-byte equality was verified for both files: package SHA256 `843e226af2941908936bcd28ef5d7fe7146e93c0c960cb1975989b27004c149f`; lock SHA256 `08a19654f09d1dce931a6d435459bf8f7d4bc2451e4a3c347b84d02b3e5d3b28`. The final files use Gisbert's dependency resolution and package script verbatim.
+
+Inter's shared WOFF2 was parsed directly using fontTools 4.64.0 and Brotli 1.2.0: `fvar` defines the `wght` axis from 100 through 900 (default 400), covering 400/500/600/700. `gvar` contains 518 entries, 511 varying glyphs and 1,019 variation tuples. This is structural proof of a variable font; the font bytes and SHA256 remain unchanged. `MANIFEST.md` records the proof and command. No replacement font was needed.
+
+The S1 gate was rerun after these checks; the final report below is from that rerun. The artifact README now uses `S1-recheck` for safe later repeats, preserving the committed S1 evidence directory. MIME checks were refreshed after the README/manifest updates: 19/19 pass against the final public files.
 
 ## Substitution table as applied
 
@@ -34,11 +42,11 @@ The extracted Latin CSS additionally substitutes the same Google WOFF2 URL in al
 
 ## Browser and network proof
 
-`verify/S1/network.json`: **50/50 recorded checks pass**, **zero external hosts/origins**, 60 CDP entries (58 HTTP requests and 2 inline data resources; 58 Playwright requests), zero page exceptions. Actual clicks cover landing, all eight app nav screens, session full screen, bus maximization, all five deck slides, dark/light and video toggles. No request interception or app-state injection was used. Required assets load and final videos decode successfully. Browser: Chromium 153.0.8010.12, Playwright 1.63.0.
+`verify/S1/network.json`: **50/50 recorded checks pass**, **zero external hosts/origins**, 56 CDP entries (54 HTTP requests and 2 inline data resources; 54 Playwright requests), zero page exceptions. Actual clicks cover landing, all eight app nav screens, session full screen, bus maximization, all five deck slides, dark/light and video toggles. No request interception or app-state injection was used. Required assets load and final videos decode successfully. Browser: Chromium 153.0.8010.12, Playwright 1.63.0.
 
 The browser traversal used 1440×1000; it is separate from the required 1440×900 pixel gate. Weight 700 is declared and its binary verified, but was not exercised by this traversal.
 
-Four console errors remain from the original parser-visible template: one unresolved video binding causes a local 404 and one unresolved SVG points binding causes a parser error per theme. Ten canceled repeated video requests are retained in the raw evidence. These were not hidden or fixed; S1-MOCK-PARSER records the permitted follow-up decision.
+Four console errors remain from the original parser-visible template: one unresolved video binding causes a local 404 and one unresolved SVG points binding causes a parser error per theme. Eleven canceled repeated video requests are retained in the raw evidence. DESIGN-35 decided S1-MOCK-PARSER on 2026-09-07: preserve these known pass-1 artifacts exactly under D15; S2 eliminates the parser diagnostics by construction.
 
 ## MIME curl results
 
@@ -70,44 +78,55 @@ All five new extensions were exercised: `.svg`, `.png`, `.woff2`, `.mp4`, `.webp
 
 ## Pixel gate
 
-**NOT RUN; no allPass claim.** S0 ref `47dbabb20855242bc7e0b421e52b0fbbab801df1` published the three devDependencies but had no `scripts/design-diff.mjs`. The dependencies are imported without other S0 files; the script is polled at the required 30-minute interval. No threshold has been changed. Required screen results are pending:
+**allPass: true on 36/36 screens**, with 72 committed capture/diff PNGs at 1440×900, scale 1. Pixelmatch threshold 0.1, includeAA false, mismatch limit 0.5%; no threshold changes. Maximum: **0.03294753086419753% (427 pixels)** on Registry dark; the other 35 screen/theme pairs have zero mismatched pixels.
 
-| Screen | Dark mismatch | Light mismatch |
-|---|---|---|
-| Landing | not run | not run |
-| Hero | not run | not run |
-| Capability | not run | not run |
-| Fleetdeck app | not run | not run |
-| Windows | not run | not run |
-| Org chart | not run | not run |
-| Registry | not run | not run |
-| Message bus | not run | not run |
-| SSH keys | not run | not run |
-| Accounts | not run | not run |
-| Machines | not run | not run |
-| Desktop sessions | not run | not run |
-| Session full screen | not run | not run |
-| 01 Title | not run | not run |
-| 02 Problem | not run | not run |
-| 03 Market | not run | not run |
-| 04 Sales | not run | not run |
-| 05 Expansion | not run | not run |
+Command: `npm run design:diff -- --app http://127.0.0.1:4181/v2/index.html --slice S1`.
+
+Published script/package provenance: S0 `f94b5f2`, byte-identical at fetched head `f17f1b5be614f921bd70dc4d190c50f66537b4c0`. Its 36 baseline PNGs were temporary comparison inputs; they are not included in S1 commits. S0 baseline and S1 environments match: Linux x64, Node 24.14.1, Playwright 1.63.0, Chromium 153.0.8010.12. Reviewer independently reproduced all 36 pixel counts and all 36 diff PNGs.
+
+The S0 visual contract uses reduced motion, identical theme storage, disabled animations/caret, hidden video/canvas and blocked media. Live video/canvas appearance is outside this pixel gate; the independent network/UI run verifies video decoding and toggles without media interception. The gate replaces its output directory, so port-diff.txt and network.json were preserved and restored byte-identically.
+
+| Screen | Dark mismatch % | Light mismatch % |
+|---|---:|---:|
+| Landing | 0.000000000000 | 0.000000000000 |
+| Hero | 0.000000000000 | 0.000000000000 |
+| Capability | 0.000000000000 | 0.000000000000 |
+| Fleetdeck app | 0.000000000000 | 0.000000000000 |
+| Windows | 0.000000000000 | 0.000000000000 |
+| Org chart | 0.000000000000 | 0.000000000000 |
+| Registry | 0.032947530864 | 0.000000000000 |
+| Message bus | 0.000000000000 | 0.000000000000 |
+| SSH keys | 0.000000000000 | 0.000000000000 |
+| Accounts | 0.000000000000 | 0.000000000000 |
+| Machines | 0.000000000000 | 0.000000000000 |
+| Desktop sessions | 0.000000000000 | 0.000000000000 |
+| Session full screen | 0.000000000000 | 0.000000000000 |
+| 01 Title | 0.000000000000 | 0.000000000000 |
+| 02 Problem | 0.000000000000 | 0.000000000000 |
+| 03 Market | 0.000000000000 | 0.000000000000 |
+| 04 Sales | 0.000000000000 | 0.000000000000 |
+| 05 Expansion | 0.000000000000 | 0.000000000000 |
 
 ## Review
 
-Independent reviewer: **CLEAN; T1/T2-only; zero implementation findings**. Results: 7/7 HTML substitution kinds, 19 occurrences ; 3 runtime swaps; 25/25 protected files; 15/15 manifest entries; 3/3 SRI matches; 4/4 media signatures; byte-identical raw diff; exactly five MIME additions; 10-line artifact README. Dynamic-proof and final gate/delivery review is recorded as it completes in LINEAR-PENDING.md.
+`git diff --check` reports ten whitespace warnings confined to byte-verbatim SVG/license inputs and raw unified-diff context. These source/evidence bytes are preserved under D15; no whitespace normalization was applied.
+
+Independent reviewer: **CLEAN; T1/T2-only; zero implementation findings**. Results: 7/7 HTML substitution kinds, 19 occurrences ; 3 runtime swaps; 25/25 protected files; 15/15 manifest entries; 3/3 SRI matches; 4/4 media signatures; byte-identical raw diff; exactly five MIME additions; 10-line artifact README. Final artifact reviewer confirms 36/36 unique screen/theme rows, 72/72 correctly sized PNGs, 36/36 capture hashes, 36/36 exact S0 baseline hashes, 36/36 recomputed pixel counts, 36/36 byte-identical diff PNGs, and restored port/network proof bytes. Zero findings remain. Push and registry receipts are separate completion steps.
 
 ## Lifecycle, delivery and open issues
 
 DESIGN-35's current ruling makes Linear OAuth expiry non-blocking. Every intended issue/comment is in `LINEAR-PENDING.md`, signed Waldemar, using stable local IDs for milestone commits; these are not fabricated Linear issue keys. Retries remain `oauth_token_invalid_grant`; the design seat mirrors entries later.
 
-The exact registry POST with `task:PENDING` returned HTTP 401 `unauthorized`. No registry success/done status is claimed. S1-REGISTRY requests the supported authorization or design-seat update. S1-ROUTING and S1-MOCK-PARSER are recorded decisions, preserving the strict S1 scope.
+The bare task-PENDING registry POST returned HTTP 401. The documented box fleet configuration supplied the supported bearer authentication without exposing its value; the authenticated task-PENDING POST returned HTTP 400 because the server requires one real Linear key or an empty task. No fabricated task key was sent. This compatibility limitation is recorded in S1-REGISTRY. The separately authorized status-only done update follows the final branch push. S1-ROUTING and S1-MOCK-PARSER are decided by DESIGN-35 (2026-09-07): directory routing deferred to L1; parser diagnostics preserved for S1 and handled by S2.
 
-Each completed milestone is pushed with a freshly obtained train-broker token, held only in the subprocess environment. Separate fresh-token `git ls-remote` checks verify the remote SHA. Final delivery receipt is pending the gate/report commit and registry completion. Latest committed milestone at report generation: `d3cf5b4bc746100dd6fa5e96af84149eace4a136`.
+Each completed milestone is pushed with a freshly obtained train-broker token, held only in the subprocess environment. Separate fresh-token `git ls-remote` checks verify the remote SHA. Final delivery receipt is pending the gate/report commit and registry completion. Latest committed milestone before this report update: `39ae4ad77e94cd30a2fa8a0f5cc6fc61f0a641c9`.
 
 Commits so far:
 
 ```
+39ae4ad docs(fleetdeck): publish S1 port evidence and pending acceptance (S1-08)
+1dd2c56 build(fleetdeck): import S0 pixel gate dependencies (S1-07)
+73bc2bc test(fleetdeck): prove local-only requests across S1 views (S1-06)
 d3cf5b4 fix(fleetdeck): serve vendored design media MIME types (S1-05)
 0bca650 feat(fleetdeck): land mechanical pass-one artboard (S1-04)
 16123f3 feat(fleetdeck): vendor every design media asset and manifest (S1-03)
