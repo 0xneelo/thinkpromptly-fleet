@@ -65,7 +65,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Mechanically copy the artboard with only count-asserted T1/T2 substitutions and generate raw source/output diffs.
@@ -220,5 +220,16 @@ Signed Waldemar.
 - Mirror status: pending
 
 Both exact hero videos and provider PNGs downloaded HTTP200, SVG copied verbatim. Independent reviewer verified 15/15 manifest hashes/sizes (19,151,780 bytes), 4/4 PNG/MP4 signatures and license provenance. Font milestone Linear retry remains oauth_token_invalid_grant.
+
+Signed Waldemar.
+
+## S1-04 — comment
+
+- Timestamp: 2026-09-06T23:18:25.936272+00:00
+- Title: Verbatim port and raw diff complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Independent reviewer confirms T1/T2-only: 7 HTML substitution kinds/19 occurrences, 3 runtime URL swaps. Reversal reproduces source bytes; all25 protected mock/oldUI files match base. Raw diff is15,690 bytes and independently reproduced. Media milestone Linear retry still oauth_token_invalid_grant.
 
 Signed Waldemar.

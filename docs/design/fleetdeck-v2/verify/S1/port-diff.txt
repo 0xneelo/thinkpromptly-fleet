@@ -1,0 +1,164 @@
+--- "docs/design/fleetdeck-v2/mock/Fleetdeck Final.dc.html"	2026-09-07 01:06:44.209218876 +0200
++++ public/v2/index.html	2026-09-07 01:15:52.241948922 +0200
+@@ -3,13 +3,12 @@
+ <head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1">
+-<script src="./support.js"></script>
++<script src="/v2/vendor/dc-runtime.js"></script>
+ </head>
+ <body>
+ <x-dc>
+ <helmet>
+-<link rel="preconnect" href="https://fonts.googleapis.com">
+-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet">
++<link rel="stylesheet" href="/v2/vendor/inter.css">
+ <style>
+ html,body{margin:0;padding:0;background:#0a0a0a;}
+ body{font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;color:#ffffff;}
+@@ -45,7 +44,7 @@
+   <div style="position:relative;z-index:10;">
+     <nav style="position:fixed;top:0;left:0;right:0;z-index:50;display:flex;align-items:center;justify-content:space-between;padding:16px 48px;border-bottom:1px solid {{ L_line15 }};background:{{ L_glass10 }};backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);">
+       <div data-reveal="r" style="display:flex;align-items:center;gap:10px;transition:all .7s ease-out;will-change:transform;">
+-        <img src="uploads/fleetdeck-eye-minimal.svg" alt="fleetdeck logo" width="26" height="26" style="display:block;">
++        <img src="/v2/media/fleetdeck-eye-minimal.svg" alt="fleetdeck logo" width="26" height="26" style="display:block;">
+         <span style="display:flex;align-items:baseline;gap:7px;white-space:nowrap;"><span style="font-size:20px;font-weight:500;letter-spacing:-0.02em;">fleetdeck.</span><span style="font-size:11px;color:{{ L_ink60 }};">by thinkpromptly</span></span>
+       </div>
+       <div style="display:flex;align-items:center;gap:40px;">
+@@ -745,8 +744,8 @@
+       <sc-for list="{{ A_miniAccounts }}" as="a" hint-placeholder-count="5">
+         <div style="display:grid;grid-template-columns:14px minmax(0,1fr) 44px;gap:8px 8px;align-items:center;">
+           <span title="{{ a.provTitle }}" style="{{ a.provStyle }}">
+-            <sc-if value="{{ a.isGpt }}" hint-placeholder-val="{{ false }}"><img src="https://thumb.wikimedia.org/wikipedia/commons/thumb/e/ef/ChatGPT-Logo.svg/1280px-ChatGPT-Logo.svg.png" alt="ChatGPT" style="{{ A_gptLogoStyle }}"></sc-if>
+-            <sc-if value="{{ a.isClaude }}" hint-placeholder-val="{{ false }}"><img src="https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b0/Claude_AI_symbol.svg/1280px-Claude_AI_symbol.svg.png" alt="Claude" style="{{ A_claudeLogoStyle }}"></sc-if>
++            <sc-if value="{{ a.isGpt }}" hint-placeholder-val="{{ false }}"><img src="/v2/media/chatgpt-logo.png" alt="ChatGPT" style="{{ A_gptLogoStyle }}"></sc-if>
++            <sc-if value="{{ a.isClaude }}" hint-placeholder-val="{{ false }}"><img src="/v2/media/claude-logo.png" alt="Claude" style="{{ A_claudeLogoStyle }}"></sc-if>
+           </span>
+           <span style="{{ a.nameStyle }}">{{ a.name }}</span>
+           <span style="{{ a.txtStyle }}">{{ a.txt }}</span>
+@@ -821,13 +820,13 @@
+ <div ref="{{ D_rootRef }}" style="position:relative;width:100%;height:100vh;overflow:hidden;background:#000;font-family:'Aeonik','Helvetica Neue',system-ui,sans-serif;">
+ 
+ <div data-fd-slide="0" data-screen-label="01 Title" style="position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#000;transition:opacity .35s ease-in-out;opacity:1;z-index:10;">
+-  <video data-src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260611_104107_121bfb5a-b1df-4e0d-8240-25b81f7cc85d.mp4" ref="{{ D_vid }}" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;top:0;bottom:0;right:-15%;left:15%;width:100%;height:100%;object-fit:cover;"></video>
++  <video data-src="/v2/media/hero-dark.mp4" ref="{{ D_vid }}" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;top:0;bottom:0;right:-15%;left:15%;width:100%;height:100%;object-fit:cover;"></video>
+   <div data-dim="1" style="position:absolute;inset:0;background:rgba(0,0,0,0);pointer-events:none;"></div>
+   <div style="position:relative;z-index:10;display:flex;flex-direction:column;height:100%;">
+     <div data-anim="1" style="animation:fdBlur 0.9s cubic-bezier(0.25,0.1,0.25,1) 0.1s both;background:rgba(255,255,255,0.10);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);">
+       <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:3.5% 5% 0 5%;">
+         <div style="display:flex;align-items:center;gap:10px;">
+-          <img src="uploads/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
++          <img src="/v2/media/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
+           <span style="font-size:22px;font-weight:500;letter-spacing:-0.02em;color:#fff;">fleetdeck.</span>
+         </div>
+         <div style="display:flex;gap:32px;">
+@@ -849,13 +848,13 @@
+ </div>
+ 
+ <div data-fd-slide="1" data-screen-label="02 Problem" style="position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#000;transition:opacity .35s ease-in-out;opacity:0;pointer-events:none;">
+-  <video data-src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260611_104107_121bfb5a-b1df-4e0d-8240-25b81f7cc85d.mp4" ref="{{ D_vid }}" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"></video>
++  <video data-src="/v2/media/hero-dark.mp4" ref="{{ D_vid }}" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;"></video>
+   <div data-dim="1" style="position:absolute;inset:0;background:rgba(0,0,0,0);pointer-events:none;"></div>
+   <div style="position:relative;z-index:10;display:flex;flex-direction:column;height:100%;">
+     <div data-anim="1" style="animation:fdBlur 0.9s cubic-bezier(0.25,0.1,0.25,1) 0.05s both;background:rgba(255,255,255,0.10);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);">
+       <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:3.5% 5% 0 5%;">
+         <div style="display:flex;align-items:center;gap:10px;">
+-          <img src="uploads/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
++          <img src="/v2/media/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
+           <span style="font-size:22px;font-weight:500;letter-spacing:-0.02em;color:#fff;">fleetdeck.</span>
+         </div>
+         <span style="color:#80838e;font-size:20px;line-height:1.4;">02</span>
+@@ -886,13 +885,13 @@
+ </div>
+ 
+ <div data-fd-slide="2" data-screen-label="03 Market" style="position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#000;transition:opacity .35s ease-in-out;opacity:0;pointer-events:none;">
+-  <video data-src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260611_104107_121bfb5a-b1df-4e0d-8240-25b81f7cc85d.mp4" ref="{{ D_vid }}" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scale(-1,-1);opacity:0.5;"></video>
++  <video data-src="/v2/media/hero-dark.mp4" ref="{{ D_vid }}" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scale(-1,-1);opacity:0.5;"></video>
+   <div data-dim="1" style="position:absolute;inset:0;background:rgba(0,0,0,0);pointer-events:none;"></div>
+   <div style="position:relative;z-index:10;display:flex;flex-direction:column;height:100%;">
+     <div data-anim="1" style="animation:fdBlur 0.9s cubic-bezier(0.25,0.1,0.25,1) 0.05s both;background:rgba(255,255,255,0.10);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);">
+       <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:3.5% 5% 0 5%;">
+         <div style="display:flex;align-items:center;gap:10px;">
+-          <img src="uploads/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
++          <img src="/v2/media/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
+           <span style="font-size:22px;font-weight:500;letter-spacing:-0.02em;color:#fff;">fleetdeck.</span>
+         </div>
+         <span style="color:#80838e;font-size:20px;line-height:1.4;">03</span>
+@@ -908,13 +907,13 @@
+ </div>
+ 
+ <div data-fd-slide="3" data-screen-label="04 Sales" style="position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#000;transition:opacity .35s ease-in-out;opacity:0;pointer-events:none;">
+-  <video data-src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260611_104107_121bfb5a-b1df-4e0d-8240-25b81f7cc85d.mp4" ref="{{ D_vid }}" data-base-left="400px" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;top:0;bottom:0;right:0;left:400px;height:100%;object-fit:cover;"></video>
++  <video data-src="/v2/media/hero-dark.mp4" ref="{{ D_vid }}" data-base-left="400px" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;top:0;bottom:0;right:0;left:400px;height:100%;object-fit:cover;"></video>
+   <div data-dim="1" style="position:absolute;inset:0;background:rgba(0,0,0,0);pointer-events:none;"></div>
+   <div style="position:relative;z-index:10;display:flex;flex-direction:column;width:100%;height:100%;justify-content:center;">
+     <div data-anim="1" style="animation:fdBlur 0.9s cubic-bezier(0.25,0.1,0.25,1) 0.05s both;position:absolute;top:0;left:0;right:0;padding-top:3.5%;background:rgba(255,255,255,0.10);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);">
+       <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:0 5%;">
+         <div style="display:flex;align-items:center;gap:10px;">
+-          <img src="uploads/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
++          <img src="/v2/media/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
+           <span style="font-size:22px;font-weight:500;letter-spacing:-0.02em;color:#fff;">fleetdeck.</span>
+         </div>
+         <span style="color:#80838e;font-size:20px;line-height:1.4;">04</span>
+@@ -930,13 +929,13 @@
+ </div>
+ 
+ <div data-fd-slide="4" data-screen-label="05 Expansion" style="position:absolute;inset:0;display:flex;flex-direction:column;overflow:hidden;background:#131318;transition:opacity .35s ease-in-out;opacity:0;pointer-events:none;">
+-  <video data-src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260611_104107_121bfb5a-b1df-4e0d-8240-25b81f7cc85d.mp4" ref="{{ D_vid }}" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;width:200%;height:200%;bottom:0;left:0;object-fit:cover;"></video>
++  <video data-src="/v2/media/hero-dark.mp4" ref="{{ D_vid }}" muted="{{ true }}" playsInline="{{ true }}" loop="{{ true }}" autoPlay="{{ true }}" style="position:absolute;width:200%;height:200%;bottom:0;left:0;object-fit:cover;"></video>
+   <div data-dim="1" style="position:absolute;inset:0;background:rgba(0,0,0,0);pointer-events:none;"></div>
+   <div style="position:relative;z-index:10;display:flex;flex-direction:column;height:100%;">
+     <div data-anim="1" style="animation:fdBlur 0.9s cubic-bezier(0.25,0.1,0.25,1) 0.05s both;background:rgba(255,255,255,0.10);backdrop-filter:blur(20px) saturate(160%);-webkit-backdrop-filter:blur(20px) saturate(160%);">
+       <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:3.5% 5% 0 5%;">
+         <div style="display:flex;align-items:center;gap:10px;">
+-          <img src="uploads/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
++          <img src="/v2/media/fleetdeck-eye-minimal.svg" alt="Fleetdeck" width="28" height="28" style="display:block;">
+           <span style="font-size:22px;font-weight:500;letter-spacing:-0.02em;color:#fff;">fleetdeck.</span>
+         </div>
+         <span style="color:#80838e;font-size:20px;line-height:1.4;">05</span>
+@@ -991,8 +990,8 @@
+   }
+   urlFor() {
+     return this.isDark()
+-      ? 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260611_104107_121bfb5a-b1df-4e0d-8240-25b81f7cc85d.mp4'
+-      : 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260729_102822_0e6c87e8-c141-4744-bf32-ad30db296371.mp4';
++      ? '/v2/media/hero-dark.mp4'
++      : '/v2/media/hero-light.mp4';
+   }
+   renderVals() {
+     const dark = this.isDark();
+@@ -1252,7 +1251,7 @@
+     const mono = "ui-monospace,'SF Mono',Menlo,monospace";
+     const t = dark ? {
+       bgAll: '#0a0a0a', overlay: 'rgba(0,0,0,0.4)', videoOpacity: 0.55,
+-      videoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260611_104107_121bfb5a-b1df-4e0d-8240-25b81f7cc85d.mp4',
++      videoUrl: '/v2/media/hero-dark.mp4',
+       side: 'rgba(10,10,10,0.18)', panel: 'rgba(255,255,255,0.08)', panelHead: 'rgba(255,255,255,0.05)',
+       line: 'rgba(255,255,255,0.13)', lineSoft: 'rgba(255,255,255,0.07)',
+       ink: '#ffffff', ink75: 'rgba(255,255,255,0.75)', ink60: 'rgba(255,255,255,0.6)', ink45: 'rgba(255,255,255,0.45)', ink35: 'rgba(255,255,255,0.35)',
+@@ -1265,7 +1264,7 @@
+       panelShadow: 'none',
+     } : {
+       bgAll: '#f2f1ee', overlay: 'rgba(242,241,238,0.55)', videoOpacity: 0.5,
+-      videoUrl: 'https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260729_102822_0e6c87e8-c141-4744-bf32-ad30db296371.mp4',
++      videoUrl: '/v2/media/hero-light.mp4',
+       side: 'rgba(255,255,255,0.28)', panel: 'rgba(255,255,255,0.55)', panelHead: 'rgba(255,255,255,0.35)',
+       line: 'rgba(0,0,0,0.13)', lineSoft: 'rgba(0,0,0,0.07)',
+       ink: '#111111', ink75: 'rgba(17,17,17,0.78)', ink60: 'rgba(17,17,17,0.62)', ink45: 'rgba(17,17,17,0.47)', ink35: 'rgba(17,17,17,0.38)',
+--- docs/design/fleetdeck-v2/mock/support.js	2026-09-07 01:06:44.209218876 +0200
++++ public/v2/vendor/dc-runtime.js	2026-09-07 01:14:26.860953572 +0200
+@@ -1140,11 +1140,11 @@
+   }
+ 
+   // src/cdn.ts
+-  var REACT_URL = "https://unpkg.com/react@18.3.1/umd/react.production.min.js";
++  var REACT_URL = "/v2/vendor/react.production.min.js";
+   var REACT_SRI = "sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z";
+-  var REACT_DOM_URL = "https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js";
++  var REACT_DOM_URL = "/v2/vendor/react-dom.production.min.js";
+   var REACT_DOM_SRI = "sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1";
+-  var BABEL_URL = "https://unpkg.com/@babel/standalone@7.29.0/babel.min.js";
++  var BABEL_URL = "/v2/vendor/babel.min.js";
+   var BABEL_SRI = "sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y";
+   function cdnScriptFor(url, sri) {
+     const res = window.__resources;
