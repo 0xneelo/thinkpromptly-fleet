@@ -8,8 +8,26 @@
     {
       "name": "mock",
       "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4173", "--directory", "docs/design/fleetdeck-v2/mock"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4173",
+        "--directory",
+        "docs/design/fleetdeck-v2/mock"
+      ],
       "port": 4173
+    },
+    {
+      "name": "v2-preview",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4174",
+        "--directory",
+        "/Users/misterislez/remote-system/.claude/worktrees/v2-s1-preview/public"
+      ],
+      "port": 4174
     }
   ]
 }
