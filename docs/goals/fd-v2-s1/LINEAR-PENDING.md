@@ -23,7 +23,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Vendor dc-runtime with only the three pinned URL swaps; download React/ReactDOM 18.3.1 and Babel standalone 7.29.0; record hashes, sizes and licenses.
@@ -93,7 +93,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: Todo
+- Intended state: In Progress
 - Mirror status: pending
 
 Capture every browser request while visiting landing, app and deck in both themes, proving zero external hosts.
@@ -176,5 +176,27 @@ Signed Waldemar.
 - Mirror status: pending
 
 Current server.js maps only / to index.html; /v2/ resolves to a directory and returns 404. The required five MIME additions cannot change routing. /v2/index.html will serve the artifact, and the specified static-server gate can resolve /v2/. Options: defer directory routing to L1 (recommended to preserve literal S1 scope), or explicitly authorize an additional routing edit. This does not stop the S1 static port or its specified gate. No routing change was made.
+
+Signed Waldemar.
+
+## S1-06 — comment
+
+- Timestamp: 2026-09-06T23:16:44.924414+00:00
+- Title: Start network proof
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Browser proof is In Progress against a static public/ server; capture actual requests without external request interception.
+
+Signed Waldemar.
+
+## S1-01 — comment
+
+- Timestamp: 2026-09-06T23:17:20.542876+00:00
+- Title: Runtime vendoring complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Independent review clean: exactly three URL substitutions, three source SRI matches, pinned versions and MIT licenses. Linear retry remains delegated to the milestone loop; no live issue is claimed.
 
 Signed Waldemar.
