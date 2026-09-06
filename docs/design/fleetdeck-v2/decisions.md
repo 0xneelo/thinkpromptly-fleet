@@ -50,3 +50,15 @@ Launch stall 2026-09-07: both GPT workers stopped on `oauth_token_invalid_grant`
 (the prompt said "a blocker that is not a Linear issue does not exist"). Fixed by a bus nudge (never-block rule,
 `LINEAR-PENDING.md`) and by amending the packs + the introduce-goal skill references. Operator action pending:
 re-auth Linear on the box over RDP (german-box-workers skill §9).
+
+## 2026-09-07 · launch log (wave A + early S2/L1, operator: "I want it ASAP")
+
+| Session | Worker | Slice | Breed | Base | Launched (Mac local) |
+|---|---|---|---|---|---|
+| `FD-v2-s0` | Gisbert | S0 gate harness | GPT Astra xhigh | docs branch @ `76c859c` | ~01:00 |
+| `FD-v2-s1` | Waldemar | S1 verbatim port | GPT Astra xhigh | docs branch @ `76c859c` | ~01:00 |
+| `FD-v2-s2` | Julius | S2 compile to plain JS | Claude high | `origin/agent-v2-s1` @ `39ae4ad` (before S1's gate report; rebases if S1 changes) | ~02:25 |
+| `FD-v2-l1` | Juergen | L1 data layer + fixture + v2 routing | Claude high | docs branch @ `226f02c` | ~02:40 |
+
+S1 independent review (design seat, 2026-09-07 ~02:30): T1/T2-only YES; MANIFEST hashes verified; MIME lines exact.
+Two findings sent back: align `package.json`/lock with S0's; prove the vendored Inter woff2 is variable.
