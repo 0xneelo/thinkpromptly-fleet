@@ -285,3 +285,33 @@ Body:
 Captured 36 baselines twice. Reviewer independently recomputed all 36 pairs, validated 1440x900 dimensions and both sets of PNG hashes, and returned clean. 34 pairs are 0%; registry-dark is 427 pixels / 0.03294753086419753%; desktop-sessions-dark is 614 pixels / 0.04737654320987654% (maximum). Both nonzero regions are native select text; no broader content/layout drift. Every pair is <=0.05%. Canonical 36 PNGs plus signed report are committed at this milestone; both run manifests are retained with the self-test evidence. Linear milestone retry still requires reauthentication; mirror this entry later.
 
 Gisbert
+
+## S0-SELFTEST-C02 — comment and state update
+
+- Timestamp: 2026-09-06T23:25:39.112713+00:00
+- Title: Deterministic self-test and failure controls pass
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-SELFTEST
+- State: Done
+- Mirror status: pending
+
+Body:
+
+Mock-as-app CLI exit 0, allPass true, 36 comparisons <=0.05%, maximum 0.03294753086419753% (registry dark); other35 pairs zero. Committing all36 app screenshots,36 diff PNGs, both baseline manifests and signed checks. Negative scratch CLI correctly exits1 with30 numeric mismatches (max1.483719135802469%) and6 expected errors. Missing Chromium replaces stale green with36failed entries. Root and reviewer recomputed positive PNG hashes/diffs. Linear milestone retry still requires reauthentication; mirror later.
+
+Gisbert
+
+## S0-REVIEW-C02 — comment and state update
+
+- Timestamp: 2026-09-06T23:25:39.112713+00:00
+- Title: Final reviewer clean
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-REVIEW
+- State: Done
+- Mirror status: pending
+
+Body:
+
+Independent final reviewer verdict: no findings. All four earlier findings fixed and rechecked. Verified36positive pairs and diffs,72hashlinks,36baseline replay pairs,30negative pairs and diffs,6explicit errors and36launch-failure rows. Zero public/server/mock edits; REPORT numbers and links accurate. Final delivery actions remain with Gisbert.
+
+Gisbert

@@ -1,0 +1,401 @@
+{
+  "schemaVersion": 1,
+  "mode": "verify",
+  "slice": "S0-adversarial",
+  "status": "complete",
+  "capturedAt": "2026-09-06T23:20:02.917Z",
+  "source": "http://127.0.0.1:34235/Fleetdeck%20Final.dc.html",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "deviceScaleFactor": 1,
+  "pixelmatch": {
+    "threshold": 0.1,
+    "includeAA": false
+  },
+  "thresholdPct": 0.5,
+  "environment": {
+    "platform": "linux",
+    "arch": "x64",
+    "node": "v24.14.1",
+    "playwright": "1.63.0",
+    "chromium": "153.0.8010.12"
+  },
+  "determinism": {
+    "initScriptSha256": "97b7b8f3f5f39dce5cbbd7135eea0be350c134ddc01f84a72fbe5f835223cff3",
+    "cssSha256": "283736555bc008f4624633618dc91de07516d74c172ef4b81ff6263c874f9fc0",
+    "reducedMotion": "reduce",
+    "locale": "en-US",
+    "timezoneId": "UTC",
+    "mediaRequests": "blocked",
+    "videoCanvas": "hidden",
+    "storage": {
+      "fd-landing-dark": "1 dark / 0 light",
+      "fd-app-video": "false"
+    }
+  },
+  "previousBaselineCompared": false,
+  "results": [
+    {
+      "screen": "landing",
+      "label": "Landing",
+      "theme": "dark",
+      "mismatchPct": 1.379320987654321,
+      "pass": false,
+      "sha256": "18552396a23580fd98bc13147510268bba9c98a4f48cc22156cbd6a338e9415b",
+      "baselineSha256": "086f9f8a898a8b761d0bd848cecebebaba2de8535e2d90ff3b2b8bcf4678130d",
+      "mismatchPixels": 17876
+    },
+    {
+      "screen": "landing",
+      "label": "Landing",
+      "theme": "light",
+      "mismatchPct": 1.379320987654321,
+      "pass": false,
+      "sha256": "459bdcbbd13952cacb0ae9cdc03fc16855a16a3cff0583cf22eb7f1ccddb3025",
+      "baselineSha256": "4faba07cc68305c394c370d47cb00f30b7984e81291d115cc7dae5bbdb1b9643",
+      "mismatchPixels": 17876
+    },
+    {
+      "screen": "hero",
+      "label": "Hero",
+      "theme": "dark",
+      "mismatchPct": 1.379320987654321,
+      "pass": false,
+      "sha256": "18552396a23580fd98bc13147510268bba9c98a4f48cc22156cbd6a338e9415b",
+      "baselineSha256": "086f9f8a898a8b761d0bd848cecebebaba2de8535e2d90ff3b2b8bcf4678130d",
+      "mismatchPixels": 17876
+    },
+    {
+      "screen": "hero",
+      "label": "Hero",
+      "theme": "light",
+      "mismatchPct": 1.379320987654321,
+      "pass": false,
+      "sha256": "459bdcbbd13952cacb0ae9cdc03fc16855a16a3cff0583cf22eb7f1ccddb3025",
+      "baselineSha256": "4faba07cc68305c394c370d47cb00f30b7984e81291d115cc7dae5bbdb1b9643",
+      "mismatchPixels": 17876
+    },
+    {
+      "screen": "capability",
+      "label": "Capability",
+      "theme": "dark",
+      "mismatchPct": null,
+      "pass": false,
+      "skipped": true,
+      "reason": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-screen-label=\"Capability\"]') to be visible\u001b[22m\n"
+    },
+    {
+      "screen": "capability",
+      "label": "Capability",
+      "theme": "light",
+      "mismatchPct": null,
+      "pass": false,
+      "skipped": true,
+      "reason": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-screen-label=\"Capability\"]') to be visible\u001b[22m\n"
+    },
+    {
+      "screen": "fleetdeck-app",
+      "label": "Fleetdeck app",
+      "theme": "dark",
+      "mismatchPct": 1.4060956790123458,
+      "pass": false,
+      "sha256": "4526d5df685e1c15526fd450a50b8599883bd4a2961a0acaa7bad3bb180b0d20",
+      "baselineSha256": "56124de53e3ee8bc2cef422c1e55d4c3c78aeda9c373062fdf8d5c2218459855",
+      "mismatchPixels": 18223
+    },
+    {
+      "screen": "fleetdeck-app",
+      "label": "Fleetdeck app",
+      "theme": "light",
+      "mismatchPct": 1.396682098765432,
+      "pass": false,
+      "sha256": "12c46397093d51070f6ea29a6aa3ed3084cbb877fce1f4879e640acd99345419",
+      "baselineSha256": "fe212ac0af8fc6a09da2d363038e6638e467764ef5e6074f50768c6cc1d5b5ff",
+      "mismatchPixels": 18101
+    },
+    {
+      "screen": "windows",
+      "label": "Windows",
+      "theme": "dark",
+      "mismatchPct": 1.4512345679012346,
+      "pass": false,
+      "sha256": "677fe61251b52b3503fdc74e7f009e7c37fca2aec02eed047f3a32d33bf07d0b",
+      "baselineSha256": "da3cf4ad14799daf1f551a86fe42da65647a9053f570d0d0831fd6732c6fcc52",
+      "mismatchPixels": 18808
+    },
+    {
+      "screen": "windows",
+      "label": "Windows",
+      "theme": "light",
+      "mismatchPct": null,
+      "pass": false,
+      "sha256": "a65b4d0d0eac3f74aa72cf21cfce683427b1f1d3e7169d729c177cdb5cc7ffba",
+      "skipped": true,
+      "reason": "ENOENT: no such file or directory, open '/tmp/fd-s0-adversarial-Mo0n67/checkout/docs/design/fleetdeck-v2/baseline/windows-light.png'"
+    },
+    {
+      "screen": "org-chart",
+      "label": "Org chart",
+      "theme": "dark",
+      "mismatchPct": 1.4756944444444444,
+      "pass": false,
+      "sha256": "6827cfe0a71e7c090e360d87ab9a24b4b3bd2ecbdf9edde2ee2afba0c7956eff",
+      "baselineSha256": "f64e175b6da6a4843d561b0bf9c26d3324d6a50408f78c89e969851de2b4ab76",
+      "mismatchPixels": 19125
+    },
+    {
+      "screen": "org-chart",
+      "label": "Org chart",
+      "theme": "light",
+      "mismatchPct": 1.4753086419753088,
+      "pass": false,
+      "sha256": "178e8f664818ffa91e2af6a9c04185ed9a6d454477b9217455a5e2e818fa9478",
+      "baselineSha256": "3ea645f94cf14b1e474ef364b0a240cfe92fb166a6ce35ed74239d215d422fed",
+      "mismatchPixels": 19120
+    },
+    {
+      "screen": "registry",
+      "label": "Registry",
+      "theme": "dark",
+      "mismatchPct": null,
+      "pass": false,
+      "sha256": "2e5e508c702eb74bda2a1c69c094393a429d9551431f46d624c6c59877ec6d3b",
+      "baselineSha256": "a93ac253da8bfc8376443d0061ff72cbbe96f418c316b87e3fbfea1d126402e3",
+      "skipped": true,
+      "reason": "Expected 1440x900 PNG; got 100x100"
+    },
+    {
+      "screen": "registry",
+      "label": "Registry",
+      "theme": "light",
+      "mismatchPct": 1.410108024691358,
+      "pass": false,
+      "sha256": "54ac01438917f2887953f84490019ca6fb597057d810d39c088b9f997e4526ce",
+      "baselineSha256": "92d65170d410a852bdedf6217a5b64e132dfb32937325822b6e94bf92badccc6",
+      "mismatchPixels": 18275
+    },
+    {
+      "screen": "message-bus",
+      "label": "Message bus",
+      "theme": "dark",
+      "mismatchPct": 1.4060956790123458,
+      "pass": false,
+      "sha256": "4526d5df685e1c15526fd450a50b8599883bd4a2961a0acaa7bad3bb180b0d20",
+      "baselineSha256": "56124de53e3ee8bc2cef422c1e55d4c3c78aeda9c373062fdf8d5c2218459855",
+      "mismatchPixels": 18223
+    },
+    {
+      "screen": "message-bus",
+      "label": "Message bus",
+      "theme": "light",
+      "mismatchPct": 1.396682098765432,
+      "pass": false,
+      "sha256": "12c46397093d51070f6ea29a6aa3ed3084cbb877fce1f4879e640acd99345419",
+      "baselineSha256": "fe212ac0af8fc6a09da2d363038e6638e467764ef5e6074f50768c6cc1d5b5ff",
+      "mismatchPixels": 18101
+    },
+    {
+      "screen": "ssh-keys",
+      "label": "SSH keys",
+      "theme": "dark",
+      "mismatchPct": 1.4797067901234568,
+      "pass": false,
+      "sha256": "d9f50e93e4c5c37741def58fe99f5e805db0bc47b8c002419f064ca9b22e995c",
+      "baselineSha256": "5b10e92128563dbba9a5136d645c331acbc7eb6263f16292aab974942870264d",
+      "mismatchPixels": 19177
+    },
+    {
+      "screen": "ssh-keys",
+      "label": "SSH keys",
+      "theme": "light",
+      "mismatchPct": 1.4719135802469137,
+      "pass": false,
+      "sha256": "80f45dde3ff1c19303ad8e8be47c43b2e5a981fe96a1d2bbde1100bf8204e47d",
+      "baselineSha256": "71a9a6ebfeacf3a92e3b410392e73ebf45da9fcdebc2fe5454a1e0fe05c1c202",
+      "mismatchPixels": 19076
+    },
+    {
+      "screen": "accounts",
+      "label": "Accounts",
+      "theme": "dark",
+      "mismatchPct": 1.3847993827160494,
+      "pass": false,
+      "sha256": "4791dab4dc175c8c458777f0fea1454e1a37ffbba405952b083321c8d7aa44bf",
+      "baselineSha256": "5f3354ba1b2478c36b6754cebe16ee9697970808d0bf8c87db560f0660d904a6",
+      "mismatchPixels": 17947
+    },
+    {
+      "screen": "accounts",
+      "label": "Accounts",
+      "theme": "light",
+      "mismatchPct": 1.378395061728395,
+      "pass": false,
+      "sha256": "efc3db7f348f1851a6ccd63d25aff2f52a0b473d8872076fb2c16bc0d67f9a44",
+      "baselineSha256": "9ad2b9e613d18060315c0d8e8c831598f089d6248b2b3c56ba40ed4ffc574bb2",
+      "mismatchPixels": 17864
+    },
+    {
+      "screen": "machines",
+      "label": "Machines",
+      "theme": "dark",
+      "mismatchPct": null,
+      "pass": false,
+      "skipped": true,
+      "reason": "Design runtime reported 1 error marker(s)"
+    },
+    {
+      "screen": "machines",
+      "label": "Machines",
+      "theme": "light",
+      "mismatchPct": null,
+      "pass": false,
+      "skipped": true,
+      "reason": "Design runtime reported 1 error marker(s)"
+    },
+    {
+      "screen": "desktop-sessions",
+      "label": "Desktop sessions",
+      "theme": "dark",
+      "mismatchPct": 1.483719135802469,
+      "pass": false,
+      "sha256": "418b647a03cf14b3adf50e005db799952924d66abb0d69c589ba6e8100414dee",
+      "baselineSha256": "a7e296277f82776451ba4076c189a8116d3a6e56b937f451abcc538bb2a9f0db",
+      "mismatchPixels": 19229
+    },
+    {
+      "screen": "desktop-sessions",
+      "label": "Desktop sessions",
+      "theme": "light",
+      "mismatchPct": 1.4368055555555557,
+      "pass": false,
+      "sha256": "5696aae98feae0e31197b3abdd307086708c773c88eab868c58bfc5c9cdc2927",
+      "baselineSha256": "3d6d13712a9296bcb6923e09703acc140da4e418398236549fe9d59730659eb5",
+      "mismatchPixels": 18621
+    },
+    {
+      "screen": "session-full-screen",
+      "label": "Session full screen",
+      "theme": "dark",
+      "mismatchPct": 1.4521604938271604,
+      "pass": false,
+      "sha256": "54da45b6da5f33f065cbe87598b023777eb78cdb749b077aff1bc4abd8d1921d",
+      "baselineSha256": "4657b5c72b4092ff883b21b7ce244b92d18384a6a379fd68bd6f0983c7cf443b",
+      "mismatchPixels": 18820
+    },
+    {
+      "screen": "session-full-screen",
+      "label": "Session full screen",
+      "theme": "light",
+      "mismatchPct": 1.4521604938271604,
+      "pass": false,
+      "sha256": "447a0c663477c1b8a9be146bbfb3b61e948b3daa2dc71a364d448bb7053a6ab2",
+      "baselineSha256": "8d17ff8d82e509f4f7eaa443e488edc7981a702aa2484ce5ce15f9b47a67822e",
+      "mismatchPixels": 18820
+    },
+    {
+      "screen": "01-title",
+      "label": "01 Title",
+      "theme": "dark",
+      "mismatchPct": 1.4814814814814816,
+      "pass": false,
+      "sha256": "27711274f53f21d4c3bb5d1c3100748b255799e3bfd49043c2c83e6fb99a711e",
+      "baselineSha256": "a822a291de98968c1d7f4797997af3d8a45f04c954fb977717386936d71d8dc5",
+      "mismatchPixels": 19200
+    },
+    {
+      "screen": "01-title",
+      "label": "01 Title",
+      "theme": "light",
+      "mismatchPct": 1.4814814814814816,
+      "pass": false,
+      "sha256": "27711274f53f21d4c3bb5d1c3100748b255799e3bfd49043c2c83e6fb99a711e",
+      "baselineSha256": "a822a291de98968c1d7f4797997af3d8a45f04c954fb977717386936d71d8dc5",
+      "mismatchPixels": 19200
+    },
+    {
+      "screen": "02-problem",
+      "label": "02 Problem",
+      "theme": "dark",
+      "mismatchPct": 1.4728395061728394,
+      "pass": false,
+      "sha256": "6fbc237d8bf6389dcbf8e77832bbfe0b7ad4f89b7f63cd758c4de4a0badfa0c8",
+      "baselineSha256": "a53537e9e8785885bb70355cf9248183b7aec28a5d81ee1779c1a8789cc5adcd",
+      "mismatchPixels": 19088
+    },
+    {
+      "screen": "02-problem",
+      "label": "02 Problem",
+      "theme": "light",
+      "mismatchPct": 1.4728395061728394,
+      "pass": false,
+      "sha256": "6fbc237d8bf6389dcbf8e77832bbfe0b7ad4f89b7f63cd758c4de4a0badfa0c8",
+      "baselineSha256": "a53537e9e8785885bb70355cf9248183b7aec28a5d81ee1779c1a8789cc5adcd",
+      "mismatchPixels": 19088
+    },
+    {
+      "screen": "03-market",
+      "label": "03 Market",
+      "theme": "dark",
+      "mismatchPct": 1.4814814814814816,
+      "pass": false,
+      "sha256": "b975eb6ce0ca09c3ba70bc9a5be627b28de32403a6207596fdf0c792ed89d889",
+      "baselineSha256": "32a98c2f1426ea02a0cc88b9e20c99fe1dd5b602bc8c4dc024c7d7026a3dc1a2",
+      "mismatchPixels": 19200
+    },
+    {
+      "screen": "03-market",
+      "label": "03 Market",
+      "theme": "light",
+      "mismatchPct": 1.4814814814814816,
+      "pass": false,
+      "sha256": "b975eb6ce0ca09c3ba70bc9a5be627b28de32403a6207596fdf0c792ed89d889",
+      "baselineSha256": "32a98c2f1426ea02a0cc88b9e20c99fe1dd5b602bc8c4dc024c7d7026a3dc1a2",
+      "mismatchPixels": 19200
+    },
+    {
+      "screen": "04-sales",
+      "label": "04 Sales",
+      "theme": "dark",
+      "mismatchPct": 1.4814814814814816,
+      "pass": false,
+      "sha256": "ebd081cb8463c3b91c776be2b444bad6bf375612917666d1019b0af49b23ccca",
+      "baselineSha256": "95f22c1422e8e83cb7acafc2a1876a99d4722e18296aa1c86146631cd8671bbc",
+      "mismatchPixels": 19200
+    },
+    {
+      "screen": "04-sales",
+      "label": "04 Sales",
+      "theme": "light",
+      "mismatchPct": 1.4814814814814816,
+      "pass": false,
+      "sha256": "ebd081cb8463c3b91c776be2b444bad6bf375612917666d1019b0af49b23ccca",
+      "baselineSha256": "95f22c1422e8e83cb7acafc2a1876a99d4722e18296aa1c86146631cd8671bbc",
+      "mismatchPixels": 19200
+    },
+    {
+      "screen": "05-expansion",
+      "label": "05 Expansion",
+      "theme": "dark",
+      "mismatchPct": 1.4814814814814816,
+      "pass": false,
+      "sha256": "bf4404b5cc0f545905de93d9aa4d5b38091b403c363059908e1c14b591e356d1",
+      "baselineSha256": "b158ea3bd2494ea8ae0e080f1be9954c05e69b65eaabe80568fea451dfb6f6b9",
+      "mismatchPixels": 19200
+    },
+    {
+      "screen": "05-expansion",
+      "label": "05 Expansion",
+      "theme": "light",
+      "mismatchPct": 1.4814814814814816,
+      "pass": false,
+      "sha256": "bf4404b5cc0f545905de93d9aa4d5b38091b403c363059908e1c14b591e356d1",
+      "baselineSha256": "b158ea3bd2494ea8ae0e080f1be9954c05e69b65eaabe80568fea451dfb6f6b9",
+      "mismatchPixels": 19200
+    }
+  ],
+  "allPass": false,
+  "maxMismatchPct": 1.483719135802469,
+  "signedBy": "Gisbert"
+}

@@ -56,9 +56,9 @@ machine-checked**. This script is the check. Every later slice (S1, L1…L11) co
 ## Acceptance (definition of done)
 
 - [x] `npm run design:diff -- --baseline` produces 36 PNGs; committed.
-- [ ] `npm run design:diff -- --app <mock> --slice S0-selftest` → `allPass: true`, every mismatch ≤ 0.05 %; `verify/S0-selftest/report.json` committed.
+- [x] `npm run design:diff -- --app <mock> --slice S0-selftest` → `allPass: true`, every mismatch ≤ 0.05 %; `verify/S0-selftest/report.json` committed.
 - [x] A second baseline run reproduces the first within 0.05 % (run it twice, diff the two reports; note the max delta in your report).
-- [ ] `reviewer` subagent pass on the diff, findings fixed.
+- [x] `reviewer` subagent pass on the diff, findings fixed.
 - [x] README section + script header explain install, flags, thresholds, and the determinism hacks.
 - [ ] Branch pushed; final report at `docs/goals/fd-v2-s0/REPORT.md` signed **Gisbert**; registry row set `done`.
 
