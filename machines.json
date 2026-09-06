@@ -1,8 +1,8 @@
 {
   "_comment": "Machines page. route local = run on the deck's own mac; ssh = pipe box/fleet-logins.sh over `ssh <ssh> [wsl] sh -s` (no install on the box); push = the machine runs `sh fleet-logins.sh push http://<tailnet-ip>:3131/api/machines <id>` on a cron. `ssh` is a deploy-cert alias from ~/.ssh/deploy-certs/current, never a 1Password-agent or static-key alias. `host` is the deck's own host key (hosts.json, plus `mac` for the deck itself) where the machine has one, so a machines row joins to that host's sessions and leases.",
   "machines": [
-    { "id": "macbook", "host": "mac", "label": "MacBook Pro", "os": "macos", "route": "local" },
-    { "id": "german-box", "host": "german-box", "label": "german-box", "os": "windows+wsl", "route": "ssh", "ssh": "gb-deploy", "wsl": true },
+    { "id": "macbook", "host": "mac", "label": "MacBook Pro", "os": "macos", "route": "local", "desktop_sessions": true },
+    { "id": "german-box", "host": "german-box", "label": "german-box", "os": "windows+wsl", "route": "ssh", "ssh": "gb-deploy", "wsl": true, "desktop_sessions": true },
     { "id": "onboarding-vps", "host": "onboarding-box", "label": "onboarding-vps", "os": "linux", "route": "ssh", "ssh": "ob-deploy" },
     { "id": "thinkpromptly-vps", "label": "thinkpromptly-vps", "os": "linux", "route": "ssh", "ssh": "vps-deploy" },
     { "id": "ivy-vps", "label": "ivy-vps", "os": "linux", "route": "ssh", "ssh": "ivybox-deploy" },

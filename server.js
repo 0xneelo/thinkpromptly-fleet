@@ -10,6 +10,7 @@ const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
 const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
 const { coordinatorRoute } = require('./coordinator-api');
+const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -535,7 +536,7 @@ function desktopSessions() {
       if (typeof j.name !== 'string' || typeof j.messagingSocketPath !== 'string') continue;
       process.kill(j.pid, 0);
       if (!fs.existsSync(j.messagingSocketPath)) continue;
-      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath });
+      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId: desktopUuid(j.sessionId) });
     } catch {}
   }
   return live;
@@ -603,9 +604,27 @@ function runInput(cmd, args, input, opts = {}) {
     let stdout = '';
     let stderr = '';
     let spawnError = null;
-    child.stdout.on('data', (chunk) => (stdout += chunk));
-    child.stderr.on('data', (chunk) => (stderr += chunk));
+    // Opt-in for bounded collectors. spawn() ignores execFile's maxBuffer option, so
+    // enforce it while reading both streams, before an SSH reply can grow deck memory.
+    let bytes = 0;
+    let overflow = false;
+    const append = (stream, chunk) => {
+      if (overflow) return;
+      bytes += chunk.length;
+      if (opts.maxBuffer && bytes > opts.maxBuffer) {
+        overflow = true;
+        stdout = stderr = '';
+        spawnError = new Error('command output limit exceeded');
+        child.kill('SIGKILL');
+        return;
+      }
+      if (stream === 'stdout') stdout += chunk;
+      else stderr += chunk;
+    };
+    child.stdout.on('data', (chunk) => append('stdout', chunk));
+    child.stderr.on('data', (chunk) => append('stderr', chunk));
     child.on('error', (error) => (spawnError = error));
+    child.stdin.on('error', (error) => { spawnError ||= error; });
     child.on('close', (code, signal) =>
       resolve({
         err:
@@ -1612,6 +1631,20 @@ function machinesConfig() {
   }
 }
 
+const DESKTOP_SESSIONS_SH = process.env.FLEET_DESKTOP_SESSIONS_SH || path.join(__dirname, 'box', 'desktop-sessions.sh');
+const desktopSessionStore = new DesktopSessions({
+  db, config: machinesConfig, accounts: creditsAccounts,
+  ttl: secs('FLEET_DESKTOP_SESSIONS_TTL_SECS', 300),
+  collect: async (machine) => {
+    const options = { timeout: 25000, maxBuffer: 16 * 1024 * 1024 };
+    if (machine.route === 'local') return run('sh', [DESKTOP_SESSIONS_SH], options);
+    if (typeof machine.ssh !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(machine.ssh))
+      throw new Error('invalid desktop session route');
+    const script = fs.readFileSync(DESKTOP_SESSIONS_SH, 'utf8');
+    return sshInput(machine.ssh, machine.wsl ? 'wsl sh -s' : 'sh -s', script, options);
+  },
+});
+
 const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
 const int = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null);
 
@@ -2214,7 +2247,11 @@ async function deliverTmux(message) {
 // looks identical either way, so nothing downstream can tell a drop from a delivery.
 function deliverDesktopSession(message) {
   const name = message.target.session;
-  const row = desktopSessions().find((s) => s.name === name);
+  // The sessions page addresses a stable CLI ID. A rename, duplicate display name, or a
+  // tab called "current" must never redirect its message to another conversation.
+  const id = name.startsWith('id:') ? desktopUuid(name.slice(3)) : null;
+  const matches = desktopSessions().filter((s) => id ? s.sessionId === id : s.name === name);
+  const row = matches.length === 1 ? matches[0] : null;
   if (!row) throw new Error('Claude Desktop session "' + name + '" is not live');
   const key = fs.readdirSync(CLAUDE_SESSIONS_DIR).find((f) => f.startsWith(row.pid + '.') && f.endsWith('.key'));
   if (!key) throw new Error('no peer key published for Claude Desktop session "' + name + '"');
@@ -2716,6 +2753,11 @@ const server = http.createServer(async (req, res) => {
       return json(res, machinesView());
     }
     if (p === '/api/machines') return await machinesRoute(req, res);
+    if (p === '/api/desktop-sessions') {
+      if (req.method !== 'GET') return send(res, 405, 'text/plain', 'method not allowed');
+      await desktopSessionStore.collect(url.searchParams.get('refresh') === '1');
+      return json(res, desktopSessionStore.view(desktopSessions()));
+    }
     if (p === '/api/messages' || p === '/api/messages/retry')
       return await messageRoute(req, res, p, url);
     if (notifyPath(p)) return await notifyRoute(req, res, p, url);
