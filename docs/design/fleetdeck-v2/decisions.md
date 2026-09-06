@@ -62,3 +62,14 @@ re-auth Linear on the box over RDP (german-box-workers skill §9).
 
 S1 independent review (design seat, 2026-09-07 ~02:30): T1/T2-only YES; MANIFEST hashes verified; MIME lines exact.
 Two findings sent back: align `package.json`/lock with S0's; prove the vendored Inter woff2 is variable.
+
+## 2026-09-07 · S0 accepted; S0.1 follow-up
+
+Independent review of `origin/agent-v2-s0` @ `cf88d29`: harness trustworthy YES (exit codes, screen map by text/key
+actions, numbers traceable to committed artifacts, scope clean). Findings routed to Gisbert as goal **S0.1** on the
+same branch: `networkidle` hangs against a live app with WebSockets → bounded in-flight-request settle; blur after
+clicks + hide focus-visible outlines and scrollbars on both sides; mock side served with `page.route` mapping CDN
+URLs to S1's vendored files when present; rename `verify/S0-baseline-failed` → `verify/baseline-failed`.
+Kept as designed: pixelmatch threshold 0.1 with `includeAA:false` (per pack; same Chromium on the same box on both sides).
+Rule for later slices: every gate report records the script sha it ran with; S1's report is valid against the S0
+script version it names.
