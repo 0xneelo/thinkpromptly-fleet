@@ -1,0 +1,4336 @@
+{
+  "schemaVersion": 1,
+  "slice": "S1",
+  "signed": "Waldemar",
+  "startedAt": "2026-09-06T23:18:36.921Z",
+  "finishedAt": "2026-09-06T23:19:13.582Z",
+  "origin": "http://127.0.0.1:4181",
+  "hosts": [
+    "127.0.0.1:4181"
+  ],
+  "origins": [
+    "http://127.0.0.1:4181"
+  ],
+  "externalHosts": [],
+  "externalOrigins": [],
+  "zeroExternalHosts": true,
+  "browser": {
+    "name": "Chromium",
+    "version": "153.0.8010.12",
+    "playwright": "1.63.0",
+    "executable": "/home/vibe/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome",
+    "headless": true,
+    "viewport": {
+      "width": 1440,
+      "height": 1000
+    },
+    "deviceScaleFactor": 1
+  },
+  "method": {
+    "entry": "/v2/",
+    "networkInterception": false,
+    "serviceWorkerBlocking": false,
+    "instrumentation": [
+      "Playwright BrowserContext request/response/requestfailed/requestfinished",
+      "Chrome DevTools Protocol Network (includes favicon)"
+    ],
+    "ui": "Actual clicks and scrolls; no app state injection or markup edits; fresh context per theme; light reached with landing toggle",
+    "command": "node /tmp/fd-v2-s1/harness/network-proof.cjs",
+    "staticServer": "python3 -m http.server 4181 --bind 127.0.0.1 --directory public"
+  },
+  "artifactHashes": {
+    "public/v2/index.html": "96be98b6e1ac43285876c5c3b320fc5ded2a66ca1af056fab074461f6403d755",
+    "public/v2/vendor/dc-runtime.js": "42c5f39fe6fafdbec2854092dafaa85aff6ab452334da4b244fc27b526bd686c",
+    "public/v2/vendor/inter.css": "59063cabc29d7d60875d834f32f8947d0e0d89ebc1385701000d66e566080dde"
+  },
+  "summary": {
+    "requestCount": 60,
+    "playwrightRequestCount": 58,
+    "interactionCount": 50,
+    "interactionPassCount": 50,
+    "interactionFailCount": 0,
+    "pageErrorCount": 0,
+    "consoleErrorCount": 4,
+    "assetChecksPass": true,
+    "fontFileCount": 1
+  },
+  "assetChecks": [
+    {
+      "path": "/v2/vendor/dc-runtime.js",
+      "pass": true
+    },
+    {
+      "path": "/v2/vendor/react.production.min.js",
+      "pass": true
+    },
+    {
+      "path": "/v2/vendor/react-dom.production.min.js",
+      "pass": true
+    },
+    {
+      "path": "/v2/vendor/babel.min.js",
+      "pass": true
+    },
+    {
+      "path": "/v2/vendor/inter.css",
+      "pass": true
+    },
+    {
+      "path": "/v2/media/fleetdeck-eye-minimal.svg",
+      "pass": true
+    },
+    {
+      "path": "/v2/media/claude-logo.png",
+      "pass": true
+    },
+    {
+      "path": "/v2/media/chatgpt-logo.png",
+      "pass": true
+    },
+    {
+      "path": "/v2/media/hero-dark.mp4",
+      "pass": true
+    },
+    {
+      "path": "/v2/media/hero-light.mp4",
+      "pass": true
+    }
+  ],
+  "fontRequests": [
+    "/v2/vendor/fonts/inter-latin-v20.woff2"
+  ],
+  "interactions": [
+    {
+      "theme": "dark",
+      "name": "landing renders",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:37.034Z",
+      "evidence": {
+        "react": "18.3.1",
+        "reactDOM": "18.3.1-next-f1338f8080-20240426",
+        "babel": null,
+        "activeView": [
+          "land"
+        ],
+        "fontFaces": [
+          {
+            "family": "Inter",
+            "weight": "400",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "500",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "600",
+            "status": "unloaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "700",
+            "status": "unloaded"
+          }
+        ]
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "landing theme via actual click",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:39.395Z",
+      "evidence": {
+        "theme": null,
+        "video": "http://127.0.0.1:4181/v2/media/hero-dark.mp4"
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "landing Hero",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:39.486Z",
+      "evidence": {
+        "label": "Hero",
+        "visible": true,
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 1000
+        },
+        "scrollY": 0
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "landing Capability",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:40.582Z",
+      "evidence": {
+        "label": "Capability",
+        "visible": true,
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 1000
+        },
+        "scrollY": 1800
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "App link reaches app",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:41.427Z",
+      "evidence": {
+        "appVisible": true,
+        "heading": "Message bus"
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app Windows",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:41.538Z",
+      "evidence": {
+        "screen": "Windows",
+        "heading": "Windows",
+        "visible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "session full screen and exit",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:41.882Z",
+      "evidence": {
+        "visible": true,
+        "text": "LC-cdx-readpath\n· german-box\nLIVE\n• Ran git fetch origin && git status --short --branch\n  └ ## agent-cdx-readpath...origin/main [ahead 2]\n• Started `/root/revie",
+        "exitSucceeded": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app Org chart",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:42.145Z",
+      "evidence": {
+        "screen": "Org chart",
+        "heading": "Org chart",
+        "visible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app Registry",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:42.468Z",
+      "evidence": {
+        "screen": "Registry",
+        "heading": "Registry",
+        "visible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app Message bus",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:42.818Z",
+      "evidence": {
+        "screen": "Message bus",
+        "heading": "Message bus",
+        "visible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "message bus maximize and exit",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:43.164Z",
+      "evidence": {
+        "bounds": {
+          "x": 12,
+          "y": 12,
+          "width": 1416,
+          "height": 976
+        },
+        "exitSucceeded": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app SSH keys",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:43.468Z",
+      "evidence": {
+        "screen": "SSH keys",
+        "heading": "SSH keys",
+        "visible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app Accounts",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:43.814Z",
+      "evidence": {
+        "screen": "Accounts",
+        "heading": "Accounts",
+        "visible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app Machines",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:44.246Z",
+      "evidence": {
+        "screen": "Machines",
+        "heading": "Machines",
+        "visible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app Desktop sessions",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:44.596Z",
+      "evidence": {
+        "screen": "Desktop sessions",
+        "heading": "Desktop sessions",
+        "visible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "app theme toggle changes pixels",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:45.003Z",
+      "evidence": {
+        "before": "rgb(10, 10, 10)",
+        "after": "rgb(242, 241, 238)",
+        "restored": "rgb(10, 10, 10)",
+        "sourceBefore": "/v2/media/hero-dark.mp4",
+        "sourceAfter": "/v2/media/hero-light.mp4"
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "video toggle off and on",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:46.457Z",
+      "evidence": {
+        "before": 1,
+        "off": 0,
+        "after": 1,
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "paused": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "back then Deck link",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:47.404Z",
+      "evidence": {
+        "deckVisible": true
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "deck slide 1",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:49.156Z",
+      "evidence": {
+        "label": "01 Title",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "deck slide 2",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:49.954Z",
+      "evidence": {
+        "label": "02 Problem",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "deck slide 3",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:50.901Z",
+      "evidence": {
+        "label": "03 Market",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "deck slide 4",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:51.658Z",
+      "evidence": {
+        "label": "04 Sales",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "deck slide 5",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:52.369Z",
+      "evidence": {
+        "label": "05 Expansion",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "unused Babel asset availability",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:53.268Z",
+      "evidence": {
+        "url": "http://127.0.0.1:4181/v2/vendor/babel.min.js",
+        "status": 200,
+        "bytes": 3137752,
+        "note": "Explicit availability probe; dc-runtime needs Babel only for JSX and this template does not request it naturally"
+      }
+    },
+    {
+      "theme": "dark",
+      "name": "rendered assets decoded",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:53.504Z",
+      "evidence": {
+        "images": [
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          }
+        ],
+        "videos": [
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          }
+        ],
+        "fonts": [
+          {
+            "family": "Inter",
+            "weight": "400",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "500",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "600",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "700",
+            "status": "unloaded"
+          }
+        ]
+      }
+    },
+    {
+      "theme": "light",
+      "name": "landing renders",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:54.594Z",
+      "evidence": {
+        "react": "18.3.1",
+        "reactDOM": "18.3.1-next-f1338f8080-20240426",
+        "babel": null,
+        "activeView": [
+          "land"
+        ],
+        "fontFaces": [
+          {
+            "family": "Inter",
+            "weight": "400",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "500",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "600",
+            "status": "unloaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "700",
+            "status": "unloaded"
+          }
+        ]
+      }
+    },
+    {
+      "theme": "light",
+      "name": "landing theme via actual click",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:57.091Z",
+      "evidence": {
+        "theme": "0",
+        "video": "http://127.0.0.1:4181/v2/media/hero-light.mp4"
+      }
+    },
+    {
+      "theme": "light",
+      "name": "landing Hero",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:57.675Z",
+      "evidence": {
+        "label": "Hero",
+        "visible": true,
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 1000
+        },
+        "scrollY": 0
+      }
+    },
+    {
+      "theme": "light",
+      "name": "landing Capability",
+      "pass": true,
+      "startedAt": "2026-09-06T23:18:58.884Z",
+      "evidence": {
+        "label": "Capability",
+        "visible": true,
+        "bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1440,
+          "height": 1000
+        },
+        "scrollY": 1800
+      }
+    },
+    {
+      "theme": "light",
+      "name": "App link reaches app",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:00.009Z",
+      "evidence": {
+        "appVisible": true,
+        "heading": "Message bus"
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app Windows",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:00.512Z",
+      "evidence": {
+        "screen": "Windows",
+        "heading": "Windows",
+        "visible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "session full screen and exit",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:00.891Z",
+      "evidence": {
+        "visible": true,
+        "text": "LC-cdx-readpath\n· german-box\nLIVE\n• Ran git fetch origin && git status --short --branch\n  └ ## agent-cdx-readpath...origin/main [ahead 2]\n• Started `/root/revie",
+        "exitSucceeded": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app Org chart",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:01.176Z",
+      "evidence": {
+        "screen": "Org chart",
+        "heading": "Org chart",
+        "visible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app Registry",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:01.510Z",
+      "evidence": {
+        "screen": "Registry",
+        "heading": "Registry",
+        "visible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app Message bus",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:01.864Z",
+      "evidence": {
+        "screen": "Message bus",
+        "heading": "Message bus",
+        "visible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "message bus maximize and exit",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:02.210Z",
+      "evidence": {
+        "bounds": {
+          "x": 12,
+          "y": 12,
+          "width": 1416,
+          "height": 976
+        },
+        "exitSucceeded": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app SSH keys",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:02.571Z",
+      "evidence": {
+        "screen": "SSH keys",
+        "heading": "SSH keys",
+        "visible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app Accounts",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:02.970Z",
+      "evidence": {
+        "screen": "Accounts",
+        "heading": "Accounts",
+        "visible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app Machines",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:03.354Z",
+      "evidence": {
+        "screen": "Machines",
+        "heading": "Machines",
+        "visible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app Desktop sessions",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:03.674Z",
+      "evidence": {
+        "screen": "Desktop sessions",
+        "heading": "Desktop sessions",
+        "visible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "app theme toggle changes pixels",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:04.031Z",
+      "evidence": {
+        "before": "rgb(242, 241, 238)",
+        "after": "rgb(12, 12, 12)",
+        "restored": "rgb(242, 241, 238)",
+        "sourceBefore": "/v2/media/hero-light.mp4",
+        "sourceAfter": "/v2/media/hero-dark.mp4"
+      }
+    },
+    {
+      "theme": "light",
+      "name": "video toggle off and on",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:05.519Z",
+      "evidence": {
+        "before": 1,
+        "off": 0,
+        "after": 1,
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+          "readyState": 4,
+          "paused": false,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "light",
+      "name": "back then Deck link",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:06.923Z",
+      "evidence": {
+        "deckVisible": true
+      }
+    },
+    {
+      "theme": "light",
+      "name": "deck slide 1",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:07.538Z",
+      "evidence": {
+        "label": "01 Title",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "light",
+      "name": "deck slide 2",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:08.229Z",
+      "evidence": {
+        "label": "02 Problem",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "light",
+      "name": "deck slide 3",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:09.203Z",
+      "evidence": {
+        "label": "03 Market",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "light",
+      "name": "deck slide 4",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:10.189Z",
+      "evidence": {
+        "label": "04 Sales",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "light",
+      "name": "deck slide 5",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:11.182Z",
+      "evidence": {
+        "label": "05 Expansion",
+        "opacity": "1",
+        "pointerEvents": "auto",
+        "video": {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "error": null
+        }
+      }
+    },
+    {
+      "theme": "light",
+      "name": "unused Babel asset availability",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:12.129Z",
+      "evidence": {
+        "url": "http://127.0.0.1:4181/v2/vendor/babel.min.js",
+        "status": 200,
+        "bytes": 3137752,
+        "note": "Explicit availability probe; dc-runtime needs Babel only for JSX and this template does not request it naturally"
+      }
+    },
+    {
+      "theme": "light",
+      "name": "rendered assets decoded",
+      "pass": true,
+      "startedAt": "2026-09-06T23:19:12.343Z",
+      "evidence": {
+        "images": [
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+            "complete": true,
+            "width": 1280,
+            "height": 1280
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+            "complete": true,
+            "width": 150,
+            "height": 150
+          }
+        ],
+        "videos": [
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          },
+          {
+            "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+            "readyState": 4,
+            "width": 1920,
+            "height": 1080,
+            "error": null
+          }
+        ],
+        "fonts": [
+          {
+            "family": "Inter",
+            "weight": "400",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "500",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "600",
+            "status": "loaded"
+          },
+          {
+            "family": "Inter",
+            "weight": "700",
+            "status": "unloaded"
+          }
+        ]
+      }
+    }
+  ],
+  "browserResources": [
+    {
+      "theme": "dark",
+      "images": [
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        }
+      ],
+      "videos": [
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        }
+      ],
+      "fonts": [
+        {
+          "family": "Inter",
+          "weight": "400",
+          "status": "loaded"
+        },
+        {
+          "family": "Inter",
+          "weight": "500",
+          "status": "loaded"
+        },
+        {
+          "family": "Inter",
+          "weight": "600",
+          "status": "loaded"
+        },
+        {
+          "family": "Inter",
+          "weight": "700",
+          "status": "unloaded"
+        }
+      ]
+    },
+    {
+      "theme": "light",
+      "images": [
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+          "complete": true,
+          "width": 1280,
+          "height": 1280
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+          "complete": true,
+          "width": 150,
+          "height": 150
+        }
+      ],
+      "videos": [
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        },
+        {
+          "src": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+          "readyState": 4,
+          "width": 1920,
+          "height": 1080,
+          "error": null
+        }
+      ],
+      "fonts": [
+        {
+          "family": "Inter",
+          "weight": "400",
+          "status": "loaded"
+        },
+        {
+          "family": "Inter",
+          "weight": "500",
+          "status": "loaded"
+        },
+        {
+          "family": "Inter",
+          "weight": "600",
+          "status": "loaded"
+        },
+        {
+          "family": "Inter",
+          "weight": "700",
+          "status": "unloaded"
+        }
+      ]
+    }
+  ],
+  "pageErrors": [],
+  "consoleMessages": [
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "type": "error",
+      "message": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\".",
+      "location": {
+        "url": "http://127.0.0.1:4181/v2/",
+        "line": 605,
+        "column": 0,
+        "lineNumber": 605,
+        "columnNumber": 0
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "type": "error",
+      "message": "Failed to load resource: the server responded with a status of 404 (File not found)",
+      "location": {
+        "url": "http://127.0.0.1:4181/v2/%7B%7B%20A_videoUrl%20%7D%7D",
+        "line": 0,
+        "column": 0,
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "type": "error",
+      "message": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\".",
+      "location": {
+        "url": "http://127.0.0.1:4181/v2/",
+        "line": 605,
+        "column": 0,
+        "lineNumber": 605,
+        "columnNumber": 0
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "type": "error",
+      "message": "Failed to load resource: the server responded with a status of 404 (File not found)",
+      "location": {
+        "url": "http://127.0.0.1:4181/v2/%7B%7B%20A_videoUrl%20%7D%7D",
+        "line": 0,
+        "column": 0,
+        "lineNumber": 0,
+        "columnNumber": 0
+      }
+    }
+  ],
+  "dialogs": [],
+  "requests": [
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "46623CA012AF000C0BC84F276BF15981",
+      "url": "http://127.0.0.1:4181/v2/",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Document",
+      "wallTime": 1788736717.036406,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/",
+        "mimeType": "text/html",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "205602",
+          "Content-type": "text/html",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Last-Modified": "Sun, 06 Sep 2026 23:15:52 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 205791
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.2",
+      "url": "http://127.0.0.1:4181/v2/vendor/dc-runtime.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Script",
+      "wallTime": 1788736717.043578,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/dc-runtime.js",
+        "mimeType": "text/javascript",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "69066",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "text/javascript",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:26 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 69260
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.3",
+      "url": "http://127.0.0.1:4181/v2/vendor/inter.css",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Stylesheet",
+      "wallTime": 1788736717.043815,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/inter.css",
+        "mimeType": "text/css",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "1488",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "text/css",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:44 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 1674
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.4",
+      "url": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736717.043879,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+        "mimeType": "image/svg+xml",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "8476",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "image/svg+xml",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:26 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 8667
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.5",
+      "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736717.043918,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+        "mimeType": "image/png",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "53129",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "image/png",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 53317
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.6",
+      "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736717.043946,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+        "mimeType": "image/png",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "32886",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "image/png",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 33074
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.13",
+      "url": "http://127.0.0.1:4181/v2/vendor/react.production.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Script",
+      "wallTime": 1788736717.055534,
+      "initiatorType": "script",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/react.production.min.js",
+        "mimeType": "text/javascript",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10751",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "text/javascript",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10945
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.14",
+      "url": "http://127.0.0.1:4181/v2/vendor/react-dom.production.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Script",
+      "wallTime": 1788736717.055746,
+      "initiatorType": "script",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/react-dom.production.min.js",
+        "mimeType": "text/javascript",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "131835",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "text/javascript",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 132030
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.28",
+      "url": "http://127.0.0.1:4181/v2/%7B%7B%20A_videoUrl%20%7D%7D",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.06276,
+      "initiatorType": "parser",
+      "response": {
+        "status": 404,
+        "statusText": "File not found",
+        "url": "http://127.0.0.1:4181/v2/%7B%7B%20A_videoUrl%20%7D%7D",
+        "mimeType": "text/html",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "335",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-Type": "text/html;charset=utf-8",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Connection": "close"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 520
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.29",
+      "url": "http://127.0.0.1:4181/v2/",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Fetch",
+      "wallTime": 1788736717.083328,
+      "initiatorType": "script",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/",
+        "mimeType": "text/html",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "205602",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "text/html",
+          "Last-Modified": "Sun, 06 Sep 2026 23:15:52 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.24",
+      "url": "http://127.0.0.1:4181/v2/vendor/fonts/inter-latin-v20.woff2",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Font",
+      "wallTime": 1788736717.112491,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/fonts/inter-latin-v20.woff2",
+        "mimeType": "font/woff2",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "48256",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "font/woff2",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:43 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 48445
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.53",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.137278,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 5329001
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.54",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.137902,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.55",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.138454,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.56",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.139616,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.57",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.140722,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.58",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.14272,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.59",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.143499,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.60",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.203575,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "20395",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 5308416-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.61",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.206658,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "20395",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 5308416-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.62",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.23441,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5132203",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 196608-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "requestId": "2287065.63",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736717.717579,
+      "initiatorType": "other",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "1200043",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 4128768-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:app Org chart",
+      "requestId": "2287065.74",
+      "url": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22rgba(255%2C255%2C255%2C0.45)%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E",
+      "host": "",
+      "origin": "null",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736722.274306,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22rgba(255%2C255%2C255%2C0.45)%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E",
+        "mimeType": "image/svg+xml",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Type": "image/svg+xml"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:message bus maximize and exit",
+      "requestId": "2287065.75",
+      "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736723.458235,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+        "mimeType": "image/png",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "53129",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "image/png",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:message bus maximize and exit",
+      "requestId": "2287065.76",
+      "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736723.458337,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+        "mimeType": "image/png",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "32886",
+          "Date": "Sun, 06 Sep 2026 23:18:37 GMT",
+          "Content-type": "image/png",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:app theme toggle changes pixels",
+      "requestId": "2287065.80",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736725.202697,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10321675",
+          "Date": "Sun, 06 Sep 2026 23:18:45 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10321866
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:app theme toggle changes pixels",
+      "requestId": "2287065.81",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736725.204051,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10321675",
+          "Date": "Sun, 06 Sep 2026 23:18:45 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10321866
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:app theme toggle changes pixels",
+      "requestId": "2287065.82",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736725.694612,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10321675",
+          "Date": "Sun, 06 Sep 2026 23:18:45 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10321866
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:unused Babel asset availability",
+      "requestId": "2287065.83",
+      "url": "http://127.0.0.1:4181/v2/vendor/babel.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Fetch",
+      "wallTime": 1788736733.304703,
+      "initiatorType": "script",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/babel.min.js",
+        "mimeType": "text/javascript",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "3137752",
+          "Date": "Sun, 06 Sep 2026 23:18:53 GMT",
+          "Content-type": "text/javascript",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 3137948
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "3B927DC04234622B3B2DAD2C8167B8A5",
+      "url": "http://127.0.0.1:4181/v2/",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Document",
+      "wallTime": 1788736734.59606,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/",
+        "mimeType": "text/html",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "205602",
+          "Content-type": "text/html",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Last-Modified": "Sun, 06 Sep 2026 23:15:52 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 205791
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.2",
+      "url": "http://127.0.0.1:4181/v2/vendor/dc-runtime.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Script",
+      "wallTime": 1788736734.602709,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/dc-runtime.js",
+        "mimeType": "text/javascript",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "69066",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "text/javascript",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:26 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 69260
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.3",
+      "url": "http://127.0.0.1:4181/v2/vendor/inter.css",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Stylesheet",
+      "wallTime": 1788736734.60294,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/inter.css",
+        "mimeType": "text/css",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "1488",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "text/css",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:44 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 1674
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.4",
+      "url": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736734.602991,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+        "mimeType": "image/svg+xml",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "8476",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "image/svg+xml",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:26 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 8667
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.5",
+      "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736734.603068,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+        "mimeType": "image/png",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "53129",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "image/png",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 53317
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.6",
+      "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736734.603239,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+        "mimeType": "image/png",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "32886",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "image/png",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 33074
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.13",
+      "url": "http://127.0.0.1:4181/v2/vendor/react.production.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Script",
+      "wallTime": 1788736734.613883,
+      "initiatorType": "script",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/react.production.min.js",
+        "mimeType": "text/javascript",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10751",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "text/javascript",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10945
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.14",
+      "url": "http://127.0.0.1:4181/v2/vendor/react-dom.production.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Script",
+      "wallTime": 1788736734.614075,
+      "initiatorType": "script",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/react-dom.production.min.js",
+        "mimeType": "text/javascript",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "131835",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "text/javascript",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 132030
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.24",
+      "url": "http://127.0.0.1:4181/v2/%7B%7B%20A_videoUrl%20%7D%7D",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.623315,
+      "initiatorType": "parser",
+      "response": {
+        "status": 404,
+        "statusText": "File not found",
+        "url": "http://127.0.0.1:4181/v2/%7B%7B%20A_videoUrl%20%7D%7D",
+        "mimeType": "text/html",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "335",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-Type": "text/html;charset=utf-8",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Connection": "close"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 520
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.29",
+      "url": "http://127.0.0.1:4181/v2/",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Fetch",
+      "wallTime": 1788736734.647407,
+      "initiatorType": "script",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/",
+        "mimeType": "text/html",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "205602",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "text/html",
+          "Last-Modified": "Sun, 06 Sep 2026 23:15:52 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.25",
+      "url": "http://127.0.0.1:4181/v2/vendor/fonts/inter-latin-v20.woff2",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Font",
+      "wallTime": 1788736734.673751,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/fonts/inter-latin-v20.woff2",
+        "mimeType": "font/woff2",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "48256",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "font/woff2",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:43 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 48445
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.53",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.783019,
+      "initiatorType": "parser",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 5329001
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.54",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.784225,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.55",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.785169,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.56",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.786954,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.57",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.788674,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.58",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.789379,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED",
+        "canceled": true
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.59",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.79029,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "5328811",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 0-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.60",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.839772,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "20395",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 5308416-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.61",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.857415,
+      "initiatorType": "parser",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "20395",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 5308416-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.62",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736734.888419,
+      "initiatorType": "script",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "4280235",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 1048576-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "requestId": "2288913.63",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736735.321875,
+      "initiatorType": "other",
+      "response": {
+        "status": 206,
+        "statusText": "Partial Content",
+        "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "2183083",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3",
+          "Content-Range": "bytes 3145728-5328810/5328811"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing theme via actual click",
+      "requestId": "2288913.64",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736737.455991,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10321675",
+          "Date": "Sun, 06 Sep 2026 23:18:57 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10321866
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing theme via actual click",
+      "requestId": "2288913.65",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736737.456503,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10321675",
+          "Date": "Sun, 06 Sep 2026 23:18:57 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10321866
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing Hero",
+      "requestId": "2288913.66",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736737.978158,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10321675",
+          "Date": "Sun, 06 Sep 2026 23:18:57 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10321866
+    },
+    {
+      "theme": "light",
+      "phase": "light:app Org chart",
+      "requestId": "2288913.77",
+      "url": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22rgba(17%2C17%2C17%2C0.47)%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E",
+      "host": "",
+      "origin": "null",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736741.315849,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22rgba(17%2C17%2C17%2C0.47)%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E",
+        "mimeType": "image/svg+xml",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Type": "image/svg+xml"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:message bus maximize and exit",
+      "requestId": "2288913.78",
+      "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736742.5612,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+        "mimeType": "image/png",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "53129",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "image/png",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:message bus maximize and exit",
+      "requestId": "2288913.79",
+      "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Image",
+      "wallTime": 1788736742.561305,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+        "mimeType": "image/png",
+        "fromDiskCache": true,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "32886",
+          "Date": "Sun, 06 Sep 2026 23:18:54 GMT",
+          "Content-type": "image/png",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 0
+    },
+    {
+      "theme": "light",
+      "phase": "light:app theme toggle changes pixels",
+      "requestId": "2288913.83",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736744.898783,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10321675",
+          "Date": "Sun, 06 Sep 2026 23:19:04 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10321866
+    },
+    {
+      "theme": "light",
+      "phase": "light:video toggle off and on",
+      "requestId": "2288913.84",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Media",
+      "wallTime": 1788736746.128374,
+      "initiatorType": "other",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+        "mimeType": "video/mp4",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "10321675",
+          "Date": "Sun, 06 Sep 2026 23:19:06 GMT",
+          "Content-type": "video/mp4",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 10321866
+    },
+    {
+      "theme": "light",
+      "phase": "light:unused Babel asset availability",
+      "requestId": "2288913.85",
+      "url": "http://127.0.0.1:4181/v2/vendor/babel.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "type": "Fetch",
+      "wallTime": 1788736752.164468,
+      "initiatorType": "script",
+      "response": {
+        "status": 200,
+        "statusText": "OK",
+        "url": "http://127.0.0.1:4181/v2/vendor/babel.min.js",
+        "mimeType": "text/javascript",
+        "fromDiskCache": false,
+        "fromServiceWorker": false,
+        "headers": {
+          "Content-Length": "3137752",
+          "Date": "Sun, 06 Sep 2026 23:19:12 GMT",
+          "Content-type": "text/javascript",
+          "Last-Modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+          "Server": "SimpleHTTP/0.6 Python/3.12.3"
+        }
+      },
+      "finished": true,
+      "encodedDataLength": 3137948
+    }
+  ],
+  "playwrightRequests": [
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "document",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "205602",
+        "content-type": "text/html",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:15:52 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/dc-runtime.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "script",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "69066",
+        "content-type": "text/javascript",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:26 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/inter.css",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "stylesheet",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "1488",
+        "content-type": "text/css",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:44 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "8476",
+        "content-type": "image/svg+xml",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:26 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "53129",
+        "content-type": "image/png",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "32886",
+        "content-type": "image/png",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/react.production.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "script",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "10751",
+        "content-type": "text/javascript",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/react-dom.production.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "script",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "131835",
+        "content-type": "text/javascript",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/%7B%7B%20A_videoUrl%20%7D%7D",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 404,
+      "statusText": "File not found",
+      "finished": true,
+      "responseHeaders": {
+        "connection": "close",
+        "content-length": "335",
+        "content-type": "text/html;charset=utf-8",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "fetch",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "205602",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "text/html",
+        "last-modified": "Sun, 06 Sep 2026 23:15:52 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/fonts/inter-latin-v20.woff2",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "font",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "48256",
+        "content-type": "font/woff2",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:43 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      },
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "20395",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 5308416-5328810/5328811"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "20395",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 5308416-5328810/5328811"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5132203",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 196608-5328810/5328811"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "1200043",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 4128768-5328810/5328811"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:message bus maximize and exit",
+      "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "53129",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "image/png",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:message bus maximize and exit",
+      "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "32886",
+        "date": "Sun, 06 Sep 2026 23:18:37 GMT",
+        "content-type": "image/png",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:app theme toggle changes pixels",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "10321675",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:18:45 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:app theme toggle changes pixels",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "10321675",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:18:45 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:app theme toggle changes pixels",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "10321675",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:18:45 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "dark",
+      "phase": "dark:unused Babel asset availability",
+      "url": "http://127.0.0.1:4181/v2/vendor/babel.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "fetch",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "3137752",
+        "content-type": "text/javascript",
+        "date": "Sun, 06 Sep 2026 23:18:53 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "document",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "205602",
+        "content-type": "text/html",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:15:52 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/dc-runtime.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "script",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "69066",
+        "content-type": "text/javascript",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:26 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/inter.css",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "stylesheet",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "1488",
+        "content-type": "text/css",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:44 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/fleetdeck-eye-minimal.svg",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "8476",
+        "content-type": "image/svg+xml",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:26 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "53129",
+        "content-type": "image/png",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "32886",
+        "content-type": "image/png",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/react.production.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "script",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "10751",
+        "content-type": "text/javascript",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/react-dom.production.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "script",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "131835",
+        "content-type": "text/javascript",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/%7B%7B%20A_videoUrl%20%7D%7D",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 404,
+      "statusText": "File not found",
+      "finished": true,
+      "responseHeaders": {
+        "connection": "close",
+        "content-length": "335",
+        "content-type": "text/html;charset=utf-8",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "fetch",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "205602",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "text/html",
+        "last-modified": "Sun, 06 Sep 2026 23:15:52 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/vendor/fonts/inter-latin-v20.woff2",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "font",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "48256",
+        "content-type": "font/woff2",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:43 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      },
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      },
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      },
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "failure": {
+        "errorText": "net::ERR_ABORTED"
+      },
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "5328811",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 0-5328810/5328811"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "20395",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 5308416-5328810/5328811"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "20395",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 5308416-5328810/5328811"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "4280235",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 1048576-5328810/5328811"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing renders",
+      "url": "http://127.0.0.1:4181/v2/media/hero-dark.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 206,
+      "statusText": "Partial Content",
+      "responseHeaders": {
+        "content-length": "2183083",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "video/mp4",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3",
+        "content-range": "bytes 3145728-5328810/5328811"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing theme via actual click",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "10321675",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:18:57 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing theme via actual click",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "10321675",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:18:57 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:landing Hero",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "10321675",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:18:57 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:message bus maximize and exit",
+      "url": "http://127.0.0.1:4181/v2/media/chatgpt-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "53129",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "image/png",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:message bus maximize and exit",
+      "url": "http://127.0.0.1:4181/v2/media/claude-logo.png",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "image",
+      "status": 200,
+      "statusText": "OK",
+      "finished": true,
+      "responseHeaders": {
+        "content-length": "32886",
+        "date": "Sun, 06 Sep 2026 23:18:54 GMT",
+        "content-type": "image/png",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      }
+    },
+    {
+      "theme": "light",
+      "phase": "light:app theme toggle changes pixels",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "10321675",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:19:04 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:video toggle off and on",
+      "url": "http://127.0.0.1:4181/v2/media/hero-light.mp4",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "media",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "10321675",
+        "content-type": "video/mp4",
+        "date": "Sun, 06 Sep 2026 23:19:06 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:41 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    },
+    {
+      "theme": "light",
+      "phase": "light:unused Babel asset availability",
+      "url": "http://127.0.0.1:4181/v2/vendor/babel.min.js",
+      "host": "127.0.0.1:4181",
+      "origin": "http://127.0.0.1:4181",
+      "method": "GET",
+      "resourceType": "fetch",
+      "status": 200,
+      "statusText": "OK",
+      "responseHeaders": {
+        "content-length": "3137752",
+        "content-type": "text/javascript",
+        "date": "Sun, 06 Sep 2026 23:19:12 GMT",
+        "last-modified": "Sun, 06 Sep 2026 23:14:40 GMT",
+        "server": "SimpleHTTP/0.6 Python/3.12.3"
+      },
+      "finished": true
+    }
+  ]
+}

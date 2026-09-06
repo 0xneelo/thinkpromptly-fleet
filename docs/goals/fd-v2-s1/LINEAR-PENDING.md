@@ -93,7 +93,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Capture every browser request while visiting landing, app and deck in both themes, proving zero external hosts.
@@ -107,7 +107,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: Todo
+- Intended state: In Progress
 - Mirror status: pending
 
 Fetch S0 design-diff script and required devDependencies; run the unchanged 36-screen pixel gate, commit report and PNGs.
@@ -242,5 +242,42 @@ Signed Waldemar.
 - Mirror status: pending
 
 Exactly5 additions and no other server changes. Isolated node server:19/19 curl GETs HTTP200, exactContent-Type and byte-identical bodies, including a transientWebP probe; probe and scratchstate removed and ports3199/3198 released. Port milestone Linear retry still oauth_token_invalid_grant.
+
+Signed Waldemar.
+
+## S1-07 — comment
+
+- Timestamp: 2026-09-06T23:19:20.785029+00:00
+- Title: Gate dependency reached; script not yet published
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+git fetch origin agent-v2-s0 succeeded at47dbabb20855242bc7e0b421e52b0fbbab801df1. It contains the three gate devDependencies but scripts/design-diff.mjs does not exist at that ref. Importing only the devDependencies now; next script poll30 minutes after this observation. No gate result is claimed.
+
+Signed Waldemar.
+
+## S1-MOCK-PARSER — issue
+
+- Timestamp: 2026-09-06T23:20:30.903838+00:00
+- Title: [Waldemar · frontend-developer] Preserved mock template emits initial parser diagnostics
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker, operator:decision
+- Project: remote-system
+- Intended state: Todo
+- Mirror status: pending
+
+Real-browser evidence in verify/S1/network.json shows the initial parser requests `/v2/%7B%7B%20A_videoUrl%20%7D%7D` from the preserved `src="{ A_videoUrl }"` at mock line145 (local404), and reports invalid polyline points for the preserved `{ a.trendPts }` binding. Each occurs once per theme, totaling four console errors and zero JavaScript page exceptions. All50 interactions pass, all final videos decode with no media errors, and zero external hosts load. Ten canceled repeated video requests remain recorded, not filtered out.
+
+Options: preserve the template exactly for S1 and handle parser timing during the planned compilation/integration phase (recommended under D15), or amend the artboard specification separately before a future regenerated port. S1 makes no mock or shipped markup fix.
+
+Signed Waldemar.
+
+## S1-06 — comment
+
+- Timestamp: 2026-09-06T23:21:53.072087+00:00
+- Title: Network proof complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Independent review clean: 58HTTP requests plus2inline data resources; zero external hosts/origins;50/50 recorded checks cover both themes, eightnavscreens,fullscreen,deck5,video toggles. No request interception/state injection. Preserved parser diagnostics/canceled requests remain visible and are carded as S1-MOCK-PARSER. MIME milestone Linear retry remains oauth_token_invalid_grant.
 
 Signed Waldemar.
