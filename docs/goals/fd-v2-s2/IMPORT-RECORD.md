@@ -68,3 +68,26 @@ DESIGN-35 also advised that Waldemar may still push a gate report and small fixe
 this branch will merge `origin/agent-v2-s1` once more before the final gate run.
 
 Signed **Julius**.
+
+---
+
+## Update 2026-09-07 — S1 accepted, superseding the caveat above
+
+DESIGN-35 confirmed S1 is final and accepted at `origin/agent-v2-s1` @ `70c32bb`, carrying its own
+36/36 gate report, S0's `scripts/design-diff.mjs` and the devDependencies. Merged into `agent-v2-s2`:
+
+    git fetch origin agent-v2-s1 && git merge --no-edit origin/agent-v2-s1   # clean, no conflicts
+
+Checked before merging: `public/v2/index.html`, `scripts/design-diff.mjs`, `server.js` and `package.json`
+are **byte-identical** between my branch and S1's accepted tip, so the merge added only evidence and docs
+and could not disturb the compiler work in flight. After the merge, `template.dc.html` and
+`pass1/index.html` still hash to `96be98b6…03d755` — they remain byte-identical to the accepted pass 1.
+
+**The "S1 is not green" caveat above is therefore resolved.** It was accurate when written and is kept
+rather than rewritten, because the reason it was true — S0's gate living on an unmerged branch — is the
+finding worth preserving.
+
+Cross-validation worth recording: S1's accepted `verify/S1/report.json` and my independent
+`verify/S1-pass1-recheck/report.json` were produced by separate runs on different ports (4181 vs 3199)
+and agree exactly — `allPass: true`, 36 results, max mismatch `0.03294753086419753`. The gate is
+reproducible to the digit.
