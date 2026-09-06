@@ -37,7 +37,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Vendor Inter latin weights 400/500/600/700, local CSS, source and license; preserve the mock rendering.
@@ -198,5 +198,16 @@ Signed Waldemar.
 - Mirror status: pending
 
 Independent review clean: exactly three URL substitutions, three source SRI matches, pinned versions and MIT licenses. Linear retry remains delegated to the milestone loop; no live issue is claimed.
+
+Signed Waldemar.
+
+## S1-02 — comment
+
+- Timestamp: 2026-09-06T23:17:47.871542+00:00
+- Title: Inter vendoring complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Reviewer clean: 3/3 file hashes and sizes, 4/4 Latin CSS faces identical except local URLs, weights400/500/600/700. SIL OFL1.1 included. Runtime milestone Linear retry returned oauth_token_invalid_grant; never-block ledger remains in use.
 
 Signed Waldemar.
