@@ -1287,5 +1287,1605 @@
       "FD-gk-l6-goalspage",
       "FD-rhoda-machines"
     ],
+    termLinesFor: {
+      "LC-cdx-readpath": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-cdx-readpath...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-CDX-READPATH.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-CDX-READPATH.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-CDX-READPATH.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(cdx-readpath): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-cdx-readpath 41c4965] docs(cdx-readpath): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-CDX-READPATH.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "LC-census-classifier": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-census-classifier...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-CENSUS-CLASSIFIER.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-CENSUS-CLASSIFIER.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-CENSUS-CLASSIFIER.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(census-classifier): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-census-classifier 41c4965] docs(census-classifier): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-CENSUS-CLASSIFIER.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "LC-chiliz-factories": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-chiliz-factories...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-CHILIZ-FACTORIES.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-CHILIZ-FACTORIES.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-CHILIZ-FACTORIES.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(chiliz-factories): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-chiliz-factories 41c4965] docs(chiliz-factories): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-CHILIZ-FACTORIES.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "LC-comparator-smalls": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-comparator-smalls...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-COMPARATOR-SMALLS.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-COMPARATOR-SMALLS.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-COMPARATOR-SMALLS.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(comparator-smalls): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-comparator-smalls 41c4965] docs(comparator-smalls): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-COMPARATOR-SMALLS.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-deck11-boardroot": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-deck11-boardroot...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-DECK11-BOARDROOT.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-DECK11-BOARDROOT.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-DECK11-BOARDROOT.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(deck11-boardroot): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-deck11-boardroot 41c4965] docs(deck11-boardroot): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-DECK11-BOARDROOT.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-deck25-gate": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-deck25-gate...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-DECK25-GATE.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-DECK25-GATE.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-DECK25-GATE.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(deck25-gate): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-deck25-gate 41c4965] docs(deck25-gate): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-DECK25-GATE.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-deck26-launcher": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-deck26-launcher...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-DECK26-LAUNCHER.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-DECK26-LAUNCHER.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-DECK26-LAUNCHER.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(deck26-launcher): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-deck26-launcher 41c4965] docs(deck26-launcher): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-DECK26-LAUNCHER.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-deck27-notifycron": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-deck27-notifycron...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-DECK27-NOTIFYCRON.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-DECK27-NOTIFYCRON.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-DECK27-NOTIFYCRON.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(deck27-notifycron): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-deck27-notifycron 41c4965] docs(deck27-notifycron): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-DECK27-NOTIFYCRON.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-desktop-sessions-p…": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-desktop-sessions-p…...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-DESKTOP-SESSIONS-P….md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-DESKTOP-SESSIONS-P….md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-DESKTOP-SESSIONS-P….md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(desktop-sessions-p…): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-desktop-sessions-p… 41c4965] docs(desktop-sessions-p…): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-DESKTOP-SESSIONS-P….md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-gb-home": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-gb-home...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-GB-HOME.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-GB-HOME.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-GB-HOME.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(gb-home): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-gb-home 41c4965] docs(gb-home): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-GB-HOME.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-gk-l1-ledger": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-gk-l1-ledger...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-GK-L1-LEDGER.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-GK-L1-LEDGER.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-GK-L1-LEDGER.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(gk-l1-ledger): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-gk-l1-ledger 41c4965] docs(gk-l1-ledger): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-GK-L1-LEDGER.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-gk-l2-sessionkind": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-gk-l2-sessionkind...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-GK-L2-SESSIONKIND.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-GK-L2-SESSIONKIND.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-GK-L2-SESSIONKIND.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(gk-l2-sessionkind): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-gk-l2-sessionkind 41c4965] docs(gk-l2-sessionkind): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-GK-L2-SESSIONKIND.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-gk-l3-skill": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-gk-l3-skill...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-GK-L3-SKILL.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-GK-L3-SKILL.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-GK-L3-SKILL.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(gk-l3-skill): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-gk-l3-skill 41c4965] docs(gk-l3-skill): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-GK-L3-SKILL.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-gk-l4-sweep": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-gk-l4-sweep...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-GK-L4-SWEEP.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-GK-L4-SWEEP.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-GK-L4-SWEEP.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(gk-l4-sweep): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-gk-l4-sweep 41c4965] docs(gk-l4-sweep): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-GK-L4-SWEEP.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-gk-l5-hooks": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-gk-l5-hooks...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-GK-L5-HOOKS.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-GK-L5-HOOKS.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-GK-L5-HOOKS.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(gk-l5-hooks): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-gk-l5-hooks 41c4965] docs(gk-l5-hooks): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-GK-L5-HOOKS.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-gk-l6-goalspage": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-gk-l6-goalspage...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-GK-L6-GOALSPAGE.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-GK-L6-GOALSPAGE.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-GK-L6-GOALSPAGE.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(gk-l6-goalspage): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-gk-l6-goalspage 41c4965] docs(gk-l6-goalspage): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-GK-L6-GOALSPAGE.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ],
+      "FD-rhoda-machines": [
+        {
+          "t": "• Ran git fetch origin && git status --short --branch",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ ## agent-rhoda-machines...origin/main [ahead 2]",
+          "kind": "out"
+        },
+        {
+          "t": "• Started `/root/review_gate`",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Reviewer returned one high and two low findings. The high one hinges on whether the route can be served on the plain-http listener; applying the hardening fixes in the same pass.",
+          "kind": "note"
+        },
+        {
+          "t": "• Edited NOTE-RHODA-MACHINES.md (+1 −1)",
+          "kind": "cmd"
+        },
+        {
+          "t": "     8  Execution paused before implementation: the required issue read is",
+          "kind": "out"
+        },
+        {
+          "t": "     9 −blocked by an expired app connection. Three consecutive MCP operations",
+          "kind": "del"
+        },
+        {
+          "t": "     9 +blocked by an app connection requiring reauthentication. Three consecutive MCP operations",
+          "kind": "add"
+        },
+        {
+          "t": "    10  returned `UNAUTHORIZED`, `oauth_token_invalid_grant`, and",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git add -- NOTE-RHODA-MACHINES.md && git diff --cached --check && git diff --cached --stat",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ NOTE-RHODA-MACHINES.md | 35 +++++++++++++++++++++++++++",
+          "kind": "out"
+        },
+        {
+          "t": "    1 file changed, 35 insertions(+)",
+          "kind": "out"
+        },
+        {
+          "t": "• Waiting for agents",
+          "kind": "cmd"
+        },
+        {
+          "t": "• Finished waiting",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ No agents completed yet",
+          "kind": "out"
+        },
+        {
+          "t": "• Ran git commit -m \"docs(rhoda-machines): record reauthentication gate\" && git rev-parse HEAD",
+          "kind": "cmd"
+        },
+        {
+          "t": "  └ [agent-rhoda-machines 41c4965] docs(rhoda-machines): record reauthentication gate",
+          "kind": "out"
+        },
+        {
+          "t": "    41c4965bc17496d080d3f02d310f406ac71651fa",
+          "kind": "out"
+        },
+        {
+          "t": "──────────────────────────────────────────────────────────────",
+          "kind": "rule"
+        },
+        {
+          "t": "• Stopped under the three-failure rule: Linear requires reauthentication (oauth_token_invalid_grant), blocking the mandatory issue read and gate comment.",
+          "kind": "note"
+        },
+        {
+          "t": "  Reviewed gate record: NOTE-RHODA-MACHINES.md, committed locally as 41c4965; unpushed.",
+          "kind": "note"
+        },
+        {
+          "t": "  No implementation, tests, Linear updates, or live-deck access occurred. Reconnect Linear to resume.",
+          "kind": "note"
+        },
+        {
+          "t": "— Worked for 1m 51s ────────────────────────────────────────",
+          "kind": "rule"
+        }
+      ]
+    },
   };
 });

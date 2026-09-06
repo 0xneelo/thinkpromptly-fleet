@@ -36,9 +36,14 @@ const SEEDS = {
   titles: 'const titles = {',
 };
 
+// termLinesFor is a function, so it cannot go in the fixture as-is: we evaluate it and store its
+// output for every session name the fixture knows. Anchor text must occur exactly once.
+const TERM_LINES_DECL = 'const termLinesFor = ';
+
 // Emitted key order of fixture.js.
 const ORDER = ['tiles', 'groups', 'regData', 'busSessions', 'busGroups', 'seedThreads',
-  'orgScopeData', 'keyRows', 'accounts', 'machines', 'dsData', 'titles', 'gbSessions'];
+  'orgScopeData', 'keyRows', 'accounts', 'machines', 'dsData', 'titles', 'gbSessions',
+  'termLinesFor'];
 
 const OPEN = { '[': ']', '{': '}' };
 
@@ -149,6 +154,51 @@ function clean(value, path) {
   return value;
 }
 
+// Slices the arrow function assigned by `decl` — from its parameter list to the closing brace of
+// its body — so it can be evaluated as an expression.
+function sliceArrowFn(src, name, decl) {
+  const at = src.indexOf(decl);
+  if (at < 0) throw new Error(`seed "${name}": declaration ${JSON.stringify(decl)} not found in ${MOCK} — the mock changed, fix tools/extract-fixture.mjs`);
+  if (src.indexOf(decl, at + 1) >= 0) throw new Error(`seed "${name}": declaration ${JSON.stringify(decl)} is ambiguous (occurs more than once) in ${MOCK}`);
+  const from = at + decl.length;
+  let body = from;
+  while (body < src.length && src[body] !== '{') body++;
+  if (body >= src.length) throw new Error(`seed "${name}": no function body '{' after its declaration in ${MOCK}`);
+  return src.slice(from, matchBracket(src, body) + 1);
+}
+
+// termLinesFor declares its own line helper, `const L = (kind, txt) => ({ t: txt, style: {…} })`,
+// which would shadow any stub we inject. Rewrite that one statement to bind the injected `__L`.
+const LOCAL_L_DECL = 'const L = (kind, txt) => ';
+
+function stubLocalL(fnSrc) {
+  const at = fnSrc.indexOf(LOCAL_L_DECL);
+  if (at < 0) throw new Error(`seed "termLinesFor": local helper ${JSON.stringify(LOCAL_L_DECL)} not found in ${MOCK} — its signature changed, fix tools/extract-fixture.mjs`);
+  if (fnSrc.indexOf(LOCAL_L_DECL, at + 1) >= 0) throw new Error(`seed "termLinesFor": local helper ${JSON.stringify(LOCAL_L_DECL)} is ambiguous (occurs more than once) in ${MOCK}`);
+  let open = at + LOCAL_L_DECL.length;
+  while (open < fnSrc.length && fnSrc[open] !== '{') open++;
+  if (open >= fnSrc.length) throw new Error(`seed "termLinesFor": no '{' in the body of its local helper L in ${MOCK}`);
+  let end = matchBracket(fnSrc, open) + 1; // past the returned object literal
+  while (end < fnSrc.length && /[\s);]/.test(fnSrc[end])) end++; // past the wrapping `)` and `;`
+  return fnSrc.slice(0, at) + 'const L = __L;' + fnSrc.slice(end);
+}
+
+// The real L(kind, txt) returns { t, style } where style is the theme colour picked from `kind`.
+// The kind is the data; the colour it maps to is presentation, so the stub keeps only the kind.
+function extractTermLines(src, ctx, names) {
+  const fnSrc = stubLocalL(sliceArrowFn(src, 'termLinesFor', TERM_LINES_DECL));
+  const make = evaluate(ctx, 'termLinesFor', `(function (__L) { return ${fnSrc}; })`);
+  const termLinesFor = make((kind, txt) => ({ t: txt, kind }));
+  const out = {};
+  for (const name of names) {
+    if (name in out) continue; // de-duplicate, first appearance wins
+    const value = clean(termLinesFor(name), `termLinesFor.${name}`);
+    if (value === DROP) throw new Error(`termLinesFor("${name}") extracted to nothing — check the stubs`);
+    out[name] = value;
+  }
+  return out;
+}
+
 function extract() {
   const src = readFileSync(join(ROOT, MOCK), 'utf8');
   const ctx = makeContext();
@@ -159,6 +209,7 @@ function extract() {
     out[name] = value;
     ctx[name] = value; // later seeds may reference earlier ones (groups uses gbSessions)
   }
+  out.termLinesFor = extractTermLines(src, ctx, [...out.tiles.map((s) => s.name), ...out.gbSessions]);
   return out;
 }
 

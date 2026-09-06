@@ -482,7 +482,8 @@ test('in fixture mode the fetchers resolve the mock seed arrays unchanged', asyn
 
 test('fixtureFor reaches every seed array by name', () => {
   const names = ['tiles', 'groups', 'regData', 'busSessions', 'busGroups', 'seedThreads',
-    'orgScopeData', 'keyRows', 'accounts', 'machines', 'dsData', 'titles', 'gbSessions'];
+    'orgScopeData', 'keyRows', 'accounts', 'machines', 'dsData', 'titles', 'gbSessions',
+    'termLinesFor'];
   for (const n of names) assert.ok(data.fixtureFor(n) !== undefined, n);
   assert.throws(() => data.fixtureFor('nope'), /no fixture named/);
 });
