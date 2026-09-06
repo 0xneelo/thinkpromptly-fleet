@@ -11,7 +11,7 @@ React-based runtime (`support.js`). The most faithful port is to **ship that mar
 re-types the design, so nothing drifts. The seed data stays in the app as a **fixture mode**
 (`?fixture=1`), so the pixel gate keeps working after the logic is wired.
 
-## Phase 0 — gate first (S0, size S, `qa-engineer`)
+## Phase 0 — gate first (S0, size S, `qa-engineer`) — ✅ delivered 2026-09-07 by Gisbert (`origin/agent-v2-s0` @ `cf88d29`): 36 baselines, self-test 36/36 allPass, max mismatch 0.033 %, baseline repeat max 0.047 %; design-seat review pending
 
 - Add devDeps `playwright`, `pixelmatch`, `pngjs`; `scripts/design-diff.mjs`:
   1. serves `docs/design/fleetdeck-v2/mock/` on a scratch port and the app (`PORT=3199 FLEET_TRAIN_PORT=3198 node server.js`) on another;
