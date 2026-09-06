@@ -1,9 +1,9 @@
 # fd-v2 S1 execution report
 
-Status: **all implementation and artifact checks pass; final delivery and registry receipt in progress**.
+Status: **COMPLETE — all seven Acceptance checkboxes are satisfied under the DESIGN-35 Linear-pending ruling.**
 
 Worker: **Waldemar** (`frontend-developer`, `agent:waldemar`). Project: `remote-system` / `fleetdeck-v2`.
-Updated: 2026-09-06T23:27:54.699250+00:00.
+Updated: 2026-09-06T23:34:53.014405+00:00.
 
 ## What landed
 
@@ -111,19 +111,41 @@ The S0 visual contract uses reduced motion, identical theme storage, disabled an
 
 `git diff --check` reports ten whitespace warnings confined to byte-verbatim SVG/license inputs and raw unified-diff context. These source/evidence bytes are preserved under D15; no whitespace normalization was applied.
 
-Independent reviewer: **CLEAN; T1/T2-only; zero implementation findings**. Results: 7/7 HTML substitution kinds, 19 occurrences ; 3 runtime swaps; 25/25 protected files; 15/15 manifest entries; 3/3 SRI matches; 4/4 media signatures; byte-identical raw diff; exactly five MIME additions; 10-line artifact README. Final artifact reviewer confirms 36/36 unique screen/theme rows, 72/72 correctly sized PNGs, 36/36 capture hashes, 36/36 exact S0 baseline hashes, 36/36 recomputed pixel counts, 36/36 byte-identical diff PNGs, and restored port/network proof bytes. Zero findings remain. Push and registry receipts are separate completion steps.
+Independent reviewer: **CLEAN; T1/T2-only; zero implementation findings**. Results: 7/7 HTML substitution kinds, 19 occurrences ; 3 runtime swaps; 25/25 protected files; 15/15 manifest entries; 3/3 SRI matches; 4/4 media signatures; byte-identical raw diff; exactly five MIME additions; 10-line artifact README. Final artifact reviewer confirms 36/36 unique screen/theme rows, 72/72 correctly sized PNGs, 36/36 capture hashes, 36/36 exact S0 baseline hashes, 36/36 recomputed pixel counts, 36/36 byte-identical diff PNGs, and restored port/network proof bytes. Zero findings remain. The authenticated push and successful registry receipt below close the delivery requirements.
 
 ## Lifecycle, delivery and open issues
 
 DESIGN-35's current ruling makes Linear OAuth expiry non-blocking. Every intended issue/comment is in `LINEAR-PENDING.md`, signed Waldemar, using stable local IDs for milestone commits; these are not fabricated Linear issue keys. Retries remain `oauth_token_invalid_grant`; the design seat mirrors entries later.
 
-The bare task-PENDING registry POST returned HTTP 401. The documented box fleet configuration supplied the supported bearer authentication without exposing its value; the authenticated task-PENDING POST returned HTTP 400 because the server requires one real Linear key or an empty task. No fabricated task key was sent. This compatibility limitation is recorded in S1-REGISTRY. The separately authorized status-only done update follows the final branch push. S1-ROUTING and S1-MOCK-PARSER are decided by DESIGN-35 (2026-09-07): directory routing deferred to L1; parser diagnostics preserved for S1 and handled by S2.
+The bare task-PENDING registry POST returned HTTP 401. The documented box fleet configuration supplied the supported bearer authentication without exposing its value; the authenticated task-PENDING POST returned HTTP 400 because the server requires one real Linear key or an empty task. No fabricated task key was sent. This compatibility limitation is recorded in S1-REGISTRY. The separately authorized status-only done update succeeded after the artifact push: HTTP 200, body `{"ok":true}`, at 2026-09-06T23:33:46.288220+00:00. S1-ROUTING and S1-MOCK-PARSER are decided by DESIGN-35 (2026-09-07): directory routing deferred to L1; parser diagnostics preserved for S1 and handled by S2.
 
-Each completed milestone is pushed with a freshly obtained train-broker token, held only in the subprocess environment. Separate fresh-token `git ls-remote` checks verify the remote SHA. Final delivery receipt is pending the gate/report commit and registry completion. Latest committed milestone before this report update: `39ae4ad77e94cd30a2fa8a0f5cc6fc61f0a641c9`.
+Every milestone was pushed with a freshly obtained train-broker token held only in the subprocess environment. A separate fresh-token `git ls-remote` verified the full remote SHA. Reviewed implementation, manifest, final gate report and all 72 PNGs were delivered at **`793a84a82702eca0bca317cbc03e9693439afe59`**; independent remote verification matched at 2026-09-06T23:33:20.433939+00:00.
 
-Commits so far:
+Registry completion receipt:
+
+```json
+{
+  "timestamp": "2026-09-06T23:33:46.288220+00:00",
+  "request": {
+    "host": "german-box",
+    "name": "FD-v2-s1",
+    "status": "done"
+  },
+  "httpStatus": 200,
+  "response": {
+    "ok": true
+  }
+}
+```
+
+The registry row is done. The literal task value `PENDING` is unsupported by the live server and was not substituted with a fabricated issue key; the design seat can attach the real key when it mirrors the pending ledger. All nine sub-issues and the main issue have intended state Done in that ledger. No live Linear issue/comment/transition is claimed while OAuth is expired.
+
+This completion report and final acceptance/ledger entries follow the artifact commit above. The final branch SHA is separately authenticated after their push and supplied in the completion response.
+
+Artifact commits (completion-only documents follow):
 
 ```
+793a84a test(fleetdeck): land reviewed 36-screen S1 pixel proof (S1-07)
 39ae4ad docs(fleetdeck): publish S1 port evidence and pending acceptance (S1-08)
 1dd2c56 build(fleetdeck): import S0 pixel gate dependencies (S1-07)
 73bc2bc test(fleetdeck): prove local-only requests across S1 views (S1-06)

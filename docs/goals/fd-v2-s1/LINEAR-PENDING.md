@@ -9,7 +9,7 @@ The operator authorizes this committed ledger instead of live Linear while box O
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: none
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Land the exact artboard with enumerated T1/T2 swaps only, vendor all assets, verify the 36-screen gate, document and push the S1 branch.
@@ -121,7 +121,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Write the 10-line artifact README and signed final report; tick only proven acceptance items.
@@ -148,7 +148,7 @@ Signed Waldemar.
 - Title: [Waldemar · frontend-developer] Authorize S1 registry task/status writes
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker, operator:gate
 - Project: remote-system
-- Intended state: Todo
+- Intended state: Done
 - Mirror status: pending
 
 The exact operator-provided POST to http://100.125.231.25:3131/api/registry with host german-box, name FD-v2-s1, task PENDING returned HTTP 401 and body `unauthorized`. Local implementation continues. Operator action: enable the documented registry authorization or set the row on behalf of S1. This is a registry-write failure, separate from the waived Linear OAuth condition.
@@ -397,5 +397,38 @@ Signed Waldemar.
 - Mirror status: pending
 
 After verbatim S0 package checkout/npmci and fvar structural proof, rerun again passes36/36 with72PNGs; all36capturehashes identical to firstpass. Max427pixels/0.03294753086419753%. Independent final reviewer clean on updatedpackages,fontproof,current19/19MIMEresults,andallrestoredproofs. TemporaryS0baselineinputs removedafterhashvalidation; no unrelatedS0files committed. Linear remains oauth_token_invalid_grant; ledger mirrorspending.
+
+Signed Waldemar.
+
+## S1-REGISTRY — comment
+
+- Timestamp: 2026-09-06T23:34:53.038771+00:00
+- Title: Registry row done accepted
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+After artifact commit793a84a82702eca0bca317cbc03e9693439afe59 was pushed and independently authenticated, POST host=german-box,name=FD-v2-s1,status=done with documented fleet authentication returned HTTP200 and {"ok":true} at2026-09-06T23:33:46.288220+00:00. No credential was recorded. Task PENDING remains unsupported by schema; DESIGN-35 can attach the real key during later Linear mirroring. No fake issue key or server policy change was used.
+
+Signed Waldemar.
+
+## S1-08 — comment
+
+- Timestamp: 2026-09-06T23:34:53.061338+00:00
+- Title: Final report and acceptance complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+REPORT.md is signed Waldemar and records all applied substitutions, 36 gate numbers, 19 MIME curl results, variable-font proof, exact S0 package checkout, independent review, push receipt, registry HTTP200 and decided follow-ups. All seven Acceptance boxes are checked. Raw parser diagnostics are preserved for S2; directory routing deferred to L1. Public README remains10 lines and safely reruns into S1-recheck.
+
+Signed Waldemar.
+
+## S1-MAIN — comment
+
+- Timestamp: 2026-09-06T23:34:53.084095+00:00
+- Title: S1 complete under DESIGN-35 pending-ledger ruling
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Verbatim port delivered with all runtime/fonts/media, 15-entry manifest, raw T1/T2 diff, zero external hosts, 36/36 allPass and72PNGs, clean independent review, 19/19 MIME checks. Maximum mismatch0.03294753086419753% (427pixels); other35pairs0%. Registry done acceptedHTTP200. Artifact commit793a84a82702eca0bca317cbc03e9693439afe59 pushed and independently verified; final completion documents follow. Linear retry still oauth_token_invalid_grant; mirror this main issue and nine sub-issues as Done using the current operator-authorized ledger.
 
 Signed Waldemar.

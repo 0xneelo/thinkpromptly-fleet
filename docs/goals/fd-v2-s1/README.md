@@ -65,7 +65,7 @@ in your commit, quote it, and continue.
 - [x] `verify/S1/report.json`: `allPass: true` on 36 screens; PNGs committed.
 - [x] `MANIFEST.md` with versions, sha256, sizes, licenses.
 - [x] `reviewer` subagent pass on the diff, findings fixed (it must confirm the diff is T1/T2-only).
-- [ ] Branch pushed; final report at `docs/goals/fd-v2-s1/REPORT.md` signed **Waldemar**; registry row set `done`.
+- [x] Branch pushed; final report at `docs/goals/fd-v2-s1/REPORT.md` signed **Waldemar**; registry row set `done`.
 
 ## Constraints
 
@@ -83,4 +83,4 @@ finish). You execute; you never orchestrate.
 
 ## DESIGN-35 execution amendment
 
-Linear OAuth expiry is non-blocking. Record every intended issue/comment in `LINEAR-PENDING.md` with title, labels, body, timestamp and Waldemar signature; commit local pending IDs and retry Linear once per milestone. The design seat mirrors later. The requested `PENDING` registration returned HTTP 401 unauthenticated, then HTTP 400 with the documented fleet authentication because the server requires a real Linear key. S1-REGISTRY records both responses; task registration is not represented as success. The separately authorized status-only done update is tracked independently. This amendment does not waive pixel-gate or registry-completion acceptance.
+Linear OAuth expiry is non-blocking. Record every intended issue/comment in `LINEAR-PENDING.md` with title, labels, body, timestamp and Waldemar signature; commit local pending IDs and retry Linear once per milestone. The design seat mirrors later. The requested `PENDING` registration returned HTTP 401 unauthenticated, then HTTP 400 with the documented fleet authentication because the server requires a real Linear key. S1-REGISTRY records both responses; task registration is not represented as success. The separately authorized status-only done update succeeded with HTTP 200 and `{"ok":true}`; REPORT.md records the receipt. This amendment does not waive pixel-gate or registry-completion acceptance.
