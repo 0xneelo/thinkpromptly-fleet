@@ -61,8 +61,33 @@ Waves (all slices edit `public/v2/index.html`, so keep concurrent workers on dis
 - Branches `claude/fd-v2-<slice>` off `main`; workers push; nothing is merged here.
 - Exit: weave brief to the live 🎛 ORCHESTRATOR of remote-system. **None is live** (census 2026-09-07: only lowcap-connector seats) → `operator-handoff` at the end unless one boots.
 
-## Decisions needed from the operator before wave A
+## Operator decisions (unblock sheet 2026-09-07, 8/8 answered)
 
-1. Runtime: ship the dc-runtime + React (recommended, only truly verbatim path) vs. hand-transpile to vanilla (drift risk).
-2. O5 external assets policy, O7 landing/deck routes, O3 registry edits location.
-3. Worker breed/effort per wave (asked again by the §4.0 gate at launch).
+| # | Decision | Ruling | Consequence in the plan |
+|---|---|---|---|
+| 1 | Runtime | **hybrid**: vendor dc-runtime + React + Babel for S1; pre-compile the template to plain JS at the end (L11) | S1 verbatim; L11 adds the pre-compile step. Operator recalls the same move in the onboarding-app v3 migration; precedent search in progress (see `decisions.md`). |
+| 2 | External assets | **vendor everything, videos included** | S1 downloads the two CloudFront videos, Inter woff2 and the two provider logos into `public/v2/media/`; no external URL remains. Repo grows ~30-40 MB. |
+| 3 | Routes | **Landing on `/`, App on `/app`** | L1: `/` = landing view, `/app` = app view (hash screens `#windows` …), `/deck` = investor deck; legacy `/keys.html` etc. → `/app#…`; README, `.claude/launch.json` and skills that open `/` get updated in L11. |
+| 4 | Workers | **mixed**: GPT Astra xhigh for the mechanical slices, Claude high for the logic slices; both `/goal` mode | Astra: S0, S1, L7, L8, L9, L11. Claude: L1, L2, L3, L4, L5, L6, L10. Reviewer on every diff. |
+| 5 | Windows empty state + ☰ | keep an empty state; ≡ only in the full-screen header | Copy: **"There are no sessions yet, open a new session via an orchestrator first."** (operator wording, typo fixed) |
+| 6 | Registry edits | ⋯ row menu + expandable details row | plus the improvisation rule below |
+| 7 | Accounts trend | **server rider now**: 7-day snapshots in `fleet.db` | new slice **L8s** (server) before L8; but first check what usage trackers already exist (operator: "we had so many systems") — search in progress |
+| 8 | Small defaults O4/O8/O9 | confirmed | as written in `diff.md` |
+
+### Improvisation rule (operator, same sheet)
+
+**Everything the app needs that the mock does not show is designed by the worker, in the mock's visual
+language, and recorded in `docs/design/fleetdeck-v2/improvised.md`**: one entry per improvisation with
+the ledger row / open item it serves, a one-line rationale, and a linked screenshot under
+`docs/design/fleetdeck-v2/improvised/<slug>.png`. An improvisation without an entry fails review.
+Applies to: empty states, the ⋯ menu contents, the details expand row, error/loading states, the
+source badge text, principal chips, anything else discovered while wiring logic.
+
+### Slice table amendments
+
+| Slice | Change |
+|---|---|
+| S1 | + vendor videos/fonts/logos (`public/v2/media/`), rewrite every external URL |
+| L1 | routes per decision 3; theme key migration; no asset work left |
+| L8s (new, Claude, size S) | server: `usage_snapshots` table in `fleet.db` (account, ts, windows/pct), written on every credits collect, pruned after 8 days; `GET /api/credits` returns `trend[]` per account. Blocked on the tracker audit result. |
+| L11 | + pre-compile the dc template to plain JS (drop runtime Babel), + update README / launch.json / skills for `/` → landing, `/app` → app |
