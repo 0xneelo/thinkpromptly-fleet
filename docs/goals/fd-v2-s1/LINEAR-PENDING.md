@@ -79,7 +79,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Add exactly the five specified MIME lines and verify vendored files through an isolated scratch server.
@@ -231,5 +231,16 @@ Signed Waldemar.
 - Mirror status: pending
 
 Independent reviewer confirms T1/T2-only: 7 HTML substitution kinds/19 occurrences, 3 runtime URL swaps. Reversal reproduces source bytes; all25 protected mock/oldUI files match base. Raw diff is15,690 bytes and independently reproduced. Media milestone Linear retry still oauth_token_invalid_grant.
+
+Signed Waldemar.
+
+## S1-05 — comment
+
+- Timestamp: 2026-09-06T23:18:48.243805+00:00
+- Title: Five MIME additions verified
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Exactly5 additions and no other server changes. Isolated node server:19/19 curl GETs HTTP200, exactContent-Type and byte-identical bodies, including a transientWebP probe; probe and scratchstate removed and ports3199/3198 released. Port milestone Linear retry still oauth_token_invalid_grant.
 
 Signed Waldemar.
