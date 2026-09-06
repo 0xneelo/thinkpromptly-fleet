@@ -117,8 +117,10 @@ tagged `WSL` and `Windows`.
 
 **Desktop sessions.** `/sessions.html` merges Claude Desktop Code tabs across accounts and
 machines, with account, machine, live-status, archive, and text filters. Each row's
-Session details panel has a Copy session context button that puts the row's metadata
-on the clipboard as `Label: value` lines. Its read-only
+Session details panel has a Copy conversation button: the row's metadata as `Label: value`
+lines, then the transcript that `GET /api/desktop-sessions/transcript` renders from the
+session's `<cliSessionId>.jsonl` on the owning machine via `box/desktop-transcript.sh`
+(text and tool calls; thinking dropped, tool output clipped). Its read-only
 `GET /api/desktop-sessions` returns `groups` keyed by account UUID, org UUID, and machine,
 plus per-machine collection status. Org labels come from `credits-accounts.json`.
 Enable a machine with `"desktop_sessions": true` on its existing `machines.json` entry;

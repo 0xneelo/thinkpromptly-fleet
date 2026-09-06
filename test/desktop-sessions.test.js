@@ -1,6 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 const { DesktopSessions, sessionRow } = require('../desktop-sessions');
@@ -218,4 +219,78 @@ test('remote desktop collection bounds both output streams and keeps diagnostics
     assert.equal(result.text.includes('oversized-fixture-output'), false);
     assert.equal(f.server.log().includes('oversized-fixture-output'), false);
   }
+});
+
+const TRANSCRIPT_SH = path.join(__dirname, '..', 'box', 'desktop-transcript.sh');
+const line = (obj) => JSON.stringify(obj) + '\n';
+function transcriptFixture(dir, id = CLI) {
+  // The renderer resolves ~/.claude/projects, so HOME pins it to the fixture.
+  const home = path.join(dir, 'home');
+  const project = path.join(home, '.claude', 'projects', '-workspace-app');
+  fs.mkdirSync(project, { recursive: true });
+  fs.writeFileSync(path.join(project, id + '.jsonl'), [
+    line({ type: 'custom-title', customTitle: 'Fixture chat', sessionId: id }),
+    line({ type: 'user', timestamp: '2026-09-06T10:00:00.000Z', cwd: '/workspace/app', gitBranch: 'feature/x',
+      message: { role: 'user', content: 'Fix the bug' } }),
+    line({ type: 'user', isMeta: true, message: { role: 'user', content: [{ type: 'text', text: 'hidden meta prompt' }] } }),
+    line({ type: 'assistant', timestamp: '2026-09-06T10:00:01.000Z', message: { role: 'assistant', content: [
+      { type: 'thinking', thinking: 'private reasoning' }, { type: 'text', text: 'Reading the file.' },
+      { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: '/workspace/app/a.js' } }] } }),
+    line({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't1', content: 'x'.repeat(500) }] } }),
+    line({ type: 'assistant', isSidechain: true, message: { role: 'assistant', content: [{ type: 'text', text: 'subagent chatter' }] } }),
+    line({ type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] } }),
+    'not json\n',
+  ].join(''));
+  return home;
+}
+
+test('desktop-transcript.sh renders text and tool calls, drops thinking, meta, and sidechains', (t) => {
+  const dir = tmpdir('desktop-transcript');
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const home = transcriptFixture(dir);
+  const render = (id) => JSON.parse(execFileSync('sh', [TRANSCRIPT_SH, id], { env: { ...process.env, HOME: home } }));
+  const r = render(CLI.toUpperCase());
+  assert.equal(r.state, 'ok');
+  assert.equal(r.text, [
+    '# Fixture chat', 'CLI session: ' + CLI, 'Directory: /workspace/app', 'Branch: feature/x', '',
+    '## User · 2026-09-06T10:00:00.000Z', 'Fix the bug', '',
+    '## Assistant · 2026-09-06T10:00:01.000Z', 'Reading the file.',
+    '> Tool Read: {"file_path": "/workspace/app/a.js"}',
+    '> Result: ' + 'x'.repeat(400) + ' … (+100 chars)',
+    'Done.', ''].join('\n'));
+  assert.ok(!r.text.includes('private reasoning') && !r.text.includes('hidden meta') && !r.text.includes('subagent chatter'));
+  assert.deepEqual(render('33333333-3333-4333-8333-333333333333'), { v: 1, state: 'not_found' });
+  assert.deepEqual(render('../escape'), { v: 1, state: 'unavailable' });
+});
+
+test('GET /api/desktop-sessions/transcript renders on the owning machine, local and over SSH', async (t) => {
+  const f = await routeFixture(t);
+  const home = transcriptFixture(f.dir);
+  // The child deck inherits HOME for its local run and for the shim's local stand-in of the box.
+  await f.server.stop();
+  const server = await startServer({
+    HOME: home, FLEET_MACHINES_FILE: path.join(f.dir, 'machines.json'), FLEET_DESKTOP_SESSIONS_SH: f.script,
+    CLAUDE_SESSIONS_DIR: path.join(f.dir, 'registry'), FLEET_SSH_BIN: path.join(__dirname, 'ssh-shim.sh'),
+    FLEET_SHIM_ARGV_LOG: f.argv, FLEET_SHIM_MAP_WSL: '1', FLEETDECK_BUS_TOKEN_FILE: path.join(f.dir, 'bus-fixture-key'),
+  }, { dir: f.dir, hosts: [] });
+  t.after(() => server.stop());
+  assert.equal((await server.get('/api/desktop-sessions')).status, 200);
+  const query = (machine) => `/api/desktop-sessions/transcript?machine=${machine}&account=${ACCOUNT}&org=${ORG}&id=local_one`;
+  const local = await server.get(query(mac.id));
+  assert.equal(local.status, 200);
+  assert.match(local.text, /^# Fixture chat\n/);
+  assert.match(local.text, /\n## Assistant · .*\nReading the file\.\n> Tool Read: /);
+  fs.writeFileSync(f.argv, '');
+  const remote = await server.get(query(german.id));
+  assert.equal(remote.status, 200);
+  assert.equal(remote.text, local.text);
+  assert.deepEqual(fs.readFileSync(f.argv, 'utf8').trim().split('\0').filter(Boolean),
+    ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', 'gb-deploy', 'wsl sh -s ' + CLI]);
+  assert.equal((await server.get(query('rog-strix'))).status, 404);
+  assert.equal((await server.get(query(mac.id).replace('local_one', 'local_missing'))).status, 404);
+  assert.equal((await server.get(query(mac.id).replace(ACCOUNT, 'not-a-uuid'))).status, 404);
+  fs.rmSync(path.join(home, '.claude'), { recursive: true });
+  assert.equal((await server.get(query(mac.id))).status, 404);
+  assert.equal((await server.post('/api/desktop-sessions/transcript', {})).status, 405);
+  assert.equal((await server.tailGet(query(mac.id))).status, 404);
 });

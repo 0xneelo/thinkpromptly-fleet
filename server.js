@@ -1645,6 +1645,26 @@ const desktopSessionStore = new DesktopSessions({
   },
 });
 
+const DESKTOP_TRANSCRIPT_SH = process.env.FLEET_DESKTOP_TRANSCRIPT_SH || path.join(__dirname, 'box', 'desktop-transcript.sh');
+// Renders one transcript on the machine that owns it. The id is a validated UUID, which is
+// why it can ride as the positional argument after `sh -s`.
+async function desktopTranscript(machine, cliSessionId) {
+  const options = { timeout: 25000, maxBuffer: 16 * 1024 * 1024 };
+  let result;
+  if (machine.route === 'local') result = await run('sh', [DESKTOP_TRANSCRIPT_SH, cliSessionId], options);
+  else {
+    if (typeof machine.ssh !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(machine.ssh)) return { state: 'unavailable' };
+    const script = fs.readFileSync(DESKTOP_TRANSCRIPT_SH, 'utf8');
+    result = await sshInput(machine.ssh, (machine.wsl ? 'wsl sh -s ' : 'sh -s ') + cliSessionId, script, options);
+  }
+  if (result.err || Buffer.byteLength(result.stdout || '') > options.maxBuffer) return { state: 'unavailable' };
+  try {
+    const data = JSON.parse((result.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop());
+    if (data?.v === 1 && data.state === 'ok' && typeof data.text === 'string') return { state: 'ok', text: data.text };
+    return { state: data?.state === 'not_found' ? 'not_found' : 'unavailable' };
+  } catch { return { state: 'unavailable' }; }
+}
+
 const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
 const int = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : null);
 
@@ -2757,6 +2777,17 @@ const server = http.createServer(async (req, res) => {
       if (req.method !== 'GET') return send(res, 405, 'text/plain', 'method not allowed');
       await desktopSessionStore.collect(url.searchParams.get('refresh') === '1');
       return json(res, desktopSessionStore.view(desktopSessions()));
+    }
+    if (p === '/api/desktop-sessions/transcript') {
+      if (req.method !== 'GET') return send(res, 405, 'text/plain', 'method not allowed');
+      const q = url.searchParams;
+      const row = desktopSessionStore.row(q.get('machine'), q.get('account'), q.get('org'), q.get('id'));
+      const machine = desktopSessionStore.machines().find((m) => m.id === q.get('machine'));
+      if (!row?.cliSessionId || !machine) return send(res, 404, 'text/plain', 'not found');
+      const result = await desktopTranscript(machine, row.cliSessionId);
+      if (result.state === 'ok') return send(res, 200, 'text/plain; charset=utf-8', result.text);
+      if (result.state === 'not_found') return send(res, 404, 'text/plain', 'no transcript');
+      return send(res, 502, 'text/plain', 'transcript unavailable');
     }
     if (p === '/api/messages' || p === '/api/messages/retry')
       return await messageRoute(req, res, p, url);

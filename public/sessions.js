@@ -180,22 +180,13 @@
       .map(([label, value]) => label + ': ' + value).join('\n') + '\n';
   }
 
-  async function copyText(text) {
-    if (navigator.clipboard?.writeText) {
-      try { await navigator.clipboard.writeText(text); return true; } catch { /* fall through */ }
-    }
-    // The deck is plain http on its Tailscale address, where navigator.clipboard is absent.
-    const area = el('textarea');
-    area.value = text;
-    area.setAttribute('readonly', '');
-    area.style.position = 'fixed';
-    area.style.opacity = '0';
-    document.body.append(area);
-    area.select();
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch { /* unsupported */ }
-    area.remove();
-    return ok;
+  function copyPending(text) {
+    // The write starts inside the click, so the user activation the clipboard needs is still
+    // live when the text arrives from the fetch. Without ClipboardItem the plain path remains.
+    const write = typeof ClipboardItem === 'function'
+      ? navigator.clipboard.write([new ClipboardItem({ 'text/plain': text.then((t) => new Blob([t], { type: 'text/plain' })) })])
+      : text.then((t) => navigator.clipboard.writeText(t));
+    return write.then(() => true, () => false);
   }
 
   function sessionElement(group, session) {
@@ -210,17 +201,23 @@
       ['CLI session', session.cliSessionId], ['Session', session.id]]) {
       if (value) list.append(el('dt', 'muted', label), el('dd', 'mono', value));
     }
-    const copy = el('button', 'ghost desktop-copy', 'Copy session context');
+    const copy = el('button', 'ghost desktop-copy', 'Copy conversation');
     copy.type = 'button';
-    copy.setAttribute('aria-label', 'Copy session context for ' + (session.title || 'Untitled session'));
+    copy.setAttribute('aria-label', 'Copy conversation of ' + (session.title || 'Untitled session'));
     copy.onclick = async () => {
       // Not disabled while busy: a disabled button drops keyboard focus.
       if (copy.dataset.busy) return;
       copy.dataset.busy = '1';
-      const ok = await copyText(sessionContext(group, session));
-      copy.textContent = ok ? 'Copied' : 'Copy failed';
+      copy.textContent = 'Copying…';
+      const params = new URLSearchParams({ machine: group.machine, account: group.accountUuid, org: group.orgUuid, id: session.id });
+      const response = fetch('/api/desktop-sessions/transcript?' + params);
+      const text = response.then((r) => r.ok ? r.text() : Promise.reject(r.status))
+        .then((t) => sessionContext(group, session) + '\n' + t);
+      let label = await copyPending(text) ? 'Copied' : 'Copy failed';
+      if (label !== 'Copied' && (await response.catch(() => null))?.status === 404) label = 'No transcript';
+      copy.textContent = label;
       copy.focus();
-      setTimeout(() => { copy.textContent = 'Copy session context'; delete copy.dataset.busy; }, 1500);
+      setTimeout(() => { copy.textContent = 'Copy conversation'; delete copy.dataset.busy; }, 1500);
     };
     details.append(list, copy);
     title.append(details);

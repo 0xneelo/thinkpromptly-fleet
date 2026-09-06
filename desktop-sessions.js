@@ -50,6 +50,7 @@ class DesktopSessions {
       state TEXT NOT NULL, skipped INTEGER NOT NULL DEFAULT 0
     )`);
     this.all = db.prepare('SELECT machine, payload, updated_at FROM desktop_sessions');
+    this.one = db.prepare('SELECT payload FROM desktop_sessions WHERE machine = ? AND account = ? AND org = ? AND id = ?');
     this.sources = db.prepare('SELECT * FROM desktop_session_sources');
     this.drop = db.prepare('DELETE FROM desktop_sessions WHERE machine = ?');
     this.put = db.prepare(`INSERT INTO desktop_sessions VALUES (?, ?, ?, ?, ?, ?)
@@ -57,6 +58,13 @@ class DesktopSessions {
     this.source = db.prepare(`INSERT INTO desktop_session_sources VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(machine) DO UPDATE SET collected_at=COALESCE(excluded.collected_at, desktop_session_sources.collected_at),
       attempted_at=excluded.attempted_at, state=excluded.state, skipped=excluded.skipped`);
+  }
+
+  row(machine, account, org, id) {
+    if (typeof machine !== 'string' || !uuid(account) || !uuid(org) || typeof id !== 'string' || !LOCAL.test(id)) return null;
+    const stored = this.one.get(machine, uuid(account), uuid(org), id);
+    if (!stored) return null;
+    try { return sessionRow(JSON.parse(stored.payload)); } catch { return null; }
   }
 
   machines() {
