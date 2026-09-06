@@ -9,6 +9,10 @@ key_file=${GH_APP_KEY_FILE:-}
 key_op=${GH_APP_KEY_OP:-}
 askpass=0
 broker=0
+# 127.0.0.1, never `localhost`: on the Mac that name resolves to ::1 first, and any process
+# that binds IPv6 *:3131 (a stray dev server did, 2026-09-06) then answers in the deck's place.
+# The deck itself listens on 127.0.0.1 only. FLEETDECK_URL (or the hooks' FD_BASE_URL) overrides.
+fleetdeck=${FLEETDECK_URL:-${FD_BASE_URL:-http://127.0.0.1:3131}}
 
 usage() {
 	echo "usage: $(basename "$0") [--app-id ID] [--installation-id ID] [--key-file PEM | --key-op 1P-DOC-TITLE] [--askpass] [--broker]" >&2
@@ -49,7 +53,7 @@ done
 # app id, no installation id and no key — it just asks the local deck for a fresh token.
 if [ "$broker" -eq 1 ]; then
 	# --fail-with-body: non-zero exit on the broker's 503, but its message still arrives.
-	if ! response=$(curl -s --fail-with-body http://localhost:3131/api/ghtoken); then
+	if ! response=$(curl -s --fail-with-body "$fleetdeck/api/ghtoken"); then
 		msg=$(printf '%s' "$response" | python3 -c '
 import json, sys
 try:
@@ -57,7 +61,7 @@ try:
 except Exception:
     print("")
 ' 2>/dev/null)
-		echo "error: ${msg:-fleetdeck not reachable at localhost:3131}" >&2
+		echo "error: ${msg:-fleetdeck not reachable at $fleetdeck}" >&2
 		exit 1
 	fi
 else
