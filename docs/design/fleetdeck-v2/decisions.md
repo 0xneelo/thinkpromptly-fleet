@@ -73,3 +73,11 @@ URLs to S1's vendored files when present; rename `verify/S0-baseline-failed` →
 Kept as designed: pixelmatch threshold 0.1 with `includeAA:false` (per pack; same Chromium on the same box on both sides).
 Rule for later slices: every gate report records the script sha it ran with; S1's report is valid against the S0
 script version it names.
+
+## 2026-09-07 · S1 accepted
+
+`origin/agent-v2-s1` @ `70c32bb`: independent review T1/T2-only YES; both findings fixed (package.json/lock identical to
+S0's; Inter = one variable woff2 covering 400-700, documented in MANIFEST); gate `verify/S1/report.json` allPass 36/36,
+max 0.033 % (registry dark); `network.json` zero external hosts; design-seat spot check of registry-dark and
+message-bus-light screenshots against the baselines: identical to the eye. Ledger: D01/D02/D07 ✅, P1 half of D03–D19 ✅.
+Waldemar released. Julius (S2) told to merge `70c32bb` before his final gate run.

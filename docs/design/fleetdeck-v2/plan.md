@@ -20,7 +20,7 @@ re-types the design, so nothing drifts. The seed data stays in the app as a **fi
 - Gate: **≤ 0.5 % mismatched pixels per screen** (threshold 0.1). Anything above fails the slice.
 - Box has passwordless sudo, Ubuntu 24.04, node 24, chromium libs present → `npx playwright install --with-deps chromium` works there.
 
-## Phase 1 — verbatim port (S1, size M, `frontend-developer`)
+## Phase 1 — verbatim port (S1, size M, `frontend-developer`) — ✅ delivered 2026-09-07 by Waldemar (`origin/agent-v2-s1` @ `70c32bb`): T1/T2-only port reviewed, 36/36 gate, max 0.033 %, zero external hosts, MIME +5 lines
 
 One slice, because the artboard is one file:
 1. Vendor `react` + `react-dom` UMD **and `@babel/standalone`** via the `VENDOR` map (server.js:2361) — the runtime transpiles the artboard's inline script with Babel at load (`support.js:1143-1147`) — and ship `support.js` as `/vendor/dc-runtime.js`; point its three unpkg URLs at the vendored files (URL swap only, nothing else touched in the generated file). Pre-transpiling the script once to drop runtime Babel is an optional L11 follow-up, not P1.
