@@ -49,3 +49,15 @@ Google Fonts request: `https://fonts.googleapis.com/css2?family=Inter:wght@400;5
 - OUT `https://unpkg.com/@babel/standalone@7.29.0/babel.min.js` → IN `/v2/vendor/babel.min.js` (count 1).
 
 Signed **Waldemar**.
+
+## Inter variable-font structural proof
+
+Parsed `vendor/fonts/inter-latin-v20.woff2` directly with `fontTools.ttLib.TTFont`, using fontTools 4.64.0, Brotli 1.2.0 and Python 3.12.3. The font was inspected without saving or modifying it; SHA256 remains `3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62`.
+
+- `fvar` exists and defines one axis: `wght` (Weight), minimum 100, default 400, maximum 900; all four CSS weights 400/500/600/700 are within this range. There are 9 named instances.
+- `gvar` exists with 518 glyph entries, 511 glyphs containing variations and 1,019 variation tuples. Both `maxp.numGlyphs` and the decoded glyph order report 518 glyphs; the best Unicode cmap contains 230 code points.
+- This proves the shared file contains variable weight data through parsed OpenType tables, not an inference from its name, size or embedded strings.
+
+Exact verification command: `PYTHONPATH=/tmp/fd-v2-s1/font-proof-deps python3 /tmp/fd-v2-s1/prove-inter-variable.py`. Dependencies were installed only under `/tmp/fd-v2-s1/font-proof-deps` with `uv pip install --python /usr/bin/python3 --target /tmp/fd-v2-s1/font-proof-deps fonttools brotli`; the resolved tool versions are recorded above. Machine-readable results: `/tmp/fd-v2-s1/inter-variable-proof.json` (`allPass: true`).
+
+Signed **Waldemar**.

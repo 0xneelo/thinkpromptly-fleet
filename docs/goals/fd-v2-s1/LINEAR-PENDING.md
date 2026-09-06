@@ -9,7 +9,7 @@ The operator authorizes this committed ledger instead of live Linear while box O
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: none
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Land the exact artboard with enumerated T1/T2 swaps only, vendor all assets, verify the 36-screen gate, document and push the S1 branch.
@@ -107,7 +107,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Fetch S0 design-diff script and required devDependencies; run the unchanged 36-screen pixel gate, commit report and PNGs.
@@ -121,7 +121,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Write the 10-line artifact README and signed final report; tick only proven acceptance items.
@@ -135,7 +135,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: In Progress
+- Intended state: Done
 - Mirror status: pending
 
 Independent reviewer verifies T1/T2-only port, five-line MIME diff, manifest, proof and acceptance evidence.
@@ -148,7 +148,7 @@ Signed Waldemar.
 - Title: [Waldemar · frontend-developer] Authorize S1 registry task/status writes
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker, operator:gate
 - Project: remote-system
-- Intended state: Todo
+- Intended state: Done
 - Mirror status: pending
 
 The exact operator-provided POST to http://100.125.231.25:3131/api/registry with host german-box, name FD-v2-s1, task PENDING returned HTTP 401 and body `unauthorized`. Local implementation continues. Operator action: enable the documented registry authorization or set the row on behalf of S1. This is a registry-write failure, separate from the waived Linear OAuth condition.
@@ -172,10 +172,14 @@ Signed Waldemar.
 - Title: [Waldemar · frontend-developer] Resolve application-server /v2/ directory routing scope
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker, operator:decision
 - Project: remote-system
-- Intended state: Todo
+- Intended state: Done
+- Decision status: decided
+- decided-by: DESIGN-35, 2026-09-07
 - Mirror status: pending
 
 Current server.js maps only / to index.html; /v2/ resolves to a directory and returns 404. The required five MIME additions cannot change routing. /v2/index.html will serve the artifact, and the specified static-server gate can resolve /v2/. Options: defer directory routing to L1 (recommended to preserve literal S1 scope), or explicitly authorize an additional routing edit. This does not stop the S1 static port or its specified gate. No routing change was made.
+
+Decision: Directory routing is deferred to L1. Use /v2/index.html everywhere in S1; no routing edit.
 
 Signed Waldemar.
 
@@ -262,12 +266,16 @@ Signed Waldemar.
 - Title: [Waldemar · frontend-developer] Preserved mock template emits initial parser diagnostics
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker, operator:decision
 - Project: remote-system
-- Intended state: Todo
+- Intended state: Done
+- Decision status: decided
+- decided-by: DESIGN-35, 2026-09-07
 - Mirror status: pending
 
-Real-browser evidence in verify/S1/network.json shows the initial parser requests `/v2/%7B%7B%20A_videoUrl%20%7D%7D` from the preserved `src="{{ A_videoUrl }}"` at mock line145 (local404), and reports invalid polyline points for the preserved `{{ a.trendPts }}` binding. Each occurs once per theme, totaling four console errors and zero JavaScript page exceptions. All50 interactions pass, all final videos decode with no media errors, and zero external hosts load. Ten canceled repeated video requests remain recorded, not filtered out.
+Real-browser evidence in verify/S1/network.json shows the initial parser requests `/v2/%7B%7B%20A_videoUrl%20%7D%7D` from the preserved `src="{{ A_videoUrl }}"` at mock line145 (local404), and reports invalid polyline points for the preserved `{{ a.trendPts }}` binding. Each occurs once per theme, totaling four console errors and zero JavaScript page exceptions. All50 interactions pass, all final videos decode with no media errors, and zero external hosts load. The initial traversal retained ten canceled repeated video requests; the later mandated /v2/index.html rerun retains eleven. Neither count was filtered out.
 
 Options: preserve the template exactly for S1 and handle parser timing during the planned compilation/integration phase (recommended under D15), or amend the artboard specification separately before a future regenerated port. S1 makes no mock or shipped markup fix.
+
+Decision: Preserve the raw template parser diagnostics exactly under D15. Record counts as known pass-1 artifacts; S2 eliminates them by construction. No S1 fix.
 
 Signed Waldemar.
 
@@ -312,5 +320,115 @@ Signed Waldemar.
 - Mirror status: pending
 
 Independent reviewer confirms T1/T2-only port,all25 protectedfiles unchanged,all15 manifestentries,3 SRI hashes,exact5MIME additions,19/19curl responses,zeroexternalhosts,50/50browser checks,andallcommittedOUT/INpairs. Three stale report statements and one pending-entry brace quote were corrected. S0 script and finalgate/delivery review remain outstanding.
+
+Signed Waldemar.
+
+## S1-07 — comment
+
+- Timestamp: 2026-09-06T23:25:33.790409+00:00
+- Title: Published S0 gate imported and running
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+DESIGN-35 announced f94b5f2; current fetchedS0ref f17f1b5be614f921bd70dc4d190c50f66537b4c0 has byte-identical script/package files and37baseline inputs(36PNGs+report). Baselines copied only as temporary inputs. Existing port/network proofs backed up before whole-directory publisher. npm ci and Playwright with-deps install pass. The unchanged36-screen gate is running at1440x900,0.1pixelmatch and<=0.5percent mismatch; video/canvas hidden perS0contract. No result is claimed until completion.
+
+Signed Waldemar.
+
+## S1-07 — comment
+
+- Timestamp: 2026-09-06T23:27:54.721655+00:00
+- Title: S1 pixel gate complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Unchanged S0 gate allPass true36/36 at1440x900;35screen/theme pairs0%;Registry dark427pixels,0.03294753086419753%, below0.5%.72PNGcaptures/diffs present. Independent reviewer reproduced all36counts and36diffPNGs. Baselineinputs fromS0f17f1b5 are temporary and no unrelatedS0files are committed. Port/network proofs restored unchanged.
+
+Signed Waldemar.
+
+## S1-09 — comment
+
+- Timestamp: 2026-09-06T23:27:54.743340+00:00
+- Title: Final artifact reviewer clean
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Final independent reviewer: zero findings.36unique screen/theme rows,72PNGdimensions,36capturehashes,36baselines,36pixelcounts,36diffPNGs allverified. T1/T2-only remains proved;25protectedfiles unchanged. Updated networkuses/v2/index.html,54HTTP+2data,50/50checks,10/10assets,zeroexternalhosts. Commitquotes and19/19MIMEproof already reviewed.
+
+Signed Waldemar.
+
+## S1-REGISTRY — comment
+
+- Timestamp: 2026-09-06T23:27:54.765100+00:00
+- Title: Registry authentication resolved; PENDING rejected by schema
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Used the documented FD_TAILNET_KEY from the box fleet configuration in memory, without exposing its value. Authentication succeeds; exact task=PENDING POST now returns HTTP400: task must be exactly one Linear issue key like XYZ-1484, or empty to clear it. Preserve the existing task and let DESIGN-35 mirror a real key later; do not invent a key or change server schema. A separately authorized status-only done POST will follow final push. This task-value compatibility issue does not prevent the status-only attempt.
+
+Signed Waldemar.
+
+## S1-02 — comment
+
+- Timestamp: 2026-09-06T23:31:39.200615+00:00
+- Title: Variable Inter structurally proved for DESIGN-35
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+fontTools4.64.0/Brotli1.2.0 parsed the actualWOFF2: fvar wght100/default400/max900, covers400/500/600/700;gvar518entries,511varyingglyphs,1019variationtuples. FontSHA remains3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62. Proof appendedMANIFEST; nofontreplacement. README safe-recheck command and19/19MIMEproof refreshed.
+
+Signed Waldemar.
+
+## S1-07 — comment
+
+- Timestamp: 2026-09-06T23:31:39.232848+00:00
+- Title: S0 package files taken verbatim on design review
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Per DESIGN-35, gitcheckout origin/agent-v2-s0 -- package.json package-lock.json repeated atcf88d293b058fa87c4e43511393a4acbc365acad and npmci succeeded. Both files are byte-identical to Gisbert source; exactSHA256 values are inREPORT. Rerunning unchanged S1 gate after structuralfontproof as requested.
+
+Signed Waldemar.
+
+## S1-07 — comment
+
+- Timestamp: 2026-09-06T23:33:14.560204+00:00
+- Title: Final requested gate rerun and review complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+After verbatim S0 package checkout/npmci and fvar structural proof, rerun again passes36/36 with72PNGs; all36capturehashes identical to firstpass. Max427pixels/0.03294753086419753%. Independent final reviewer clean on updatedpackages,fontproof,current19/19MIMEresults,andallrestoredproofs. TemporaryS0baselineinputs removedafterhashvalidation; no unrelatedS0files committed. Linear remains oauth_token_invalid_grant; ledger mirrorspending.
+
+Signed Waldemar.
+
+## S1-REGISTRY — comment
+
+- Timestamp: 2026-09-06T23:34:53.038771+00:00
+- Title: Registry row done accepted
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+After artifact commit793a84a82702eca0bca317cbc03e9693439afe59 was pushed and independently authenticated, POST host=german-box,name=FD-v2-s1,status=done with documented fleet authentication returned HTTP200 and {"ok":true} at2026-09-06T23:33:46.288220+00:00. No credential was recorded. Task PENDING remains unsupported by schema; DESIGN-35 can attach the real key during later Linear mirroring. No fake issue key or server policy change was used.
+
+Signed Waldemar.
+
+## S1-08 — comment
+
+- Timestamp: 2026-09-06T23:34:53.061338+00:00
+- Title: Final report and acceptance complete
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+REPORT.md is signed Waldemar and records all applied substitutions, 36 gate numbers, 19 MIME curl results, variable-font proof, exact S0 package checkout, independent review, push receipt, registry HTTP200 and decided follow-ups. All seven Acceptance boxes are checked. Raw parser diagnostics are preserved for S2; directory routing deferred to L1. Public README remains10 lines and safely reruns into S1-recheck.
+
+Signed Waldemar.
+
+## S1-MAIN — comment
+
+- Timestamp: 2026-09-06T23:34:53.084095+00:00
+- Title: S1 complete under DESIGN-35 pending-ledger ruling
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Verbatim port delivered with all runtime/fonts/media, 15-entry manifest, raw T1/T2 diff, zero external hosts, 36/36 allPass and72PNGs, clean independent review, 19/19 MIME checks. Maximum mismatch0.03294753086419753% (427pixels); other35pairs0%. Registry done acceptedHTTP200. Artifact commit793a84a82702eca0bca317cbc03e9693439afe59 pushed and independently verified; final completion documents follow. Linear retry still oauth_token_invalid_grant; mirror this main issue and nine sub-issues as Done using the current operator-authorized ledger.
 
 Signed Waldemar.
