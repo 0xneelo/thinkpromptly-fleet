@@ -23,7 +23,7 @@ re-types the design, so nothing drifts. The seed data stays in the app as a **fi
 ## Phase 1 — verbatim port (S1, size M, `frontend-developer`)
 
 One slice, because the artboard is one file:
-1. Vendor `react` + `react-dom` UMD via the `VENDOR` map (server.js:2361) and `support.js` as `/vendor/dc-runtime.js`; point the runtime's two unpkg URLs at the vendored files (URL swap only, nothing else touched in the generated file).
+1. Vendor `react` + `react-dom` UMD **and `@babel/standalone`** via the `VENDOR` map (server.js:2361) — the runtime transpiles the artboard's inline script with Babel at load (`support.js:1143-1147`) — and ship `support.js` as `/vendor/dc-runtime.js`; point its three unpkg URLs at the vendored files (URL swap only, nothing else touched in the generated file). Pre-transpiling the script once to drop runtime Babel is an optional L11 follow-up, not P1.
 2. `public/v2/index.html` = the artboard verbatim (all 18 screens: land/app/deck), asset paths rewritten to `/v2/uploads/…` and `/vendor/…`. Served at `/v2/` next to the old UI until cut-over.
 3. Baselines + gate green on all 18 screens × 2 themes. Report filed under `verify/S1/`.
 
