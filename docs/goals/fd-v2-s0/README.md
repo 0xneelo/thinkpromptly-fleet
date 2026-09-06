@@ -69,6 +69,8 @@ machine-checked**. This script is the check. Every later slice (S1, L1…L11) co
 - Never edit the mock files (`docs/design/fleetdeck-v2/mock/**`).
 - Push with a fresh train-broker token per push (recipe in `LAUNCH.md`); 503 = file `operator:gate` and block.
 
+- **Linear unreachable** (expired OAuth on the box: `oauth_token_invalid_grant`, or any MCP error) is NEVER a blocker: write the would-be issue/comment into `LINEAR-PENDING.md` in this pack (title, labels, body, timestamp), commit it, register with `task: "PENDING"`, and keep working. Retry Linear once per milestone; file the pending entries when it is back. The design seat mirrors them otherwise.
+
 ## Execution protocol
 
 `PROTOCOL.md` in this directory (Linear issues per subtask, tag `agent-gisbert`, labels

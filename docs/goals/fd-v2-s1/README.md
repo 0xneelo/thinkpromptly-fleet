@@ -75,6 +75,8 @@ in your commit, quote it, and continue.
 - Push with a fresh train-broker token per push (recipe in `LAUNCH.md`); 503 = file `operator:gate` and block.
 - Blocked on the gate script for > 2 h → Linear issue `needs:agent:gisbert`, keep everything else committed.
 
+- **Linear unreachable** (expired OAuth on the box: `oauth_token_invalid_grant`, or any MCP error) is NEVER a blocker: write the would-be issue/comment into `LINEAR-PENDING.md` in this pack (title, labels, body, timestamp), commit it, register with `task: "PENDING"`, and keep working. Retry Linear once per milestone; file the pending entries when it is back. The design seat mirrors them otherwise.
+
 ## Execution protocol
 
 `PROTOCOL.md` in this directory (Linear issues per subtask, tag `agent-waldemar`, labels
