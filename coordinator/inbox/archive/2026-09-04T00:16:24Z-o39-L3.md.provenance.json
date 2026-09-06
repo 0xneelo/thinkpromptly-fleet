@@ -1,0 +1,10 @@
+{
+  "disposition": "archived",
+  "run": "2026-09-04T21:17:32Z",
+  "lane": "L3",
+  "seat": "o39",
+  "event_time": "2026-09-04T00:16:24Z",
+  "reason": "withdrawn by the owner seat o40 (message to 🧭 7, 2026-09-04T21:12Z): superseded by its 2026-09-04T21:12:00Z one-liners on the same lanes; every fact kept on Linear XYZ-2026/2027/2028/2029 — never applied; run 2026-09-04T21:17:32Z (🧭 COORDINATOR 7)",
+  "archived_at": "2026-09-04T21:17:32Z",
+  "sha256": "dfa1a8cae145b0b28813a171e54390545355b5271ef74e87c4299d73d22b3bb2"
+}

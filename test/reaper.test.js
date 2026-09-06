@@ -625,3 +625,65 @@ test('S5 — a heartbeat updates in place and writes no history row', async (t) 
   assert.equal(i.db.prepare('SELECT count(*) AS n FROM sessions').get().n, 1, 'a heartbeat wrote a history row');
   assert.equal(i.row(HOST, 'EDITH-T-H1').epoch, epoch, 'a heartbeat moved the epoch');
 });
+
+// XYZ-1904 — the guard fired 4618 times against a box that was answering fine. Both causes
+// were in tmuxSample(), the one place the tick's liveness sample and the per-session re-check
+// share; both made a REACHABLE host read as unreachable, which stops every reap on that host.
+test('M6 — the tick prefixes a WSL host and does not prefix a linux one', async (t) => {
+  const LINUX = 'onboarding-box';
+  const i = instance({
+    hosts: [HOST, { name: LINUX, kind: 'linux' }],
+    state: { hosts: { [HOST]: { sessions: {} }, [LINUX]: { sessions: {} } }, calls: [] },
+  });
+  t.after(() => i.stop());
+
+  await i.tick();
+
+  // `ssh german-box tmux ls` lands in Windows CMD, which says `'tmux' is not recognized` — an
+  // error with no idle wording in it, so the host reads as down on every tick forever. The
+  // fixture answers either shape, so only the argv itself can catch this.
+  const calls = JSON.parse(fs.readFileSync(i.state, 'utf8')).calls.filter((c) => /tmux ls /.test(c.cmd));
+  const forHost = (h) => calls.filter((c) => c.host === h).map((c) => c.cmd);
+
+  assert.ok(forHost(HOST).length, 'the tick never sampled the WSL host: ' + JSON.stringify(calls));
+  for (const c of forHost(HOST)) assert.match(c, /^wsl tmux ls /, 'a WSL host needs the prefix: ' + c);
+
+  // The other half of remote(): a linux host runs tmux directly and `wsl` is not a command there.
+  assert.ok(forHost(LINUX).length, 'the tick never sampled the linux host: ' + JSON.stringify(calls));
+  for (const c of forHost(LINUX)) assert.match(c, /^tmux ls /, 'a linux host takes no prefix: ' + c);
+});
+
+test('M6 — an idle tmux socket is reachable, not a failing poll', async (t) => {
+  const i = instance({ state: { hosts: { [HOST]: { idleAsSocketError: true, sessions: {} } }, calls: [] } });
+  t.after(() => i.stop());
+  await armed(i, 'EDITH-T-W1');
+  const live = await armed(i, 'EDITH-T-W2');
+
+  await sleep(1100);
+  await i.tick(); // both suspect + warned
+  // One candidate only: with two, the whole-host rule trips and would mask what is under test.
+  assert.equal((await i.beat({ name: 'EDITH-T-W2', epoch: live })).status, 200);
+  // A row is only a candidate once its warn has aged past the suspect window. Without this
+  // sleep the candidate list is empty, the guard is never reached, and this test passes on
+  // a deck that gets the answer wrong — which is what it did before the sleep was added.
+  await sleep(1100);
+
+  const before = i.alerts().length;
+  await i.tick();
+
+  // tmux 3.4 and 3.6 both report a socket that was never created as `error connecting to
+  // <path> (No such file or directory)`. Read as an ssh failure, that pins the whole host.
+  const raised = i.alerts().slice(before);
+  assert.deepEqual(
+    raised.filter((a) => /ssh poll is failing/.test(a.message)),
+    [],
+    'an idle host was called unreachable: ' + JSON.stringify(raised)
+  );
+  // And say so positively, so the test cannot pass by never reaching the guard at all: the
+  // absence of an alert is only meaningful if this row really was a candidate this tick.
+  assert.equal(
+    i.row(HOST, 'EDITH-T-W1').lease_state,
+    'reaped',
+    'the row never became a candidate, so the guard was never asked: ' + JSON.stringify(i.row(HOST, 'EDITH-T-W1'))
+  );
+});

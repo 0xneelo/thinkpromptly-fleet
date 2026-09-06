@@ -1,1 +1,1 @@
-["german-box", { "name": "onboarding-box", "kind": "linux" }]
+[{ "name": "german-box", "ssh": "gb-deploy" }, { "name": "onboarding-box", "kind": "linux" }]

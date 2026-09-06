@@ -1,0 +1,281 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lowcap Unblock 09-04</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --card:#ffffff; --fg:#1a1d21; --muted:#5c6470;
+    --line:#e2e5ea; --accent:#2563eb; --accent-soft:#eaf1fe;
+    --good:#16a34a; --good-soft:#e9f9ef; --star:#b45309; --star-soft:#fdf3d7;
+    --explain-bg:#f2f6fc; --code-bg:#0f172a; --code-fg:#d7e0ee;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#101318; --card:#181c23; --fg:#e8eaee; --muted:#9aa3b0;
+      --line:#2a303a; --accent:#60a5fa; --accent-soft:#1c2c45;
+      --good:#4ade80; --good-soft:#152b1c; --star:#fbbf24; --star-soft:#33290f;
+      --explain-bg:#1a2230; --code-bg:#0b0e13; --code-fg:#c7d1df;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#101318; --card:#181c23; --fg:#e8eaee; --muted:#9aa3b0;
+    --line:#2a303a; --accent:#60a5fa; --accent-soft:#1c2c45;
+    --good:#4ade80; --good-soft:#152b1c; --star:#fbbf24; --star-soft:#33290f;
+    --explain-bg:#1a2230; --code-bg:#0b0e13; --code-fg:#c7d1df;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg); color:var(--fg); margin:0;
+    font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+  code{background:var(--accent-soft); padding:0 4px; border-radius:4px; font-size:.9em}
+  .wrap{max-width:760px; margin:0 auto; padding:0 16px 64px}
+
+  /* sticky header: title + progress + copy */
+  .top{position:sticky; top:0; z-index:5; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:12px 0 10px; margin-bottom:20px}
+  .top h1{font-size:20px; margin:0 0 2px}
+  .top .intro{color:var(--muted); font-size:14px; margin:0 0 10px}
+  .toprow{display:flex; align-items:center; gap:12px}
+  .bar{flex:1; height:8px; background:var(--line); border-radius:4px; overflow:hidden}
+  .bar i{display:block; height:100%; width:100%; background:var(--good);
+    transform:scaleX(0); transform-origin:left; transition:transform .25s}
+  .count{font-size:13px; color:var(--muted); white-space:nowrap}
+  .copybtn{background:var(--accent); color:#fff; border:0; border-radius:8px;
+    padding:8px 14px; font-size:14px; font-weight:600; cursor:pointer}
+  .copybtn.done{background:var(--good)}
+
+  /* card */
+  .card{background:var(--card); border:1px solid var(--line); border-radius:12px;
+    padding:18px 18px 14px; margin-bottom:18px; transition:border-color .2s}
+  .card.answered{border-color:var(--good)}
+  .chip{display:inline-block; font-size:12px; font-weight:600; color:var(--muted);
+    background:var(--bg); border:1px solid var(--line); border-radius:20px;
+    padding:2px 10px; margin-bottom:8px}
+  .card.answered .chip::after{content:" ✓"; color:var(--good)}
+  .decision{font-size:17px; font-weight:700; margin:0 0 4px}
+  .why{color:var(--muted); font-size:14px; margin:0 0 12px}
+  .explain{background:var(--explain-bg); border-radius:8px; padding:10px 12px;
+    font-size:14px; margin-bottom:12px}
+  .explain .tag{font-weight:700; font-size:12px; display:block; margin-bottom:4px}
+
+  /* options */
+  .opt{display:block; width:100%; text-align:left; background:var(--card);
+    border:1.5px solid var(--line); border-radius:8px; padding:9px 12px;
+    margin-bottom:8px; cursor:pointer; color:var(--fg); font:inherit}
+  .opt:hover{border-color:var(--accent)}
+  .opt .lab{font-weight:600; font-size:15px}
+  .opt .det{display:block; color:var(--muted); font-size:13px; margin-top:1px}
+  .opt.rec{border-color:var(--star); background:var(--star-soft)}
+  .opt.rec .lab::before{content:"⭐ "}
+  .opt.sel{border-color:var(--good); background:var(--good-soft)}
+  .opt.sel .lab::after{content:"  ✓"; color:var(--good)}
+  .card.answered .opt:not(.sel){opacity:.45}
+  .note{width:100%; border:1px solid var(--line); border-radius:8px; padding:8px 10px;
+    font:14px/1.4 inherit; background:var(--bg); color:var(--fg); margin-top:4px}
+
+  /* json */
+  .jsonbox{margin-top:28px}
+  .jsonbox h2{font-size:15px; margin:0 0 6px}
+  .jsonbox textarea{width:100%; height:180px; background:var(--code-bg); color:var(--code-fg);
+    border:1px solid var(--line); border-radius:10px; padding:12px;
+    font:12.5px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace; resize:vertical}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <h1 id="t"></h1>
+    <p class="intro" id="i"></p>
+    <div class="toprow">
+      <div class="bar"><i id="fill"></i></div>
+      <span class="count" id="count"></span>
+      <button class="copybtn" id="copy">Copy JSON</button>
+    </div>
+  </div>
+  <div id="cards"></div>
+  <div class="jsonbox">
+    <h2>📋 JSON — updates as you click; Copy, then paste back in chat</h2>
+    <textarea id="json" readonly></textarea>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   AGENT: replace SHEET only. Do not touch anything below it.
+   Per question:
+     id       kebab-slug, stable
+     topic    short label ("Deploy route")
+     decision the actual question, one sentence
+     why      why it's blocked + what depends on it (1-2 sentences)
+     explain  from-zero background, <=120 words, define every term,
+              <b>bold the one sentence that matters</b>. Simple HTML ok.
+     options  2-4 of {key,label,detail,recommended?}; exactly one
+              recommended:true, its detail says WHY.
+   "You decide" / "Explain more" / note field are added automatically.
+   ============================================================ */
+const SHEET = {
+  title: "Lowcap Unblock 09-04",
+  intro: "7 cards, ~6 minutes. Decided today and off this sheet: ownership (a) → D-20, mint wave 1 → D-21, verify cg_wrong → D-22; cert re-minted, Chiliz 88888 re-enabled and verified, 10 lanes launched (seat, 10:30Z). ⭐ = my recommendation, a safe default if unsure. Done: hit Copy JSON (top right), paste it back in chat.",
+  questions: [
+    {
+      id: "cg-wrong-verify",
+      topic: "cg_wrong 80",
+      decision: "How do we verify the 80 cg_wrong rows before calling CoinGecko wrong?",
+      why: "You ruled 'verify really really really well' (D-22). No lane owns it: L5 stops at zero ours_wrong. This card picks the route so a lane can start.",
+      explain: "The consensus board compares our price for each token with CoinGecko and other venues. <i>cg_wrong</i> is the verdict that our price won the vote and CoinGecko's is the outlier. 80 rows carry it today. That verdict rests on the same <i>family</i> votes (sources grouped so one venue cannot vote twice) that the 09-06 review is questioning. <b>If a family rule is wrong, some of those 80 are us being wrong with a majority of echoes.</b>",
+      options: [
+        { key: "hunt", label: "First-principle hunt, then fix what is ours", detail: "A researcher plus hunters re-price every row from independent venues (DexScreener, GeckoTerminal, on-chain quotes) and tag each PROVEN cg wrong / PROVEN ours wrong / UNKNOWN. A lane then fixes only the proven-ours rows. Recommended: it proves before it builds and it matches the credo of never trusting one source.", recommended: true },
+        { key: "lane", label: "Worker lane now, in the engine", detail: "A Rust worker re-checks each row inside the pricing engine. Faster to a fix, but it builds on top of family rules that are under review until 09-06." },
+        { key: "wait", label: "Wait for the family review (09-06)", detail: "Cheapest. The 80 rows sit unverified two more days and any fix lands after the weekend marathon." },
+      ],
+    },
+    {
+      id: "dust-floor",
+      topic: "Dust-carrier floor",
+      decision: "Should a comparator pool below a liquidity floor be excluded from voting?",
+      why: "Five thin_weight rows (BTC, GDOR, TRISM, peawanuck, COAR) sit on dust comparators. Unfiled since the 09-03 brief; the thin_weight bucket cannot shrink without it.",
+      explain: "A <i>comparator</i> is a venue we compare our price against. A <i>dust</i> comparator is a pool holding a few dollars, so its price is noise. <i>thin_weight</i> means the row gathered too little voting weight to reach quorum (weight 3 or more across 2 or more families). Dust pools are admitted at low weight today, so these rows can never reach quorum and are never judged. <b>A floor turns 'stuck at thin_weight' into an honest 'no real comparator exists', and sends the row to sourcing for a better one.</b>",
+      options: [
+        { key: "floor", label: "Floor + widen sourcing", detail: "Exclude comparators below a liquidity floor (the lane sets it from measured pool sizes), label the row no_comparator, and let D-6 (want every source) hunt real comparators. Recommended: honest label now, real fix through sourcing.", recommended: true },
+        { key: "keep", label: "Keep as is", detail: "Dust keeps voting at low weight. The five rows stay thin_weight indefinitely." },
+        { key: "full", label: "Count dust at full weight", detail: "Rows reach quorum, but a five-dollar pool can convict our price. Not recommended." },
+      ],
+    },
+    {
+      id: "deck-notify-bug",
+      topic: "Deck notify",
+      decision: "File a DECK issue for the false 'delivered' bug?",
+      why: "Two notifies to the O39 seat reported delivered:true and never rendered; agents block up to 120 s waiting for an ACK that cannot come. Only you file on the fleetdeck team (portal has no cross-project remit).",
+      explain: "<i>fleetdeck</i> is the local dashboard at <code>localhost:3131</code> that also carries messages between agent sessions. Its <i>notify</i> layer promises guaranteed delivery plus an acknowledgement. Today it claimed delivery to the orchestrator seat twice; the seat's chat showed nothing. Only a direct session message got through. <b>Until this is fixed, an agent that trusts a seat notify is talking to nobody.</b>",
+      options: [
+        { key: "file", label: "File it, medium", detail: "I write the DECK issue with the two notify ids and the reproduction. Under D-15 it is fixed this week or cancelled. Recommended: the bug silently breaks the fleet's own contract.", recommended: true },
+        { key: "skip", label: "Skip", detail: "Everyone uses direct session messages for seats; deck notify stays for tmux workers only. The memory note already says so." },
+        { key: "urgent", label: "File urgent + ban seat notifies", detail: "Same issue at urgent, and the notify skill refuses seat targets until fixed. Heavier than the blast radius warrants." },
+      ],
+    },
+    {
+      id: "d18-confirm",
+      topic: "D-18 Ankr",
+      decision: "Confirm ruling D-18 as recorded?",
+      why: "Money and scope rulings must be your verbatim word. D-18 was relayed by the O38 seat from chat, so the ledger flags it 'operator may confirm'.",
+      explain: "D-18 reads: Chiliz runs on Ankr Premium, keyed WebSocket primary, PublicNode as fallback, and the keys live only in the VPS <code>.env</code>, never in a full push of production.env. The relayed words were 'premium booked. lets use ankr premium i provide the keys into the .env now' and 'its on production.env main'. <b>If that is what you meant, one click closes the flag.</b>",
+      options: [
+        { key: "confirm", label: "Confirmed as written", detail: "Flag closes; D-18 becomes your word. Recommended: the text matches what the seat relayed and what XYZ-2009 built.", recommended: true },
+        { key: "correct", label: "Correct it", detail: "Write the fix in the note; I amend D-18 verbatim." },
+        { key: "not-mine", label: "Not my ruling", detail: "D-18 is removed and XYZ-2009's Ankr setup becomes a seat decision that needs your fresh word." },
+      ],
+    },
+    {
+      id: "cg-governor-ceiling",
+      topic: "CG credit ceiling",
+      decision: "How do we set the CoinGecko spend ceiling to the upgraded plan?",
+      why: "XYZ-1697 is an open blocker on lane N3. The plan was upgraded around 09-01 and the ceiling still reflects the old plan. D-16 set the sampler share to 0.05 with the governor disabled.",
+      explain: "CoinGecko sells API credits per month. Our <i>governor</i> is the spend limiter; its ceiling should equal the plan's monthly credits so we never overrun. The real figure is on CoinGecko's key page (the <code>/key</code> page of their dashboard), which needs your login. Until the ceiling is set, the governor stays disabled and only the 0.05 sampler share guards spend. <b>Someone with the CoinGecko login must read the monthly credit figure; then the seat sets it through the admin route.</b>",
+      options: [
+        { key: "you-read", label: "You read /key, paste the number in the note", detail: "I record it; the seat sets the ceiling. Recommended: the login stays with you, no credential moves to a box.", recommended: true },
+        { key: "seat-reads", label: "Seat reads /key itself", detail: "Needs the CoinGecko login on the box. Credential sprawl, which the fleet rules avoid." },
+        { key: "leave", label: "Leave the governor disabled", detail: "The 0.05 share is the only guard. This is how the 500-dollar burn of 08-24 happened." },
+      ],
+    },
+    {
+      id: "round3-sheet",
+      topic: "Round-3 backlog",
+      decision: "What happens to the 24 unanswered round-3 backlog cards?",
+      why: "They are the last piece of the 09-04 backlog burn (D-17). D-15 says a task is done this week or cancelled, and the week ends Sunday.",
+      explain: "On 09-03 and 09-04 the backlog was burned: 257 issues swept, the KEEP sheet ruled 16 of 16 and applied. A third sheet of 24 cards (id 6e038397) was never answered. Under D-15 priorities are not a queue: a task is done this week or cancelled. <b>Unanswered by Sunday means those 24 are cancelled by doctrine, not by choice.</b>",
+      options: [
+        { key: "reissue", label: "Re-issue it right after this sheet", detail: "24 cards, about 10 minutes, same format as this one. Recommended: you decide, doctrine does not decide for you.", recommended: true },
+        { key: "cancel", label: "Cancel all 24 now under D-15", detail: "The seat applies the cancellations with an operator-ruling comment on each." },
+        { key: "park", label: "Park past the weekend", detail: "Breaks D-15. Say why in the note so the ledger records the exception." },
+      ],
+    },
+    {
+      id: "board-placement",
+      topic: "Board placement",
+      decision: "Keep the lowcap coordinator board in the fleet repo?",
+      why: "The last open flag from initiation (XYZ-1898, now DECK-11). D-5 says the coordinator lives in the fleet repo; DECK-11 says instances belong in customer repos.",
+      explain: "The coordinator's memory is three files (board, decisions, northstar) in a git repo. D-5 (08-28) put them in the fleet repo at <code>~/remote-system/coordinator/</code>. On 08-30 you said 'you are building the coordinator, you aren't using it', which became DECK-11: the deck should serve customer instances, for example one inside lowcap-connector. Today the deck serves the fleet-repo board, which is the live lowcap board, so nothing is broken. <b>Moving means a repo move plus deck config; keeping means DECK-11 stays product work for future customers.</b>",
+      options: [
+        { key: "keep", label: "Keep it in the fleet repo", detail: "D-5 stands, the flag closes, DECK-11 stays a product item. Recommended: it works today and a move buys nothing this week.", recommended: true },
+        { key: "move", label: "Move into lowcap-connector this week", detail: "A worker lane moves the files and the deck learns the new root. Costs a lane in the marathon weekend." },
+      ],
+    },
+  ],
+};
+
+const STANDARD = [
+  { key: "you-decide", label: "🤷 You decide", detail: "Go with the ⭐ recommendation." },
+  { key: "more-info", label: "❓ Explain more", detail: "The agent explains in chat before this gets decided." },
+];
+
+const state = {};   // id -> {choice, choiceLabel, note}
+const $ = (s) => document.querySelector(s);
+$("#t").textContent = SHEET.title;
+document.title = SHEET.title;
+$("#i").textContent = SHEET.intro;
+
+const cardsEl = $("#cards");
+SHEET.questions.forEach((q, n) => {
+  state[q.id] = { choice: null, choiceLabel: null, note: "" };
+  const card = document.createElement("div");
+  card.className = "card";
+  card.id = "card-" + q.id;
+  const opts = q.options.concat(STANDARD);
+  card.innerHTML =
+    '<span class="chip">' + (n + 1) + "/" + SHEET.questions.length + " · " + esc(q.topic) + "</span>" +
+    '<p class="decision">' + esc(q.decision) + "</p>" +
+    '<p class="why">' + esc(q.why) + "</p>" +
+    '<div class="explain"><span class="tag">🧠 Need to know</span>' + q.explain + "</div>" +
+    opts.map((o) =>
+      '<button class="opt' + (o.recommended ? " rec" : "") + '" data-q="' + q.id + '" data-k="' + esc(o.key) + '">' +
+      '<span class="lab">' + esc(o.label) + '</span><span class="det">' + esc(o.detail) + "</span></button>"
+    ).join("") +
+    '<input class="note" data-q="' + q.id + '" placeholder="Optional note for the agent…">';
+  cardsEl.appendChild(card);
+});
+
+cardsEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".opt");
+  if (!btn) return;
+  const id = btn.dataset.q;
+  state[id].choice = btn.dataset.k;
+  state[id].choiceLabel = btn.querySelector(".lab").textContent;
+  const card = $("#card-" + id);
+  card.classList.add("answered");
+  card.querySelectorAll(".opt").forEach((b) => b.classList.toggle("sel", b === btn));
+  sync();
+});
+cardsEl.addEventListener("input", (e) => {
+  if (!e.target.classList.contains("note")) return;
+  state[e.target.dataset.q].note = e.target.value;
+  sync();
+});
+
+function sync() {
+  const total = SHEET.questions.length;
+  const done = Object.values(state).filter((s) => s.choice).length;
+  $("#fill").style.transform = "scaleX(" + done / total + ")";
+  $("#count").textContent = done + "/" + total;
+  $("#json").value = JSON.stringify({
+    sheet: "adhd-unblock",
+    title: SHEET.title,
+    answered: done + "/" + total,
+    answers: SHEET.questions.map((q) => ({
+      id: q.id, decision: q.decision,
+      choice: state[q.id].choice, choiceLabel: state[q.id].choiceLabel,
+      note: state[q.id].note,
+    })),
+  }, null, 2);
+}
+
+$("#copy").addEventListener("click", async () => {
+  const ta = $("#json");
+  try { await navigator.clipboard.writeText(ta.value); }
+  catch (_) { ta.focus(); ta.select(); try { document.execCommand("copy"); } catch (_) {} }
+  const btn = $("#copy");
+  btn.textContent = "Copied ✓"; btn.classList.add("done");
+  setTimeout(() => { btn.textContent = "Copy JSON"; btn.classList.remove("done"); }, 1600);
+});
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+sync();
+</script>

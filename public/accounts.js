@@ -1,8 +1,13 @@
 // Labels and account identity all come from the API (credits-accounts.json is the
 // operator's copy); this page renders whatever it is handed, most constrained first.
 const WIN_LABEL = { five_hour: '5 hour', seven_day: '7 day', extra: 'extra usage', weekly: 'weekly', secondary: 'session' };
-// Claude's own windows lead; anything model-specific follows in reported order.
-const WIN_ORDER = ['five_hour', 'seven_day', 'extra'];
+// Claude's own windows lead, model-scoped weeklies (seven_day_fable) follow, paid extra last.
+const WIN_ORDER = ['five_hour', 'seven_day'];
+const rank = (n) => WIN_ORDER.indexOf(n) + 1 || (n === 'extra' ? 99 : 50);
+// seven_day_fable is the desktop app's "Weekly · Fable": shown as "7 day Fable".
+const label = (n) =>
+  WIN_LABEL[n] ||
+  (n.startsWith('seven_day_') ? '7 day ' + n.slice(10).replace(/(^|_)(\w)/g, (m, s, c) => (s && ' ') + c.toUpperCase()) : n.replace(/_/g, ' '));
 // What each row's numbers actually are, so a stale snapshot is never read as live usage.
 const SOURCE = { oauth: 'live', desktop: 'desktop snapshot', push: 'push', codex: 'live' };
 // The plan behind the windows. An unknown tier shows verbatim rather than as nothing.
@@ -51,9 +56,12 @@ function until(epoch) {
 
 const level = (pct) => (pct > 90 ? 'red' : pct >= 70 ? 'amber' : '');
 
-// The windows that say whether this account is about to hit a wall — the rest are either
-// paid credits or model-specific extras nobody plans around.
-const MAIN = { claude: (r) => [(r.windows || {}).five_hour, (r.windows || {}).seven_day], codex: (r) => [r.weekly, r.secondary] };
+// The windows that say whether this account is about to hit a wall — every rate window,
+// the per-model weeklies included (the driver runs on Fable); paid credits are not a wall.
+const MAIN = {
+  claude: (r) => Object.entries(r.windows || {}).filter(([n]) => /^(five_hour|seven_day)/.test(n)).map(([, w]) => w),
+  codex: (r) => [r.weekly, r.secondary],
+};
 const worst = (r) => {
   const p = (MAIN[r.kind] || MAIN.claude)(r).filter((w) => w && typeof w.pct === 'number').map((w) => w.pct);
   return p.length ? Math.max(...p) : null;
@@ -67,7 +75,7 @@ function bar(name, w) {
   fill.style.width = Math.max(0, Math.min(100, w.pct || 0)) + '%';
   track.append(fill);
   row.append(
-    el('span', 'muted', WIN_LABEL[name] || name.replace(/_/g, ' ')),
+    el('span', 'muted', label(name)),
     track,
     el('span', 'pct', typeof w.pct === 'number' ? w.pct + '%' : '—'),
     el('span', 'muted', until(w.resets_at))
@@ -160,9 +168,7 @@ function card(r) {
     );
   }
   if (r.kind === 'claude') {
-    const names = Object.keys(r.windows || {}).sort(
-      (a, b) => (WIN_ORDER.indexOf(a) + 1 || 99) - (WIN_ORDER.indexOf(b) + 1 || 99)
-    );
+    const names = Object.keys(r.windows || {}).sort((a, b) => rank(a) - rank(b));
     if (!names.length) acct.append(el('div', 'muted', 'no usage windows reported'));
     for (const n of names) acct.append(bar(n, r.windows[n]));
     // The paid pool in money rather than percent — what "out of credits" actually means.
