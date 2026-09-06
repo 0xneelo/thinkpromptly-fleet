@@ -6,8 +6,10 @@
     "start": "node server.js",
     "build:claude-bridge": "sh scripts/build-claude-bridge.sh",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true",
-    "pretest": "node scripts/check-deps.js",
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "pretest": "node scripts/check-deps.js && node tools/extract-fixture.mjs --check",
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "v2:fixture": "node tools/extract-fixture.mjs",
+    "v2:fixture:check": "node tools/extract-fixture.mjs --check"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
