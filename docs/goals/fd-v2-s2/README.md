@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | Project / sub-project | `remote-system` / `fleetdeck-v2` |
-| Worker | **<Name>** · `frontend-developer` · tag `agent-<name>` · Claude, high, `/goal` |
+| Worker | **Julius** · `frontend-developer` · tag `agent-julius` · Claude, high, `/goal` |
 | Branch | `agent-v2-s2` off `origin/agent-v2-s1` (= main + design docs + S1's pass-1 port) — launch only after S1 is pushed with a green gate |
 | Design seat | 🎨 DESIGN 35 (plan `docs/design/fleetdeck-v2/plan.md`, ledger `diff.md`, precedent `decisions.md`) |
 | Registry group | `fd-v2` |
@@ -93,6 +93,16 @@ Fallback (only via `operator:decision`): the precedent's DOM-dump method.
 5. Vendored engine only, egress denied during parity runs.
 6. Never `git stash`.
 7. Time-box: if F2 parity is not 36/36 after 1.5 working days, file `operator:decision` with the fallback proposal and the current numbers; do not keep grinding silently.
+
+
+## Known pass-1 diagnostics to eliminate by construction (from S1's network proof)
+
+The dc-runtime parses the raw template before binding, so the browser requests `/v2/%7B%7B%20A_videoUrl%20%7D%7D`
+once per theme (mock line 145, `src="{{ A_videoUrl }}"`) and logs invalid `<polyline points>` for the unbound
+`{{ a.trendPts }}` — four console errors, zero JS exceptions, preserved under D15 in S1. A compiled render has no
+pre-bind DOM, so these must be absent in pass 2; assert zero console errors and zero 404s in `network.json`.
+Also: `/v2/` (directory) returns 404 from `server.js`; only `/v2/index.html` resolves. Routing is L1's; keep using
+`/v2/index.html` (and `/v2/pass1/index.html`) in every gate URL.
 
 ## Constraints
 
