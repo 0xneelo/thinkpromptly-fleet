@@ -255,3 +255,33 @@ Body:
 Root README Design gate section and script header document install, CLI flags, output locations, 0.5% gate, 0.05% self-test/repeat target, and all deterministic interventions. Reviewer found no remaining documentation issues. Linear milestone retry still returns oauth_token_invalid_grant; this entry remains pending for mirroring.
 
 Gisbert
+
+## S0-SELFTEST-C01 — comment and state update
+
+- Timestamp: 2026-09-06T23:20:37.790225+00:00
+- Title: Mock-as-app self-test started
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-SELFTEST
+- State: In Progress
+- Mirror status: pending
+
+Body:
+
+Two full baseline runs completed. Run2 allPass true across 36 comparisons; max mismatch 0.04737654320987654%, within 0.05%. Previous and current PNG SHA256 references verified for all 36. Starting the self-test against the separately served mock URL on scratch port 4175. Controlled adversarial CLI checks run against a separate scratch copy.
+
+Gisbert
+
+## S0-BASELINES-C02 — comment and state update
+
+- Timestamp: 2026-09-06T23:22:02.969943+00:00
+- Title: Both baseline runs pass repeatability acceptance
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-BASELINES
+- State: Done
+- Mirror status: pending
+
+Body:
+
+Captured 36 baselines twice. Reviewer independently recomputed all 36 pairs, validated 1440x900 dimensions and both sets of PNG hashes, and returned clean. 34 pairs are 0%; registry-dark is 427 pixels / 0.03294753086419753%; desktop-sessions-dark is 614 pixels / 0.04737654320987654% (maximum). Both nonzero regions are native select text; no broader content/layout drift. Every pair is <=0.05%. Canonical 36 PNGs plus signed report are committed at this milestone; both run manifests are retained with the self-test evidence. Linear milestone retry still requires reauthentication; mirror this entry later.
+
+Gisbert
