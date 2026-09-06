@@ -21,7 +21,7 @@ Rules and tools worth reusing:
 **Sequencing question raised by the precedent.** Richmond compiled to plain JS *before* wiring logic. The
 sheet ruling was "vendor first, pre-compile at the end (L11)". Proposal: insert **S2 = pass-2 compile**
 right after S1, so L1–L10 are written against plain JS (our stack, like today's `app.js`) instead of
-against the dc-runtime template. Default if the operator does not rule: keep the sheet ruling (L11).
+against the dc-runtime template. **Operator ruling (same day, after a from-zero explainer): compile EARLY.** S2 follows S1; L1–L10 are written in plain JS; L11 no longer compiles.
 
 ## 2026-09-07 · Accounts trend: history already exists (reader audit)
 
