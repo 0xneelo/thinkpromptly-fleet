@@ -9,7 +9,8 @@
  *
  * For each of 18 screens x dark/light it drives both builds through the SAME real
  * clicks as scripts/design-diff.mjs (SCREEN_MAP mirrored verbatim), dumps the live
- * DOM, normalizes it and asserts the two strings are byte-identical:
+ * #dc-root subtree (see dumpScreen for why the head is out of scope), normalizes it
+ * and asserts the two strings are byte-identical:
  *   side A  /v2/pass1/index.html  — the dc-runtime render
  *   side B  /v2/index.html        — the compiled render (--self-test points B at A)
  *
@@ -33,6 +34,8 @@ const THEMES = ['dark', 'light'];
 const VIEWPORT = Object.freeze({ width: 1440, height: 900 });
 const TIMEOUT = 30_000;
 const CONTEXT_CHARS = 200; // divergence context printed from each side
+const SENTINEL = 'fd-v2-parity-style'; // id of the injected suppression sheet, also the freeze sentinel
+const CSS = '*,*::before,*::after{animation:none!important;transition:none!important}';
 
 // n4 — THE VOLATILE MASK. Applied last, to both sides, after every structural
 // normalization. Every entry must name the non-deterministic source it excuses
@@ -110,13 +113,15 @@ function initPage({ theme, css, sentinel }) {
 
 // The freeze is the whole basis for an empty mask, so prove it landed rather than
 // assume it: real timer ids are non-zero, and the suppression sheet must be in head.
-async function assertFrozen(page, sentinel) {
+// Negative control (run against this page without initPage): 4 / 5 / 2 and no style —
+// so this assertion does fire when the freeze is missing.
+async function assertFrozen(page) {
   const state = await page.evaluate(id => ({
     setTimeout: setTimeout(() => {}, 0),
     setInterval: setInterval(() => {}, 0),
     requestAnimationFrame: requestAnimationFrame(() => {}),
     style: !!document.getElementById(id),
-  }), sentinel);
+  }), SENTINEL);
   const broken = ['setTimeout', 'setInterval', 'requestAnimationFrame'].filter(key => state[key] !== 0);
   if (broken.length || !state.style) throw new Error(`Determinism freeze did not land (live: ${broken.join(', ') || 'none'}${state.style ? '' : '; suppression style missing'})`);
 }
@@ -243,17 +248,15 @@ const firstDiff = (a, b) => {
 export async function run(options) {
   const screens = SCREEN_MAP.filter(screen => !options.only || screen.id === options.only);
   const themes = THEMES.filter(theme => !options.theme || theme === options.theme);
-  const sentinel = 'fd-v2-parity-style';
-  const css = '*,*::before,*::after{animation:none!important;transition:none!important}';
   const report = {
     schemaVersion: 1,
     startedAt: new Date().toISOString(),
     finishedAt: null,
     mode: options['self-test'] ? 'self-test' : 'parity',
     sources: { a: options.a, b: options.b },
-    // dumpScope: the whole serialized document, with only the mount wrapper unwrapped —
-    // so <head> (helmet link/style, dc-runtime's .sc-placeholder sheet) is compared too.
-    determinism: { dumpScope: 'document', setTimeout: 'frozen', setInterval: 'frozen', requestAnimationFrame: 'frozen', animations: 'suppressed', media: 'blocked', reducedMotion: 'reduce', locale: 'en-US', timezoneId: 'UTC', viewport: VIEWPORT },
+    // dumpScope: the #dc-root subtree only — <head> is out of scope on purpose; see
+    // dumpScreen(). The pixel gate covers head styling across all 36 screens.
+    determinism: { dumpScope: '#dc-root', setTimeout: 'frozen', setInterval: 'frozen', requestAnimationFrame: 'frozen', animations: 'suppressed', media: 'blocked', reducedMotion: 'reduce', locale: 'en-US', timezoneId: 'UTC', viewport: VIEWPORT },
     volatileMask: VOLATILE_MASK.map(entry => ({ pattern: String(entry.pattern), why: entry.why })),
     filter: { only: options.only ?? null, theme: options.theme ?? null },
     results: [],
@@ -267,8 +270,8 @@ export async function run(options) {
       const result = { screen: screen.id, label: screen.label, theme, identical: false, aLength: null, bLength: null, firstDiffOffset: null, aSha256: null, bSha256: null };
       let a, b;
       try {
-        a = normalize(await dump(browser, options.a, screen, theme, css, sentinel), 'A (pass1)');
-        b = normalize(await dump(browser, options.b, screen, theme, css, sentinel), 'B (compiled)');
+        a = normalizeDump(await dumpScreen(browser, options.a, screen, theme), 'A (pass1)');
+        b = normalizeDump(await dumpScreen(browser, options.b, screen, theme), 'B (compiled)');
         Object.assign(result, { aLength: a.length, bLength: b.length, aSha256: sha256(a), bSha256: sha256(b) });
         result.firstDiffOffset = firstDiff(a, b);
         result.identical = result.firstDiffOffset === null;
