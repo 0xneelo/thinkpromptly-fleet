@@ -195,3 +195,63 @@ Body:
 Document the specified install commands, CLI flags, screenshot dimensions, 0.5% gate, 0.05% self-test standard, and deterministic setup in root README.
 
 Gisbert
+
+## S0-BASELINES-C01 — comment and state update
+
+- Timestamp: 2026-09-06T23:17:34.888785+00:00
+- Title: Baseline capture starting
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-BASELINES
+- State: In Progress
+- Mirror status: pending
+
+Body:
+
+The 18-screen map and live navigation smoke are ready. Capture the full mock in both themes, preserve the first manifest, then compare a second independent baseline run.
+
+Gisbert
+
+## S0-REVIEW-C01 — comment and state update
+
+- Timestamp: 2026-09-06T23:17:34.888805+00:00
+- Title: Harness reviewer and adversarial checks started
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-REVIEW
+- State: In Progress
+- Mirror status: pending
+
+Body:
+
+Reviewer is auditing the complete script and documentation. Root comparator boundary test exposed a real pngjs TypeError from passing frozen viewport options; builder is fixing it before official compare runs. This is red evidence, not a passing gate claim.
+
+Gisbert
+
+## S0-SCRIPT-C02 — comment and state update
+
+- Timestamp: 2026-09-06T23:19:15.796107+00:00
+- Title: Harness implemented and reviewer findings fixed
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-SCRIPT
+- State: Done
+- Mirror status: pending
+
+Body:
+
+Implemented scripts/design-diff.mjs and npm design:diff entry. Reviewer re-review clean after fixing frozen pngjs options, stale green report on fatal startup, suppressed runtime error markers, and an overbroad README claim. Actual comparator tests: 6480/1296000 pixels = 0.5% passes; 6481 = 0.5000771604938271% fails. Wrong PNG dimensions, seven invalid CLI cases, screen uniqueness, and static server traversal/method checks pass. First baseline capture is running; no full capture pass claimed yet.
+
+Gisbert
+
+## S0-README-C02 — comment and state update
+
+- Timestamp: 2026-09-06T23:19:15.796125+00:00
+- Title: Design gate documentation reviewed
+- Labels: agent:gisbert, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Target: S0-README
+- State: Done
+- Mirror status: pending
+
+Body:
+
+Root README Design gate section and script header document install, CLI flags, output locations, 0.5% gate, 0.05% self-test/repeat target, and all deterministic interventions. Reviewer found no remaining documentation issues. Linear milestone retry still returns oauth_token_invalid_grant; this entry remains pending for mirroring.
+
+Gisbert
