@@ -18,6 +18,55 @@ naming the missing packages, instead of letting the first test file die on `Cann
 module 'ws'` — a stack trace that reads like a broken branch. Every test binds its own
 loopback port and writes its own temp `fleet.db`, so a run never touches the operator's deck.
 
+## Design gate
+
+Install the development dependencies and Chromium in this worktree:
+
+```sh
+npm ci
+npx playwright install --with-deps chromium
+```
+
+Capture the approved mock, then compare a locally served app in fixture mode:
+
+```sh
+npm run design:diff -- --baseline
+npm run design:diff -- --app 'http://127.0.0.1:3199/v2/?fixture=1' --slice S1
+```
+
+The gate serves `docs/design/fleetdeck-v2/mock/` itself; `--mock <url>` overrides
+that source. It captures all 18 exported screen labels in dark and light at
+1440×900, device scale factor 1. Baselines go to
+`docs/design/fleetdeck-v2/baseline/`; app screenshots, pixel diffs and `report.json`
+go to `docs/design/fleetdeck-v2/verify/<slice>/`. Each comparison uses pixelmatch
+threshold `0.1`, with anti-aliasing excluded (`includeAA: false`), and exits 1
+if any screen exceeds **0.5%** mismatched pixels or cannot be verified.
+
+Both sides receive the same pre-load storage (`fd-landing-dark=1/0`,
+`fd-app-video=false`), theme color scheme and reduced-motion setting. Injected
+CSS disables animations, transitions and carets, and hides video/canvas pixels.
+The harness waits for the rendered screen, fonts, images, network idle and native
+landing reveals. Fresh browser contexts isolate each capture. Hidden media
+requests are blocked identically on both sides; fonts, scripts and images must
+still load. The screen map and route descriptions are exported from
+`scripts/design-diff.mjs` for later slices.
+
+For the deterministic self-test, serve the mock on a separate scratch port and
+use its URL as the app:
+
+```sh
+python3 -m http.server 4173 --bind 127.0.0.1 --directory docs/design/fleetdeck-v2/mock
+# In another terminal:
+npm run design:diff -- --app 'http://127.0.0.1:4173/Fleetdeck%20Final.dc.html' --slice S0-selftest
+```
+
+S0 requires every self-test comparison to be **≤0.05%**, and two consecutive
+baseline runs to agree within **0.05%**. Keep the capture reports as evidence.
+Run captures in the same Chromium and OS/font environment as the committed
+baselines. The source mock loads its React/Babel runtime and Inter font over the
+network. The gate does not start the application. Supply only mock or fixture app
+URLs you serve yourself; never point it at the operator's live deck.
+
 **Message bus.** Fleetdeck persists messages in `fleet.db`, serializes delivery per target,
 and supports the current Claude Desktop session plus local or configured remote tmux sessions. Build the
 macOS bridge once, then send from Codex, Claude, scripts, or the Bus panel:

@@ -7,7 +7,8 @@
     "build:claude-bridge": "sh scripts/build-claude-bridge.sh",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true",
     "pretest": "node scripts/check-deps.js",
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "design:diff": "node scripts/design-diff.mjs"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

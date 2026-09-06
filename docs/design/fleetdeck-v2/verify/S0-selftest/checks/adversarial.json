@@ -1,0 +1,303 @@
+{
+  "verifiedAt": "2026-09-06T23:21:43.807Z",
+  "allChecksPass": true,
+  "scriptSha256": "78a570b484b0b5d6a75223dee7cfd0e2aa9f4f248b0f615897340cb6c3724eb4",
+  "canonicalBaselineReportSha256": "6a57db4a36d4170ed0fc7c0a60d3c8dcaeebb9e9602c7bcac0b6f71ec06e9d48",
+  "isolation": {
+    "scratch": "/tmp/fd-s0-adversarial-Mo0n67/checkout",
+    "sourcesReadOnly": [
+      "/home/vibe/projects/remote-system/.claude/worktrees/v2-s0/docs/design/fleetdeck-v2/mock",
+      "/tmp/gisbert-s0-baseline-1.s3mtvm6o/baseline"
+    ],
+    "canonicalFilesModified": false,
+    "frozenSourcePngHashesVerifiedAfterRun": 36
+  },
+  "mutations": {
+    "overlay": "Fixed magenta 160x120 at (1050,100), pointer-events:none; added in-memory stylesheet",
+    "unreachable": "Capability label renamed in memory",
+    "runtimeError": "Machines gets sc-logic-error in memory",
+    "missingBaseline": "scratch windows-light.png removed",
+    "invalidBaseline": "scratch registry-dark.png replaced with 100x100 PNG"
+  },
+  "adversarial": {
+    "exitCode": 1,
+    "allPass": false,
+    "total": 36,
+    "unique": 36,
+    "measuredDiffs": 30,
+    "explicitErrors": 6,
+    "rows": [
+      {
+        "screen": "landing",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.379320987654321,
+        "diffWritten": true
+      },
+      {
+        "screen": "landing",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.379320987654321,
+        "diffWritten": true
+      },
+      {
+        "screen": "hero",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.379320987654321,
+        "diffWritten": true
+      },
+      {
+        "screen": "hero",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.379320987654321,
+        "diffWritten": true
+      },
+      {
+        "screen": "capability",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": null,
+        "skipped": true,
+        "reason": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-screen-label=\"Capability\"]') to be visible\u001b[22m\n"
+      },
+      {
+        "screen": "capability",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": null,
+        "skipped": true,
+        "reason": "locator.waitFor: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('[data-screen-label=\"Capability\"]') to be visible\u001b[22m\n"
+      },
+      {
+        "screen": "fleetdeck-app",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4060956790123458,
+        "diffWritten": true
+      },
+      {
+        "screen": "fleetdeck-app",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.396682098765432,
+        "diffWritten": true
+      },
+      {
+        "screen": "windows",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4512345679012346,
+        "diffWritten": true
+      },
+      {
+        "screen": "windows",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": null,
+        "skipped": true,
+        "reason": "ENOENT: no such file or directory, open '/tmp/fd-s0-adversarial-Mo0n67/checkout/docs/design/fleetdeck-v2/baseline/windows-light.png'"
+      },
+      {
+        "screen": "org-chart",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4756944444444444,
+        "diffWritten": true
+      },
+      {
+        "screen": "org-chart",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4753086419753088,
+        "diffWritten": true
+      },
+      {
+        "screen": "registry",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": null,
+        "skipped": true,
+        "reason": "Expected 1440x900 PNG; got 100x100"
+      },
+      {
+        "screen": "registry",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.410108024691358,
+        "diffWritten": true
+      },
+      {
+        "screen": "message-bus",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4060956790123458,
+        "diffWritten": true
+      },
+      {
+        "screen": "message-bus",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.396682098765432,
+        "diffWritten": true
+      },
+      {
+        "screen": "ssh-keys",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4797067901234568,
+        "diffWritten": true
+      },
+      {
+        "screen": "ssh-keys",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4719135802469137,
+        "diffWritten": true
+      },
+      {
+        "screen": "accounts",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.3847993827160494,
+        "diffWritten": true
+      },
+      {
+        "screen": "accounts",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.378395061728395,
+        "diffWritten": true
+      },
+      {
+        "screen": "machines",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": null,
+        "skipped": true,
+        "reason": "Design runtime reported 1 error marker(s)"
+      },
+      {
+        "screen": "machines",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": null,
+        "skipped": true,
+        "reason": "Design runtime reported 1 error marker(s)"
+      },
+      {
+        "screen": "desktop-sessions",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.483719135802469,
+        "diffWritten": true
+      },
+      {
+        "screen": "desktop-sessions",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4368055555555557,
+        "diffWritten": true
+      },
+      {
+        "screen": "session-full-screen",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4521604938271604,
+        "diffWritten": true
+      },
+      {
+        "screen": "session-full-screen",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4521604938271604,
+        "diffWritten": true
+      },
+      {
+        "screen": "01-title",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4814814814814816,
+        "diffWritten": true
+      },
+      {
+        "screen": "01-title",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4814814814814816,
+        "diffWritten": true
+      },
+      {
+        "screen": "02-problem",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4728395061728394,
+        "diffWritten": true
+      },
+      {
+        "screen": "02-problem",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4728395061728394,
+        "diffWritten": true
+      },
+      {
+        "screen": "03-market",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4814814814814816,
+        "diffWritten": true
+      },
+      {
+        "screen": "03-market",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4814814814814816,
+        "diffWritten": true
+      },
+      {
+        "screen": "04-sales",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4814814814814816,
+        "diffWritten": true
+      },
+      {
+        "screen": "04-sales",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4814814814814816,
+        "diffWritten": true
+      },
+      {
+        "screen": "05-expansion",
+        "theme": "dark",
+        "pass": false,
+        "mismatchPct": 1.4814814814814816,
+        "diffWritten": true
+      },
+      {
+        "screen": "05-expansion",
+        "theme": "light",
+        "pass": false,
+        "mismatchPct": 1.4814814814814816,
+        "diffWritten": true
+      }
+    ],
+    "report": "/tmp/fd-s0-adversarial-Mo0n67/checkout/docs/design/fleetdeck-v2/verify/S0-adversarial/report.json",
+    "screenshotArtifacts": 32,
+    "diffArtifacts": 30
+  },
+  "launchFailure": {
+    "exitCode": 1,
+    "allPass": false,
+    "status": "failed",
+    "total": 36,
+    "staleGreenReplaced": true,
+    "fatalError": "browserType.launch: Executable doesn't exist at /tmp/fd-s0-adversarial-Mo0n67/missing-browser-cache/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell\n\u2554\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2557\n\u2551 Looks like Playwright was just installed or updated.       \u2551\n\u2551 Please run the following command to download new browsers: \u2551\n\u2551                                                            \u2551\n\u2551     npx playwright install                                 \u2551\n\u2551                                                            \u2551\n\u2551 <3 Playwright Team                                         \u2551\n\u255a\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u255d",
+    "report": "/tmp/fd-s0-adversarial-Mo0n67/checkout/docs/design/fleetdeck-v2/verify/S0-launch-failure/report.json"
+  },
+  "signedBy": "Gisbert"
+}
