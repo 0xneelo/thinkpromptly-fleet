@@ -1,0 +1,518 @@
+{
+  "schemaVersion": 1,
+  "slice": "S2",
+  "generatedAt": "2026-09-06T23:49:03.918Z",
+  "source": "http://127.0.0.1:3199/v2/pass1/index.html",
+  "expectEngine": true,
+  "screensVisited": 36,
+  "totalRequests": 684,
+  "shellSha256": "96be98b6e1ac43285876c5c3b320fc5ded2a66ca1af056fab074461f6403d755",
+  "shellHasXdc": true,
+  "shellHasDcScript": true,
+  "engineLoadCount": 108,
+  "engineUrls": [
+    "http://127.0.0.1:3199/v2/vendor/dc-runtime.js",
+    "http://127.0.0.1:3199/v2/vendor/react.production.min.js",
+    "http://127.0.0.1:3199/v2/vendor/react-dom.production.min.js"
+  ],
+  "uniqueUrls": [
+    "http://127.0.0.1:3199/v2/media/chatgpt-logo.png",
+    "http://127.0.0.1:3199/v2/media/claude-logo.png",
+    "http://127.0.0.1:3199/v2/media/fleetdeck-eye-minimal.svg",
+    "http://127.0.0.1:3199/v2/media/hero-dark.mp4",
+    "http://127.0.0.1:3199/v2/media/hero-light.mp4",
+    "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+    "http://127.0.0.1:3199/v2/pass1/index.html",
+    "http://127.0.0.1:3199/v2/vendor/dc-runtime.js",
+    "http://127.0.0.1:3199/v2/vendor/fonts/inter-latin-v20.woff2",
+    "http://127.0.0.1:3199/v2/vendor/inter.css",
+    "http://127.0.0.1:3199/v2/vendor/react-dom.production.min.js",
+    "http://127.0.0.1:3199/v2/vendor/react.production.min.js"
+  ],
+  "consoleErrors": [
+    {
+      "screen": "landing/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "landing/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "hero/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "hero/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "capability/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "capability/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "fleetdeck-app/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "fleetdeck-app/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "windows/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "windows/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "org-chart/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "org-chart/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "registry/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "registry/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "message-bus/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "message-bus/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "ssh-keys/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "ssh-keys/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "accounts/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "accounts/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "machines/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "machines/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "desktop-sessions/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "desktop-sessions/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "session-full-screen/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "session-full-screen/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "01-title/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "01-title/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "02-problem/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "02-problem/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "03-market/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "03-market/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "04-sales/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "04-sales/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "05-expansion/dark",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "05-expansion/dark",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "landing/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "landing/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "hero/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "hero/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "capability/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "capability/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "fleetdeck-app/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "fleetdeck-app/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "windows/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "windows/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "org-chart/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "org-chart/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "registry/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "registry/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "message-bus/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "message-bus/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "ssh-keys/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "ssh-keys/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "accounts/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "accounts/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "machines/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "machines/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "desktop-sessions/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "desktop-sessions/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "session-full-screen/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "session-full-screen/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "01-title/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "01-title/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "02-problem/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "02-problem/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "03-market/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "03-market/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "04-sales/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "04-sales/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    },
+    {
+      "screen": "05-expansion/light",
+      "text": "Error: <polyline> attribute points: Expected number, \"{{ a.trendPts }}\"."
+    },
+    {
+      "screen": "05-expansion/light",
+      "text": "Failed to load resource: the server responded with a status of 404 (Not Found)"
+    }
+  ],
+  "pageErrors": [],
+  "failedRequests": [
+    {
+      "screen": "landing/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "hero/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "capability/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "fleetdeck-app/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "windows/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "org-chart/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "registry/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "message-bus/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "ssh-keys/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "accounts/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "machines/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "desktop-sessions/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "session-full-screen/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "01-title/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "02-problem/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "03-market/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "04-sales/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "05-expansion/dark",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "landing/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "hero/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "capability/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "fleetdeck-app/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "windows/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "org-chart/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "registry/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "message-bus/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "ssh-keys/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "accounts/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "machines/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "desktop-sessions/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "session-full-screen/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "01-title/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "02-problem/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "03-market/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "04-sales/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    },
+    {
+      "screen": "05-expansion/light",
+      "url": "http://127.0.0.1:3199/v2/pass1/%7B%7B%20A_videoUrl%20%7D%7D",
+      "error": "HTTP 404"
+    }
+  ],
+  "blockedMediaCount": 288,
+  "blockedMediaConsoleCount": 288,
+  "unreachedScreens": [],
+  "checks": {
+    "noEngineLoads": true,
+    "shellHasNoXdc": false,
+    "shellHasNoDcScript": false,
+    "zeroConsoleErrors": false,
+    "zeroPageErrors": true,
+    "zeroFailedRequests": false,
+    "allScreensReached": true
+  },
+  "allPass": false
+}
