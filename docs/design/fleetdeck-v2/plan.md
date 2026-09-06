@@ -48,6 +48,8 @@ Closes ledger D01, D02, D07 and the P1 half of D03-D19.
 Waves (all slices edit `public/v2/index.html`, so keep concurrent workers on disjoint screen line ranges):
 **A** S0 ∥ S1 → **B** S2 (pass-2 compile) → **C** L1 → **D** L2 ∥ L3 ∥ L4 → **E** L5 ∥ L6 ∥ L7 → **F** L8 ∥ L9 ∥ L10 → **G** L11.
 
+**Operator 2026-09-07 evening: "I want it ASAP."** S2 (Julius) launched off S1's current tip before S1's gate report (rebase if S1 changes); L1 (Juergen, data layer + fixture + v2 routing) launched in parallel with S2 because it depends only on the API contract and the mock seed shapes, not on S2's output. Wave C therefore starts the moment S2 lands.
+
 **Operator ruling 2026-09-07 (after the precedent search): compile EARLY.** S2 turns the pass-1 port into plain HTML + JS with a parity check (Richmond's method, lowcap `editorial-clean-port`); every logic slice L1–L10 is then written in plain JS like today's `app.js`, and the product never ships React/Babel. The fixture-mode pixel gate stays the acceptance for every slice.
 
 ## Verification per slice (design seat)
