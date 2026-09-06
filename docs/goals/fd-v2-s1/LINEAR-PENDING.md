@@ -135,7 +135,7 @@ Signed Waldemar.
 - Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
 - Project: remote-system
 - Parent: S1-MAIN
-- Intended state: Todo
+- Intended state: In Progress
 - Mirror status: pending
 
 Independent reviewer verifies T1/T2-only port, five-line MIME diff, manifest, proof and acceptance evidence.
@@ -290,5 +290,27 @@ Signed Waldemar.
 - Mirror status: pending
 
 Imported exactly3 S0 devDependencies from47dbabb20855242bc7e0b421e52b0fbbab801df1 and4dev-only lock entries. Reviewer confirms7/7 existing lock entries unchanged and zero productiondependency changes; npm checks/module imports pass. Script and36-screen result remain pending. Network milestone Linear retry remains oauth_token_invalid_grant.
+
+Signed Waldemar.
+
+## S1-08 — comment
+
+- Timestamp: 2026-09-06T23:23:13.018596+00:00
+- Title: Artifact README and interim report published
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Committed10-line artifactREADME and signed report with exact appliedpairs,18 explicitly unrun pixel-screen rows,19 MIME results,network findings and open registry/mock/routing issues. Four proven acceptance boxes are ticked; gate,finalreview and registrycompletion remain open. Gate-dependency milestone Linear retry remains oauth_token_invalid_grant.
+
+Signed Waldemar.
+
+## S1-09 — comment
+
+- Timestamp: 2026-09-06T23:23:13.040323+00:00
+- Title: Implementation and dynamic evidence review clean
+- Labels: agent:waldemar, project:remote-system, subproject:fleetdeck-v2, session:cli-worker
+- Mirror status: pending
+
+Independent reviewer confirms T1/T2-only port,all25 protectedfiles unchanged,all15 manifestentries,3 SRI hashes,exact5MIME additions,19/19curl responses,zeroexternalhosts,50/50browser checks,andallcommittedOUT/INpairs. Three stale report statements and one pending-entry brace quote were corrected. S0 script and finalgate/delivery review remain outstanding.
 
 Signed Waldemar.

@@ -59,11 +59,11 @@ in your commit, quote it, and continue.
 
 ## Acceptance (definition of done)
 
-- [ ] `port-diff.txt` shows only T1/T2 lines; every substitution quoted OUT → IN in the commit body.
-- [ ] `/v2/index.html` renders the landing; "App" reaches the app view with all 8 nav screens + full screen; "Deck" reaches the 5 slides; dark and light both work; video toggle works.
-- [ ] `network.json`: zero requests to hosts other than your own origin.
+- [x] `port-diff.txt` shows only T1/T2 lines; every substitution quoted OUT → IN in the commit body.
+- [x] `/v2/index.html` renders the landing; "App" reaches the app view with all 8 nav screens + full screen; "Deck" reaches the 5 slides; dark and light both work; video toggle works.
+- [x] `network.json`: zero requests to hosts other than your own origin.
 - [ ] `verify/S1/report.json`: `allPass: true` on 36 screens; PNGs committed.
-- [ ] `MANIFEST.md` with versions, sha256, sizes, licenses.
+- [x] `MANIFEST.md` with versions, sha256, sizes, licenses.
 - [ ] `reviewer` subagent pass on the diff, findings fixed (it must confirm the diff is T1/T2-only).
 - [ ] Branch pushed; final report at `docs/goals/fd-v2-s1/REPORT.md` signed **Waldemar**; registry row set `done`.
 
@@ -80,3 +80,7 @@ in your commit, quote it, and continue.
 `PROTOCOL.md` in this directory (Linear issues per subtask, tag `agent-waldemar`, labels
 `project:remote-system`, `subproject:fleetdeck-v2`, `session:cli-worker`; commit per milestone; report on
 finish). You execute; you never orchestrate.
+
+## DESIGN-35 execution amendment
+
+Linear OAuth expiry is non-blocking. Record every intended issue/comment in `LINEAR-PENDING.md` with title, labels, body, timestamp and Waldemar signature; commit local pending IDs and retry Linear once per milestone. The design seat mirrors later. Registration uses task `PENDING`; the actual HTTP 401 response is recorded in S1-REGISTRY and is not represented as success. This amendment does not waive pixel-gate or registry-completion acceptance.
