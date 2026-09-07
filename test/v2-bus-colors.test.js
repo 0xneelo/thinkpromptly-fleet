@@ -16,6 +16,8 @@ const FIXTURE_JS = fs.readFileSync(path.join(ROOT, 'public/v2/fixture.js'), 'utf
 const LOGIC_JS = fs.readFileSync(path.join(ROOT, 'public/v2/logic.js'), 'utf8');
 
 const DESK = 'id:22222222-2222-4222-8222-222222222222';
+const TMUX = 'tmux';
+const WORKER = 'FD-v2-l11';
 const iso = (minutes) => new Date(Date.now() - minutes * 60000).toISOString();
 
 function render({ state = {}, props = {}, data = null } = {}) {
@@ -42,21 +44,22 @@ function render({ state = {}, props = {}, data = null } = {}) {
   })`, ctx)(props, Object.assign({ screen: 'bus' }, state));
 }
 
-// A live Claude Desktop thread: two bus messages and two transcript turns, whose ages
-// interleave (operator 6m, sent 5m, received 4m, agent 3m).
-const liveData = () => ({
-  busSessions: [{ id: DESK, name: 'Claude Desktop · seat', host: '', live: true, kind: 'claude-desktop' }],
+// A live Claude thread: two bus messages and two transcript turns, whose ages interleave
+// (operator 6m, sent 5m, received 4m, agent 3m). A tmux worker's thread is the same shape
+// with another `kind`, and a host beside it -- the merge must not tell the two apart.
+const liveData = (id = DESK, kind = 'claude-desktop') => ({
+  busSessions: [{ id, name: kind === TMUX ? id : 'Claude Desktop · seat', host: kind === TMUX ? 'german-box' : '', live: true, kind }],
   busGroups: [],
   busUnreadDefault: {},
-  busActiveDefault: DESK,
+  busActiveDefault: id,
   seedThreads: {
-    [DESK]: [
+    [id]: [
       { k: 'm1', dir: 'out', from: 'fleetdeck-ui', at: '5m ago', m: 5, status: 'delivered', text: 'ping' },
       { k: 'm2', dir: 'in', from: 'seat', at: '4m ago', m: 4, text: 'pong' },
     ],
   },
   busTranscripts: {
-    [DESK]: {
+    [id]: {
       state: 'ok', omitted: 2, at: Date.now(),
       turns: [
         { role: 'user', ts: iso(6), text: 'operator turn' },
@@ -77,18 +80,34 @@ test('a fixture thread keeps the mock two greys — no bubble is tinted', () => 
   }
 });
 
-test('the show slot only offers the transcript on a live Claude Desktop row', () => {
+test('the eye keeps its one job on every row type -- the transcript is its own button', () => {
   assert.equal(showAction(render({ state: { busActive: 'ermenhild' } })).label, 'Show session');
+  const desk = showAction(render({ state: { busActive: DESK }, data: liveData() }));
+  assert.equal(desk.label, 'Show session');
+  assert.equal(desk.desc, 'Claude Desktop threads have no tmux terminal to show.');
+  const tmux = showAction(render({ state: { busActive: WORKER }, data: liveData(WORKER, TMUX) }));
+  assert.equal(tmux.label, 'Show session');
+  assert.equal(tmux.desc, "Open this session's live terminal full screen.");
+});
+
+test('the merge follows the thread the toggle was armed on, not the open view', () => {
   const off = render({ state: { busActive: DESK }, data: liveData() });
-  assert.equal(showAction(off).label, 'Full conversation');
   assert.equal(off.thMsgs.length, 2, 'the bus messages alone until the button is pressed');
-  const on = render({ state: { busActive: DESK, busTranscript: DESK }, data: liveData() });
-  assert.equal(showAction(on).label, 'Bus only');
-  // The toggle is armed on one thread, not on the view: busActive also moves through a
-  // toast and a broadcast send, and neither passes through the rail's own off-toggle.
+  // busActive also moves through a toast and a broadcast send, and neither passes through
+  // the rail's own off-toggle, so a bare flag would merge into the thread the user left.
   const moved = render({ state: { busActive: DESK, busTranscript: 'ermenhild' }, data: liveData() });
-  assert.equal(showAction(moved).label, 'Full conversation');
   assert.equal(moved.thMsgs.length, 2, 'a toggle armed elsewhere merges nothing here');
+});
+
+test("a tmux worker's transcript merges and tints exactly as a seat's does", () => {
+  const vals = render({ state: { busActive: WORKER, busTranscript: WORKER }, data: liveData(WORKER, TMUX) });
+  assert.deepEqual(Array.from(vals.thMsgs, (m) => m.text),
+    ['… 2 earlier turns not shown', 'operator turn', 'ping', 'pong', 'agent turn']);
+  const [, op, sent, recv, agent] = vals.thMsgs;
+  assert.deepEqual([sent, recv, op, agent].map((m) => m.wrapStyle.background),
+    ['oklch(0.75 0.13 250 / 0.20)', 'oklch(0.83 0.15 155 / 0.14)',
+      'oklch(0.83 0.14 80 / 0.16)', 'oklch(0.78 0.13 300 / 0.16)']);
+  assert.equal(new Set([sent, recv, op, agent].map((m) => m.fromStyle.color)).size, 4);
 });
 
 test('transcript turns merge into the thread by age, oldest first', () => {

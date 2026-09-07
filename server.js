@@ -1646,16 +1646,17 @@ const desktopSessionStore = new DesktopSessions({
 });
 
 const DESKTOP_TRANSCRIPT_SH = process.env.FLEET_DESKTOP_TRANSCRIPT_SH || path.join(__dirname, 'box', 'desktop-transcript.sh');
-// Renders one transcript on the machine that owns it. The id is a validated UUID, which is
-// why it can ride as the positional argument after `sh -s`.
-async function desktopTranscript(machine, cliSessionId) {
+// Renders one transcript on the machine that owns it. The selector is either a validated
+// UUID or 'tmux:<validated session name>', which is why it can ride as the positional
+// argument after `sh -s`.
+async function desktopTranscript(machine, selector) {
   const options = { timeout: 25000, maxBuffer: 16 * 1024 * 1024 };
   let result;
-  if (machine.route === 'local') result = await run('sh', [DESKTOP_TRANSCRIPT_SH, cliSessionId], options);
+  if (machine.route === 'local') result = await run('sh', [DESKTOP_TRANSCRIPT_SH, selector], options);
   else {
     if (typeof machine.ssh !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(machine.ssh)) return { state: 'unavailable' };
     const script = fs.readFileSync(DESKTOP_TRANSCRIPT_SH, 'utf8');
-    result = await sshInput(machine.ssh, (machine.wsl ? 'wsl sh -s ' : 'sh -s ') + cliSessionId, script, options);
+    result = await sshInput(machine.ssh, (machine.wsl ? 'wsl sh -s ' : 'sh -s ') + selector, script, options);
   }
   if (result.err || Buffer.byteLength(result.stdout || '') > options.maxBuffer) return { state: 'unavailable' };
   try {
@@ -1687,6 +1688,15 @@ function desktopSeat(seat) {
   if (!id) return seat.startsWith('id:') ? null : desktopSessionStore.byTitle(seat);
   const local = desktopSessionStore.machines().find((m) => m.route === 'local') || { id: 'local', route: 'local' };
   return desktopSessionStore.byCli(id) || { row: { cliSessionId: id }, machine: local };
+}
+
+// A fleet tmux worker's own Claude conversation. `host` names the machine the message bus
+// shows beside the session, which is the machines config's `host` field -- not the
+// desktop-sessions set, since a box that runs workers need not run Claude Desktop at all.
+// The name is the tmux session, and the renderer resolves its pane directory over there.
+const TMUX_SESSION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+function tmuxMachine(host) {
+  return machinesConfig().find((m) => m.host === host && ['local', 'ssh'].includes(m.route)) || null;
 }
 
 // One entry per role section of the same transcript. A malformed entry is dropped rather
@@ -2908,22 +2918,34 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/desktop-sessions/transcript') {
       if (req.method !== 'GET') return send(res, 405, 'text/plain', 'method not allowed');
       const q = url.searchParams;
-      // `seat=<thread id>` is the message bus's handle on a thread; machine/account/org/id is
-      // the Desktop screen's. `format=json` adds the per-turn split the bus merges into a thread.
+      // `seat=<thread id>` is the message bus's handle on a thread -- a Claude Desktop seat on
+      // its own, a tmux session when `host=` names the machine it runs on; machine/account/org/id
+      // is the Desktop screen's. `format=json` adds the per-turn split the bus merges in.
       const asJson = q.get('format') === 'json';
       const seat = str(q.get('seat'), 300);
-      // A name resolves against the collector's rows, so the store has to be warm. TTL-gated,
-      // so this is a no-op on every request but the first after a restart.
-      if (seat !== null) await desktopSessionStore.collect(false);
-      const found = seat !== null
-        ? desktopSeat(seat)
-        : {
-          row: desktopSessionStore.row(q.get('machine'), q.get('account'), q.get('org'), q.get('id')),
-          machine: desktopSessionStore.machines().find((m) => m.id === q.get('machine')),
-        };
-      if (!found?.row?.cliSessionId || !found.machine)
-        return asJson ? json(res, { state: 'not_found' }, 404) : send(res, 404, 'text/plain', 'not found');
-      const result = await desktopTranscript(found.machine, found.row.cliSessionId);
+      const hostName = str(q.get('host'), 300);
+      const miss = () => (asJson ? json(res, { state: 'not_found' }, 404) : send(res, 404, 'text/plain', 'not found'));
+      let machine = null;
+      let selector = null;
+      if (seat !== null && hostName !== null) {
+        // A tmux worker: `host` is the machine, `seat` the tmux session on it.
+        machine = tmuxMachine(hostName);
+        if (!machine || !TMUX_SESSION.test(seat)) return miss();
+        selector = 'tmux:' + seat;
+      } else if (seat !== null) {
+        // A name resolves against the collector's rows, so the store has to be warm. TTL-gated,
+        // so this is a no-op on every request but the first after a restart.
+        await desktopSessionStore.collect(false);
+        const found = desktopSeat(seat);
+        if (!found?.row?.cliSessionId || !found.machine) return miss();
+        [machine, selector] = [found.machine, found.row.cliSessionId];
+      } else {
+        const row = desktopSessionStore.row(q.get('machine'), q.get('account'), q.get('org'), q.get('id'));
+        machine = desktopSessionStore.machines().find((m) => m.id === q.get('machine'));
+        if (!row?.cliSessionId || !machine) return miss();
+        selector = row.cliSessionId;
+      }
+      const result = await desktopTranscript(machine, selector);
       if (asJson) {
         if (result.state !== 'ok') return json(res, { state: result.state }, result.state === 'not_found' ? 404 : 502);
         return json(res, { state: 'ok', title: result.title, cwd: result.cwd, branch: result.branch, turns: result.turns });

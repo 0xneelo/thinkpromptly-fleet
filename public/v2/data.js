@@ -99,9 +99,12 @@
     // Transcripts are plain text, not JSON — sessions.js:214 reads r.text(). A bus thread id
     // asks for the per-turn JSON the message bus merges into a thread instead, and resolves a
     // state rather than rejecting: the bus renders the state as a note.
-    transcript: (q) =>
+    // `host` is set for a tmux thread only: it is what tells the route the seat is a tmux
+    // session on that machine rather than a Claude Desktop seat.
+    transcript: (q, host) =>
       typeof q === 'string'
-        ? getJson('/api/desktop-sessions/transcript?' + new URLSearchParams({ seat: q, format: 'json' }))
+        ? getJson('/api/desktop-sessions/transcript?' + new URLSearchParams(
+          typeof host === 'string' && host ? { seat: q, host, format: 'json' } : { seat: q, format: 'json' }))
           .catch((e) => ({ state: e && e.status === 404 ? 'not_found' : 'unavailable' }))
         : getText('/api/desktop-sessions/transcript?' + new URLSearchParams({ machine: q.machine, account: q.account, org: q.org, id: q.id })),
     poll,

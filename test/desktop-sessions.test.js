@@ -271,6 +271,17 @@ test('desktop-transcript.sh renders text and tool calls, drops thinking, meta, a
   ]);
   assert.deepEqual(render('33333333-3333-4333-8333-333333333333'), { v: 1, state: 'not_found' });
   assert.deepEqual(render('../escape'), { v: 1, state: 'unavailable' });
+  // 'tmux:<session>' is the same renderer over a pane directory: '/workspace/app' slugs to
+  // the fixture's own '-workspace-app' folder, and the newest .jsonl in it is the session.
+  const bin = tmuxStub(dir, 'FD-v2-l11', '/workspace/app');
+  const worker = (id) => JSON.parse(execFileSync('sh', [TRANSCRIPT_SH, id],
+    { env: { ...process.env, HOME: home, PATH: bin + ':' + process.env.PATH } }));
+  const byPane = worker('tmux:FD-v2-l11');
+  assert.deepEqual(byPane.turns, r.turns);
+  assert.equal(byPane.text, r.text, 'the file names the session, so the header is the same');
+  assert.deepEqual(worker('tmux:FD-v2-l99'), { v: 1, state: 'not_found' }, 'no such tmux session');
+  assert.deepEqual(worker('tmux:bad name'), { v: 1, state: 'unavailable' });
+  assert.deepEqual(worker('tmux:-leading-dash'), { v: 1, state: 'unavailable' });
 });
 
 test('GET /api/desktop-sessions/transcript renders on the owning machine, local and over SSH', async (t) => {
@@ -303,6 +314,68 @@ test('GET /api/desktop-sessions/transcript renders on the owning machine, local 
   assert.equal((await server.get(query(mac.id))).status, 404);
   assert.equal((await server.post('/api/desktop-sessions/transcript', {})).status, 405);
   assert.equal((await server.tailGet(query(mac.id))).status, 404);
+});
+
+// A tmux worker on a fleet box: `host=` names the machine, `seat=` the tmux session on it,
+// and the renderer resolves the pane's working directory to the projects folder over there.
+// The stub answers only for the one session name, so a miss is a miss for the right reason.
+function tmuxStub(dir, session, cwd) {
+  const bin = path.join(dir, 'bin');
+  fs.mkdirSync(bin, { recursive: true });
+  const shim = path.join(bin, 'tmux');
+  fs.writeFileSync(shim, ['#!/bin/sh', '[ "$4" = "' + session + '" ] || exit 1', 'printf \'%s\\n\' "' + cwd + '"', ''].join('\n'));
+  fs.chmodSync(shim, 0o755);
+  return bin;
+}
+
+test('GET /api/desktop-sessions/transcript?host= renders a tmux worker on its own box', async (t) => {
+  const f = await routeFixture(t);
+  const home = transcriptFixture(f.dir);
+  // The fixture project folder is '-workspace-app', which is '/workspace/app' with '/' and
+  // '.' both mapped to '-' -- the slug Claude Code gives a worktree.
+  const bin = tmuxStub(f.dir, 'FD-v2-l11', '/workspace/app');
+  await f.server.stop();
+  const server = await startServer({
+    HOME: home, PATH: bin + ':' + process.env.PATH,
+    FLEET_MACHINES_FILE: path.join(f.dir, 'machines.json'), FLEET_DESKTOP_SESSIONS_SH: f.script,
+    CLAUDE_SESSIONS_DIR: path.join(f.dir, 'registry'), FLEET_SSH_BIN: path.join(__dirname, 'ssh-shim.sh'),
+    FLEET_SHIM_ARGV_LOG: f.argv, FLEET_SHIM_MAP_WSL: '1', FLEETDECK_BUS_TOKEN_FILE: path.join(f.dir, 'bus-fixture-key'),
+  }, { dir: f.dir, hosts: [] });
+  t.after(() => server.stop());
+  const seat = (session, host, format = '&format=json') => server.get('/api/desktop-sessions/transcript?seat='
+    + encodeURIComponent(session) + '&host=' + encodeURIComponent(host) + format);
+
+  const local = await seat('FD-v2-l11', mac.host);
+  assert.equal(local.status, 200);
+  assert.equal(local.body.state, 'ok');
+  assert.equal(local.body.title, 'Fixture chat');
+  assert.deepEqual(local.body.turns.map((x) => x.role), ['user', 'assistant']);
+  assert.equal(local.body.turns[0].text, 'Fix the bug');
+
+  // Over SSH the selector rides as the positional argument after `sh -s`, like the UUID.
+  fs.writeFileSync(f.argv, '');
+  const remote = await seat('FD-v2-l11', german.host);
+  assert.equal(remote.status, 200);
+  assert.deepEqual(remote.body.turns, local.body.turns);
+  assert.deepEqual(fs.readFileSync(f.argv, 'utf8').trim().split('\0').filter(Boolean),
+    ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', 'gb-deploy', 'wsl sh -s tmux:FD-v2-l11']);
+
+  // The plain-text form is still the same renderer, without the per-turn split.
+  const plain = await seat('FD-v2-l11', mac.host, '');
+  assert.equal(plain.status, 200);
+  assert.match(plain.text, /^# Fixture chat\n/);
+
+  // A name no tmux server answers for is a miss, not an error.
+  const missing = await seat('FD-v2-l99', mac.host);
+  assert.equal(missing.status, 404);
+  assert.deepEqual(missing.body, { state: 'not_found' });
+  // A session name outside the allowed shape never reaches the box at all.
+  for (const bad of ['FD v2; rm -rf /', '-leading-dash', 'x'.repeat(129), '']) {
+    assert.equal((await seat(bad, mac.host)).status, 404, 'rejected: ' + bad);
+  }
+  // An unknown host, and a machine with no local or ssh route, are both not found.
+  assert.equal((await seat('FD-v2-l11', 'no-such-box')).status, 404);
+  assert.equal((await seat('FD-v2-l11', 'rog-strix')).status, 404);
 });
 
 test('byTitle takes the freshest row and refuses a title two sessions share', async (t) => {

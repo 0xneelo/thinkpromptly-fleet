@@ -108,6 +108,8 @@ function fakeHost(state = {}) {
     props: {},
     host: { state: { view: 'app' }, setState(p) { Object.assign(this.state, p); } },
     setState(u) { Object.assign(host.state, typeof u === 'function' ? u(host.state) : u); },
+    // AppLogic's own default; the injected header button reads it for its active look.
+    isDark() { return host.state.dark !== false; },
   };
   return host;
 }
@@ -628,9 +630,19 @@ test('a transcript the machine cannot render becomes a state, never a rejection'
   assert.deepStrictEqual(FD.fixture.busTranscripts[DESK_ID].turns, []);
 });
 
-test('wantTranscript refuses a tmux thread and stops fetching once it is off', async () => {
+test('a tmux thread is fetched by session name plus the host it runs on', async () => {
+  const { bus, FD, calls } = await boot({ transcript: { state: 'ok', turns: [{ role: 'user', ts: '', text: 'go' }] } });
+  assert.strictEqual(bus._state().targets[THREAD].host, HOST, 'the fixture thread knows its box');
+  assert.strictEqual(bus.wantTranscript(THREAD, true), true);
+  await settle();
+  const query = new URLSearchParams({ seat: THREAD, host: HOST, format: 'json' }).toString();
+  assert.ok(calls.some((c) => c.url === '/api/desktop-sessions/transcript?' + query), calls.map((c) => c.url).join(' '));
+  assert.strictEqual(FD.fixture.busTranscripts[THREAD].turns[0].text, 'go');
+});
+
+test('wantTranscript refuses a thread of no known kind and stops fetching once it is off', async () => {
   const { bus, calls } = await boot(deskPlan([]));
-  assert.strictEqual(bus.wantTranscript(THREAD, true), false);
+  assert.strictEqual(bus.wantTranscript('nobody-here', true), false);
   bus.wantTranscript(DESK_ID, true);
   await settle();
   const before = calls.length;
@@ -779,4 +791,187 @@ test('an id:<uuid> thread for a live desktop session is not shown as offline', a
   await settle();
   const row = FD.fixture.busSessions.find((r) => r.id === target.session);
   assert.strictEqual(row.live, true);
+});
+
+// ---------------------------------------------------------------------------
+// The injected 'Full conversation' button. The compiled template's icon set is
+// frozen, so the toggle is a find-or-create DOM patch (screens/desktop.js's
+// improvisation, and its audit-F5 safety rig). These cases run it over a DOM
+// small enough to hold the four nodes it reaches for.
+// ---------------------------------------------------------------------------
+const ICON_CSS = 'display:inline-flex;width:28px;height:28px;border-radius:9999px;'
+  + 'border:1px solid rgba(255,255,255,0.13);background:transparent;color:rgba(255,255,255,0.75);'
+  + 'opacity:0.3;cursor:not-allowed';
+
+function domFixture() {
+  const observers = [];
+  const touch = () => observers.slice().forEach((o) => { if (o.target) o.cb(); });
+
+  function el(tag, attrs) {
+    const node = {
+      tagName: tag.toUpperCase(), children: [], parentNode: null, style: { cssText: '' },
+      innerHTML: '', _attrs: Object.assign({}, attrs), _clicks: [],
+      setAttribute(k, v) { node._attrs[k] = String(v); },
+      getAttribute(k) { return k in node._attrs ? node._attrs[k] : null; },
+      hasAttribute(k) { return k in node._attrs; },
+      addEventListener(kind, fn) { if (kind === 'click') node._clicks.push(fn); },
+      click() { node._clicks.forEach((fn) => fn()); },
+      insertBefore(child, ref) {
+        const at = node.children.indexOf(child);
+        if (at >= 0) node.children.splice(at, 1);
+        const i = ref ? node.children.indexOf(ref) : -1;
+        child.parentNode = node;
+        if (i < 0) node.children.push(child); else node.children.splice(i, 0, child);
+        touch();
+        return child;
+      },
+      removeChild(child) {
+        const i = node.children.indexOf(child);
+        if (i >= 0) node.children.splice(i, 1);
+        child.parentNode = null;
+        touch();
+        return child;
+      },
+      querySelector: (sel) => find(node, sel),
+    };
+    const sibling = (step) => {
+      const p = node.parentNode;
+      if (!p) return null;
+      return p.children[p.children.indexOf(node) + step] || null;
+    };
+    Object.defineProperty(node, 'previousSibling', { get: () => sibling(-1) });
+    Object.defineProperty(node, 'nextSibling', { get: () => sibling(1) });
+    return node;
+  }
+
+  // Only the three selectors screens/bus.js uses; anything else is a bug, not a miss.
+  function matches(node, sel) {
+    if (sel === '[data-screen-label="Message bus"]') return node.getAttribute('data-screen-label') === 'Message bus';
+    if (sel === 'button[aria-label="Show session"]') return node.tagName === 'BUTTON' && node.getAttribute('aria-label') === 'Show session';
+    if (sel === 'button[data-fd-l6]') return node.tagName === 'BUTTON' && node.hasAttribute('data-fd-l6');
+    throw new Error('unsupported selector: ' + sel);
+  }
+  function find(node, sel) {
+    for (const child of node.children) {
+      if (matches(child, sel)) return child;
+      const hit = find(child, sel);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  const root = el('div', { id: 'dc-root' });
+  const screen = el('div', { 'data-screen-label': 'Message bus' });
+  const actionRow = el('span', {});
+  const wrap = (label) => {
+    const slot = el('span', {});
+    const button = el('button', { 'aria-label': label });
+    button.style.cssText = ICON_CSS;
+    slot.insertBefore(button, null);
+    actionRow.insertBefore(slot, null);
+    return slot;
+  };
+  root.insertBefore(screen, null);
+  screen.insertBefore(actionRow, null);
+  const eyeWrap = wrap('Show session');
+  const copyWrap = wrap('Copy thread');
+
+  class FakeObserver {
+    constructor(cb) { this.cb = cb; this.target = null; observers.push(this); }
+    observe(target) { this.target = target; }
+    disconnect() { this.target = null; }
+  }
+
+  const document = {
+    body: root,
+    createElement: (tag) => el(tag),
+    querySelector: (sel) => (matches(root, sel) ? root : find(root, sel)),
+    getElementById: (id) => (root.getAttribute('id') === id ? root : null),
+  };
+  return { document, MutationObserver: FakeObserver, root, actionRow, eyeWrap, copyWrap, find: (sel) => find(root, sel), render: touch };
+}
+
+function withDom(t) {
+  const dom = domFixture();
+  global.document = dom.document;
+  global.MutationObserver = dom.MutationObserver;
+  t.after(() => { delete global.document; delete global.MutationObserver; });
+  return dom;
+}
+
+const ours = (dom) => dom.actionRow.children.filter((n) => n.hasAttribute('data-fd-l6'));
+
+test('the transcript toggle is injected once, between the eye and the clipboard', async (t) => {
+  const dom = withDom(t);
+  const { bus } = await boot(deskPlan([]));
+  bus.attach(fakeHost({ busActive: DESK_ID }));
+  dom.render();
+  await settle();
+  const btn = dom.find('button[data-fd-l6]');
+  assert.ok(btn, 'the button exists');
+  assert.strictEqual(btn.previousSibling, dom.eyeWrap, 'it follows the eye');
+  assert.strictEqual(btn.nextSibling, dom.copyWrap, 'and comes before the clipboard');
+  assert.strictEqual(btn.getAttribute('title'), 'Full conversation');
+  assert.strictEqual(btn.getAttribute('aria-label'), 'Full conversation');
+  assert.ok(/<svg /.test(btn.innerHTML) && btn.innerHTML.includes('stroke="currentColor"'));
+  // The sibling's own style, minus the two keys logic.js's offBtn adds on a row with
+  // no terminal -- what is left is the neutral icon button.
+  assert.ok(btn.style.cssText.startsWith(ICON_CSS));
+  assert.ok(/opacity:1;cursor:pointer$/.test(btn.style.cssText));
+  // Re-applying is what every render does; it must never make a second button.
+  for (let i = 0; i < 5; i++) { dom.render(); await settle(); }
+  assert.strictEqual(ours(dom).length, 1);
+});
+
+test('clicking the toggle arms the thread, and clicking again disarms it', async (t) => {
+  const dom = withDom(t);
+  const { bus, FD } = await boot(deskPlan([]));
+  const host = fakeHost({ busActive: DESK_ID });
+  bus.attach(host);
+  dom.render();
+  await settle();
+  const btn = dom.find('button[data-fd-l6]');
+  btn.click();
+  assert.strictEqual(host.state.busTranscript, DESK_ID, 'the state holds the thread id, not a flag');
+  assert.strictEqual(bus._state().wantId, DESK_ID);
+  assert.strictEqual(FD.fixture.busTranscripts[DESK_ID].state, 'loading');
+  dom.render();
+  await settle();
+  assert.strictEqual(btn.getAttribute('title'), 'Bus only');
+  assert.ok(btn.style.cssText.endsWith('background:rgba(255,255,255,0.11);border-color:rgba(255,255,255,0.22);color:#ffffff'), btn.style.cssText);
+  // A light/dark flip rewrites the sibling's inline style, so the copy is re-read.
+  host.state.dark = false;
+  dom.render();
+  await settle();
+  assert.ok(btn.style.cssText.endsWith('background:rgba(0,0,0,0.07);border-color:rgba(0,0,0,0.18);color:#111111'), btn.style.cssText);
+  btn.click();
+  assert.strictEqual(host.state.busTranscript, null);
+  assert.strictEqual(bus._state().wantId, null);
+  await settle();
+  assert.strictEqual(btn.getAttribute('title'), 'Full conversation');
+  assert.strictEqual(ours(dom).length, 1, 'still one button after both clicks');
+});
+
+test('the toggle is absent on a thread with no transcript to fetch, and in fixture mode', async (t) => {
+  const dom = withDom(t);
+  const { bus } = await boot(deskPlan([]));
+  const host = fakeHost({ busActive: DESK_ID });
+  bus.attach(host);
+  dom.render();
+  await settle();
+  assert.strictEqual(ours(dom).length, 1);
+  host.state.busActive = 'a-broadcast-group';
+  dom.render();
+  await settle();
+  assert.strictEqual(ours(dom).length, 0, 'a thread of no known kind loses the button');
+});
+
+test('fixture mode never injects the toggle', async (t) => {
+  const dom = withDom(t);
+  const { bus } = await boot({ fixture: true });
+  bus.attach(fakeHost({ busActive: DESK_ID }));
+  dom.render();
+  await settle();
+  assert.strictEqual(dom.find('button[data-fd-l6]'), null);
+  assert.strictEqual(ours(dom).length, 0);
 });

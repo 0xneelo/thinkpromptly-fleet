@@ -1,15 +1,18 @@
 #!/usr/bin/env sh
-# Renders one Claude Code transcript as plain text. $1 is the CLI session UUID, validated by
-# the deck before it is passed here. Only <projects root>/*/<uuid>.jsonl is opened; thinking
-# blocks are dropped, tool calls and results are clipped. Diagnostics never carry content.
+# Renders one Claude Code transcript as plain text. $1 selects it, and the deck validates it
+# before it is passed here: a bare CLI session UUID (a Claude Desktop seat), or 'tmux:<session>'
+# for a fleet tmux worker, whose pane working directory names the projects folder. Only
+# <projects root>/*/<uuid>.jsonl or <projects root>/<slug>/*.jsonl is opened; thinking blocks
+# are dropped, tool calls and results are clipped. Diagnostics never carry content.
 if ! command -v python3 >/dev/null 2>&1; then
   printf '%s\n' '{"v":1,"state":"unavailable"}'
   exit 0
 fi
 python3 - "$1" <<'PY'
-import glob, json, os, re, stat, sys
+import glob, json, os, re, stat, subprocess, sys
 
 UUID = re.compile(r'^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$')
+TMUX = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$')
 MAX_FILE = 64 * 1024 * 1024
 MAX_TEXT = 4 * 1024 * 1024
 CLIP = 400
@@ -20,15 +23,36 @@ def emit(state, **extra):
     print(json.dumps(out, separators=(',', ':')))
     sys.exit(0)
 
-sid = sys.argv[1].lower() if len(sys.argv) > 1 else ''
-if not UUID.fullmatch(sid):
-    emit('unavailable')
+arg = sys.argv[1] if len(sys.argv) > 1 else ''
 users = os.environ.get('FLEET_DESKTOP_WINDOWS_USERS', '/mnt/c/Users')
 roots = [os.path.join(os.path.expanduser('~'), '.claude', 'projects')]
 roots += glob.glob(os.path.join(users, '*', '.claude', 'projects'))
-files = []
-for root in roots:
-    files += glob.glob(os.path.join(glob.escape(root), '*', sid + '.jsonl'))
+files, sid = [], ''
+if arg.startswith('tmux:'):
+    # A fleet tmux worker holds no session UUID the deck can know, but its pane's working
+    # directory is the project, and Claude Code names that project's folder by mapping both
+    # '/' and '.' to '-'. A resumed session leaves more than one file there, so the newest
+    # one is the conversation on screen -- the same rule the UUID form already follows.
+    name = arg[5:]
+    if not TMUX.fullmatch(name):
+        emit('unavailable')
+    try:
+        cwd = subprocess.check_output(
+            ['tmux', 'display-message', '-p', '-t', name, '#{pane_current_path}'],
+            stderr=subprocess.DEVNULL).decode('utf-8', 'replace').strip()
+    except Exception:
+        cwd = ''
+    if not cwd:
+        emit('not_found')
+    slug = cwd.replace('/', '-').replace('.', '-')
+    for root in roots:
+        files += glob.glob(os.path.join(glob.escape(root), glob.escape(slug), '*.jsonl'))
+else:
+    sid = arg.lower()
+    if not UUID.fullmatch(sid):
+        emit('unavailable')
+    for root in roots:
+        files += glob.glob(os.path.join(glob.escape(root), '*', sid + '.jsonl'))
 files = [f for f in files if not os.path.islink(f) and os.path.isfile(f)]
 if not files:
     emit('not_found')
@@ -36,6 +60,8 @@ try:
     path = max(files, key=os.path.getmtime)
 except OSError:
     emit('unavailable')
+if not sid:
+    sid = os.path.basename(path)[:-len('.jsonl')]
 
 def clip(value):
     s = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
