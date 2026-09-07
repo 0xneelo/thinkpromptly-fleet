@@ -220,3 +220,11 @@ logged with screenshots: L2 `e904077` (Renate, live 59/59), L3 `b6d94b5` (Gottli
 (Tankred, live 66/66), L8 `97bdbb2` (Kunhild, live 60/60). Ledger D03–D05, D09–D12, D14, D15 P2 ✅. Merged into
 `weave/fd-v2` (keep-both on shared lifecycle hooks and appended docs), pushed; parallel reviews staggered (L2, L3, L4
 first). Outstanding: L6 (Gerhild, bus + toast) and L11 phase 1; riders L10.1, any L4/L7 late pushes.
+
+## 2026-09-08 · weave/fd-v2 @ `444fc6d` = base + L2, L3, L4, L5, L7, L8, L9, L10
+
+Merged with a base-aware keep-both resolver (`resolve3.py`: the side that changed the base lines wins, the other
+side's additions are appended). One hunk needed a hand splice: L2's rewritten `boxRows` mapping vs L3's `tiles`
+block at the same spot (`logic.js` ~L1181-1186) — kept L2's line, dropped the stale copy, kept L3's block. `node
+--check` clean on every v2 file; `npm test` 460/460. Pushed as a branch; preview follows; box gate re-launched
+(`FD-weave-gate`). Outstanding: L6 (bus + toast), L11 phase 1, riders L10.1 and any late L4/L7 pushes.
