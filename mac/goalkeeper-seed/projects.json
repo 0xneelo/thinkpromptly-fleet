@@ -1,0 +1,18 @@
+{
+  "projects": [
+    {
+      "alias": "remote-system",
+      "path": "/Users/misterislez/remote-system",
+      "ledger": "docs/operator-goals/ledger.json",
+      "board": "coordinator/board.json",
+      "decisions": "coordinator/decisions-effective.md"
+    },
+    {
+      "alias": "lowcapsxyz",
+      "path": "/Users/misterislez/projects/lowcap-connector",
+      "ledger": "docs/operator-goals/ledger.json",
+      "board": "coordinator/board.json",
+      "decisions": "coordinator/decisions-effective.md"
+    }
+  ]
+}
