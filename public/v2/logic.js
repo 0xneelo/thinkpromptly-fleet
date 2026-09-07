@@ -277,6 +277,93 @@ class AppLogic extends Sub {
     window.addEventListener('keydown', this._esc);
   }
   componentWillUnmount() { if (this._esc) window.removeEventListener('keydown', this._esc); if (this._busRO) this._busRO.disconnect(); }
+  // ---- L5 · Org chart (Dietlind, agent-v2-l5) ------------------------------
+  // "Send a message" deep-links into the bus thread (ruling O8). L6 owns the bus,
+  // so the hook is guarded; until L6 lands we keep the mock's own behaviour.
+  _orgMessage(target) {
+    const org = FD.screens && FD.screens.org;
+    if (target && org && org.openBus(target)) return;
+    this.setState({ screen: 'bus', busActive: 'desktop' });
+  }
+  // FD.fixture.orgLive is published by public/v2/screens/org.js in live mode
+  // ONLY. When it is absent every value below is the mock's own literal, so
+  // fixture mode — and the pixel gate — render byte-for-byte as before.
+  _orgLive(c) {
+    const { t, dot, chipTone, mono, orgSort, orgScope, orgKidList, orgCard } = c;
+    const hLine = (n) => ({ position: 'absolute', top: 0, height: '1px', background: t.line, left: 'calc(' + (50 / n) + '% - ' + ((n - 1) * 20 / (2 * n)) + 'px)', right: 'calc(' + (50 / n) + '% - ' + ((n - 1) * 20 / (2 * n)) + 'px)' });
+    const live = FD.fixture.orgLive || null;
+
+    if (!live) return {
+      orgSpine: [
+        { name: orgScope, tag: orgKidList.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) },
+        { name: 'coordinator', tag: 'seat', sub: 'long-lease · weekly', path: 'mac / coordinator', lease: 'lease active', exp: '6d left', expStyle: { color: t.ink, whiteSpace: 'nowrap' }, dotStyle: dot(t.ink) },
+        { name: 'orchestrator', tag: 'epoch #10', sub: 'seat · fenced · high churn', path: 'mac / orchestrator', lease: 'lease suspect · 3m', exp: 'expired 2m ago', expStyle: { color: t.bad, whiteSpace: 'nowrap' }, dotStyle: { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }, canMsg: true, message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) },
+      ],
+      orgKids: orgKidList.map(([name, role, path, on]) => ({ name, role, path, epoch: '#1', lease: on === false ? 'lease suspect' : 'lease active', exp: on === false ? 'expired 4m ago' : '1m left', expStyle: { color: on === false ? t.bad : t.good, whiteSpace: 'nowrap' }, dotStyle: dot(on === false ? t.warn : t.good), message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) })),
+      orgKidCols: orgKidList.length,
+      orgHLineStyle: hLine(orgKidList.length),
+      orgCards: [
+        orgCard('Bettina', true, 'backend-developer', 'german-box / ST-bettina', 'st-lanes-0831 / VIB-344', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('Margery', true, 'backend-developer', 'german-box / ST-margery', 'st-lanes-0831 / VIB-345', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('ops', true, 'unassigned role', 'onboarding-box / ops', 'no group / no task', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('Adelgund', false, 'unassigned role', 'german-box / LC-adelgund-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '16h 30m', 'expired 22h ago', t.bad),
+        orgCard('Adelmar', true, 'devops-engineer', 'german-box / FD-gb-home', 'xyz-1890 / XYZ-1890', '#1', 'active', t.good, '3s', '1m left', t.good),
+        orgCard('Albrecht', true, 'unassigned role', 'german-box / LC-albrecht-xyz…', 'no group / no task', '#1', 'active', t.good, '3s', '1m left', t.good),
+        orgCard('Alwin', false, 'unassigned role', 'german-box / LC-alwin-xyz-19…', 'no group / no task', '#1', 'suspect', t.warn, '1d 15h', 'expired 1d 15h ago', t.bad),
+        orgCard('Amalberga', false, 'unassigned role', 'german-box / LC-amalberga-xy…', 'no group / no task', '#1', 'suspect', t.warn, '23h 52m', 'expired 23h 51m ago', t.bad),
+        orgCard('Amalia', false, 'unassigned role', 'german-box / LC-amalia-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '1d 16h', 'expired 1d 16h ago', t.bad),
+      ],
+    };
+
+    // Live. org.js emits tone NAMES; the theme tokens resolve here so both themes
+    // stay correct — the layer split L1 recorded as I-L1-01.
+    const tone = (n) => n === 'good' ? t.good : n === 'warn' ? t.warn : n === 'bad' ? t.bad
+      : n === 'ink' ? t.ink : n === 'ink75' ? t.ink75 : n === 'ink60' ? t.ink60 : t.ink35;
+    const dotFor = (n) => n === 'hollow'
+      ? { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }
+      : dot(tone(n));
+    const inScope = (r) => !orgScope || (orgSort === 'machine' ? r.mach : r.proj) === orgScope;
+    const kids = (live.kids || []).filter(inScope);
+    const cards = (live.cards || []).filter(inScope);
+    const cols = Math.max(1, kids.length);
+
+    const toSpine = (n) => ({
+      name: n.name, tag: n.tag || '', sub: n.sub || '', path: n.path || '',
+      lease: n.lease || '', exp: n.exp || '',
+      expStyle: { color: tone(n.expTone), whiteSpace: 'nowrap' },
+      dotStyle: dotFor(n.dotTone),
+      canMsg: !!n.canMsg,
+      message: () => this._orgMessage(n.target),
+    });
+
+    // The head card is the scope node; the seat roots behind it are fleet-wide.
+    const head = { name: orgScope || 'fleet', tag: kids.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) };
+    const spine = live.mode !== 'ok' ? (live.spine || []).map(toSpine)
+      : live.empty ? [head, toSpine({ name: live.empty, dotTone: 'hollow' })]
+      : [head, ...(live.spine || []).map(toSpine)];
+
+    return {
+      orgSpine: spine,
+      orgKids: kids.map((k) => ({
+        name: k.name, role: k.role, path: k.path, epoch: k.epoch, lease: k.lease, exp: k.exp,
+        expStyle: { color: tone(k.expTone), whiteSpace: 'nowrap' },
+        dotStyle: dotFor(k.dotTone),
+        message: () => this._orgMessage(k.target),
+      })),
+      orgKidCols: cols,
+      orgHLineStyle: hLine(cols),
+      orgCards: cards.map((x) => {
+        const m = x.meta || [];
+        const base = orgCard(x.name, true, x.role, x.path, x.grp,
+          m[0] && m[0].v, m[1] && m[1].v, tone(m[1] && m[1].tone), m[2] && m[2].v, m[3] && m[3].v, tone(m[3] && m[3].tone));
+        // The mock's card has one badge slot and always fills it; a row with no
+        // badge hides the pill rather than showing an empty one (I-L5-03).
+        return { ...base, badge: x.badge || '',
+          dotStyle: dotFor(x.dotTone),
+          badgeStyle: x.badge ? { ...chipTone(x.badgeTone === 'warn' ? 'warn' : 'neutral'), marginLeft: 'auto' } : { display: 'none' } };
+      }),
+    };
+  }
   renderVals() {
     const dark = this.isDark();
     const useColor = this.props.statusColors ?? true;
@@ -669,9 +756,10 @@ class AppLogic extends Sub {
     // Org chart scope
     const orgSort = this.state.orgSort || 'machine';
     const orgScopeData = FD.fixture.orgScopeData;
-    const orgScopeList = Object.keys(orgScopeData[orgSort]);
-    const orgScope = this.state.orgScope && orgScopeList.includes(this.state.orgScope) ? this.state.orgScope : (orgSort === 'machine' ? 'german-box' : orgScopeList[0]);
-    const orgKidList = orgScopeData[orgSort][orgScope];
+    // L5: live scope data need not contain the mock's own default scope.
+    const orgScopeList = Object.keys(orgScopeData[orgSort] || {});
+    const orgScope = this.state.orgScope && orgScopeList.includes(this.state.orgScope) ? this.state.orgScope : (orgSort === 'machine' && orgScopeList.includes('german-box') ? 'german-box' : orgScopeList[0]);
+    const orgKidList = (orgScopeData[orgSort] || {})[orgScope] || [];
     const orgTabStyle = (on) => ({ border: 'none', background: 'transparent', padding: '0 0 3px', margin: 0, font: 'inherit', fontSize: '12.5px', color: on ? t.ink : t.ink60, cursor: 'pointer', borderBottom: '1.5px solid ' + (on ? t.ink : 'transparent'), transition: 'color .2s, border-color .2s' });
     // Machines
     const mSec = (env, name, email, chips, bars, note) => {
@@ -833,32 +921,7 @@ class AppLogic extends Sub {
       orgScopes: orgScopeList.map((k) => ({ label: k })),
       orgSortBtnStyle: { borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink75, padding: '7px 12px', fontSize: '12px', cursor: 'pointer', width: '150px', textAlign: 'center', transition: 'background .2s' },
       orgScopeSelectStyle: { borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink75, padding: '7px 12px', fontSize: '12px', cursor: 'pointer', fontFamily: mono, width: '230px', appearance: 'none', WebkitAppearance: 'none', paddingRight: '30px', backgroundImage: 'url("data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="' + t.ink45 + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>') + '")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' },
-      orgSpine: [
-        { name: orgScope, tag: orgKidList.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) },
-        { name: 'coordinator', tag: 'seat', sub: 'long-lease · weekly', path: 'mac / coordinator', lease: 'lease active', exp: '6d left', expStyle: { color: t.ink, whiteSpace: 'nowrap' }, dotStyle: dot(t.ink) },
-        { name: 'orchestrator', tag: 'epoch #10', sub: 'seat · fenced · high churn', path: 'mac / orchestrator', lease: 'lease suspect · 3m', exp: 'expired 2m ago', expStyle: { color: t.bad, whiteSpace: 'nowrap' }, dotStyle: { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }, canMsg: true, message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) },
-      ],
-      orgKids: orgKidList.map(([name, role, path, live]) => ({ name, role, path, epoch: '#1', lease: live === false ? 'lease suspect' : 'lease active', exp: live === false ? 'expired 4m ago' : '1m left', expStyle: { color: live === false ? t.bad : t.good, whiteSpace: 'nowrap' }, dotStyle: dot(live === false ? t.warn : t.good), message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) })),
-      orgKidCols: orgKidList.length,
-      orgHLineStyle: { position: 'absolute', top: 0, height: '1px', background: t.line, left: 'calc(' + (50 / orgKidList.length) + '% - ' + ((orgKidList.length - 1) * 20 / (2 * orgKidList.length)) + 'px)', right: 'calc(' + (50 / orgKidList.length) + '% - ' + ((orgKidList.length - 1) * 20 / (2 * orgKidList.length)) + 'px)' },
-      orgMsgBtnStyle: { marginTop: '4px', width: '100%', borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink, padding: '8px 14px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s' },
-      orgAttached: !this.state.orgTab || this.state.orgTab === 'attached',
-      orgUnattached: this.state.orgTab === 'unattached',
-      showAttached: () => this.setState({ orgTab: 'attached' }),
-      showUnattached: () => this.setState({ orgTab: 'unattached' }),
-      tabAttachedStyle: orgTabStyle(!this.state.orgTab || this.state.orgTab === 'attached'),
-      tabUnattachedStyle: orgTabStyle(this.state.orgTab === 'unattached'),
-      orgCards: [
-        orgCard('Bettina', true, 'backend-developer', 'german-box / ST-bettina', 'st-lanes-0831 / VIB-344', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('Margery', true, 'backend-developer', 'german-box / ST-margery', 'st-lanes-0831 / VIB-345', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('ops', true, 'unassigned role', 'onboarding-box / ops', 'no group / no task', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('Adelgund', false, 'unassigned role', 'german-box / LC-adelgund-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '16h 30m', 'expired 22h ago', t.bad),
-        orgCard('Adelmar', true, 'devops-engineer', 'german-box / FD-gb-home', 'xyz-1890 / XYZ-1890', '#1', 'active', t.good, '3s', '1m left', t.good),
-        orgCard('Albrecht', true, 'unassigned role', 'german-box / LC-albrecht-xyz…', 'no group / no task', '#1', 'active', t.good, '3s', '1m left', t.good),
-        orgCard('Alwin', false, 'unassigned role', 'german-box / LC-alwin-xyz-19…', 'no group / no task', '#1', 'suspect', t.warn, '1d 15h', 'expired 1d 15h ago', t.bad),
-        orgCard('Amalberga', false, 'unassigned role', 'german-box / LC-amalberga-xy…', 'no group / no task', '#1', 'suspect', t.warn, '23h 52m', 'expired 23h 51m ago', t.bad),
-        orgCard('Amalia', false, 'unassigned role', 'german-box / LC-amalia-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '1d 16h', 'expired 1d 16h ago', t.bad),
-      ],
+      ...this._orgLive({ t, dot, chipTone, mono, orgSort, orgScope, orgKidList, orgCard }),
       // registry
       q: this.state.q, rowCount: filtered.length, regRows,
       setQ: (e) => this.setState({ q: e.target.value }),
