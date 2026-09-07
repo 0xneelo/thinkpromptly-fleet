@@ -599,3 +599,81 @@ test('validate output survives a full round trip through toCards', () => {
   const cards = _.toCards(payload, NOW);
   assert.deepStrictEqual(_.validate(cards), cards, 'a well-formed card must pass through unchanged');
 });
+
+// ---------------------------------------------------------------------------
+// The 60 s poll is gated on the active screen. logic.js passes the flag from
+// AppLogic's lifecycle (`screen === 'machines'`); nothing here sniffs the DOM.
+// Today's page has no equivalent — it IS the screen, so its interval dies with the
+// page. Entering is that page load; leaving is that unload.
+// ---------------------------------------------------------------------------
+
+// load() ends in publish(), which needs the runtime's FD.setData; the browser has it,
+// Node does not.
+const withStubbedSeam = async (fn) => {
+  const realSetData = global.FD.setData;
+  global.FD.setData = () => {};
+  global.FD.data._fetch = async () => ({
+    ok: true, status: 200, json: async () => payload, text: async () => JSON.stringify(payload),
+  });
+  try {
+    return await fn();
+  } finally {
+    if (_.state.poll) _.state.poll.stop();
+    _.state.poll = null;
+    _.state.started = false;
+    global.FD.setData = realSetData;
+    delete global.FD.data._fetch;
+  }
+};
+
+test('sync(false) starts no poll and issues no request', async () => {
+  await withStubbedSeam(async () => {
+    let calls = 0;
+    global.FD.data._fetch = async () => { calls++; throw new Error('no request expected'); };
+    screen.sync(false);
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(_.state.poll, null, 'no interval while the screen is off');
+    assert.strictEqual(_.state.started, false);
+    assert.strictEqual(calls, 0, 'an inactive screen must not poll the API');
+  });
+});
+
+test('sync(true) starts the poll, and sync(false) stops it', async () => {
+  await withStubbedSeam(async () => {
+    screen.sync(true);
+    await new Promise((r) => setImmediate(r));
+    assert.ok(_.state.poll, 'entering the screen starts the interval');
+    assert.strictEqual(_.state.started, true);
+
+    screen.sync(false);
+    assert.strictEqual(_.state.poll, null, 'leaving the screen stops the interval');
+    assert.strictEqual(_.state.started, false, 're-entering must load fresh');
+  });
+});
+
+test('sync(true) while already active does not stack a second poll', async () => {
+  await withStubbedSeam(async () => {
+    screen.sync(true);
+    await new Promise((r) => setImmediate(r));
+    const first = _.state.poll;
+    screen.sync(true);
+    screen.sync(true);
+    await new Promise((r) => setImmediate(r));
+    assert.strictEqual(_.state.poll, first, 'the interval is created once, not per render');
+  });
+});
+
+test('sync is inert in fixture mode', async () => {
+  const realLocation = global.location;
+  global.location = { search: '?fixture=1' };
+  try {
+    await withStubbedSeam(async () => {
+      screen.sync(true);
+      await new Promise((r) => setImmediate(r));
+      assert.strictEqual(_.state.poll, null, 'fixture mode never polls');
+      assert.strictEqual(_.state.started, false);
+    });
+  } finally {
+    if (realLocation === undefined) delete global.location; else global.location = realLocation;
+  }
+});
