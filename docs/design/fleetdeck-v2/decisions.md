@@ -394,3 +394,27 @@ behind a long turn; mint a parallel worker when the slice is independent.
   gate (the gate renders `public/` through a static python server); it gets `npm test` + the headless scroll
   probe, not a re-gate.
 - Handover line unchanged: `cd ~/remote-system && git merge --ff-only weave/fd-v2 && ./up.sh`.
+
+## 2026-09-07 03:53 — candidate `9147462` = `e646554` + L12 (all three live defects closed)
+
+**L12 accepted** (Hadwig, `453e57c`): `sendFile` now answers `Accept-Ranges: bytes` + `Content-Length` on 200,
+206 with `Content-Range` for single ranges (explicit, open-ended, suffix), 416 for unsatisfiable, full 200 for
+multi-range or malformed. `test/static-range.test.js` (+210 lines). A second commit holds the response head
+back until the file actually opens, so a mid-flight ENOENT still yields 404 rather than a half-sent 200.
+
+**Independently verified by the design seat** (not taken from the worker's report): server started from the
+merged weave on port 31999 —
+```
+Range: bytes=0-99 → 206, content-range: bytes 0-99/10321675, content-length: 100, accept-ranges: bytes
+probe-scroll: s0 vt 0 hash 385233935 · s1 vt 4.99 hash 4218100027 · s2 vt 9.98 hash 3935661745 · s3 back to s0's hash
+```
+Screenshots at scroll top/mid/end (`scratchpad/shots/`) show three different video frames; sent to the operator.
+
+**Merge note:** Hadwig committed her scratch probe (`probe-scroll.cjs`) to the repo root; removed in the merge
+commit — a worker's measurement tool is not shipped code. Everything else merged clean.
+
+`npm test` 578/578. Box gate on `9147462`: **allPass, 36/36, max 0.0329 %** (unchanged — the gate serves
+`public/` through python's static server, so it can never observe a `server.js` fix; that is exactly why the
+scroll probe now belongs in the verify set).
+
+Handover line: `cd ~/remote-system && git merge --ff-only weave/fd-v2 && ./up.sh`.
