@@ -16,7 +16,8 @@ are gone. The mock's logic class runs unmodified on a dependency-free shim. Ever
 | No engine | **`allPass: true`** — 0 engine loads, 0 console errors, 0 page errors, 0 failed requests, 36/36 screens reached | `verify/S2/network.json` |
 | `npm run v2:compile` | **idempotent** — all four outputs byte-identical across two runs | below |
 | `npm run v2:check` | **green**, exit 0 | below |
-| `logic.js` byte-identical | **yes**, sha256 `d0db2453d48bee35…` | `verify/S2/logic-roundtrip.txt` |
+| Round trip byte-identical | **yes** — template script body sha256 `d0db2453d48bee35…`, re-inserted reproduces the template exactly (205602 bytes, sha256 `96be98b6…`) | `verify/S2/logic-roundtrip.txt` |
+| `logic.js` as emitted | 80544 bytes, sha256 `806484221cda532d…` — the body after the 7 T3 substitutions, differing by design | `verify/S2/logic-roundtrip.txt` |
 
 The pixel maximum is the same number on the same screen (`registry` dark) as pass 1's own run. The
 compiled build is pixel-identical to pass 1 to the digit.
@@ -147,8 +148,10 @@ not attempted. All gates were re-run after T3 and stayed green.
    audit returned HTTP 429 `You've reached your Fable limit`. Both adversarial routes were unavailable at
    once. I ran the identical adversarial brief on a Sonnet `reviewer` instead. That substitute is weaker
    than a `hunter` pass and the reader should weigh it as such.
-4. **`runtime.js` is 374 lines against the pack's `<= 300`.** This is a deliberate, argued overrun,
-   not drift. Composition: 323 code, 33 comment, 18 blank. A trim pass took it from 374 to 361 by collapsing
+4. **`runtime.js` line count — RESOLVED.** The design seat has accepted the shim at 361 lines and
+   confirmed the 300 was a guideline, not a hard cap. It now stands at **374**: the adversarial fix for
+   the missing Array case added 13 lines on top of the accepted 361, and the seat asked for that fix to
+   land. Recorded for completeness rather than as an open question. Composition: 323 code, 33 comment, 18 blank. A trim pass took it from 374 to 361 by collapsing
    genuinely-single statements and deleting a redundant event-type map; no semantics and no explanatory
    comments were touched. The adversarial fix for the missing Array case then added 13 lines back. The
    gates were re-run after each change.
@@ -265,5 +268,155 @@ match, and I verified byte-identity independently by byte-offset extraction.
 - `55b9e0c` declared n5 canonical attribute order
 - `dafeba6` close reviewer findings in the gate tools
 - `2bd76de` compile the template to plain JS and split the fixture
+
+## S2.1 — follow-up after the independent review
+
+The design seat's review of S2 raised six items. S2 stays accepted; these landed in one follow-up commit.
+
+**1. The two proofs `REPORT.md` cites were missing at `f370e4e`.** Correct — the pixel gate had deleted
+them and a `git add -A` committed the deletion. I had already caught and restored them in `8abf779`
+before the review arrived; they are present and regenerated here.
+
+**2. `npm run v2:check` now exits 0 at HEAD, and stays 0.** The root cause was real:
+`tools/dc-compile.mjs` counted `logic-roundtrip.txt` and `t3-substitutions.txt` as generated outputs, so
+every pixel-gate run — which republishes `verify/S2/` by renaming a staging directory over it — left the
+check red for a reason that says nothing about whether the app is stale. **The two proofs are now
+evidence documents, written by a compile but excluded from the staleness verdict.** A `--check` must not
+write files, so healing them inside `--check` was the wrong half of the choice.
+
+Proven three ways, by exit code:
+
+| Scenario | `npm run v2:check` |
+|---|---|
+| proofs present | **exit 0** |
+| proofs deleted, exactly as the pixel gate leaves them | **exit 0** |
+| `public/v2/app.js` tampered with one appended line | **exit 1**, `stale: public/v2/app.js` |
+
+So the check no longer goes red for the wrong reason, and still catches the thing it exists to catch.
+
+**3. The `logic.js sha256` label was wrong.** It printed the sha of the pre-T3 template script body under
+a `logic.js` label — the same hash as the line above it, which is how it went unnoticed. Now the proof
+reads `template script body sha256` for the body and prints the sha of the **emitted** `public/v2/logic.js`
+under `logic.js`, with a note that the two differ by design because of the T3 substitutions. Verified
+against independent hashing of the files on disk: `806484221cda532d…`, 80544 bytes.
+
+While fixing the label I also corrected the byte counts. They were `String.length`, which is UTF-16 code
+units, so the proof reported 205150 and 92669 for files that are 205602 and 93067 bytes. They now use
+`Buffer.byteLength`, and the numbers match `wc -c`.
+
+**4. A keystroke step, and it is the seam that mattered.** `tools/v2-interactions.mjs` now clears the bus
+composer, clicks it, and types five characters **one keystroke at a time** with `page.keyboard.type`.
+`setDraft` calls `setState` on every character, so the composer re-renders five times.
+
+The probe asserts what a DOM dump structurally cannot see: focus and caret. Markup is identical whether or
+not the textarea kept focus and whether the caret sits at 0 or 5, so if the reconciler had replaced the
+node instead of reusing it, typing would be unusable **with DOM parity still green**.
+
+Result on both sides: `focusIsComposer=true`, caret `5/5`, value `"abcde"`, both sides agreeing.
+
+The probe is proven to fail. With a `blur()` injected after typing as a negative control, the step goes
+DIFF, `focus/caret probe failures: bus-keystrokes`, exit 1 — **even though both sides agreed and the DOM
+dump was unchanged**. Agreeing that focus was lost is deliberately not a pass.
+
+**5. The `arrayKids` fix is in this branch** (landed `3e64200`, re-gated here).
+
+**6. Out-of-scope edits, declared.**
+- `.claude/launch.json` — **not mine.** It was changed by commit `826d5fa` ("tooling: launch config
+  v2-preview", author `0xneelo`), which is on `origin/claude/fleetdeck-v2-redesign-plan-5a5cd5` and
+  arrived on this branch through the docs merge the seat asked me to perform. Nothing to revert.
+- `.gitignore` — **mine, and I recommend keeping it.** Four lines adding `.tmp/` and `.tmp2/`, in commit
+  `c0324a4`. It exists because my own `git add -A` swept 790 KB of a builder's scratch directory into the
+  tree; the same commit removed it. Reverting the ignore would re-expose the repo to the accident it was
+  written to prevent. Happy to drop it if the seat prefers.
+
+### S2.1 gate re-run, all green
+
+| Gate | Result |
+|---|---|
+| F2 DOM parity | **36/36 identical**, mask empty |
+| Interaction parity | **36/36 steps identical** (34 + the 2 new keystroke steps), mask empty |
+| Keystroke focus/caret probe | **pass** — focus held, caret 5/5, both sides agree; proven to fail under a blur |
+| Pixel gate | **`allPass: true`**, max **0.032948 %** |
+| No engine | **`allPass: true`** — 0 loads, 0 console errors, 0 page errors, 0 failed requests |
+| `npm run v2:compile` | **idempotent** |
+| `npm run v2:check` | **exit 0** |
+| `FD.setData` seam | **pass** |
+
+## S2.2 — the oracle's shim findings
+
+Seven findings from the design seat's oracle audit of `runtime.js` and `dc-compile.mjs` at `3e64200`,
+all reproduced in Chromium. Fixed in one push, ahead of S2.1's remaining items, because F1-F3 block the
+nine logic slices.
+
+**The audit file itself was not reachable.** `docs/design/fleetdeck-v2/audits/s2-shim-oracle-2026-09-08.md`
+does not exist on `origin/claude/fleetdeck-v2-redesign-plan-5a5cd5` after a fresh fetch
+(`0724bdf..32fc491`), nor on any other ref — I scanned every remote branch for `oracle` and `s2-shim`.
+The same thing happened with the T3 README amendment. The instruction text specifies every finding with
+file, line and required fix, so I implemented from it and recorded the gap here rather than blocking.
+
+I also checked before starting that this was not already fixed elsewhere: `origin/agent-v2-base` @
+`42b56bb` is simply my own `8abf779` merged in, and its `runtime.js` is byte-identical to mine with no
+`data-dc-raw` and no `keyGet`. All seven were genuinely live.
+
+| | Finding | Fix |
+|---|---|---|
+| **F1** | CRITICAL — rows keyed by position, so reordering a list left externally mounted subtrees under the wrong row and dropped the last | `<sc-for key="{{ expr }}">` support; the emitted row key becomes `+ (keyGet(sub) ?? i)`, evaluated in the row scope |
+| **F2** | CRITICAL — a throw in `renderVals` fell through to `vals = host.props` and rendered anyway, blanking every screen | On catch, return **without rendering**; the last committed DOM stands and the error is reported |
+| **F3** | HIGH — any child-list change deleted foreign nodes | `syncChildren` skips a parent marked `data-dc-raw` entirely |
+| **F4** | MEDIUM — a `<select>`'s value was skipped when the prop had not changed, so an assignment made before its options existed was never retried | `value` on `SELECT` is always re-applied |
+| **F5** | MEDIUM — no update-depth guard | Chained-flush counter; above 50 it logs and bails |
+| **F6** | LOW — `checked` skipped when unchanged, so DOM drift from a user click was never corrected | `checked` is always re-applied |
+| **F7** | LOW — `?` poisoned `isPureData` | A literal containing `?` is refused, like the `${` case |
+
+**On F5 I deviated deliberately.** The instruction said to count flushes per macrotask. Both parity
+harnesses freeze `setTimeout`, so a timer-based window would never reset and would misfire on a long
+legitimate run. I count **chained** flushes instead — a flush scheduled from inside a flush, which is
+exactly the runaway shape (`setState` from `renderVals` or `componentDidUpdate`) — and the counter resets
+whenever a flush is scheduled from outside one. Same defect caught, no dependence on a timer the gates
+disable.
+
+### Regressions, each proven to fail without its fix
+
+`tools/v2-shim-regress.mjs`. These **cannot** be A/B steps in `v2-interactions.mjs`, which is why they
+are a separate script: side A is pass 1 running the real dc-runtime, which has no `sc-for key=`, no
+`data-dc-raw` and no `FD.setData`. The production template exercises none of them either — zero keyed
+loops, zero raw parents — which is precisely why every gate stayed green while these bugs were live. So
+each finding is driven against a synthetic fixture compiled by the real `tools/dc-compile.mjs` and
+mounted on the real `public/v2/runtime.js`, served from a throwaway loopback server. Nothing is written
+into `public/`.
+
+| Check | With the fix | Fix reverted |
+|---|---|---|
+| F1 — reorder `[a,b,c]` -> `[c,a,b]` with a foreign `<em>` mounted inside row b | PASS: order `c,a,b`, 3 rows, foreign node still inside row **b** | **FAIL** |
+| F2 — `renderVals` throws | PASS: `#list` innerHTML unchanged (303 -> 303 chars), rows still present, error reported | **FAIL** |
+| F2b — recovery once it stops throwing | PASS: renders again | — |
+| F3 — foreign child inside a `data-dc-raw` parent across a child-list change | PASS: survived | **FAIL** |
+
+The F3 check needed a second pass to be worth anything. My first version toggled only the parent's text,
+which hits `syncChildren`'s unchanged-list early return, so the removal path never ran and **the test
+passed with the guard removed**. It now toggles an `sc-if` inside the raw parent so the child list
+genuinely changes. That is what the negative controls are for.
+
+To make F1 testable at all I added `--template <path>` and `--print-app` to `dc-compile.mjs`:
+`--print-app` writes nothing, it prints `app.js` and exits, so a test can assert on generated code
+without touching `public/`. The F1 check asserts the emitted key expression *and* the resulting runtime
+behaviour.
+
+### Gates after F1-F7
+
+F1 and F3 are additive: the production template has zero `sc-for key=` and zero `data-dc-raw`, so neither
+can alter current output — confirmed, all generated files unchanged and T3 still 7 of 13.
+
+| Gate | Result |
+|---|---|
+| F2 DOM parity | **36/36**, mask empty |
+| Interaction parity | **36/36**, mask empty, keystroke probe passing |
+| Pixel | **`allPass: true`**, max **0.032948 %** |
+| No engine | **`allPass: true`** — 0 loads, 0 console errors, 0 failed requests |
+| `v2:compile` / `v2:check` | idempotent / **exit 0** |
+| Shim regressions | **4/4**, each proven to fail without its fix |
+
+`runtime.js` is now **416** lines. The seat has accepted the shim over the 300 guideline; F2, F3 and F5
+add code and the comments that explain why each behaves as it does.
 
 Signed **Julius**.
