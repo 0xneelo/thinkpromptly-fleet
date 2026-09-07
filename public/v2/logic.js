@@ -345,41 +345,72 @@ class AppLogic extends Sub {
     // Desktop sessions
     const hex = (seed, n) => { let s = seed * 2654435761 % 4294967296; let o = ''; while (o.length < n) { s = (s * 1103515245 + 12345) % 4294967296; o += s.toString(16).padStart(8, '0'); } return o.slice(0, n); };
     const uuid = (seed) => hex(seed, 8) + '-' + hex(seed + 1, 4) + '-4' + hex(seed + 2, 3) + '-' + hex(seed + 3, 4) + '-' + hex(seed + 4, 12);
-    const dsData = FD.fixture.dsData;
-    const dq = (this.state.dq || '').toLowerCase();
+    const dsData = Array.isArray(FD.fixture.dsData) ? FD.fixture.dsData : [];
+    // toLocaleLowerCase on both sides, as today's sessions.js matches (BEHAVIOUR 2).
+    const dq = (this.state.dq || '').trim().toLocaleLowerCase();
     const dsExp = this.state.dsExp || {};
-    let dsCount = 0, dsLive = 0;
+    let dsCount = 0, dsLive = 0, dsGroups;
     const liveRows = [];
     const iconBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', flexShrink: 0, borderRadius: '9999px', border: '1px solid ' + t.line, background: 'transparent', color: t.ink75, cursor: 'pointer', padding: 0, transition: 'background .15s' };
+    // L10: the screen slice registers rowAction only in live mode, so fixture
+    // mode keeps the mock's own handlers untouched and pixel-identical.
+    const dsAct = (FD.screens && FD.screens.desktop && FD.screens.desktop.rowAction) || null;
     const dsRow = (g, gi, r, ri, where) => {
       const key = gi + '-' + ri; const open = !!dsExp[key]; const seed = gi * 100 + ri * 7 + 3;
-      const cli = r.cli || uuid(seed), sid = r.sid || 'local_' + uuid(seed + 40);
-      const cut = r.path.lastIndexOf('/') + 1;
+      // The mock invents a CLI/session id for seed rows that lack one. That is right
+      // for the mock and wrong for live data: sessions.js:199-202 OMITS a details row
+      // whose value is absent rather than showing a plausible invention as fact.
+      // dsAct is registered only in live mode, so it is exactly the "is this real" test.
+      const cli = r.cli || (dsAct ? '' : uuid(seed));
+      const sid = r.sid || (dsAct ? '' : 'local_' + uuid(seed + 40));
+      // Live rows can arrive without a cwd; the mock's seed always has one.
+      const path = r.path || '';
+      const cut = path.lastIndexOf('/') + 1;
+      // liveState is 'live' | 'offline' | 'unknown' and only the live feed sets it.
+      const st = r.liveState || (r.live ? 'live' : 'offline');
       return {
-        title: r.title, dir: r.path.slice(0, cut), leaf: r.path.slice(cut), branch: r.branch, model: r.model, when: r.when, turns: r.turns,
+        title: r.title, dir: path.slice(0, cut), leaf: path.slice(cut), branch: r.branch, model: r.model, when: r.when, turns: r.turns,
         where: where ? g.name + ' · ' + g.machine : '',
-        live: !!r.live, notLive: !r.live, status: r.live ? 'Live' : 'Offline',
-        pillStyle: chipTone(r.live ? 'good' : 'neutral'), dotStyle: dot(r.live ? t.good : t.ink35),
+        live: !!r.live, notLive: !r.live,
+        status: st === 'live' ? 'Live' : st === 'unknown' ? 'Live unknown' : 'Offline',
+        pillStyle: chipTone(st === 'live' ? 'good' : 'neutral'), dotStyle: dot(st === 'live' ? t.good : t.ink35),
         open, chevStyle: { transition: 'transform .2s', transform: open ? 'rotate(90deg)' : 'none', color: t.ink45, flexShrink: 0, marginTop: '3px' },
         toggle: () => { const e2 = { ...(this.state.dsExp || {}) }; e2[key] = !e2[key]; this.setState({ dsExp: e2 }); },
         stop: (e) => e.stopPropagation(),
-        show: (e) => { e.stopPropagation(); if (r.live && this._openTerm) this._openTerm(r.title, g.machine); },
-        message: (e) => { e.stopPropagation(); if (r.live) this.setState({ screen: 'bus', busActive: 'desktop' }); },
+        show: (e) => { e.stopPropagation(); if (dsAct) return dsAct('show', r, e.currentTarget); if (r.live && this._openTerm) this._openTerm(r.title, g.machine); },
+        message: (e) => { e.stopPropagation(); if (dsAct) return dsAct('message', r, e.currentTarget); if (r.live) this.setState({ screen: 'bus', busActive: 'desktop' }); },
         showTitle: r.live ? 'Show session' : 'Show — session is not running',
         msgTitle: r.live ? 'Message this session' : 'Message — session is not running',
         liveBtnStyle: r.live ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
-        details: [{ k: 'Created', v: r.created }, { k: 'CLI session', v: cli }, { k: 'Session', v: sid }, { k: 'Full path', v: r.path }],
-        copy: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(r.title + '\n' + r.path + '\n' + r.branch + '\ncli=' + cli + '\nsession=' + sid); } catch (e2) {} },
-        copyConv: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText('# ' + r.title + '\n' + r.model + ' · ' + r.turns + ' · ' + r.branch + '\n\n[conversation transcript for ' + sid + ']'); } catch (e2) {} },
+        details: [{ k: 'Created', v: r.created }, { k: 'CLI session', v: cli }, { k: 'Session', v: sid }, { k: 'Full path', v: path }]
+          .concat(r.worktree ? [{ k: 'Worktree', v: r.worktree }] : [])
+          .filter((d) => d.v),
+        copy: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copy', r, e.currentTarget); try { navigator.clipboard.writeText(r.title + '\n' + path + '\n' + r.branch + '\ncli=' + cli + '\nsession=' + sid); } catch (e2) {} },
+        copyConv: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copyConv', r, e.currentTarget); try { navigator.clipboard.writeText('# ' + r.title + '\n' + r.model + ' · ' + r.turns + ' · ' + r.branch + '\n\n[conversation transcript for ' + sid + ']'); } catch (e2) {} },
       };
     };
-    const dsGroups = dsData.map((g, gi) => {
-      const kept = g.rows.map((r, ri) => [r, ri]).filter(([r]) => !dq || (r.title + ' ' + r.path + ' ' + r.branch).toLowerCase().includes(dq));
-      kept.forEach(([r, ri]) => { dsCount++; if (r.live) { dsLive++; liveRows.push(dsRow(g, gi, r, ri, true)); } });
-      const rows = kept.sort((a, b) => (b[0].live ? 1 : 0) - (a[0].live ? 1 : 0)).map(([r, ri]) => dsRow(g, gi, r, ri, false));
-      return { name: g.name, sub: g.email + ' · ' + g.acct, machine: g.machine, n: rows.length, rows, isLive: false };
-    }).filter((g) => g.rows.length > 0);
-    if (liveRows.length) dsGroups.unshift({ name: 'Live now', sub: 'can receive a message on the next turn', machine: '', n: liveRows.length, rows: liveRows, isLive: true });
+    // S2 oracle audit F2 (2026-09-08, binding instruction 2): a throw anywhere in
+    // renderVals makes the runtime render with vals = host.props, which turns every
+    // sc-if false and empties every list — one malformed row from one slice blanks
+    // all nine screens. So this block cannot throw: every field access on an
+    // incoming row is guarded, and if one still does, the screen keeps its last
+    // good values instead of taking the whole app down with it.
+    try {
+      dsGroups = dsData.filter((g) => g && Array.isArray(g.rows)).map((g, gi) => {
+        const kept = g.rows.map((r, ri) => [r, ri]).filter(([r]) => r && (!dq
+          || [r.title, r.path, r.worktree, r.branch, r.model]
+            .filter((v) => typeof v === 'string').join(' ').toLocaleLowerCase().includes(dq)));
+        kept.forEach(([r, ri]) => { dsCount++; if (r.live) { dsLive++; liveRows.push(dsRow(g, gi, r, ri, true)); } });
+        const rows = kept.sort((a, b) => (b[0].live ? 1 : 0) - (a[0].live ? 1 : 0)).map(([r, ri]) => dsRow(g, gi, r, ri, false));
+        return { name: g.name, sub: g.email + ' · ' + g.acct, machine: g.machine, n: rows.length, rows, isLive: false };
+      }).filter((g) => g.rows.length > 0);
+      if (liveRows.length) dsGroups.unshift({ name: 'Live now', sub: 'can receive a message on the next turn', machine: '', n: liveRows.length, rows: liveRows, isLive: true });
+      this._dsLastGood = { dsGroups, dsCount, dsLive };
+    } catch (e) {
+      console.error('[fd-v2 l10] desktop rows failed to render; keeping the last good view', e);
+      const last = this._dsLastGood || { dsGroups: [], dsCount: 0, dsLive: 0 };
+      dsGroups = last.dsGroups; dsCount = last.dsCount; dsLive = last.dsLive;
+    }
     // Registry data + selection
     const regData = FD.fixture.regData;
     const q = (this.state.q || '').toLowerCase();

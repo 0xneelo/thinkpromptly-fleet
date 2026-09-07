@@ -1,0 +1,213 @@
+{
+  "schemaVersion": 1,
+  "slice": "l10",
+  "capturedAt": "2026-09-07T01:11:50.085Z",
+  "base": "http://127.0.0.1:4178",
+  "results": [
+    {
+      "id": "shell-data-layer",
+      "action": "fetch the shipped /v2/index.html and look for the data layer",
+      "expectation": "documents the one shim this run applies: the shell does not load /v2/data.js yet (L11 cut-over)",
+      "pass": true,
+      "detail": "shim applied: <script src=\"/v2/data.js\"> inserted before runtime.js, nothing else changed"
+    },
+    {
+      "id": "rows-render",
+      "action": "load the screen with the six-session states fixture",
+      "expectation": "six rows across the person groups, \"Live now\" pinned first holding exactly the one live row",
+      "pass": true
+    },
+    {
+      "id": "group-headings",
+      "action": "read the two per-person group headings",
+      "expectation": "name, \"email · Account xxxxxxxx\" and the machine chip",
+      "pass": true
+    },
+    {
+      "id": "row-fallbacks",
+      "action": "read the session with no title, branch, model or completedTurns",
+      "expectation": "\"Untitled session\", \"No branch\", \"Model unknown\", \"Turns unknown\"",
+      "pass": true
+    },
+    {
+      "id": "row-ages",
+      "action": "read every row's last-activity string",
+      "expectation": "Just now, 9m ago, 1h ago, 2d ago, 30m ago, 3h ago",
+      "pass": true
+    },
+    {
+      "id": "row-status-chips",
+      "action": "read every row's status pill",
+      "expectation": "Live / Live unknown / Offline",
+      "pass": true
+    },
+    {
+      "id": "row-extra-chips",
+      "action": "read the stale row's and the archived row's status cell",
+      "expectation": "the stale row also shows Cached; the archived row also shows Archived",
+      "pass": true
+    },
+    {
+      "id": "row-details",
+      "action": "click Show on the live row (has a worktree) and on the unknown row (has none)",
+      "expectation": "Created, CLI session, Session, Full path — plus Worktree only where there is one",
+      "pass": true
+    },
+    {
+      "id": "action-show-keeps-open",
+      "action": "click Show again on the already-expanded live row",
+      "expectation": "the row stays expanded (Show expands, it never toggles)",
+      "pass": true
+    },
+    {
+      "id": "action-message",
+      "action": "click Message on the live row with FD.screens.bus.open spied on",
+      "expectation": "the bus is opened once with {type:\"claude-desktop\", session:\"id:cli-live-1\"}",
+      "pass": true
+    },
+    {
+      "id": "action-message-not-live",
+      "action": "click Message on the offline row",
+      "expectation": "nothing happens: the bus is not opened again",
+      "pass": true
+    },
+    {
+      "id": "action-copy-context",
+      "action": "click Copy context on the live row and read the clipboard back",
+      "expectation": "exactly sessionContext(): the thirteen \"Label: value\" lines, empties skipped, trailing newline",
+      "pass": true
+    },
+    {
+      "id": "action-copy-conversation",
+      "action": "click Copy conversation on the live row with the transcript stub at 200",
+      "expectation": "clipboard = context + \"\\n\" + transcript, and the label cycles to Copied",
+      "pass": true
+    },
+    {
+      "id": "machine-notes",
+      "action": "read the per-machine notes panel",
+      "expectation": "all five state texts verbatim, one per machine that is not a healthy fresh \"ok\"",
+      "pass": true
+    },
+    {
+      "id": "request-plain-load",
+      "action": "inspect the URL of the first (unforced) /api/desktop-sessions call",
+      "expectation": "exactly /api/desktop-sessions, no query string",
+      "pass": true
+    },
+    {
+      "id": "count-line",
+      "action": "read the count line and the last-collection line with no filters applied",
+      "expectation": "\"<shown> of <total> sessions · <live> live\" and \"Last collection: <age>\"",
+      "pass": true,
+      "detail": "last collection read from the newest machine stamp: Last collection: 1h ago"
+    },
+    {
+      "id": "filter-account",
+      "action": "open the account select, then pick Aylin Yeter",
+      "expectation": "\"All accounts\" + both accounts as \"label · uuid8\"; picking one hides the other group",
+      "pass": true
+    },
+    {
+      "id": "filter-machine",
+      "action": "open the machine select, then pick german-box",
+      "expectation": "\"All machines\" + every collected machine; picking one filters to it",
+      "pass": true
+    },
+    {
+      "id": "filter-live",
+      "action": "step the live select through all four values",
+      "expectation": "Any live status / Live / Offline / Unknown, each filtering to the matching rows",
+      "pass": true
+    },
+    {
+      "id": "filter-archived",
+      "action": "step the archived select through all three values",
+      "expectation": "All sessions / Not archived / Archived — Archived shows only the archived row, Not archived hides it",
+      "pass": true
+    },
+    {
+      "id": "filter-search",
+      "action": "type \"opus-4-8\" into the search box — a string only the model field holds",
+      "expectation": "the widened haystack (title/cwd/worktree/branch/model) leaves only the claude-opus-4-8 row",
+      "pass": true
+    },
+    {
+      "id": "empty-filtered",
+      "action": "type a string no row matches",
+      "expectation": "\"No sessions match these filters. Reset filters to see all conversations.\"",
+      "pass": true
+    },
+    {
+      "id": "filter-reset",
+      "action": "set all five controls, then click Reset",
+      "expectation": "search and all four selects go back to their defaults and every row returns",
+      "pass": true
+    },
+    {
+      "id": "screenshots",
+      "action": "screenshot the live screen, then click the app's light/dark toggle and screenshot again",
+      "expectation": "live-dark.png and live-light.png, with fd-landing-dark flipped to \"0\"",
+      "pass": true,
+      "detail": "live-dark.png, live-light.png"
+    },
+    {
+      "id": "theme-resync",
+      "action": "read the colours of the injected nodes after clicking the light/dark toggle",
+      "expectation": "every injected node re-themes with the screen, the way the template nodes do",
+      "pass": true
+    },
+    {
+      "id": "transcript-404",
+      "action": "click Copy conversation with the transcript endpoint answering 404",
+      "expectation": "the label reads \"No transcript\"",
+      "pass": true
+    },
+    {
+      "id": "transcript-502",
+      "action": "click Copy conversation with the transcript endpoint answering 502",
+      "expectation": "the label reads \"Copy failed\"",
+      "pass": true
+    },
+    {
+      "id": "empty-nothing-collected",
+      "action": "load with a collection that returned no groups and no machines",
+      "expectation": "the empty text verbatim and \"No completed collection\" as the last-collection line",
+      "pass": true
+    },
+    {
+      "id": "first-load-failure",
+      "action": "let the very first /api/desktop-sessions answer HTTP 500",
+      "expectation": "\"Sessions could not be refreshed. Try Refresh to reconnect.\", count \"Sessions unavailable\", body \"Could not load desktop sessions.\"",
+      "pass": true
+    },
+    {
+      "id": "later-load-failure",
+      "action": "load once successfully, then break the endpoint and click Refresh",
+      "expectation": "\"Sessions could not be refreshed. The last view is still shown.\" and the rows stay on screen",
+      "pass": true
+    },
+    {
+      "id": "refresh-forces-collect",
+      "action": "click Refresh",
+      "expectation": "the request carries refresh=1 and the button reads \"Collecting…\" until it answers",
+      "pass": true
+    },
+    {
+      "id": "vanished-selection",
+      "action": "select an account, then serve a payload without it and click Refresh",
+      "expectation": "the select keeps the selection and offers it as \"Previously selected (unavailable)\"",
+      "pass": true
+    },
+    {
+      "id": "console-clean",
+      "action": "watch console + pageerror on every page of the run",
+      "expectation": "zero console errors",
+      "pass": true,
+      "detail": "filtered 6 browser resource error(s) for deliberately stubbed 4xx/5xx: [transcript-404] Failed to load resource: the server responded with a status of 404 (Not Found) | [transcript-502] Failed to load resource: the server responded with a status of 502 (Bad Gateway) | [first-load-500] Failed to load resource: the server responded with a status of 500 (Internal Server Error) | [first-load-500] [fd-v2 l10] desktop sessions load failed Error: HTTP 500 /api/desktop-sessions\n    at httpError (http://127.0.0.1:4178/v2/data.js:39:17)\n    at async request (http://127.0.0.1:4178/v2/data.js:47:25) | [refresh-500] Failed to load resource: the server responded with a status of 500 (Internal Server Error) | [refresh-500] [fd-v2 l10] desktop sessions load failed Error: HTTP 500 /api/desktop-sessions?refresh=1\n    at httpError (http://127.0.0.1:4178/v2/data.js:39:17)\n    at async request (http://127.0.0.1:4178/v2/data.js:47:25)"
+    }
+  ],
+  "total": 33,
+  "passed": 33,
+  "allPass": true
+}
