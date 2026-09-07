@@ -442,8 +442,18 @@ def under(cwd, path):
 # Harness text that arrives as a plain string `user` row and therefore passes §3.3's
 # type/content test, but that the operator never typed. The tag pattern matches by
 # family, so a new suffix (-caveat, -stdout, -stderr) is caught without a code change.
+# Anchored to the exact harness tag names. `<command-` alone also swallowed an
+# operator turn opening with the literal text `<command-line ...>`, which is a
+# thing a person types; losing a real operator turn is the one error this filter
+# must not make, because a turn is what stops activity being called OFF THREAD.
 INJECTED_TAG = re.compile(
-    r"^<\s*(?:local-command-|task-notification|system-reminder|command-|cross-session-)")
+    r"^<\s*(?:"
+    r"command-message|command-name|command-args|command-contents"
+    r"|local-command-[a-z]+"
+    r"|task-notification"
+    r"|system-reminder"
+    r"|cross-session-message"
+    r")\b")
 # Not tag-shaped, so they need their own prefixes.
 INJECTED_PREFIXES = (
     "This session is being continued from a previous conversation",
