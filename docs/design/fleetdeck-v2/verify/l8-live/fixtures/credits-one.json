@@ -1,0 +1,63 @@
+{
+  "rows": [
+    {
+      "kind": "claude",
+      "id": "neelo@vibe.trading",
+      "host": "DESKTOP-LJMEJQN",
+      "updated_at": 1788726047,
+      "source": "oauth",
+      "org": "c578669c-cdac-42d7-b451-13f3a3554d75",
+      "email": "neelo@vibe.trading",
+      "label": "Reiner Garrecht",
+      "confirmed": true,
+      "tier": "default_claude_max_20x",
+      "type": "claude_max",
+      "state": "ok",
+      "windows": {
+        "five_hour": {
+          "pct": 28,
+          "resets_at": 1788740400
+        },
+        "seven_day": {
+          "pct": 6,
+          "resets_at": 1788966000
+        },
+        "seven_day_fable": {
+          "pct": 0,
+          "resets_at": null
+        }
+      },
+      "credit": {
+        "used": null,
+        "limit": null,
+        "decimals": 0,
+        "currency": null,
+        "enabled": false,
+        "capped": false
+      },
+      "seen": [
+        {
+          "host": "rfc1918-internal",
+          "source": "oauth"
+        },
+        {
+          "host": "rfc1918-internal",
+          "source": "desktop"
+        },
+        {
+          "host": "DESKTOP-LJMEJQN",
+          "source": "oauth"
+        }
+      ],
+      "history": [
+        {
+          "t": 1787574325,
+          "fh": 0,
+          "sd": 0,
+          "xu": null
+        }
+      ]
+    }
+  ],
+  "errors": []
+}

@@ -286,6 +286,114 @@ class AppLogic extends Sub {
     window.addEventListener('keydown', this._esc);
   }
   componentWillUnmount() { if (this._esc) window.removeEventListener('keydown', this._esc); if (this._busRO) this._busRO.disconnect(); }
+  // ---- L5 · Org chart (Dietlind, agent-v2-l5) ------------------------------
+  // "Send a message" deep-links into the bus thread (ruling O8). L6 owns the bus,
+  // so the hook is guarded; until L6 lands we keep the mock's own behaviour.
+  _orgMessage(target) {
+    const org = FD.screens && FD.screens.org;
+    if (target && org && org.openBus(target)) return;
+    this.setState({ screen: 'bus', busActive: 'desktop' });
+  }
+  // DESIGN-35 binding (2): one throw in any slice's renderVals section blanks
+  // EVERY screen, because the shim falls back to bare props. So this section is
+  // throw-proof: on a bad row it keeps the last good values and logs.
+  _orgLive(c) {
+    try {
+      const out = this._orgVals(c);
+      this._orgGood = out;
+      return out;
+    } catch (e) {
+      console.error('[org] renderVals section failed; keeping the last good values', e);
+      if (this._orgGood) return this._orgGood;
+      // Nothing good yet: fall back to the mock's own literals, which cannot throw.
+      const live = FD.fixture.orgLive;
+      delete FD.fixture.orgLive;
+      try { return this._orgVals(c); } finally { if (live) FD.fixture.orgLive = live; }
+    }
+  }
+  // FD.fixture.orgLive is published by public/v2/screens/org.js in live mode
+  // ONLY. When it is absent every value below is the mock's own literal, so
+  // fixture mode — and the pixel gate — render byte-for-byte as before.
+  _orgVals(c) {
+    const { t, dot, chipTone, mono, orgSort, orgScope, orgKidList, orgCard } = c;
+    const hLine = (n) => ({ position: 'absolute', top: 0, height: '1px', background: t.line, left: 'calc(' + (50 / n) + '% - ' + ((n - 1) * 20 / (2 * n)) + 'px)', right: 'calc(' + (50 / n) + '% - ' + ((n - 1) * 20 / (2 * n)) + 'px)' });
+    const live = FD.fixture.orgLive || null;
+
+    if (!live) return {
+      orgSpine: [
+        { name: orgScope, tag: orgKidList.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) },
+        { name: 'coordinator', tag: 'seat', sub: 'long-lease · weekly', path: 'mac / coordinator', lease: 'lease active', exp: '6d left', expStyle: { color: t.ink, whiteSpace: 'nowrap' }, dotStyle: dot(t.ink) },
+        { name: 'orchestrator', tag: 'epoch #10', sub: 'seat · fenced · high churn', path: 'mac / orchestrator', lease: 'lease suspect · 3m', exp: 'expired 2m ago', expStyle: { color: t.bad, whiteSpace: 'nowrap' }, dotStyle: { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }, canMsg: true, message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) },
+      ],
+      orgKids: orgKidList.map(([name, role, path, on]) => ({ name, role, path, epoch: '#1', lease: on === false ? 'lease suspect' : 'lease active', exp: on === false ? 'expired 4m ago' : '1m left', expStyle: { color: on === false ? t.bad : t.good, whiteSpace: 'nowrap' }, dotStyle: dot(on === false ? t.warn : t.good), message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) })),
+      orgKidCols: orgKidList.length,
+      orgHLineStyle: hLine(orgKidList.length),
+      orgCards: [
+        orgCard('Bettina', true, 'backend-developer', 'german-box / ST-bettina', 'st-lanes-0831 / VIB-344', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('Margery', true, 'backend-developer', 'german-box / ST-margery', 'st-lanes-0831 / VIB-345', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('ops', true, 'unassigned role', 'onboarding-box / ops', 'no group / no task', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('Adelgund', false, 'unassigned role', 'german-box / LC-adelgund-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '16h 30m', 'expired 22h ago', t.bad),
+        orgCard('Adelmar', true, 'devops-engineer', 'german-box / FD-gb-home', 'xyz-1890 / XYZ-1890', '#1', 'active', t.good, '3s', '1m left', t.good),
+        orgCard('Albrecht', true, 'unassigned role', 'german-box / LC-albrecht-xyz…', 'no group / no task', '#1', 'active', t.good, '3s', '1m left', t.good),
+        orgCard('Alwin', false, 'unassigned role', 'german-box / LC-alwin-xyz-19…', 'no group / no task', '#1', 'suspect', t.warn, '1d 15h', 'expired 1d 15h ago', t.bad),
+        orgCard('Amalberga', false, 'unassigned role', 'german-box / LC-amalberga-xy…', 'no group / no task', '#1', 'suspect', t.warn, '23h 52m', 'expired 23h 51m ago', t.bad),
+        orgCard('Amalia', false, 'unassigned role', 'german-box / LC-amalia-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '1d 16h', 'expired 1d 16h ago', t.bad),
+      ],
+    };
+
+    // Live. org.js emits tone NAMES; the theme tokens resolve here so both themes
+    // stay correct — the layer split L1 recorded as I-L1-01.
+    const tone = (n) => n === 'good' ? t.good : n === 'warn' ? t.warn : n === 'bad' ? t.bad
+      : n === 'ink' ? t.ink : n === 'ink75' ? t.ink75 : n === 'ink60' ? t.ink60 : t.ink35;
+    const dotFor = (n) => n === 'hollow'
+      ? { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }
+      : dot(tone(n));
+    const inScope = (r) => !orgScope || (orgSort === 'machine' ? r.mach : r.proj) === orgScope;
+    const kids = (live.kids || []).filter(inScope);
+    // The unattached grid is NOT scope-filtered: the mock puts the sort/scope
+    // control inside the attached tab only, and the "N unattached" count beside
+    // it is fleet-wide, so a filtered grid would contradict its own tab count.
+    // That also matches today's <details> strip, which lists every orphan.
+    const cards = live.cards || [];
+    const cols = Math.max(1, kids.length);
+
+    const toSpine = (n) => ({
+      name: n.name, tag: n.tag || '', sub: n.sub || '', path: n.path || '',
+      lease: n.lease || '', exp: n.exp || '',
+      expStyle: { color: tone(n.expTone), whiteSpace: 'nowrap' },
+      dotStyle: dotFor(n.dotTone),
+      canMsg: !!n.canMsg,
+      message: () => this._orgMessage(n.target),
+    });
+
+    // The head card is the scope node; the seat roots behind it are fleet-wide.
+    const head = { name: orgScope || 'fleet', tag: kids.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) };
+    const spine = live.mode !== 'ok' ? (live.spine || []).map(toSpine)
+      : live.empty ? [head, toSpine({ name: live.empty, dotTone: 'hollow' })]
+      : [head, ...(live.spine || []).map(toSpine)];
+
+    return {
+      orgSpine: spine,
+      orgKids: kids.map((k) => ({
+        name: k.name, role: k.role, path: k.path, epoch: k.epoch, lease: k.lease, exp: k.exp,
+        expStyle: { color: tone(k.expTone), whiteSpace: 'nowrap' },
+        dotStyle: dotFor(k.dotTone),
+        message: () => this._orgMessage(k.target),
+      })),
+      orgKidCols: cols,
+      orgHLineStyle: hLine(cols),
+      orgCards: cards.map((x) => {
+        const m = x.meta || [];
+        const base = orgCard(x.name, true, x.role, x.path, x.grp,
+          m[0] && m[0].v, m[1] && m[1].v, tone(m[1] && m[1].tone), m[2] && m[2].v, m[3] && m[3].v, tone(m[3] && m[3].tone));
+        // The mock's card has one badge slot and always fills it; a row with no
+        // badge hides the pill rather than showing an empty one (I-L5-03).
+        return { ...base, badge: x.badge || '',
+          dotStyle: dotFor(x.dotTone),
+          badgeStyle: x.badge ? { ...chipTone(x.badgeTone === 'warn' ? 'warn' : 'neutral'), marginLeft: 'auto' } : { display: 'none' } };
+      }),
+    };
+  }
   renderVals() {
     const dark = this.isDark();
     const useColor = this.props.statusColors ?? true;
@@ -412,26 +520,52 @@ class AppLogic extends Sub {
       dsGroups = last.dsGroups; dsCount = last.dsCount; dsLive = last.dsLive;
     }
     // Registry data + selection
-    const regData = FD.fixture.regData;
-    const q = (this.state.q || '').toLowerCase();
-    const filtered = regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
+    // L4 (DECK-43): fixture mode renders the mock's rows untouched — FD.setData is
+    // never called there, so the pixel gate stays byte-for-byte the mock (DESIGN-35,
+    // 2026-09-07). In live mode FD.screens.registry publishes FD.fixture.l4, whose
+    // rows are already filtered and sorted, and owns filter, sort and selection.
+    const regScreen = (FD.screens && FD.screens.registry) || null;
+    if (regScreen && regScreen.setTokens) regScreen.setTokens(t, this);
+    if (screen === 'registry' && regScreen && regScreen.start) regScreen.start();
+    // One throw anywhere in renderVals blanks every screen, so this block never
+    // leaves one: it keeps the last values it rendered and logs once (oracle
+    // audit of the shim, 2026-09-08).
     const sel = this.state.sel || {};
-    const selCount = filtered.filter((r) => sel[r.id]).length;
-    const stTone = (st) => st === 'active' ? 'good' : st === 'kill-requested' ? 'warn' : 'dim';
-    const regRows = filtered.map((r) => {
-      const tone = stTone(r.st);
-      const dim = r.gone;
-      return {
-        s: r.s, g: r.g, t: r.tk, st: r.st, active: r.active, msg: r.msg, seen: r.seen, sel: !!sel[r.id],
-        toggle: () => { const s2 = { ...(this.state.sel || {}) }; s2[r.id] = !s2[r.id]; this.setState({ sel: s2 }); },
-        checkStyle: check(!!sel[r.id]),
-        nameStyle: { ...goneName, color: dim ? t.ink45 : t.ink },
-        cellStyle: { fontSize: '12.5px', color: dim ? t.ink35 : t.ink60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-        taskStyle: r.tk === '—' ? { fontSize: '12.5px', color: t.ink35 } : { fontSize: '12.5px', color: dim ? t.ink45 : t.ink, textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationColor: t.ink35, whiteSpace: 'nowrap', cursor: 'pointer' },
-        pillStyle: chipTone(tone === 'dim' ? 'neutral' : tone),
-        stDotStyle: dot(tone === 'good' ? t.good : tone === 'warn' ? t.warn : t.ink35),
-      };
-    });
+    let l4 = null, filtered = [], selCount = 0, regRows = [];
+    try {
+      // Rows always come from regData — the live screen publishes into that same
+      // key, so FD.setData('regData', …) reaches the table whoever calls it. l4
+      // carries only what a row cannot: the counts and the search text.
+      l4 = FD.fixture.l4 || null;
+      const regData = FD.fixture.regData || [];
+      const q = l4 ? String(l4.q || '').toLowerCase() : (this.state.q || '').toLowerCase();
+      filtered = l4 ? regData : regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
+      const regSel = (r) => (l4 ? !!r.sel : !!sel[r.id]);
+      selCount = l4 ? l4.selLive + l4.selGone : filtered.filter((r) => sel[r.id]).length;
+      const stTone = (st) => st === 'active' ? 'good' : st === 'kill-requested' ? 'warn' : 'dim';
+      regRows = filtered.map((r) => {
+        const tone = stTone(r.st);
+        const dim = r.gone;
+        return {
+          s: r.s, g: r.g, t: r.tk, st: r.st, active: r.active, msg: r.msg, seen: r.seen, sel: regSel(r),
+          toggle: () => {
+            if (l4) return regScreen.toggleRow(r.id);
+            const s2 = { ...(this.state.sel || {}) }; s2[r.id] = !s2[r.id]; this.setState({ sel: s2 });
+          },
+          checkStyle: check(regSel(r)),
+          nameStyle: { ...goneName, color: dim ? t.ink45 : t.ink },
+          cellStyle: { fontSize: '12.5px', color: dim ? t.ink35 : t.ink60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+          taskStyle: r.tk === '—' ? { fontSize: '12.5px', color: t.ink35 } : { fontSize: '12.5px', color: dim ? t.ink45 : t.ink, textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationColor: t.ink35, whiteSpace: 'nowrap', cursor: 'pointer' },
+          pillStyle: chipTone(tone === 'dim' ? 'neutral' : tone),
+          stDotStyle: dot(tone === 'good' ? t.good : tone === 'warn' ? t.warn : t.ink35),
+        };
+      });
+      this.__l4Last = { l4, filtered, selCount, regRows };
+    } catch (err) {
+      if (!this.__l4Failed) { this.__l4Failed = true; console.error('registry render failed', err); }
+      const last = this.__l4Last;
+      if (last) { l4 = last.l4; filtered = last.filtered; selCount = last.selCount; regRows = last.regRows; }
+    }
     // Sessions sidebar
     const gbSessions = ['FD-deck11-boardroot', 'FD-deck25-gate', 'FD-deck26-launcher', 'FD-deck27-notifycron', 'FD-desktop-sessions-p…', 'FD-gb-home', 'FD-gk-l1-ledger', 'FD-gk-l2-sessionkind', 'FD-gk-l3-skill', 'FD-gk-l4-sweep', 'FD-gk-l5-hooks', 'FD-gk-l6-goalspage', 'FD-rhoda-machines'];
     // Org cards
@@ -593,23 +727,68 @@ class AppLogic extends Sub {
       ];
     };
     const openTerm = (name, host, id) => this.setState({ termOpen: { name, host, id: id || null }, termMenu: false });
+    /* fd-v2 L3 (windows tiles + session full screen) — owned by that slice.
+     * The screen file paints the nodes the mock leaves out (stall line, dead
+     * overlay, empty state) and it must do so in the mock's own tokens, so the
+     * palette is republished on every render and a theme switch repaints them.
+     * l3Live is set by public/v2/screens/windows.js in live mode only; in
+     * fixture mode it is absent and every branch below stays on the seed. */
+    const l3 = (FD.l3 = FD.l3 || {});
+    /* Throw-proofing (oracle audit item 2): one exception raised inside any
+     * slice's renderVals blanks every screen, not just that slice's. Each L3
+     * value is produced through l3Try, which keeps the last good result and
+     * falls back to it rather than letting the render die. */
+    const l3Last = (l3.lastGood = l3.lastGood || { tiles: [], termSessions: [], termFoot: '' });
+    const l3Try = (k, fn) => {
+      try { const v = fn(); l3Last[k] = v; return v; }
+      catch (e) { console.error('fd-v2 L3:', e); return l3Last[k]; }
+    };
+    l3.tokens = {
+      ink: t.ink, ink75: t.ink75, ink60: t.ink60, ink45: t.ink45, ink35: t.ink35,
+      line: t.line, lineSoft: t.lineSoft, panel: t.panel, panelHead: t.panelHead,
+      panelShadow: t.panelShadow, hoverBg: t.hoverBg, good: t.good, warn: t.warn, bad: t.bad,
+      ctaBg: t.ctaBg, ctaFg: t.ctaFg,
+      termBg: dark ? 'rgba(10,10,10,0.55)' : 'rgba(242,241,238,0.6)', mono, dark,
+    };
+    l3.term = term;
+    l3.termMenu = !!this.state.termMenu;
+    /* One render-tick signal for the screen file: the tile boxes it parks its
+     * terminals in are rebuilt by screen switches and theme flips, and this is
+     * the only moment that can have happened. */
+    if (l3.onRender) l3.onRender();
+    l3.openTerm = openTerm;
+    l3.closeTerm = () => this.setState({ termOpen: null, termMenu: false });
+    const l3Live = !!FD.fixture.l3Live;
     const termVals = {
       termOpen: !!term,
       termBg: dark ? 'rgba(10,10,10,0.55)' : 'rgba(242,241,238,0.6)',
       termName: term ? term.name : '', termHost: term ? term.host : '',
-      termLines: term ? termLinesFor(term.name) : [],
-      termFoot: term ? 'gpt-6-astra xhigh fast · ~/projects/remote-system/.claude/worktrees/' + term.name.replace(/^(LC|FD)-/, '').toLowerCase() + ' · Main [default]' : '',
-      termRef: (el) => { if (el) el.scrollTop = el.scrollHeight; },
+      /* Live, the body is an xterm mount, so the template renders no lines and
+       * termRef hands the box to the screen file to park the terminal in. */
+      termLines: term ? (l3Live ? [] : termLinesFor(term.name)) : [],
+      termFoot: term ? (l3Live ? l3Try('termFoot', () => (l3.footFull ? l3.footFull(term.host, term.name) : '')) : 'gpt-6-astra xhigh fast · ~/projects/remote-system/.claude/worktrees/' + term.name.replace(/^(LC|FD)-/, '').toLowerCase() + ' · Main [default]') : '',
+      termRef: (el) => {
+        if (l3Live) { l3.termBody = el; if (FD.screens.windows) FD.screens.windows._sync(); return; }
+        if (el) el.scrollTop = el.scrollHeight;
+      },
       closeTerm: () => this.setState({ termOpen: null, termMenu: false }),
-      termMessage: () => { const id = term && term.id; this.setState({ termOpen: null, termMenu: false, screen: 'bus', busActive: id || active }); },
+      termMessage: () => {
+        /* Live, Message hands the session to the bus slice (L6) rather than
+         * jumping the local view; the guard keeps it a no-op until L6 lands. */
+        if (l3Live) { if (FD.screens.windows) FD.screens.windows._message(); return; }
+        const id = term && term.id; this.setState({ termOpen: null, termMenu: false, screen: 'bus', busActive: id || active });
+      },
       termMenuOpen: !!this.state.termMenu,
       toggleTermMenu: () => this.setState({ termMenu: !this.state.termMenu }),
       termMenuBtnStyle: this.state.termMenu ? { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink } : iconBtn,
-      termSessions: busSessions.filter((s) => s.live && s.id !== 'desktop').map((s) => ({
+      /* The ≡ menu is the old sidebar drawer switcher: live sessions only. */
+      termSessions: l3Try('termSessions', () => (l3Live ? (FD.fixture.l3TermSessions || []) : busSessions).filter((s) => s && s.live && s.id !== 'desktop').map((s) => ({
         name: s.name, host: s.host, dotStyle: dot(t.good),
         style: { display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: '1px solid ' + (term && term.name === s.name ? t.navActBorder : 'transparent'), background: term && term.name === s.name ? t.navActBg : 'transparent', color: t.ink, borderRadius: '8px', padding: '7px 9px', cursor: 'pointer', boxSizing: 'border-box' },
-        open: () => openTerm(s.name, s.host, s.id),
-      })),
+        /* Live, switching sessions must attach the tile first, not just swap
+         * the header — openMax opens it (deduped) and maximizes it. */
+        open: () => (l3Live && FD.screens.windows ? FD.screens.windows.openMax(s.host, s.name) : openTerm(s.name, s.host, s.id)),
+      }))),
     };
     this._openTerm = openTerm;
     const busUnread = Object.values(unread).reduce((a, b) => a + b, 0);
@@ -706,12 +885,35 @@ class AppLogic extends Sub {
     const ttl = this.state.ttl;
     const prin = this.state.prin;
     const selChip = (on) => ({ borderRadius: '9999px', border: '1px solid ' + (on ? t.navActBorder : t.line), background: on ? t.navActBg : 'transparent', color: on ? t.ink : t.ink60, padding: '8px 16px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s', fontWeight: on ? 500 : 400 });
+    // L7: the GitHub-train and Certificates cards carry no bindings in the mock,
+    // so screens/keys.js paints them from the mock's own nodes after each flush.
+    // It needs this render's theme tokens. Guarded: undefined in fixture mode,
+    // where that file returns before registering and the mock renders verbatim.
+    // Every style handed over is built by the mock's own pill()/dot()/selChip()
+    // helpers, so the painted cards carry the mock's tokens and nothing new.
+    //
+    // Wrapped because renderVals() is shared: one throw anywhere in it blanks
+    // EVERY screen, not just this one (DESIGN-35 oracle audit, rule 2). The keys
+    // screen degrading to the mock's static cards is a bad day; taking the whole
+    // app down with it is not acceptable.
+    try {
+      if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({
+        t, dark, isKeys: screen === 'keys', ttl, prin, logic: this,
+        pills: {
+          good: chipTone('good'), goodDot: dot(t.good),
+          dim: { ...chipTone('neutral'), color: t.ink45 }, dimDot: dot(t.ink35),
+          warn: chipTone('warn'), warnDot: dot(t.warn),
+        },
+        chipBtn: selChip(false), chipBtnSel: selChip(true),
+      });
+    } catch (e) { console.error('L7 keys sync failed', e); }
     // Org chart scope
     const orgSort = this.state.orgSort || 'machine';
     const orgScopeData = FD.fixture.orgScopeData;
-    const orgScopeList = Object.keys(orgScopeData[orgSort]);
-    const orgScope = this.state.orgScope && orgScopeList.includes(this.state.orgScope) ? this.state.orgScope : (orgSort === 'machine' ? 'german-box' : orgScopeList[0]);
-    const orgKidList = orgScopeData[orgSort][orgScope];
+    // L5: live scope data need not contain the mock's own default scope.
+    const orgScopeList = Object.keys(orgScopeData[orgSort] || {});
+    const orgScope = this.state.orgScope && orgScopeList.includes(this.state.orgScope) ? this.state.orgScope : (orgSort === 'machine' && orgScopeList.includes('german-box') ? 'german-box' : orgScopeList[0]);
+    const orgKidList = (orgScopeData[orgSort] || {})[orgScope] || [];
     const orgTabStyle = (on) => ({ border: 'none', background: 'transparent', padding: '0 0 3px', margin: 0, font: 'inherit', fontSize: '12.5px', color: on ? t.ink : t.ink60, cursor: 'pointer', borderBottom: '1.5px solid ' + (on ? t.ink : 'transparent'), transition: 'color .2s, border-color .2s' });
     // Machines
     const mSec = (env, name, email, chips, bars, note) => {
@@ -831,6 +1033,64 @@ class AppLogic extends Sub {
       console.error(e);
       mCards = this._mLastCards || [];
     }
+    // ---- accounts (fd-v2 L8) -------------------------------------------------
+    // This screen builds its own bars rather than calling the shared bar(): today's
+    // Accounts page turns a bar red over 90 %, a step the mock's bar() does not have
+    // (BEHAVIOUR.md 3), and bar() is also the Machines screen's helper.
+    // The improvised chrome in screens/accounts.js paints in the mock's tokens, so the
+    // ones it uses are published here and follow the theme toggle.
+    FD.screens = FD.screens || {};
+    FD.screens.accounts = FD.screens.accounts || {};
+    FD.screens.accounts.tokens = {
+      ink: t.ink, ink75: t.ink75, ink60: t.ink60, ink45: t.ink45, ink35: t.ink35,
+      warn: t.warn, warnBg: t.warnBg, bad: t.bad, good: t.good, line: t.line,
+      panel: t.panel, panelShadow: t.panelShadow, track: t.track, hoverBg: t.hoverBg,
+      cardPad: compact ? '14px 16px' : '18px 20px',
+    };
+    const accTone = (lvl) => (lvl === 'red' ? t.bad : lvl === 'amber' ? t.warn : t.good);
+    const accBar = (b) => ({
+      label: b.label,
+      resets: b.resets || '',
+      fillStyle: { display: 'block', height: '100%', width: (b.pct == null ? 0 : Math.max(0, Math.min(100, b.pct))) + '%', borderRadius: '2px', background: b.pct == null ? t.ink35 : accTone(b.level) },
+      right: b.right,
+      // Only the fill carries the level colour: the mock's bar() and today's .pct rule
+      // both render the percentage itself in neutral ink.
+      rightStyle: { fontSize: '11px', textAlign: 'right', whiteSpace: 'nowrap', color: b.pct == null ? t.ink35 : t.ink75 },
+    });
+    // A rate limit says nothing about the account, so it must not read like a fault —
+    // today's page renders it as plain muted text, not as the boxed notice that an
+    // expired token or a failed read gets.
+    const accBannerStyle = (tone) => tone === 'notice'
+      ? { borderRadius: '8px', border: '1px solid ' + t.warn, background: t.warnBg, color: t.warn, padding: '9px 14px', fontSize: '12.5px' }
+      : { fontSize: '12.5px', color: t.ink60 };
+    const accView = (a) => ({
+      prov: a.prov, name: a.name, email: a.email, id: a.id, plan: a.plan, live: a.live,
+      right: a.right, seen: a.seen, atLimit: a.atLimit, noData: a.noData, noWindows: a.noWindows,
+      // The mock's pill is a neutral chip with a coloured dot: green when a source
+      // reported and the read was clean, amber when it reported anything else.
+      provStyle: chipTone('neutral'),
+      provDotStyle: dot(a.pillTone === 'green' ? t.good : a.pillTone === 'amber' ? t.warn : t.ink35),
+      planStyle: chipTone('neutral'),
+      banner: a.banner, bannerStyle: accBannerStyle(a.bannerTone),
+      // The mock's one free text line per card. screens/accounts.js joins every note
+      // today's page shows into it and recolours the <p> to match the strongest tone.
+      staleNote: a.note,
+      bars: (a.bars || []).map(accBar),
+      trendPts: a.trendPts, trendColor: accTone(a.trendLevel), trendPct: a.trendPct,
+    });
+    // One throw anywhere in renderVals blanks every screen, so this block is fenced:
+    // a row the API shapes unexpectedly costs the Accounts screen its last update, not
+    // the whole app (DESIGN-35 binding, 2026-09-08, point 2).
+    const accStore = FD.screens.accounts;
+    let accRows = null;
+    try {
+      const live = FD.fixture.accountsLive;
+      if (live) accStore.lastGood = accRows = live.map(accView);
+    } catch (e) {
+      console.error(e);
+      accRows = accStore.lastGood || null;
+    }
+    const accLive = !!accRows;
     return {
       dark, notDark: !dark, ...t, four: 4,
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
@@ -919,8 +1179,8 @@ class AppLogic extends Sub {
         { name: 'german-box', st: 'holder OK', tone: 'good' },
         { name: 'onboarding-box', st: 'reachable', tone: 'good' },
       ]).map((b0) => (b0 || {})).map((b) => ({ name: b.name, st: b.st, dotStyle: dot(b.tone === 'good' ? t.good : b.tone === 'bad' ? t.bad : t.warn), stStyle: { fontSize: '11px', color: t.ink45, whiteSpace: 'nowrap' } })),
-      // windows
-      tiles: [
+      // windows — live tiles come from the screen file via FD.setData('l3Tiles')
+      tiles: l3Try('tiles', () => (l3Live ? (FD.fixture.l3Tiles || []) : [
         { name: 'LC-cdx-readpath', box: 'german-box', foot1: 'gpt-5.6-sol xhigh · ~/projects/lowcap-connecto…', foot2: 'Pursuing goal (11m)', lines: [
           { t: 'Interacted with /root/xyz_1630_review', style: { color: t.ink75 } },
           { t: 'Ran cargo clippy -p lowcap-pools-management --tests --no-deps', style: { color: t.ink60 } },
@@ -949,7 +1209,7 @@ class AppLogic extends Sub {
           { t: '— Worked for 30m 21s ———————', style: { color: t.ink45 } },
           { t: '› Ask Codex to do anything', style: { color: t.ink35 } },
         ]},
-      ].map((tl) => ({ ...tl, openTerm: () => openTerm(tl.name, tl.box) })),
+      ]).map((tl) => ({ ...tl, openTerm: () => (l3Live && FD.screens.windows ? FD.screens.windows.openMax(tl.box, tl.name) : openTerm(tl.name, tl.box)) }))),
       // org
       orgSort, orgScope,
       orgSortLabel: 'Sorted by ' + orgSort,
@@ -958,14 +1218,6 @@ class AppLogic extends Sub {
       orgScopes: orgScopeList.map((k) => ({ label: k })),
       orgSortBtnStyle: { borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink75, padding: '7px 12px', fontSize: '12px', cursor: 'pointer', width: '150px', textAlign: 'center', transition: 'background .2s' },
       orgScopeSelectStyle: { borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink75, padding: '7px 12px', fontSize: '12px', cursor: 'pointer', fontFamily: mono, width: '230px', appearance: 'none', WebkitAppearance: 'none', paddingRight: '30px', backgroundImage: 'url("data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="' + t.ink45 + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>') + '")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' },
-      orgSpine: [
-        { name: orgScope, tag: orgKidList.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) },
-        { name: 'coordinator', tag: 'seat', sub: 'long-lease · weekly', path: 'mac / coordinator', lease: 'lease active', exp: '6d left', expStyle: { color: t.ink, whiteSpace: 'nowrap' }, dotStyle: dot(t.ink) },
-        { name: 'orchestrator', tag: 'epoch #10', sub: 'seat · fenced · high churn', path: 'mac / orchestrator', lease: 'lease suspect · 3m', exp: 'expired 2m ago', expStyle: { color: t.bad, whiteSpace: 'nowrap' }, dotStyle: { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }, canMsg: true, message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) },
-      ],
-      orgKids: orgKidList.map(([name, role, path, live]) => ({ name, role, path, epoch: '#1', lease: live === false ? 'lease suspect' : 'lease active', exp: live === false ? 'expired 4m ago' : '1m left', expStyle: { color: live === false ? t.bad : t.good, whiteSpace: 'nowrap' }, dotStyle: dot(live === false ? t.warn : t.good), message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) })),
-      orgKidCols: orgKidList.length,
-      orgHLineStyle: { position: 'absolute', top: 0, height: '1px', background: t.line, left: 'calc(' + (50 / orgKidList.length) + '% - ' + ((orgKidList.length - 1) * 20 / (2 * orgKidList.length)) + 'px)', right: 'calc(' + (50 / orgKidList.length) + '% - ' + ((orgKidList.length - 1) * 20 / (2 * orgKidList.length)) + 'px)' },
       orgMsgBtnStyle: { marginTop: '4px', width: '100%', borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink, padding: '8px 14px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s' },
       orgAttached: !this.state.orgTab || this.state.orgTab === 'attached',
       orgUnattached: this.state.orgTab === 'unattached',
@@ -973,30 +1225,26 @@ class AppLogic extends Sub {
       showUnattached: () => this.setState({ orgTab: 'unattached' }),
       tabAttachedStyle: orgTabStyle(!this.state.orgTab || this.state.orgTab === 'attached'),
       tabUnattachedStyle: orgTabStyle(this.state.orgTab === 'unattached'),
-      orgCards: [
-        orgCard('Bettina', true, 'backend-developer', 'german-box / ST-bettina', 'st-lanes-0831 / VIB-344', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('Margery', true, 'backend-developer', 'german-box / ST-margery', 'st-lanes-0831 / VIB-345', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('ops', true, 'unassigned role', 'onboarding-box / ops', 'no group / no task', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('Adelgund', false, 'unassigned role', 'german-box / LC-adelgund-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '16h 30m', 'expired 22h ago', t.bad),
-        orgCard('Adelmar', true, 'devops-engineer', 'german-box / FD-gb-home', 'xyz-1890 / XYZ-1890', '#1', 'active', t.good, '3s', '1m left', t.good),
-        orgCard('Albrecht', true, 'unassigned role', 'german-box / LC-albrecht-xyz…', 'no group / no task', '#1', 'active', t.good, '3s', '1m left', t.good),
-        orgCard('Alwin', false, 'unassigned role', 'german-box / LC-alwin-xyz-19…', 'no group / no task', '#1', 'suspect', t.warn, '1d 15h', 'expired 1d 15h ago', t.bad),
-        orgCard('Amalberga', false, 'unassigned role', 'german-box / LC-amalberga-xy…', 'no group / no task', '#1', 'suspect', t.warn, '23h 52m', 'expired 23h 51m ago', t.bad),
-        orgCard('Amalia', false, 'unassigned role', 'german-box / LC-amalia-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '1d 16h', 'expired 1d 16h ago', t.bad),
-      ],
+      ...this._orgLive({ t, dot, chipTone, mono, orgSort, orgScope, orgKidList, orgCard }),
       // registry
-      q: this.state.q, rowCount: filtered.length, regRows,
-      setQ: (e) => this.setState({ q: e.target.value }),
-      resetFilters: () => this.setState({ q: '', sel: {} }),
+      // BEHAVIOUR §2: the count reads "<n> rows" or "<k> of <n> rows"; the
+      // template supplies the " rows" suffix, so live mode hands over the
+      // "<k> of <n>" string and fixture mode the plain number, as the mock does.
+      q: l4 ? l4.q : this.state.q,
+      rowCount: l4 ? l4.count : filtered.length,
+      regRows,
+      setQ: (e) => (l4 ? regScreen.setFilter('q', e.target.value) : this.setState({ q: e.target.value })),
+      resetFilters: () => (l4 ? regScreen.reset() : this.setState({ q: '', sel: {} })),
       hasSel: selCount > 0, selCount,
       allSel: selCount > 0 && selCount === filtered.length,
       toggleAll: () => {
+        if (l4) return regScreen.toggleAll();
         const all = selCount === filtered.length;
         const s2 = {};
         if (!all) filtered.forEach((r) => { s2[r.id] = true; });
         this.setState({ sel: s2 });
       },
-      clearSel: () => this.setState({ sel: {} }),
+      clearSel: () => (l4 ? regScreen.clearSel() : this.setState({ sel: {} })),
       // bus
       ...busVals, ...termVals,
       /* L2 (D03): the sidebar nav badge is shell chrome. L6 owns the count and
@@ -1010,8 +1258,11 @@ class AppLogic extends Sub {
       prinChips: ['root', 'vibe'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: FD.fixture.keyRows,
-      // accounts
-      accounts: [
+      // accounts (fd-v2 L8) — the mock's seed, or the live rows that
+      // screens/accounts.js feeds in through FD.setData('accountsLive', ...).
+      // S2 could not substitute this seed into fixture.js (the mock literal calls
+      // bar()/spark()/chipTone() on it), so L8 reads its own key here instead.
+      accounts: (accRows || [
         { prov: 'codex', name: 'Daniel Tabor (personal · ChatGPT)', email: 'admin@deus.finance', id: '', plan: 'pro', live: 'live', right: 'just now · DESKTOP-LJMEJQN',
           provStyle: chipTone('neutral'), provDotStyle: dot(t.good), planStyle: chipTone('neutral'),
           bars: [bar('weekly', 80, 'resets in 129h 2m')], trendPts: '', seen: 'rfc1918-internal · live, DESKTOP-LJMEJQN · live, ubuntu-8gb-nbg1-1 · live' },
@@ -1040,8 +1291,12 @@ class AppLogic extends Sub {
           bars: [bar('5 hour', null), bar('7 day', null)],
           trendPts: spark([1,2,3,3.5,3,4,4.5,4,3.5,4,3,4.5,5,4.5,2,4,4.5,5,4.5,7]), trendColor: t.warn, trendPct: '88%',
           seen: 'rfc1918-internal · live, rfc1918-internal · desktop snapshot, DESKTOP-LJMEJQN' },
-      ].map((a, i) => {
-        const open = !!(this.state.aOpen || {})[i];
+      ]).map((a, i) => {
+        // Untouched rows keep the mock's default (collapsed). On live data a row at or
+        // over a limit — or one carrying a banner — opens by itself, so a wall and a
+        // fault are never hidden behind a chevron. improvised.md I-L8-02.
+        const aOpen = this.state.aOpen || {};
+        const open = i in aOpen ? !!aOpen[i] : (accLive ? !!(a.atLimit || a.banner || a.noData || a.noWindows) : false);
         const primary = a.bars.find((b) => b.label === '5 hour') || a.bars[0];
         return {
           ...a, open,
