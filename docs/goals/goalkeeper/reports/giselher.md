@@ -280,3 +280,92 @@ matcher, and the live `goalkeeper.py` parses.
   accepted for v1, all now written down rather than left as folklore.
 
 `G-2`, `G-5`, `G-7` and `G-9` are settled by PLAN §9 and need nothing further.
+
+---
+
+# GK-M.3 — the last round
+
+Re-review of `c85afbb`: all nine GK-M.2 items CLOSED, suites green, verdict **WEAVE once these
+land**. Brief: `lane-giselher-fixes-2.md`, items 1–5. All five closed.
+
+Every one of them was in `commandWritesGoalkeeper` — the Bash write-into-jail check I added
+*beyond* the GK-M.2 brief. Unbriefed work gets the least review, and it showed.
+
+## Commits
+
+| Item | Commit | What |
+|---|---|---|
+| 1 | `ccc2664` | a `cd` in the same command no longer defeats the jail |
+| 2 | `f4dd189` | `$HOME` is a spelling of `~`, and `norm()` now knows it |
+| 3 | `8cba3b8` | a copy reads its sources and writes its destination |
+| 4 | `c8dac99` | `agent` and `seat` are addressee keys again |
+| 5 | `846ad28` | the harness tag is anchored to exact names |
+| 1–4 | `dd220bd` | their regression groups in `guard.test.js` |
+
+## Tests
+
+```
+node --test mac/claude-home/session-kind/test/guard.test.js      # 152 pass  (was 128)
+sh   mac/claude-home/session-kind/test/mark.test.sh              # 33 pass   (2 skipped, no timeout(1))
+python3 -m unittest discover -s mac/claude-home/skills/goalkeeper/tests   # 52 pass (was 48)
+```
+
+25 GK-M.3 probe shapes green, and the GK-M.2 probes for the reach, heredoc and quoted-addressee
+shapes still pass.
+
+## What each fix actually protects
+
+- **Item 1** is the real hole. `cd ~/.claude/goalkeeper && echo pwned > evil.md` wrote into the
+  jail with a target that is just a filename. The scanner now tracks where the shell is standing
+  across `&&`, `||`, `;`, `|` and newlines. The care is in the unknowable case: after a
+  `cd "$var"` a relative target cannot be placed, and denying those would break every worker
+  writing relative paths in its own repo — so that case denies only when the command names the
+  jail somewhere anchored.
+- **Item 3** was a false positive, not a hole, and the worse kind of one: it refused an
+  orchestrator *reading* the seat's audit note, with a message saying "never write there" that
+  was not even true of the command. A copy reads its sources.
+- **Item 5** protects an operator turn from being discarded. That is the error this filter must
+  not make — §3.3 calls activity OFF THREAD only when no direction *and* no operator turn covers
+  it, so a lost turn turns authorised work into reported drift. Measured after the fix: no row in
+  the current window opens with `<command-`, so it changes no count today. It closes a latent
+  path, not an observed one.
+
+## Robustness, checked separately
+
+The segment scanner was probed outside the suite — empty command, only operators, a 200-deep
+`cd`, a 200 KB command, an unterminated quote, 2000 segments, a symlink loop. All exit 0 in under
+40 ms. The guard is fail-open on error, but a **hang** would wedge every seat rather than fail
+open, so this is worth re-checking whenever the scanner changes.
+
+## One deviation in the tests, diagnosed not papered over
+
+`mkdir <jail>/sub` allows, where the brief's case list expects a deny. An earlier fixture group
+deliberately makes `<jail>/sub` a symlink pointing **out** of the jail, so resolving it out and
+allowing is correct — denying it would be the bug. The mkdir-into-the-jail intent is asserted with
+`<jail>/newsub`, and the collision is named in a comment.
+
+## Installer re-run
+
+```
+changed 2   unchanged 15   backups made 2   stamp 2026-09-07
+```
+
+| Live file | Backup |
+|---|---|
+| `~/.claude/session-kind/guard.js` | `guard.js.bak-2026-09-07-230650` |
+| `~/.claude/skills/goalkeeper/goalkeeper.py` | `goalkeeper.py.bak-2026-09-07-230650` |
+
+Vendored tree is byte-identical to live for `guard.js`, `mark.sh`, `census.py`, `goalkeeper.py`
+and `SKILL.md`. Verified against the **live** guard afterwards: the `cd`-into-jail and `$HOME`
+PoCs deny, `cp` out of the jail allows, and this worker still writes its own lane report.
+
+**Rollback:** `cp ~/.claude/session-kind/guard.js.bak-2026-09-07-230650 ~/.claude/session-kind/guard.js`
+
+## Still open for the operator
+
+Unchanged by this round: **`G-13`** (gate — the broker's GitHub App is not installed on
+`0xneelo/lowcap-connector`, so lowcapsxyz evidence stays STALE and `NO ACTIVITY` there cannot be
+trusted), **`G-18`** (a live plaintext broker token was found on disk from another caller of
+`--askpass`; removed, but that caller is still leaking), and the test README's *Known limits*.
+
+Lane GK-M is complete. The weave is the orchestrator's.
