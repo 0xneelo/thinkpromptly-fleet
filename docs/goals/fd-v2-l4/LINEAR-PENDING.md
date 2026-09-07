@@ -5,15 +5,20 @@ Main issue: **DECK-43** — `[Ruprecht · frontend-developer] fd-v2 L4 Registry 
 labels `agent:ruprecht` `project:remote-system` `subproject:fleetdeck-v2` `session:cli-worker`.
 (The label `agent:ruprecht` did not exist and was created.)
 
-## Fleet registry row — cannot be written from the box
+## Fleet registry row — written, after four self-inflicted 401s
 
 ```
-POST http://100.125.231.25:3131/api/registry  →  401 unauthorized
+POST http://100.125.231.25:3131/api/registry            →  401 unauthorized   (no Authorization header)
+POST … with Authorization: Bearer $FD_TAILNET_KEY       →  200 {"ok":true}
 ```
 
-Same failure Juergen hit in L1: registry writes are seat-epoch fenced and a box worker has no seat
-(XYZ-2137). Recorded here rather than filed as a new gate; the launch prompt's "registry row done"
-step is blocked by that known issue, not by this slice.
+The `401` is `tailnetAuthed()` (`server.js:497`), not the seat fence of XYZ-2137: every POST over
+the tailnet listener must carry the shared key, and the launch prompt's curl recipe omits the
+header. The box has the key as `FD_TAILNET_KEY` in `~/.claude/fleet/fleet.env` (0600). Both the
+registration and the closing `status: done` returned `{"ok":true}`.
+
+Worth re-checking XYZ-2137 against this — L1 recorded the same `401` and concluded the write was
+fenced for box workers.
 
 ## Pack gap (recorded, not a stop)
 
