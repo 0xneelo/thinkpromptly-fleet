@@ -372,19 +372,31 @@ class AppLogic extends Sub {
     }).filter((g) => g.rows.length > 0);
     if (liveRows.length) dsGroups.unshift({ name: 'Live now', sub: 'can receive a message on the next turn', machine: '', n: liveRows.length, rows: liveRows, isLive: true });
     // Registry data + selection
-    const regData = FD.fixture.regData;
-    const q = (this.state.q || '').toLowerCase();
-    const filtered = regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
+    // L4 (DECK-43): fixture mode renders the mock's rows untouched — FD.setData is
+    // never called there, so the pixel gate stays byte-for-byte the mock (DESIGN-35,
+    // 2026-09-07). In live mode FD.screens.registry publishes FD.fixture.l4, whose
+    // rows are already filtered and sorted, and owns filter, sort and selection.
+    const regScreen = (FD.screens && FD.screens.registry) || null;
+    if (regScreen && regScreen.setTokens) regScreen.setTokens(t, this);
+    if (screen === 'registry' && regScreen && regScreen.start) regScreen.start();
+    const l4 = FD.fixture.l4 || null;
+    const regData = l4 ? l4.rows : FD.fixture.regData;
+    const q = l4 ? String(l4.q || '').toLowerCase() : (this.state.q || '').toLowerCase();
+    const filtered = l4 ? regData : regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
     const sel = this.state.sel || {};
-    const selCount = filtered.filter((r) => sel[r.id]).length;
+    const regSel = (r) => (l4 ? !!r.sel : !!sel[r.id]);
+    const selCount = l4 ? l4.selLive + l4.selGone : filtered.filter((r) => sel[r.id]).length;
     const stTone = (st) => st === 'active' ? 'good' : st === 'kill-requested' ? 'warn' : 'dim';
     const regRows = filtered.map((r) => {
       const tone = stTone(r.st);
       const dim = r.gone;
       return {
-        s: r.s, g: r.g, t: r.tk, st: r.st, active: r.active, msg: r.msg, seen: r.seen, sel: !!sel[r.id],
-        toggle: () => { const s2 = { ...(this.state.sel || {}) }; s2[r.id] = !s2[r.id]; this.setState({ sel: s2 }); },
-        checkStyle: check(!!sel[r.id]),
+        s: r.s, g: r.g, t: r.tk, st: r.st, active: r.active, msg: r.msg, seen: r.seen, sel: regSel(r),
+        toggle: () => {
+          if (l4) return regScreen.toggleRow(r.id);
+          const s2 = { ...(this.state.sel || {}) }; s2[r.id] = !s2[r.id]; this.setState({ sel: s2 });
+        },
+        checkStyle: check(regSel(r)),
         nameStyle: { ...goneName, color: dim ? t.ink45 : t.ink },
         cellStyle: { fontSize: '12.5px', color: dim ? t.ink35 : t.ink60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
         taskStyle: r.tk === '—' ? { fontSize: '12.5px', color: t.ink35 } : { fontSize: '12.5px', color: dim ? t.ink45 : t.ink, textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationColor: t.ink35, whiteSpace: 'nowrap', cursor: 'pointer' },
@@ -860,18 +872,24 @@ class AppLogic extends Sub {
         orgCard('Amalia', false, 'unassigned role', 'german-box / LC-amalia-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '1d 16h', 'expired 1d 16h ago', t.bad),
       ],
       // registry
-      q: this.state.q, rowCount: filtered.length, regRows,
-      setQ: (e) => this.setState({ q: e.target.value }),
-      resetFilters: () => this.setState({ q: '', sel: {} }),
+      // BEHAVIOUR §2: the count reads "<n> rows" or "<k> of <n> rows"; the
+      // template supplies the " rows" suffix, so live mode hands over the
+      // "<k> of <n>" string and fixture mode the plain number, as the mock does.
+      q: l4 ? l4.q : this.state.q,
+      rowCount: l4 ? l4.count : filtered.length,
+      regRows,
+      setQ: (e) => (l4 ? regScreen.setFilter('q', e.target.value) : this.setState({ q: e.target.value })),
+      resetFilters: () => (l4 ? regScreen.reset() : this.setState({ q: '', sel: {} })),
       hasSel: selCount > 0, selCount,
       allSel: selCount > 0 && selCount === filtered.length,
       toggleAll: () => {
+        if (l4) return regScreen.toggleAll();
         const all = selCount === filtered.length;
         const s2 = {};
         if (!all) filtered.forEach((r) => { s2[r.id] = true; });
         this.setState({ sel: s2 });
       },
-      clearSel: () => this.setState({ sel: {} }),
+      clearSel: () => (l4 ? regScreen.clearSel() : this.setState({ sel: {} })),
       // bus
       ...busVals, ...termVals,
       // keys
