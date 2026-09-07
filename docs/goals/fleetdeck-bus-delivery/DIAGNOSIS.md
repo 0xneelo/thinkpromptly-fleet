@@ -6,6 +6,11 @@ seat→lane delivered every time. Linear: **XYZ-2200** (Urgent, project:remote-s
 lowcap seat); this repo's pending row P12. Read-only diagnosis by 🎛 ORCHESTRATOR 34 via a reader
 over `/Users/misterislez/remote-system` (the running deck's checkout) and `fleet.db`.
 
+**In one sentence:** the deck's VIEW path resolves a desktop seat by title (`byTitle` fallback) and its
+DELIVERY path does not, so the UI showed every seat under a name that delivery could never resolve —
+that asymmetry, not carelessness, is why every sender used a title. Independently derived by
+🎛 ORCHESTRATOR 28 and 🧭 COORDINATOR 12 from the same two lines (server.js:2317 and :524).
+
 ## Evidence (fleet.db `messages`, target_type = claude-desktop, 2026-09-07)
 
 | error (verbatim) | rows |
@@ -60,9 +65,21 @@ unchanged on disk), but a restart precedes any re-test.
 5. Proof in the report: one real message from a box lane to the live orchestrator seat, addressed
    by title, with `status: delivered` in `fleet.db`, plus the same by `id:`.
 
-Workaround until the lane lands: address a desktop seat as `id:<its sessionId>` (the seat reads
-its own uuid from `~/.claude/sessions/<pid>.json` and tells its lanes), or send over the tmux path
-(`HOST:SESSION`) which is unaffected.
+Workaround until the lane lands: address a desktop seat as `id:<its sessionId>` — the seat reads
+its own uuid from `~/.claude/sessions/<pid>.json` (field `sessionId`) and tells its lanes. Prefer
+`id:` over the derived slug: a rename breaks the slug and never touches the uuid. Never infer a
+uuid from a peer id or a title; read it from the file (a wrong uuid reproduces this exact silent
+failure). The tmux path (`HOST:SESSION`) is unaffected. Proven 2026-09-07T21:51Z (this seat, self-test)
+and on lowcap (four lane reports arrived after `seat-notify.sh` switched to `id:`).
+
+Two general traps found by 🎛 ORCHESTRATOR 28 while fixing its box-side script, worth carrying
+into every sender: (a) a fixed shared response-body path (`/tmp/seat-notify.out`) lets concurrent
+lanes on one box read each other's reports — an information leak, not just a race; use a per-send
+`mktemp` with a trap. (b) `GET /api/sessions` answers 404 from the box (tailnet) while
+`POST /api/messages` works, so a failure diagnostic that lists "known seats" from that route prints
+an empty list and reads as "no seats exist" — say "could not list" instead. Both are the deck's to
+address too: fix item 2 should return the live desktop targets in the error body, and the tailnet
+listener should either serve `/api/sessions` read-only or say why not.
 
 ## Addendum 2026-09-08T00:5xZ — independent confirmation
 
