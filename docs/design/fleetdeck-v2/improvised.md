@@ -369,3 +369,27 @@ lands immediately after the reconciler has restored the template's static nodes 
 before the browser paints, so there is no flicker.
 
 Screenshot: `improvised/l7-certificates.png`.
+
+### I-L7-08 — The Certificates card is marked `data-dc-raw`, and clones are restyled every paint
+
+**Serves:** `BEHAVIOUR.md` §4; DESIGN-35's S2.2 broadcast (F3, `runtime.js:288-292`).
+
+Two decisions, both consequences of I-L7-07.
+
+**The card owns its own children.** S2.2 added `data-dc-raw`: the reconciler neither inserts nor
+removes inside an element carrying it. The Certificates card's children are this screen's from the
+first paint onward, so it now carries the attribute — set from JavaScript in `capture()`, because
+the template is out of scope and `runtime.js:292` reads the live attribute rather than a compiled
+one. The reconciler already no-ops while a child set is unchanged, so this changes no behaviour
+today; it means a future change to that set cannot start deleting painted rows. Fixture mode never
+reaches it, because the module does not register there.
+
+**Clones carry the palette they were captured in.** A prototype cloned in dark mode keeps dark
+colours forever, so a theme flip inside a live session would leave the copy line's background, the
+principals line, the countdown and the buttons on the old palette while the rest of the app moved.
+Every theme-dependent property on a cloned node is therefore re-derived from that render's tokens
+on each paint, rather than trusted from the clone. Proven by `verify/l7` L7-61 and L7-62, which
+flip the theme *after* the cards are painted and assert the computed colours actually changed —
+they fail against the previous implementation.
+
+Screenshot: `improvised/l7-certificates.png` (dark) and `improvised/l7-screen-light.png` (light).

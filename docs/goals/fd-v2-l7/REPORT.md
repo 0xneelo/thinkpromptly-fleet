@@ -1,7 +1,7 @@
 # fd-v2 L7 — SSH keys + GitHub train — REPORT
 
 **Worker:** Tankred · `frontend-developer` · tag `agent-tankred`
-**Branch:** `agent-v2-l7` (off `origin/agent-v2-base`, merged forward to the S2 reconciliation fix)
+**Branch:** `agent-v2-l7` (off `origin/agent-v2-base`, merged forward twice — the S2 reconciliation fix, then S2.2 + L1.1)
 **Linear:** [DECK-44](https://linear.app/synchronicity/issue/DECK-44) · ledger row **D14**
 **Date:** 2026-09-07
 
@@ -16,10 +16,10 @@ The SSH keys + GitHub train screen runs on live data, inside the mock's markup, 
 |---|---|---|
 | `public/v2/screens/keys.js` | owned | the whole screen: load, poll, tick, the four cards, every action |
 | `public/v2/logic.js` | this screen's section only | the keys block hands the render's theme tokens to the screen file, guarded and wrapped |
-| `docs/design/fleetdeck-v2/verify/l7-harness/live.mjs` | new | the live-mode proof, 23 scenarios / 60 checks |
+| `docs/design/fleetdeck-v2/verify/l7-harness/live.mjs` | new | the live-mode proof, 24 scenarios / 62 checks |
 | `docs/design/fleetdeck-v2/verify/l7-harness/shots.mjs` | new | the improvisation screenshots |
 | `test/v2-keys.test.js` | new | 17 unit tests over the pure helpers |
-| `docs/design/fleetdeck-v2/improvised.md` | appended | I-L7-01 … I-L7-07 |
+| `docs/design/fleetdeck-v2/improvised.md` | appended | I-L7-01 … I-L7-08 |
 
 ### The problem this slice had to solve
 
@@ -129,11 +129,11 @@ timer, DOM write or network request happens. That is what holds the pixel gate a
 
 ### §7 Improvisations
 
-All seven are in `docs/design/fleetdeck-v2/improvised.md` with screenshots under
+All eight are in `docs/design/fleetdeck-v2/improvised.md` with screenshots under
 `docs/design/fleetdeck-v2/improvised/`: I-L7-01 principals source · I-L7-02 the data-layer loader ·
 I-L7-03 the live principal default · I-L7-04 notices cloned from the mock's hint line ·
 I-L7-05 the real key type · I-L7-06 `BROKER DOWN` amber + mint flash · I-L7-07 painting the unbound
-cards from clones.
+cards from clones · I-L7-08 `data-dc-raw` and restyling clones on every paint.
 
 ---
 
@@ -142,7 +142,7 @@ cards from clones.
 | Gate | Result |
 |---|---|
 | Pixel gate, fixture mode | **36/36, `allPass: true`**, max mismatch 0.032948 % (a pre-existing `registry dark` delta inherited from S2). **`ssh-keys` 0.000000 % in both themes.** `verify/l7/report.json` |
-| Live proof, API stubbed | **60/60, `allPass: true`**, zero console errors of the screen's own. `verify/l7/live.json`, `live-dark.png`, `live-light.png` |
+| Live proof, API stubbed | **62/62, `allPass: true`**, zero console errors of the screen's own. `verify/l7/live.json`, `live-dark.png`, `live-light.png` |
 | Unit tests | `test/v2-keys.test.js` — **17/17** |
 | `npm test` | **246 pass / 1 fail of 247.** The one failure is **pre-existing at base** — see below. |
 
@@ -229,6 +229,26 @@ once; the layout now makes it impossible.
   never treated as stable identities. The cards this slice paints are static markup, not `sc-for`
   lists. Both gates were re-run after merging S2's reconciliation fix and stayed green.
 - **Rule 3 (raw input state).** Not applicable: this screen has no text input and no `<select>`.
+- **S2.2's `data-dc-raw`, adopted.** The Certificates card is marked raw from `capture()`, so the
+  reconciler neither inserts nor removes inside it. Set from JS, since the template is out of scope
+  and `runtime.js:292` reads the live attribute. See I-L7-08.
+
+### A defect S2.2 surfaced, found and fixed here
+
+Adopting `data-dc-raw` made me re-examine the cloned prototypes and exposed a real bug of my own:
+**a clone carries the palette of whichever theme was live when it was captured.** Flipping theme
+inside a live session would have left the copy line's background, the principals line, the countdown
+and the buttons on the old palette while the rest of the app moved. Every theme-dependent property
+on a cloned node is now re-derived from that render's tokens on each paint.
+
+It had no coverage, so `verify/l7` gained L7-61 and L7-62: they flip the theme *after* the cards are
+painted and assert the computed colours actually changed. Both fail against the previous
+implementation. The app has no theme control in its markup — theme is `AppLogic` state — so the
+harness drives it through the logic handle the screen already receives on every `sync()`, exposed on
+the existing `_debug` seam.
+
+A first version of that check asserted `true` and could not fail. That is exactly the vacuous-test
+class I had asked the reviewer to hunt for, and it is fixed; the numbers above are from the real one.
 
 ## 7. Delegation
 

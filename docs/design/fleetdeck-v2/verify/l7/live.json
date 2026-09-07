@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "mode": "live",
   "slice": "l7",
-  "capturedAt": "2026-09-07T01:05:27.657Z",
+  "capturedAt": "2026-09-07T01:10:33.902Z",
   "clock": {
     "fixedNow": 1788745984000,
     "iso": "2026-09-07T01:53:04.000Z",
@@ -13,8 +13,8 @@
     "width": 1440,
     "height": 900
   },
-  "total": 60,
-  "passed": 60,
+  "total": 62,
+  "passed": 62,
   "failed": 0,
   "allPass": true,
   "results": [
@@ -326,7 +326,7 @@
       "action": "press a start chip",
       "expectation": "the chip reads Touch ID… while the mint is in flight",
       "pass": true,
-      "detail": "1h"
+      "detail": "Touch ID…"
     },
     {
       "id": "L7-46",
@@ -425,6 +425,20 @@
       "expectation": "a missing type falls back to '?'",
       "pass": true,
       "detail": "expected \"?\", got \"?\""
+    },
+    {
+      "id": "L7-61",
+      "action": "flip to the light theme after the cards are painted",
+      "expectation": "the painted copy line takes the new palette instead of the captured one",
+      "pass": true,
+      "detail": "flipped=true rgba(0, 0, 0, 0.4) -> rgba(0, 0, 0, 0.043)"
+    },
+    {
+      "id": "L7-62",
+      "action": "flip to the light theme after the cards are painted",
+      "expectation": "the principals line is restyled too, not left on the dark ink",
+      "pass": true,
+      "detail": "rgba(255, 255, 255, 0.6) -> rgba(17, 17, 17, 0.62)"
     },
     {
       "id": "L7-60",

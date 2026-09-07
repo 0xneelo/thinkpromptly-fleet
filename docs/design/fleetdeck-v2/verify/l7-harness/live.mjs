@@ -464,6 +464,37 @@ async function main() {
       eq('L7-59', 'load a key with no type', "a missing type falls back to '?'", await text(rows.nth(4).locator('> span').nth(1)), '?');
     }));
 
+    // -- S24 switching theme in a live session restyles the painted rows ----
+    // The cloned prototypes carry whichever palette was live when they were
+    // captured, so a theme flip after the first paint is the case that catches
+    // a frozen colour. The sidebar's theme toggle drives it, as a user would.
+    allNoise.push(...await scenario(browser, server.port, { sshkeys: baseKeys, ghtrain: baseTrain }, async ({ page, keys }) => {
+      const codeEl = card(keys, CERTS).locator('> div').nth(1).locator('code');
+      const principals = card(keys, CERTS).locator('> div').nth(0).locator('> span').nth(2);
+      const read = async () => ({
+        code: await codeEl.evaluate((n) => getComputedStyle(n).backgroundColor),
+        principals: await principals.evaluate((n) => getComputedStyle(n).color),
+      });
+      const before = await read();
+      // The app has no theme control in its markup — theme is AppLogic state
+      // read from localStorage. Drive it the way the app itself would, through
+      // the logic handle the screen already receives on every sync.
+      const flipped = await page.evaluate(() => {
+        const c = window.FD && FD.screens && FD.screens.keys && FD.screens.keys._debug && FD.screens.keys._debug.ctx;
+        if (!c || !c.logic) return false;
+        c.logic.setState({ dark: false });
+        return true;
+      });
+      await page.waitForTimeout(400);
+      const after = await read();
+      check('L7-61', 'flip to the light theme after the cards are painted',
+        'the painted copy line takes the new palette instead of the captured one',
+        flipped && before.code !== after.code, `flipped=${flipped} ${before.code} -> ${after.code}`);
+      check('L7-62', 'flip to the light theme after the cards are painted',
+        'the principals line is restyled too, not left on the dark ink',
+        flipped && before.principals !== after.principals, `${before.principals} -> ${after.principals}`);
+    }));
+
     // -- silence -----------------------------------------------------------
     const noise = [...new Set(allNoise)];
     check('L7-60', 'watch the console across every scenario', 'the screen logs no errors of its own', noise.length === 0, noise.join(' | '));

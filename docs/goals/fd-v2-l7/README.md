@@ -36,8 +36,8 @@ Make the **SSH keys + GitHub train** screen work on live data exactly like today
 ## Acceptance (definition of done)
 
 - [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md` §2), texts/confirms/keys verbatim. Two items are **n.a.** with reasons: the old DOM ids (the mock has no such ids and hand-adding them is forbidden) and the 405 text (the screen never issues a wrong method; the `HTTP <status>` path that renders it is proven at L7-35/L7-48).
-- [x] `verify/l7/report.json` **allPass 36/36** (fixture mode), `ssh-keys` 0.000000 % both themes; `verify/l7/live.json` **60/60 allPass**, zero console errors; `live-dark.png` / `live-light.png` filed.
-- [x] `improvised.md` I-L7-01 … I-L7-07, each with its screenshot under `docs/design/fleetdeck-v2/improvised/`.
+- [x] `verify/l7/report.json` **allPass 36/36** (fixture mode), `ssh-keys` 0.000000 % both themes; `verify/l7/live.json` **62/62 allPass**, zero console errors; `live-dark.png` / `live-light.png` filed.
+- [x] `improvised.md` I-L7-01 … I-L7-08, each with its screenshot under `docs/design/fleetdeck-v2/improvised/`.
 - [x] Hooks provided: **none** (declared in the first commit). Hooks used: **none**. The one internal seam, `FD.screens.keys.sync()`, is called guarded from `logic.js`.
 - [x] `npm test` **246 pass / 1 fail of 247** — the single failure is `test/v2-data.test.js`, red at `origin/agent-v2-base` because the generated `public/v2/fixture.js` has no UMD guard. Not this slice's file and not editable by any L-slice (DESIGN-35 rule 4); filed as **DECK-85**. My own 17 tests pass. Branch pushed; `REPORT.md` signed **Tankred**; registry row attempted (see REPORT §3).
 

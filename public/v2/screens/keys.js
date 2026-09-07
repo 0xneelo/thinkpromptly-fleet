@@ -163,6 +163,10 @@
       get state() { return state; },
       get train() { return train; },
       get errors() { return { mint: mintError, train: trainError, load: loadError }; },
+      // The last sync payload, which carries the AppLogic handle. verify/l7 uses
+      // it to flip the theme mid-session — the app has no theme toggle in its
+      // markup, so there is no other way to drive that path from a test.
+      get ctx() { return ctx; },
     },
   };
 
@@ -216,6 +220,13 @@
       certCopy: certRows[2].cloneNode(true),          // copy line + Copy button
       certDead: certRows[3].cloneNode(true),          // expired cert row
     };
+    // S2.2 F3: this card's children are ours from here on, so the reconciler
+    // must neither insert nor remove inside it. It already no-ops while the
+    // child set is unchanged; saying so explicitly means a future change to
+    // that set cannot start deleting painted rows. Set from JS because the
+    // template is out of scope — runtime.js:292 reads the live attribute.
+    // Never reached in fixture mode, where this module does not register.
+    cards[2].setAttribute('data-dc-raw', '');
     return true;
   }
 
@@ -322,6 +333,12 @@
       parts[1].textContent = c.keyId || c.dir;
       parts[2].textContent = ((c.principals || []).join(', ') || 'no principals') +
         ' · until ' + (c.validTo || '?');
+      // A clone carries the palette of whichever theme was live when the
+      // prototype was captured. Re-derive every theme-dependent colour from
+      // this render's tokens, or switching theme leaves the old one behind.
+      if (!live) parts[1].style.color = ctx.t.ink60;
+      parts[2].style.color = live ? ctx.t.ink60 : ctx.t.ink45;
+      if (live && parts[3]) parts[3].style.color = ctx.t.ink75;
 
       var btn = kids(row).filter(function (n) { return n.tagName === 'BUTTON'; })[0];
       if (live) {
@@ -332,6 +349,8 @@
       if (btn) {
         btn.textContent = live ? 'Kill now' : 'Delete';
         btn.disabled = false;
+        btn.style.borderColor = ctx.t.line;
+        btn.style.color = live ? ctx.t.ink : ctx.t.ink75;
         btn.onclick = function () { removeCert(c, live, btn); };
       }
       if (c.dir === flashDir) flash(row);
@@ -341,9 +360,16 @@
         var copy = proto.certCopy.cloneNode(true);
         var code = copy.querySelector('code');
         var copyBtn = copy.querySelector('button');
-        if (code) code.textContent = sshOpts(c.dir);
+        if (code) {
+          code.textContent = sshOpts(c.dir);
+          code.style.borderColor = ctx.t.lineSoft;
+          code.style.background = ctx.t.codeBg;
+          code.style.color = ctx.t.ink75;
+        }
         if (copyBtn) {
           copyBtn.textContent = 'Copy';
+          copyBtn.style.borderColor = ctx.t.line;
+          copyBtn.style.color = ctx.t.ink;
           copyBtn.onclick = function () {
             navigator.clipboard.writeText(code ? code.textContent : '').then(function () {
               copyBtn.textContent = 'Copied';
