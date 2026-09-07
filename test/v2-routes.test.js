@@ -12,8 +12,17 @@ const ROOT = path.join(__dirname, '..');
 const SHELL = fs.readFileSync(path.join(ROOT, 'public/v2/index.html'), 'utf8');
 
 // One server for the whole file: every case here is a plain GET with no shared state.
+// startServer picks a random port, and sibling worktrees run this suite at the same
+// time, so a collision is normal rather than exceptional -- and here it would take all
+// of the tests down with it instead of one. Retry a few times before giving up.
 let srv;
-test.before(async () => { srv = await startServer(); });
+test.before(async () => {
+  let last;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try { srv = await startServer(); return; } catch (error) { last = error; }
+  }
+  throw last;
+});
 test.after(async () => { await srv.stop(); });
 
 test('/app serves the v2 shell without a redirect', async () => {
