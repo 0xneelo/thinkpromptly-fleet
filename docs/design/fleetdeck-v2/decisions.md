@@ -320,3 +320,12 @@ D13 stays ✅.
 L9 (Eckbert): fixed on the branch — 4 new unit tests (no poll or request while off-screen, start/stop on enter/leave,
 no stacked interval, inert in fixture mode), 59/59. L10 (Clodwig): probe confirmed the 30 s poll stops off-screen;
 a permanent live + unit guard is being added on request. L5.1 and L7.1 carry the same fix for org and keys.
+
+## 2026-09-08 · L11 phase 2 accepted; weave candidate `52069d1`; two merge-caused fixes → L11.1
+
+L11 `8f95eb2` (Alrun): fixture gate 36/36 on `/app`, live smoke 30/30, 10 real-API screenshots, shell loads
+`data.js`/`router.js`, URL drives the views (DECK-84/79 closed), old UI + pass-1 + Babel deleted, `board.html` kept,
+tests 501/501 on the box. Weave candidate `52069d1` = nine slices + riders + L11. Two merge artefacts: four
+`v2-shell` tests red on the weave (L2.1's setBadge retention vs L11's new data-layer load order) and a leftover
+data.js loader in `keys.js` (L7.1 vs L11 both-sides hunk). Sent to Alrun as L11.1. Operator asked when main is
+deployed: answer — I never push main; the one-liner follows the next green candidate, est. 2–3 h (L6.1 + L11.1).
