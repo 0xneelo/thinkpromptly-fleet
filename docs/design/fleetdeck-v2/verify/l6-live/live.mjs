@@ -37,6 +37,17 @@ const TIMEOUT = 20_000;
 
 const MESSAGES = JSON.parse(readFileSync(join(API, 'messages.json'), 'utf8'));
 const SESSIONS = JSON.parse(readFileSync(join(API, 'sessions.json'), 'utf8'));
+const DESKTOP = JSON.parse(readFileSync(join(API, 'desktop-sessions.json'), 'utf8'));
+
+// The live desktop row the Desktop screen offers "Message session" on. Its
+// messageTarget is the API's resolved-at-delivery form, {type:'claude-desktop',
+// session:'id:<cliSessionId>'} — the shape L6.2 was reported broken on.
+const LIVE_DESKTOP = (() => {
+  for (const g of DESKTOP.groups || []) {
+    for (const x of g.sessions || []) if (x.live && x.messageTarget) return x;
+  }
+  throw new Error('desktop-sessions fixture has no live row with a messageTarget');
+})();
 
 // A tmux thread with real inbound traffic, and its host.
 const THREAD = 'LC-wendelgard-clean-pure-voting';
@@ -132,6 +143,7 @@ function apiStub(plan = {}) {
 
     if (name === 'messages') return json(route, plan.messages_body || MESSAGES);
     if (name === 'sessions') return json(route, plan.sessions_body || SESSIONS);
+    if (name === 'desktop-sessions') return json(route, DESKTOP);
     return json(route, {});
   };
   return { seen, handler };
@@ -932,6 +944,93 @@ async function main() {
       s.errors.forEach((e) => consoleErrors.push(e));
       s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
+    }
+
+    // =====================================================================
+    // L6.2 — the deployed entry point. /v2/index.html?view=app mounts the shell
+    // inside app.js, BEFORE public/v2/screens/*.js load, so an attach that only
+    // ran from componentDidMount never fired and every deep link was dead while
+    // threads still painted. This scenario loads the page exactly that way.
+    // =====================================================================
+    {
+      const posts = [];
+      const context = await browser.newContext({
+        viewport: VIEWPORT, deviceScaleFactor: 1, colorScheme: 'dark',
+        reducedMotion: 'reduce', locale: 'en-US', timezoneId: 'UTC', serviceWorkers: 'block',
+      });
+      context.setDefaultTimeout(TIMEOUT);
+      await context.addInitScript(() => {
+        localStorage.setItem('fd-landing-dark', '1');
+        localStorage.setItem('fd-app-video', 'false');
+      });
+      const stub = apiStub({
+        messages: (route, ctx) => {
+          if (route.request().method() === 'POST') { posts.push(ctx.body); return json(route, { ok: true, id: 'd1', status: 'delivered' }); }
+          return json(route, MESSAGES);
+        },
+      });
+      await context.route('**/api/**', stub.handler);
+      const page = await context.newPage();
+      const errs = [];
+      const NET2 = /^Failed to load resource: the server responded with a status of \d+/;
+      page.on('console', (m) => { if (m.type() === 'error' && !NET2.test(m.text())) errs.push(m.text()); });
+      page.on('pageerror', (e) => errs.push('pageerror: ' + e.message));
+
+      // No App-link click: land in the app view the way the deployed deck does.
+      await page.goto(url + '?view=app', { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => window.FD && FD.screens.bus && FD.screens.bus.polls > 0);
+      await page.waitForTimeout(400);
+
+      await check('L6-51', 'load /v2/index.html?view=app — the shell mounts before the screen files',
+        'the bus screen still attached to the shell, so a deep link actually lands',
+        async () => {
+          // Assert the EFFECT, not the return value: a queued open legitimately
+          // reports true, so only "the bus is now showing that thread" proves
+          // the shell was attached.
+          const ok = await page.evaluate(() => FD.screens.bus.open({ type: 'claude-desktop', session: 'current' }));
+          await page.waitForTimeout(500);
+          const shown = await bus(page).isVisible();
+          const name = shown ? (await bus(page).locator('span[data-dc-tpl="429"]').first().innerText()).trim() : '';
+          return {
+            pass: ok === true && shown && name === 'Claude Desktop · current chat',
+            detail: `open=${ok} visible=${shown} name=${JSON.stringify(name)}`,
+          };
+        });
+
+      await check('L6-52', 'click Message session on a live Desktop sessions row',
+        'the bus opens on that id:<uuid> thread, labelled with the session title',
+        async () => {
+          await page.locator('aside button[title="Desktop sessions"]').click();
+          await page.locator('[data-screen-label="Desktop sessions"]').waitFor({ state: 'visible' });
+          await page.waitForTimeout(800);
+          const btn = page.locator('[data-screen-label="Desktop sessions"]')
+            .getByRole('button', { name: /Message session/i }).first();
+          await btn.click();
+          await page.waitForTimeout(900);
+          const shown = await bus(page).isVisible();
+          const name = (await bus(page).locator('span[data-dc-tpl="429"]').first().innerText()).trim();
+          const hash = await page.evaluate(() => location.hash);
+          return {
+            pass: shown && name === 'Claude Desktop · ' + LIVE_DESKTOP.title && hash === '#bus',
+            detail: `visible=${shown} name=${JSON.stringify(name)} hash=${hash}`,
+          };
+        });
+
+      await check('L6-53', 'send from that thread',
+        'the POST body carries {type:"claude-desktop", session:"id:<uuid>"} verbatim',
+        async () => {
+          await composer(page).fill('ping from the desktop deep link');
+          await sendBtn(page).click();
+          await page.waitForTimeout(600);
+          const mine = posts.filter((b) => b.text === 'ping from the desktop deep link');
+          return {
+            pass: mine.length === 1 && JSON.stringify(mine[0].target) === JSON.stringify(LIVE_DESKTOP.messageTarget),
+            detail: JSON.stringify(mine.map((b) => b.target)),
+          };
+        });
+
+      errs.forEach((e) => consoleErrors.push(e));
+      await context.close();
     }
 
     // =====================================================================
