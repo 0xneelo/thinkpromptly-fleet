@@ -58,9 +58,33 @@ const REACH = /fleet-notify|fleet-message|api\/notify|api\/messages|\.claude\/se
 // Naming the seat. Case-insensitive, because `to: "goalkeeper"` is every bit a
 // reach as the all-caps badge form.
 const GK_NAME_I = /goalkeeper|🥅/i;
-// The badge spelling, still used by the Bash reach path below (item 2 narrows
-// that path to addressee-shaped tokens).
-const GK_TARGET = /GOALKEEPER|🥅/;
+// Addressee-shaped tokens inside a SHELL COMMAND. A reach NAMES its target; the
+// first cut tested the badge spelling anywhere in the command, which both missed
+// a lowercase `to` value and fired on any command that merely mentioned the
+// seat. Each pattern's LAST capture is the addressee's value.
+const CMD_ADDRESSEE = [
+  /--to[=\s]+(['"]?)([^\s'"]+)\1/gi,          // --to <x>, --to host:session
+  /--session[=\s]+(['"]?)([^\s'"]+)\1/gi,
+  /--target[=\s]+(['"]?)([^\s'"]+)\1/gi,
+  /["']to["']\s*:\s*["']([^"']*)["']/gi,      // {"to": "<x>"}
+  /["']session(?:_id)?["']\s*:\s*["']([^"']*)["']/gi,
+  /["']target["']\s*:\s*["']([^"']*)["']/gi,
+  /["']name["']\s*:\s*["']([^"']*)["']/gi,
+  /["']title["']\s*:\s*["']([^"']*)["']/gi,
+];
+
+function commandAddressesGoalkeeper(cmd) {
+  for (const re of CMD_ADDRESSEE) {
+    re.lastIndex = 0;
+    let m = re.exec(cmd);
+    while (m) {
+      const value = m[m.length - 1];
+      if (typeof value === 'string' && GK_NAME_I.test(value)) return true;
+      m = re.exec(cmd);
+    }
+  }
+  return false;
+}
 
 // PLAN.md v2 §3.4.2 as amended by §9: for a non-goalkeeper kind the deny matches
 // the ADDRESSEE FIELDS ONLY, never the whole serialised input. The first cut
@@ -233,7 +257,7 @@ try {
     // Every other stamped seat reaches everyone except the 🥅 seat.
     if (MSG_TOOLS.includes(tool) && addressesGoalkeeper(input)) {
       deny(NO_MSG_TO_GK);
-    } else if (REACH.test(command) && GK_TARGET.test(command)) {
+    } else if (REACH.test(command) && commandAddressesGoalkeeper(command)) {
       deny(NO_REACH_TO_GK);
     } else if (isWrite && writePath && underGoalkeeper(writePath, cfg, cwd)) {
       deny(NO_WRITE_TO_GK);
