@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice": "l2",
   "mode": "live",
-  "capturedAt": "2026-09-07T01:10:47.565Z",
+  "capturedAt": "2026-09-07T01:18:13.163Z",
   "harness": "docs/design/fleetdeck-v2/verify/l2-live/live.mjs",
   "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api + docs/design/fleetdeck-v2/verify/l2-live/stubs",
   "total": 59,

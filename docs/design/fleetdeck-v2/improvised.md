@@ -446,10 +446,20 @@ are today's, verbatim: `Switch to light theme` / `Switch to dark theme`. Both ar
 compiled button, so no node is added.
 
 The key migration is L1's `FD.data.theme()` (`fleetTheme` → `fd-landing-dark`), called once at boot. Two
-details of today's resolution order that `theme()` does not cover are kept here: `?theme=light|dark`
-still wins over storage, and with **neither** key set the OS preference decides
-(`prefers-color-scheme`), where `theme()` alone would default to dark. `data-theme` and
-`style.colorScheme` are still written onto `<html>`, as `syncTheme()` does today.
+details of today's resolution order that `theme()` does not cover are kept here.
+
+**`?theme=light|dark` wins for the visit and is never persisted.** Today's app holds the query answer
+in a variable (`app.js:11-20`) and only the manual toggle writes storage (`app.js:60-63`); a first pass
+here wrote it, which would have let one shared link overwrite the user's saved theme for good. It is now
+handed to `AppLogic` once, on mount, as `state.dark` — the mock's own `isDark()` reads that before
+storage — and the next toggle simply replaces it. `F05`–`F07` in the live proof cover all three steps,
+and `F06` is proven to fail when the write is put back.
+
+**With neither key set the OS preference decides** (`prefers-color-scheme`), where `theme()` alone would
+default to dark. That answer *is* written, because it is the D06 migration seeding the key the mock
+reads; nothing else can carry it.
+
+`data-theme` and `style.colorScheme` are still written onto `<html>`, as `syncTheme()` does today.
 
 ### I-L2-14 — the "Live API" pill carries the org source badge
 

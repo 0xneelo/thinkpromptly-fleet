@@ -14,9 +14,9 @@
 | Gate | Result | Evidence |
 |---|---|---|
 | Pixel gate, fixture mode, 36 screens | **`allPass: true`**, max mismatch **0.032948 %** | `verify/l2/report.json` |
-| Live-mode proof, API stubbed | **55/55**, `allPass: true`, **zero console errors** | `verify/l2/live.json`, `live-dark.png`, `live-light.png` |
-| Unit tests (`test/v2-shell.test.js`) | **17 pass** | below |
-| `npm test` | **246 pass / 1 fail** — the failure is inherited from the base, not this slice | **DECK-81**, proof below |
+| Live-mode proof, API stubbed | **59/59**, `allPass: true`, **zero console errors** | `verify/l2/live.json`, `live-dark.png`, `live-light.png` |
+| Unit tests (`test/v2-shell.test.js`) | **19 pass** | below |
+| `npm test` | **322 pass / 0 fail** | below |
 | Improvisation log | 15 entries, 6 screenshots | `improvised.md` §L2, `improvised/l2-*.png` |
 
 The pixel maximum is the same number on the same screen (`registry` dark) that S1, S2 and my own
@@ -29,13 +29,13 @@ the digit.
 |---|---|
 | `public/v2/screens/shell.js` | the slice — 640 lines: fetch, adapt, `FD.setData`, the four hooks, the improvised layer |
 | `public/v2/logic.js` | **four hunks**, all guarded: `groups`, `miniAccounts`, `boxRows`, the nav badge |
-| `docs/design/fleetdeck-v2/verify/l2-live/live.mjs` + `stubs/` | the live proof and five hand-written API variants |
+| `docs/design/fleetdeck-v2/verify/l2-live/live.mjs` + `stubs/` | the live proof and six hand-written API variants |
 | `docs/design/fleetdeck-v2/verify/l2-live/shots.mjs` | the improvisation screenshots |
-| `test/v2-shell.test.js` | 17 unit tests over the pure halves |
+| `test/v2-shell.test.js` | 19 unit tests over the pure halves and the fixture-mode gate |
 | `docs/design/fleetdeck-v2/improvised.md` | 15 entries, I-L2-01 … I-L2-15 |
 
-Commits: `4da1a09` (pack + seam) · `bef3c0a` (the slice) · `308ad4d` (base merge) · `8afc195`
-(the oracle audit's three rulings).
+Commits: `4da1a09` (pack + seam) · `bef3c0a` (the slice) · `8afc195` (the oracle audit's three
+rulings) · `ab8251b` (scroll churn) · the reviewer's findings, plus three base merges (S2.2, L1.1, L1.2).
 
 ## The shape of the slice, and why
 
@@ -203,10 +203,10 @@ scenarios, 55 checks:
 |---|---|---|
 | A · captured fixtures | `sessions/health/credits.json` as captured | 26 — grouping, counts, titles, dots, both click paths, `⤢`, Connect all, Refresh, the rail, both hooks, the theme, no polling, a clean console |
 | B · hidden rows | `stubs/sessions-hidden.json` | 9 — exclusion, the two toggle texts, persistence, dimming, the amber dot, the label in the title |
-| C · errors and empty | `stubs/sessions-errors.json`, `sessions-empty.json` | 4 |
+| C · errors, empty, unkeyable | `stubs/sessions-errors.json`, `sessions-empty.json`, `sessions-unkeyable.json` | 5 |
 | D · health branches | `stubs/health-branches.json`, plus a 500 | 4 — all five branches' texts, tones and tips in one payload |
 | E · credits variants | `stubs/credits-variants.json`, plus a 500 | 8 — the pct rule, both thresholds, the em dash, `€`, the codex suffix, the tooltip |
-| F · theme and fixture mode | legacy `fleetTheme`, `?fixture=1` | 4 |
+| F · theme and fixture mode | legacy `fleetTheme`, `?theme=`, `?fixture=1` | 7 |
 
 The captured `sessions.json` contains no hidden row, no `kill-requested` row and no error, and
 `credits.json` no capped pool and no window past 90 %. Those five states are the hand-written stubs in
@@ -223,28 +223,37 @@ and moves a staging directory into place. It ate the first copy of this harness.
 stubs therefore live in `verify/l2-live/` and only the results land in `verify/l2/`. **Run the pixel
 gate first, then the live proof**, or `live.json` is deleted by the next gate run.
 
-### `npm test` — 246 pass, 1 fail, and the failure is not mine
+### `npm test` — 322 pass, 0 fail
+
+Green on the current base. Two things had to be established to say that honestly.
+
+**DECK-81 is fixed by the base, not by me.** When I first ran the suite, `test/v2-data.test.js` threw
+`ReferenceError: window is not defined` — the generated `fixture.js` carried a browser-only preamble and
+L1's test `require`s it, so all 65 of L1's data-layer tests never ran. I proved it was inherited by
+checking out `origin/agent-v2-base` into a scratch worktree with no L2 code in it and reproducing the
+identical error, and filed **DECK-81**. L1.1 landed `public/v2/fixture-extract.js` and the file is now
+requirable; `test/v2-data.test.js` runs 74 tests and passes.
+
+**The reaper suites are flaky, and it is not this slice.** Intermediate runs showed 19, then 13, then 1
+failure, always in `reaper.test.js` / `lease.test.js` / `seats-fencing.test.js` and never in a v2 file.
+Same tree, same three files, back to back:
 
 ```
-$ node --test test/v2-data.test.js
-public/v2/fixture.js:4
-window.FD = window.FD || {};
-ReferenceError: window is not defined
+node --test test/reaper.test.js test/lease.test.js test/seats-fencing.test.js
+  run 1 → tests 60, pass 46, fail 14
+  run 2 → tests 60, pass 60, fail  0
 ```
 
-`tools/dc-compile.mjs:145` emits a browser-only preamble for the generated `fixture.js`; L1's
-`test/v2-data.test.js:17` `require`s that file. All 65 of L1's data-layer tests never run.
-
-Proven inherited, not caused: I checked out `origin/agent-v2-base` into a scratch worktree with no L2
-code in it and got the identical `ReferenceError`, and `public/v2/fixture.js` on this branch is
-byte-identical to the one on the base. Filed as **DECK-81** with the three-line fix; it belongs to S2's
-compiler, which I may not edit. **Every L slice inherits this**, so the honest number for L2 is
-246/247, and the 17 tests this slice adds all pass.
+They are wall-clock-sensitive suites that lose races under load — a clean checkout of the base shows the
+same behaviour (9 failures in one `reaper.test.js` run, 2 in a full run). The v2 files are deterministic:
+`v2-shell` 19/19 and `v2-data` 74/74 on every run. Reported so the next slice does not spend an hour on
+it, and worth a Linear issue from whoever owns the reaper.
 
 ## Deviations and open items, stated plainly
 
-1. **`npm test` is not green** — 246/247, the one failure inherited from the base and filed as
-   DECK-81 (above). This is the only acceptance box I cannot tick.
+1. **The reaper suites are flaky.** Not mine, not v2, but the next slice will trip over it: same tree,
+   back to back, `reaper`+`lease`+`seats-fencing` scored 14 failures then 0. Worth an issue from whoever
+   owns them.
 2. **Registry row not written.** `POST /api/registry` answers `401 unauthorized` from the box, for the
    opening call. Known box-side 401 (XYZ-2137), the same one L1 hit; per that precedent no operator gate
    is filed. There is no `FD-v2-l2` row; DECK-56 is the record. Logged in `LINEAR-PENDING.md`.
@@ -272,9 +281,42 @@ compiler, which I may not edit. **Every L slice inherits this**, so the honest n
     shell plumbing in `logic.js` that nine slices would then conflict over. Stated so a reviewer can
     overrule it.
 
+## The reviewer pass, and what it changed
+
+A Sonnet `reviewer` on the whole changeset returned six findings. Two were real behaviour bugs, one was
+a real hole in my own tests, and three were smaller. All six are fixed.
+
+1. **`?theme=` was persisted** (high). `applyTheme()` wrote the query answer into `fd-landing-dark`.
+   Today's app holds it in a variable and only the toggle writes storage (`app.js:11-20` vs `60-63`), so
+   one shared `?theme=light` link would have overwritten the user's saved theme for every later visit.
+   The override is now handed to `AppLogic` once, on mount, as `state.dark` — which the mock's own
+   `isDark()` reads before storage — and nothing is written. Three new live checks, `F05`–`F07`.
+2. **"no sessions" counted the wrong rows** (medium). The fallback tested the raw session list while the
+   sidebar renders the *validated* one, so a live row the API cannot key (no host, or no name) would
+   leave the sidebar completely empty with no explanation. It now counts what could actually be
+   rendered. New live check `C05` with its own stub.
+3. **A vacuous test** (medium). `assert.ok(!shell.__pure.__loaded)` checked a property nothing ever
+   sets — true no matter what fixture-mode detection did. Replaced with three real cases: both routes
+   into fixture mode leave `FD.__dataLoading` untouched and append no script; a live boot **does** create
+   it and appends exactly one `/v2/data.js`; and `?fixture=0` is a live boot. The negative case is the
+   point — it proves the check is not simply always true.
+4. **Painting raced the render** (low). `FD.setData` schedules its re-render on a microtask, so painting
+   in the same tick read the previous render's DOM against the new data. The paint is now queued behind
+   it, and still covers the case where the app view is not mounted and no `componentDidUpdate` arrives.
+5. **`tokens()` re-runs `renderVals()`** (low). Accepted, and already reduced: it is cached per theme, so
+   it runs on a theme change rather than on every paint. It is the only way to reach the mock's token
+   table from outside the logic.
+6. **The ⤢ could be stranded** (low). Hover was only cleared by moving onto another element, so leaving
+   the window over a row left the button visible. `mouseleave` on the document and `blur` on the window
+   now clear it.
+
+**Both new checks were mutation-tested**, because this project's own standard is that a gate nobody has
+seen fail is not evidence. Putting the `write()` back fails `F06` (`58/59`); restoring the raw-row count
+fails `C05` with `foot=[]` — literally the empty, unexplained sidebar the finding described.
+
 ## Subagents
 
-A Sonnet `reviewer` on the diff. The protocol's `hard-crux` audits were not run: this session's driver
+A Sonnet `reviewer` on the diff, findings above. The protocol's `hard-crux` audits were not run: this session's driver
 is already at that tier for the decisions involved, and the design seat's own oracle audit of the shim
 arrived mid-slice and was the binding review — I rewrote the improvised layer to satisfy its ruling 1
 before pushing. Reads were done inline rather than delegated, because the slice turns on the exact
