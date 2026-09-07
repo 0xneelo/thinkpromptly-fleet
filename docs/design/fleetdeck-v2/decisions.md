@@ -244,3 +244,9 @@ L11's phase-1 report: routes correct on the wire (14/14) but `logic.js` ~L1053 s
 `props.startView`, ignoring the URL (live smoke 20/22). Ruling: Alrun changes that seed (and the screen seed from the
 hash) to read `FD.router` with the prop as fallback, quoted OUT→IN; fixture-mode default unchanged. Closes DECK-79
 with DECK-84. Names released: Julius (S2 complete after S2.2), Tankred (L7 accepted).
+
+## 2026-09-08 · box gate green on weave `444fc6d`; L2 review accept
+
+`fd-weave-gate.sh` on the german-box (`~/weave-gate/weave-fd-v2/result.txt`): HEAD 444fc6d, `npm test` 460 pass,
+pixel gate fixture mode allPass 36/36 max 0.0329 %, no fails. The eight-slice weave is proven on the gate machine.
+L2 review: ACCEPT; follow-up L2.1 to Renate (setBadge must retain a count set before the data layer is ready).
