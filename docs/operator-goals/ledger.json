@@ -1,6 +1,6 @@
 {
- "project": "remote-system",
- "updated": "2026-09-07",
+ "project": "weave-goalkeeper-v1",
+ "updated": "2026-09-08",
  "goals": [
   {
    "id": "G1",
@@ -111,15 +111,15 @@
    "asked": "2026-09-07",
    "status": "active",
    "health": "moving",
-   "progress": "GK-D done (a06d903, review WEAVE); GK-M Giselher running on the Mac in auto mode since 2026-09-07 ~03:20Z",
-   "next": "orchestrator: review Giselher's milestones as they push, then weave both lanes as weave/goalkeeper-v1 for one ff-merge + ./up.sh; operator: decide P11 (drop 'current' as a bus target)",
+   "progress": "v1 woven at f299a71 on weave branch (main ac00e62 + pack + GK-D a06d903 + GK-M 3d5dd81); 4 suites green 261/33/62/626; Mac install live; push held: train shut since 21:15Z",
+   "next": "operator: start a train + mint root,vibe cert on localhost:3131/keys.html, then ONE ff-merge of the weave branch onto main and ./up.sh; decide P11 (drop 'current'); install the broker GitHub App on lowcap-connector (G-13)",
    "tasks": [
     {
      "ref": "P2",
      "title": "GK-M — session kind, guard, /goalkeeper skill, goalkeeper.py, data repo, installer (Mac-local)",
      "who": "Giselher",
      "lane": "goalkeeper-mac",
-     "state": "In Progress"
+     "state": "Done (3d5dd81 local; six rounds; WEAVE)"
     },
     {
      "ref": "P3",
@@ -132,7 +132,7 @@
    "sources": [
     "operator, ORCHESTRATOR 34 session"
    ],
-   "updated": "2026-09-07",
+   "updated": "2026-09-08",
    "log": [
     {
      "at": "2026-09-07",
@@ -148,6 +148,10 @@
     },
     {
      "at": "2026-09-07",
+     "note": "health → moving"
+    },
+    {
+     "at": "2026-09-08",
      "note": "health → moving"
     }
    ]
