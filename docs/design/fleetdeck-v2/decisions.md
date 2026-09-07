@@ -185,3 +185,10 @@ registry row shows done. No further base moves planned; the next integration poi
   `verify/l10-harness/`, nine improvisations with screenshots, hardened per the oracle audit, L1.2 strings adopted.
 - Ledger D16, D17 P2 ✅. Both merged into `weave/fd-v2` (from `agent-v2-base` @ `6cb8e2d`), pushed as a branch (never
   main). Parallel reviews launched; findings go back as follow-ups. Preview now follows `weave/fd-v2`.
+
+## 2026-09-08 · L9 review: ACCEPT (no defects)
+
+Reviewer: contract scope clean, BEHAVIOUR texts byte-identical to `public/machines.js`/`server.js`, fixture mode
+untouched, oracle rules followed, live checks substantive, tests 353/353. Notes for the weave: L9 adds calls in the
+shared `componentDidMount`/`componentDidUpdate` hooks (other slices will too → keep-both resolution); `weave/fd-v2`
+confirmed to carry L1.2's `data.js` (merge from base `6cb8e2d`).
