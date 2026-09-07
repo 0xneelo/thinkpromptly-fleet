@@ -314,3 +314,9 @@ reply toast for the selected thread even when the bus screen is not on-screen, s
 Per the ruling L6 stays in the weave; L6.1 (priority) sent to Gerhild with three smaller items (unbounded `stOv`
 growth, unknown-target path without refresh, unguarded rail builders). Ledger D08 P2 back to 🔨 until L6.1 lands;
 D13 stays ✅.
+
+## 2026-09-08 · poll-gating sweep results
+
+L9 (Eckbert): fixed on the branch — 4 new unit tests (no poll or request while off-screen, start/stop on enter/leave,
+no stacked interval, inert in fixture mode), 59/59. L10 (Clodwig): probe confirmed the 30 s poll stops off-screen;
+a permanent live + unit guard is being added on request. L5.1 and L7.1 carry the same fix for org and keys.
