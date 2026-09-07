@@ -2084,4 +2084,98 @@ maps `cliSessionId` and `id` to `title`, and relabels the row to
 fails or the session is not listed, so the thread is never unlabelled. The **target** is never
 rewritten — the POST body carries the `id:` form verbatim, because that is what the server
 resolves.
+---
 
+## L12 — message-bus rail filters (`claude/session-filters-grouping`, 2026-09-07)
+
+The session rail gets the filter menu Claude Desktop puts next to its own session list. All four
+entries are live-mode only. **Screenshots:** `improvised/bus-filters-dark.png`,
+`improvised/bus-filters-light.png`.
+
+### I-L12-01 — the filter set is Claude Desktop's menu, mapped onto the fleet
+
+**Serves:** the rail's "Find a session" bar; ledger row D13.
+
+Claude Desktop's session list carries one menu with Status, Environment, Group by, Sort by, Show
+empty groups, Show PR status and Clear filters. Five of the seven have a fleet meaning, and each is
+mapped to the thing the deck already knows about a session:
+
+| Menu item | Fleet meaning | Values |
+|---|---|---|
+| Status | the row's liveness, from `/api/sessions` | All · Live · Offline |
+| Environment | where the session runs | All · Claude Desktop · Box |
+| Group by | which bucket the rail draws it in | Pinned & recent · Host · Environment · Status · Group · None |
+| Sort by | the order inside a bucket | Last activity · Name · Live first |
+| Show empty groups | keep a bucket with nothing in it | on / off |
+| Clear filters | back to the defaults | — |
+
+**"Show PR status" is omitted.** It reads a session's git branch against GitHub; a fleet session is a
+tmux pane on a box, the deck has no PR for it, and a menu row that can only ever say nothing is worse
+than no row. It is the one item with no counterpart, so it is the one item dropped.
+
+**Show empty groups keeps only the fixed-label buckets** — Pinned/Recent, Live/Offline, Claude
+Desktop/Box sessions. Those labels are a scale, and a gap in a scale is information. Host and Group
+labels come from the data itself, so an "empty german-box" bucket could only appear by inventing a
+host that has no sessions, which is not information but noise.
+
+### I-L12-02 — the menu is injected next to Select, not templated
+
+**Serves:** the frozen-template rule (`plan.md` §"S2 owns the compiled template").
+
+`public/v2/template.dc.html`, `app.js` and `logic.js`'s render are S2's, and the pixel gate captures
+the compiled fixture render byte-for-byte. So the menu is not markup: `screens/bus.js` finds the rail
+bar through two stable hooks — `input[placeholder="Find a session"]` and the Select button's
+`title` — and appends one `span[data-fd-bus="filter-wrap"]` after Select, the same technique
+`screens/desktop.js` uses for its Refresh button (I-L10-07). It is re-applied from a
+`MutationObserver` on the host root because the runtime re-render drops nodes it did not make, the
+observer is disconnected while we write so our own DOM cannot re-trigger us, and every theme colour
+is re-read from the search input on each apply, since the light/dark toggle rewrites the inline
+styles a cached copy would be stuck on.
+
+**Fixture mode is untouched by construction, not by a check.** Nothing here runs unless `bus.live`
+is true, and `bus.live` is false on `?fixture=1` (I-L6, `boot()`); the shaping itself only ever
+changes an order when a fixture row carries `kind` or `group`, and no fixture row carries either.
+The pixel gate therefore sees exactly the render it saw before.
+
+**Gate evidence (2026-09-07, darwin/arm64, Chromium 153.0.8010.12).** The committed baseline was cut on
+linux, and on a Mac every one of the 36 captures drifts 0.67–3.65 % from it — landing, hero and the
+five deck slides included, which this change cannot reach — so the linux verdict is not reproducible
+here. The proof is the A/B instead: `scripts/design-diff.mjs` run twice on this machine, once on the
+worktree and once on `git archive HEAD public`, gave identical per-screen percentages, and all 72
+captured PNGs (18 screens × 2 themes × both runs) were byte-identical under `cmp`. The verify
+directories were not committed, because a report that reads FAIL for platform reasons would mislead.
+
+### I-L12-03 — the registry's `group` joins the rail row
+
+**Serves:** "Group by · Group".
+
+`/api/sessions` already returns each session's `group` — the fleet's own lane name (`fd-v2`,
+`st-lanes-0831`). The bus rail was dropping it. `build()` now records it per `host + ' ' + name`,
+the same key liveness uses, so a same-named session on another box cannot lend its lane to a row that
+is not it. It is set on the row **only when it is a non-empty string**, so the row shape the compiled
+logic reads is unchanged for every session that has no lane, and `validRow`'s whitelist keeps that
+rule at the boundary. Ungrouped sessions collect under "No group", which sorts after the named lanes.
+
+### I-L12-04 — the filters live in `localStorage`, sanitised on read
+
+**Serves:** BEHAVIOUR section 7 (client-side preferences).
+
+`fd-bus-filters` holds one object, alongside `fd-bus-seen` and `fd-bus-pinned`. It is read through
+the same never-throwing `readJson` and then sanitised key by key against a whitelist: an unknown
+`group`, a hand-edited value, a half-written object or a `null` all degrade to the default for that
+one key rather than to a rail with no bucket to draw. `setFilters` sanitises on the way in too, so
+nothing outside the allowed set is ever written back. A filter set that differs from the defaults
+raises a dot on the button, which is the only way the user can tell a short rail from a filtered one.
+
+### I-L12-05 — `setFilters` is live-only, like every other mutator here
+
+**Serves:** the fixture-mode rule. Data-only.
+
+`attach()` stores the host before its own `bus.live` check, so the fixture page has a host object even
+though it has no live bus. Without a guard, a `setFilters` call there would write `fd-bus-filters` and
+force a re-render on the very page the pixel gate captures. It now returns the current filters
+untouched when `bus.live` is false, which is what `markSeen`, `setPinned`, `deliver` and `retry`
+already do. `detach` gained the mirror-image rule: a stale instance's unmount may not tear down the
+attached host's poll timer and menu, while a detach that names no host stays an unconditional
+teardown. The open menu is also forgotten whenever the rail bar leaves the DOM, so returning to the
+screen does not re-draw a menu the user never reopened. All three are covered by tests.
