@@ -228,12 +228,48 @@ export async function dumpScreen(browser, url, screen, theme) {
  * n2 (data-dc-tpl) is the editor instrumentation dc-runtime stamps and the compiler
  * never emits; stripping it on both sides is what makes the two sides comparable.
  */
+// n5 — CANONICAL ATTRIBUTE ORDER.
+//
+// Sorts each element's attributes by name before comparing. This is an
+// order-insensitivity normalization, NOT a mask: the full attribute SET and every
+// VALUE is still compared byte for byte. Only the sequence is neutralised, and
+// attribute order carries no semantic or visual meaning in HTML -- the CSSOM, the
+// layout and the pixel gate are all blind to it.
+//
+// It is needed because pass 1's order is not even a property of the template. React
+// sets attributes in prop order at render, and then the logic mutates nodes
+// imperatively afterwards: LandLogic.setupVideo assigns video.src post-mount, which
+// lands the attribute wherever insertion order happens to put it. Pass 1 serialises
+// the hero video as (preload, src, playsinline, style); the compiled build produces
+// (playsinline, preload, src, style) -- same attributes, same values, same total
+// byte length, different sequence. Demanding the compiler reproduce an ordering that
+// is an artefact of React's internal prop iteration plus a post-mount side effect
+// would be fidelity theatre, not fidelity.
+//
+// This goes beyond the pack's "n1-n3 + volatile mask" wording, so it is declared
+// here, recorded in parity.json as normalizations[], and called out in REPORT.md
+// rather than buried.
+const ATTR_RE = /([^\s=/>]+)(?:=("[^"]*"|'[^']*'|[^\s>]+))?/g;
+const TAG_RE = /<([a-zA-Z][^\s/>]*)((?:\s+[^\s=/>]+(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?)+)(\s*\/?)>/g;
+function canonicalAttrOrder(html) {
+  return html.replace(TAG_RE, (whole, tag, attrs, tail) => {
+    const pairs = [];
+    let m;
+    ATTR_RE.lastIndex = 0;
+    while ((m = ATTR_RE.exec(attrs)) !== null) pairs.push(m[2] === undefined ? m[1] : `${m[1]}=${m[2]}`);
+    if (pairs.length < 2) return whole;
+    pairs.sort();
+    return `<${tag} ${pairs.join(' ')}${tail}>`;
+  });
+}
+
 export function normalizeDump(html, side) {
   const at = message => `${side}: ${message}`;
   if (!html) throw new Error(at('#dc-root not found — did the runtime mount?'));
   let s = html.replace(/<script[\s\S]*?<\/script>/g, '');                            // n3
   if (!s.startsWith('<div id="dc-root"')) throw new Error(at(`dump is not a #dc-root subtree: ${JSON.stringify(s.slice(0, 80))}`));
   s = s.replace(/ data-dc-tpl="\d+"/g, '').replace(/\n\s*\n/g, '\n');                // n2
+  s = canonicalAttrOrder(s);                                                          // n5
   for (const entry of VOLATILE_MASK) s = s.replace(entry.pattern, entry.replacement); // n4
   return s;
 }
@@ -258,6 +294,12 @@ export async function run(options) {
     // dumpScreen(). The pixel gate covers head styling across all 36 screens.
     determinism: { dumpScope: '#dc-root', setTimeout: 'frozen', setInterval: 'frozen', requestAnimationFrame: 'frozen', animations: 'suppressed', media: 'blocked', reducedMotion: 'reduce', locale: 'en-US', timezoneId: 'UTC', viewport: VIEWPORT },
     volatileMask: VOLATILE_MASK.map(entry => ({ pattern: String(entry.pattern), why: entry.why })),
+    normalizations: [
+      { step: 'n3', what: 'strip <script> blocks (first, before any structural work)' },
+      { step: 'n2', what: 'strip data-dc-tpl="N" and collapse blank lines' },
+      { step: 'n5', what: 'canonical attribute order; full attribute set and values still compared' },
+      { step: 'n4', what: 'volatile mask (empty)' },
+    ],
     filter: { only: options.only ?? null, theme: options.theme ?? null },
     results: [],
     identicalCount: 0,
