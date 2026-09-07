@@ -94,8 +94,11 @@ function bootable({ search = '' } = {}) {
   return {
     FD,
     shell: FD.shell,
-    // Resolve the data layer the way a real /v2/data.js load would.
+    // Make the data layer arrive late. The shell no longer injects data.js -- the page
+    // loads it before the screens (DECK-84) -- so arrival is simply FD.data becoming
+    // present, which the shell picks up on one of its re-check turns.
     async arrive() {
+      assert.strictEqual(appended.length, 0, 'the shell injects nothing of its own');
       FD.data = {
         isFixture: () => false,
         theme: () => true,
@@ -104,9 +107,7 @@ function bootable({ search = '' } = {}) {
         health: async () => ({ hosts: [] }),
         credits: async () => ({ rows: [] }),
       };
-      assert.strictEqual(appended.length, 1, 'the shell asked for the data layer');
-      appended[0].onload();
-      // Let the boot chain and the loads it starts settle.
+      // Let the re-check, the boot chain and the loads it starts settle.
       for (let i = 0; i < 12; i++) await Promise.resolve();
     },
   };
