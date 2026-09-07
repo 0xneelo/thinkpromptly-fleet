@@ -230,7 +230,12 @@
     syncChildren(el, kids);
     var prev = el.__dcProps, k;
     if (prev) for (k in prev) if (!(k in props)) setProp(el, k, void 0, prev[k]);
-    for (k in props) if (k !== "key" && (!prev || props[k] !== prev[k] || k === "style")) setProp(el, k, props[k], prev ? prev[k] : void 0);
+    /* F4/F6 — an unchanged prop is normally skipped, but the DOM can drift out from under
+     * it: a <select>'s value is only assignable once its <option>s exist, so the first
+     * assignment can silently no-op and never be retried; and a checkbox the user clicked
+     * holds a value the props never changed. Always re-apply those two. */
+    for (k in props) if (k !== "key" && (!prev || props[k] !== prev[k] || k === "style"
+        || k === "checked" || (k === "value" && el.tagName === "SELECT"))) setProp(el, k, props[k], prev ? prev[k] : void 0);
     el.__dcProps = props;
     return el;
   }
@@ -280,6 +285,11 @@
   }
 
   function syncChildren(el, kids) {
+    /* F3 — an element marked data-dc-raw owns its own children. The reconciler removes any
+     * node it did not itself place, so a subtree mounted by other code (a chart, an editor,
+     * a slice's own DOM) was destroyed by the next unrelated child-list change. Skip such a
+     * parent entirely: we neither insert nor remove inside it. */
+    if (el.nodeType === 1 && el.hasAttribute && el.hasAttribute("data-dc-raw")) return;
     /* React only writes children when the child set actually changes, which is why the
      * deck's imperative splitWords()/innerHTML edits survive a re-render. Same rule here:
      * an unchanged list is a no-op, foreign nodes included. */
@@ -313,6 +323,7 @@
   DCLogic.prototype.renderVals = function () { return {}; };
 
   var logic = null, renderRoot = null, hostEl = null, mounted = false, queued = false, cbs = [];
+  var inFlush = false, chain = 0;   /* F5 runaway-update guard */
   var host = {
     props: {},
     /* dc-runtime __setLogicState L825-829: the updater runs synchronously and the
@@ -326,15 +337,46 @@
   };
   function schedule(cb) {
     if (cb) cbs.push(cb);
+    /* F5: a flush scheduled from inside a flush is a chained update; one scheduled from
+     * an event handler or FD.setData starts a fresh chain. */
+    if (inFlush) chain++; else chain = 0;
     if (queued) return;
     queued = true; Promise.resolve().then(function () { queued = false; flush(); });
   }
   function flush() {
-    pass++; detach = []; attach = [];
+    /* F5 — runaway-update guard. A loop here is setState called from render or from a
+     * lifecycle hook, which chains flush -> schedule -> flush through microtasks. We count
+     * CHAINED flushes rather than flushes per macrotask on purpose: the parity harnesses
+     * freeze setTimeout, so a timer-based window would never reset and would misfire on a
+     * long legitimate run. `chain` resets whenever a flush is scheduled from outside a
+     * flush, so ordinary interaction never accumulates. */
+    if (chain > 50) {
+      console.error("dc-runtime shim: more than 50 chained updates — bailing to break a render loop. " +
+                    "Look for setState() called from renderVals or componentDidUpdate.");
+      chain = 0;
+      return;
+    }
     logic.props = host.props;
-    var vals = host.props;
-    try { vals = Object.assign({}, host.props, logic.renderVals() || {}); } catch (e) { console.error(e); }
-    syncChildren(hostEl, flat(renderRoot(vals, ""), []));
+    /* F2 — if renderVals throws we must NOT render. The old code left vals as host.props
+     * and rendered anyway, which evaluates every binding against an object with none of
+     * the screen's values and blanks the entire UI. Keeping the last committed DOM is the
+     * strictly better failure: the user sees stale data instead of nothing, and the error
+     * is reported. Nothing is mutated before this point, so bailing leaves no half-state. */
+    var vals;
+    try {
+      vals = Object.assign({}, host.props, logic.renderVals() || {});
+    } catch (e) {
+      console.error("dc-runtime shim: renderVals() threw — keeping the last committed DOM, " +
+                    "this render was skipped.", e);
+      return;
+    }
+    pass++; detach = []; attach = [];
+    inFlush = true;
+    try {
+      syncChildren(hostEl, flat(renderRoot(vals, ""), []));
+    } finally {
+      inFlush = false;
+    }
     sweep();
     /* React commit order: every detach fires before any attach, then the lifecycle hook. */
     for (var i = 0; i < detach.length; i++) setRef(detach[i], null);

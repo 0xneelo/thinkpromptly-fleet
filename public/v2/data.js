@@ -114,6 +114,7 @@
     // Fixture mode.
     isFixture,
     fixtureFor,
+    loadFixtures,
     // Time helpers the adapters share, exported so screen slices format the
     // same way rather than growing their own.
     ago,
@@ -147,7 +148,10 @@
     api[name] = function (...args) {
       if (!isFixture()) return live.apply(null, args);
       const key = FIXTURE_ROUTES[name];
-      return Promise.resolve(key === null ? fixtureShim(name) : fixtureFor(key));
+      if (key === null) return Promise.resolve(fixtureShim(name));
+      // Loading is deferred to here so fixture-extract.js is fetched only on a
+      // page that actually asked for fixture mode.
+      return loadFixtures().then(() => fixtureFor(key));
     };
   });
 
@@ -381,9 +385,10 @@
         live: r.state === 'ok' ? 'live' : '',
         right: ago(r.updated_at, now) + ' · ' + r.host,
         bars: creditBars(r, now),
-        // The raw history; the polyline string spark() builds is presentation
-        // (I-L1-02). O6 assumed this did not exist server-side — it partly does.
-        trendPts: Array.isArray(r.history) ? r.history : null,
+        // A number[] of seven-day percentages in time order — the series spark()
+        // draws. Design ruling 2026-09-07: history[].sd is the sampled percent, so
+        // the raw {t, fh, sd, xu} objects do not belong in the seed (I-L1-11).
+        trendPts: trendSeries(r.history),
         seen: (r.seen || []).map((s) => s.host + ' · ' + s.source).join(', '),
       };
       if (r.stale_windows) acct.staleNote = 'sampled ' + ago(r.sample_ts, now) + ' — window has reset since';
@@ -399,6 +404,18 @@
     const match = errors.find((e) => e && (e.id === r.id || e.host === r.host));
     if (match && match.message) return match.message;
     return 'could not read usage on ' + r.host;
+  }
+
+  // history[] is {t, fh, sd, xu} samples; the sparkline plots the seven-day percent.
+  // Sorted by t rather than trusting the server's order, and samples with no reading
+  // are dropped so the series is a clean number[] the template can hand to spark().
+  function trendSeries(history) {
+    if (!Array.isArray(history) || !history.length) return null;
+    return history
+      .slice()
+      .sort((a, b) => (a && a.t) - (b && b.t))
+      .map((h) => (h ? h.sd : null))
+      .filter((v) => typeof v === 'number' && !Number.isNaN(v));
   }
 
   // The API reports a machine enum ('claude_max' + tier 'default_claude_max_20x');
@@ -530,14 +547,22 @@
     return [head].concat(people);
   }
 
+  // The three fallbacks below are the current app's, copied verbatim so the wording
+  // does not drift between the old UI and v2 — public/sessions.js:225 and :229.
   function desktopRow(s, now) {
     const row = {
       title: s.title,
       path: s.cwd,
-      branch: s.branch,
-      model: s.model,
+      // 313 of the 923 captured rows have no branch, so this fallback is load-bearing.
+      branch: s.branch || 'No branch',
+      model: s.model || 'Model unknown',
       when: ago(s.lastActivityAt, now),
-      turns: (s.completedTurns === null || s.completedTurns === undefined ? 0 : s.completedTurns) + ' turns',
+      // A missing turn count is unknown, not zero — '0 turns' would be a claim the
+      // API never made. sessions.js:229 tests === null; undefined is folded in
+      // because a missing key can only mean the same thing.
+      turns: s.completedTurns === null || s.completedTurns === undefined
+        ? 'Turns unknown'
+        : s.completedTurns + ' turns',
       // The mock keeps `created` as a raw ISO string (I-L1-04).
       created: s.createdAt,
     };
@@ -566,19 +591,55 @@
     return typeof search === 'string' && /[?&]fixture=1(&|$)/.test(search);
   }
 
+  // FD.fixture is S2's — the seeds its compiler moved out of the template, and the
+  // ones the app itself renders. FD.fixtureExtract holds only the seeds S2 did not
+  // substitute. FD.fixture always wins, and by construction the two never define
+  // the same key (tools/extract-fixture.mjs filters S2's keys out and its --check
+  // proves the overlap still agrees), so this order is a safety net, not a merge.
   function fixtureFor(name) {
-    const all = fixtures();
-    if (!(name in all)) throw new Error('no fixture named ' + name);
-    return all[name];
+    const owned = root.FD && root.FD.fixture;
+    if (owned && name in owned) return owned[name];
+    let extra = root.FD && root.FD.fixtureExtract;
+    // Under Node the extract is a synchronous require, so a caller that reaches
+    // here before loadFixtures() resolved still gets an answer rather than a throw.
+    if (!extra && typeof require === 'function') {
+      extra = require('./fixture-extract.js');
+    }
+    if (extra && name in extra) return extra[name];
+    throw new Error(
+      'no fixture named ' + name + ' — if it is one of this slice\'s seeds, ' +
+      'await FD.data.loadFixtures() before reading it'
+    );
   }
 
-  // Resolved at call time so a browser load never attempts a require and a Node
-  // test never depends on load order.
-  function fixtures() {
-    const found = root.FD && root.FD.fixture;
-    if (found) return found;
-    if (typeof require === 'function') return require('./fixture.js');
-    throw new Error('FD.fixture is not loaded');
+  // Resolves once fixture-extract.js is available. In Node it is a require; in the
+  // browser the shell is expected to have included it under ?fixture=1, and if it
+  // did not we inject it rather than fail. Never called outside fixture mode.
+  let fixturesLoading = null;
+  function loadFixtures() {
+    if (root.FD && root.FD.fixtureExtract) return Promise.resolve(root.FD.fixtureExtract);
+    if (fixturesLoading) return fixturesLoading;
+    if (typeof require === 'function') {
+      fixturesLoading = Promise.resolve(require('./fixture-extract.js'));
+      return fixturesLoading;
+    }
+    fixturesLoading = new Promise((resolve, reject) => {
+      const el = root.document.createElement('script');
+      // Absolute, matching how the shell loads S2's fixture.js (index.html:36),
+      // so it resolves the same from /v2/ and from /v2/index.html.
+      el.src = '/v2/fixture-extract.js';
+      el.onload = () => resolve(root.FD && root.FD.fixtureExtract);
+      el.onerror = () => {
+        // Forget the failure so a later call retries. Caching a rejected promise
+        // would turn one network hiccup into fixture mode being dead for the life
+        // of the page.
+        fixturesLoading = null;
+        el.parentNode && el.parentNode.removeChild(el);
+        reject(new Error('could not load /v2/fixture-extract.js'));
+      };
+      root.document.head.appendChild(el);
+    });
+    return fixturesLoading;
   }
 
   function orgChart() {
