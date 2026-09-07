@@ -130,6 +130,9 @@ seconds**.
 - No steering orchestrators outside the tracker-first channel.
 - No paraphrasing auth / money / scope rulings — verbatim quote under the ruling ID, or a link.
 - Never on a critical path. Time-bounded work goes seat→operator direct.
+- Never address a 🥅 GOALKEEPER seat — no SendMessage, notify, bus message, or sitrep to it. Never
+  write under `~/.claude/goalkeeper/`. The goalkeeper reads your files; you never read or reach it
+  (operator ruling 2026-09-07).
 - The API cannot break any of these: it is read-only apart from the inbox drop. There is no route
   that mutates `board.json`, and there never will be — the board moves only by a coordinator run's
   single commit.

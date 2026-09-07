@@ -13,3 +13,15 @@ newest at the bottom. Workers append their own entries below the line.
 | P5 | 2026-09-07T01:40Z | `operator:gate — ./up.sh on the deck` | operator:gate project:remote-system | G1 machines page + G2 sessions page are on main but not running; GK-D's refusal will need it too. |
 
 ---
+
+Lane GK-D (Luitpold) — appended 2026-09-07T03:00Z. Linear MCP on the german-box returns
+`oauth_token_invalid_grant`, so the tag `agent-luitpold` could not be registered either; it is
+carried by P6–P9 below.
+
+| # | when (UTC) | title | labels | body |
+|---|---|---|---|---|
+| P6 | 2026-09-07T03:00Z | `[Luitpold · backend-developer] GK-D 1 — deliverDesktopSession refuses a 🥅 row with 403` | agent:luitpold project:remote-system subproject:goalkeeper session:cli-worker | One choke point in `server.js deliverDesktopSession`: refuse when the resolved row's `name` starts with 🥅 or its `cwd` is `~/.claude/goalkeeper` (or under it). `desktopSessions()` now carries `cwd`. `message-bus.js deliverOne` rethrows an `error.refused` verdict instead of swallowing it into `status:'failed'`, so `/api/notify`, loopback `POST /api/messages` and the sessions page all answer HTTP 403 `goalkeeper accepts no messages`; transport failures still behave exactly as before. |
+| P7 | 2026-09-07T03:00Z | `[Luitpold · backend-developer] GK-D 2 — repo suite covers the goalkeeper refusal` | agent:luitpold project:remote-system subproject:goalkeeper session:cli-worker | `test/goalkeeper-refusal.test.js` (node:test, spawned server via `test/http.js`): 🥅 row refused via each caller, goalkeeper-`cwd` row refused, `id:<uuid>` of a 🥅 row refused, a 🎛 row still delivered. Whole `npm test` green. |
+| P8 | 2026-09-07T03:00Z | `[Luitpold · backend-developer] GK-D 3 — isolation line in coordinator-portal + coordinator-run` | agent:luitpold project:remote-system subproject:goalkeeper session:cli-worker | One bullet appended to the hard-nevers section of `.claude/skills/coordinator-portal/SKILL.md` and `.claude/skills/coordinator-run/SKILL.md`. Done. |
+| P9 | 2026-09-07T03:00Z | `[Luitpold · backend-developer] GK-D 4 — report + push agent-goalkeeper-deck` | agent:luitpold project:remote-system subproject:goalkeeper session:cli-worker | Report at `docs/goals/goalkeeper/reports/luitpold.md`; branch pushed via the ghtoken broker. |
+| P10 | 2026-09-07T03:00Z | `operator:decision — PLAN §3.4 item 4 names a third skill (local-orchestrator) that no lane can reach` | operator:decision project:remote-system subproject:goalkeeper | PLAN §3.4 item 4 asks for the isolation line in `local-orchestrator`, `coordinator-portal` and `coordinator-run`. Only the latter two exist in this repo (`.claude/skills/`); `local-orchestrator` lives under `~/.claude/skills/`, which GK-D is barred from touching (Giselher owns `~/.claude`). goal.md item 7 asks only for the two repo skills, so GK-D did those. Options: (a) fold the third into Giselher's GK-M lane, (b) the operator adds the one line by hand, (c) accept the two-skill scope and amend PLAN §3.4 item 4. Recommendation: (b) — it is one line and needs no lane. |
