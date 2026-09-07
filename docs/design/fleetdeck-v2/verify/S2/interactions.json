@@ -2,10 +2,10 @@
   "schemaVersion": 1,
   "slice": "S2",
   "mode": "interaction-parity",
-  "generatedAt": "2026-09-07T00:36:20.536Z",
+  "generatedAt": "2026-09-07T00:44:40.555Z",
   "sources": {
-    "a": "http://127.0.0.1:3217/v2/pass1/index.html",
-    "b": "http://127.0.0.1:3217/v2/index.html"
+    "a": "http://127.0.0.1:3222/v2/pass1/index.html",
+    "b": "http://127.0.0.1:3222/v2/index.html"
   },
   "theme": "dark",
   "determinism": {
@@ -17,11 +17,12 @@
     "media": "blocked"
   },
   "volatileMask": [],
-  "steps": 34,
-  "identicalCount": 34,
+  "steps": 36,
+  "identicalCount": 36,
   "allIdentical": true,
   "outcomeMismatches": [],
   "failedSteps": [],
+  "probeFailures": [],
   "results": [
     {
       "step": "initial-load",
@@ -251,6 +252,44 @@
       "bLength": 71799,
       "aSha256": "c5aadcc590d839fa41d44babf10a814564905f9498ab5528aee9aaad5c8b9e2c",
       "bSha256": "c5aadcc590d839fa41d44babf10a814564905f9498ab5528aee9aaad5c8b9e2c"
+    },
+    {
+      "step": "bus-compose-clear",
+      "sideA": "ok",
+      "sideB": "ok",
+      "sameOutcome": true,
+      "identical": true,
+      "aLength": 71796,
+      "bLength": 71796,
+      "aSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef",
+      "bSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef"
+    },
+    {
+      "step": "bus-keystrokes",
+      "sideA": "ok",
+      "sideB": "ok",
+      "sameOutcome": true,
+      "identical": true,
+      "probeA": {
+        "focusedTag": "TEXTAREA",
+        "focusIsComposer": true,
+        "selectionStart": 5,
+        "selectionEnd": 5,
+        "value": "abcde"
+      },
+      "probeB": {
+        "focusedTag": "TEXTAREA",
+        "focusIsComposer": true,
+        "selectionStart": 5,
+        "selectionEnd": 5,
+        "value": "abcde"
+      },
+      "probeMatch": true,
+      "probeOk": true,
+      "aLength": 71792,
+      "bLength": 71792,
+      "aSha256": "a9ab1832b0e8014c4e639be4765ba25a9aa011faae48b7c1a0e763d948cf4ce5",
+      "bSha256": "a9ab1832b0e8014c4e639be4765ba25a9aa011faae48b7c1a0e763d948cf4ce5"
     },
     {
       "step": "windows-open",
