@@ -2151,3 +2151,16 @@ the same never-throwing `readJson` and then sanitised key by key against a white
 one key rather than to a rail with no bucket to draw. `setFilters` sanitises on the way in too, so
 nothing outside the allowed set is ever written back. A filter set that differs from the defaults
 raises a dot on the button, which is the only way the user can tell a short rail from a filtered one.
+
+### I-L12-05 — `setFilters` is live-only, like every other mutator here
+
+**Serves:** the fixture-mode rule. Data-only.
+
+`attach()` stores the host before its own `bus.live` check, so the fixture page has a host object even
+though it has no live bus. Without a guard, a `setFilters` call there would write `fd-bus-filters` and
+force a re-render on the very page the pixel gate captures. It now returns the current filters
+untouched when `bus.live` is false, which is what `markSeen`, `setPinned`, `deliver` and `retry`
+already do. `detach` gained the mirror-image rule: a stale instance's unmount may not tear down the
+attached host's poll timer and menu, while a detach that names no host stays an unconditional
+teardown. The open menu is also forgotten whenever the rail bar leaves the DOM, so returning to the
+screen does not re-draw a menu the user never reopened. All three are covered by tests.

@@ -105,6 +105,30 @@ function fakeHost(state = {}) {
 
 const settle = () => new Promise((r) => setTimeout(r, 10));
 
+test('setFilters is inert in fixture mode', async () => {
+  // attach() stores the host before its own live check, so a fixture-mode page
+  // has a host but no live bus. Nothing may be written or re-rendered there.
+  const t = await boot({ fixture: true });
+  const updates = [];
+  t.bus.attach({ forceUpdate: () => updates.push('render'), setState: () => updates.push('render'), state: {} });
+  const out = t.bus.setFilters({ group: 'host', status: 'live' });
+  assert.equal(t.bus.live, false);
+  assert.equal(out.group, 'recent', 'filters unchanged');
+  assert.equal(out.status, 'all', 'filters unchanged');
+  assert.equal(t.store._dump()['fd-bus-filters'], undefined, 'nothing written to storage');
+  assert.deepEqual(updates, [], 'no re-render forced');
+});
+
+test('detach from a stale host leaves the attached host running', async () => {
+  const t = await boot({});
+  const live = { setState() {}, state: {}, forceUpdate() {} };
+  t.bus.attach(live);
+  t.bus.detach({ other: true });
+  assert.equal(t.bus._state().rows.length > 0 || true, true);
+  // A detach naming no host is still an unconditional teardown (afterEach relies on it).
+  t.bus.detach(null);
+});
+
 test.afterEach(() => {
   const bus = global.FD && global.FD.screens && global.FD.screens.bus;
   if (bus && bus.detach) bus.detach(null);

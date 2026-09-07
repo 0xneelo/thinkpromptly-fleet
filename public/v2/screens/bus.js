@@ -582,7 +582,10 @@
   };
 
   bus.detach = function (h) {
-    if (host === h) host = null;
+    // A stale instance's unmount must not kill the live host's poll timer and
+    // filter UI. A detach with no host named is still an unconditional teardown.
+    if (h != null && host != null && host !== h) return;
+    host = null;
     stop();
     stopFilterUi();
   };
@@ -689,6 +692,10 @@
   };
 
   bus.setFilters = function (patch) {
+    // Live-only, like markSeen/setPinned/deliver/retry. attach() stores the host
+    // before its own live check, so without this a fixture-mode call would write
+    // storage and force a re-render on the page the pixel gate captures.
+    if (!bus.live) return bus.filters();
     filters = sanitiseFilters(Object.assign({}, filters, patch || {}));
     writeStore(FILTERS_KEY, JSON.stringify(filters));
     if (host) {
@@ -945,7 +952,10 @@
 
   function drawFilterUi() {
     var input = railBar();
-    if (!input) return;
+    // The bus screen is conditionally rendered, so leaving it removes the rail
+    // bar and our nodes with it. Forget the open state now: otherwise coming
+    // back re-draws the menu open, expanded, with nothing having been clicked.
+    if (!input) { menuOpen = false; menuSection = null; menuSig = null; return; }
     var bar = input.parentNode;
     var select = bar.querySelector('button[title="Pick several sessions for a broadcast"]');
 
@@ -1034,7 +1044,10 @@
 
   function observeHost() {
     if (!observer) return;
-    observer.observe((host && host.rootEl) || document, { childList: true, subtree: true });
+    // dc-root is the runtime's mount point (runtime.js mount()). Watching the
+    // document instead would re-run this on every mutation in the app.
+    var root = (host && host.rootEl) || document.getElementById('dc-root') || document;
+    observer.observe(root, { childList: true, subtree: true });
   }
 
   function bindWindow() {
