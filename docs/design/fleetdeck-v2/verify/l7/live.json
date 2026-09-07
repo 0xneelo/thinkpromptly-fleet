@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "mode": "live",
   "slice": "l7",
-  "capturedAt": "2026-09-07T01:10:33.902Z",
+  "capturedAt": "2026-09-07T01:24:21.535Z",
   "clock": {
     "fixedNow": 1788745984000,
     "iso": "2026-09-07T01:53:04.000Z",
@@ -13,8 +13,8 @@
     "width": 1440,
     "height": 900
   },
-  "total": 62,
-  "passed": 62,
+  "total": 66,
+  "passed": 66,
   "failed": 0,
   "allPass": true,
   "results": [
@@ -247,6 +247,20 @@
       "detail": "expected \"{\\\"ttl\\\":\\\"4h\\\",\\\"principals\\\":\\\"root,vibe\\\"}\", got \"{\\\"ttl\\\":\\\"4h\\\",\\\"principals\\\":\\\"root,vibe\\\"}\""
     },
     {
+      "id": "L7-65",
+      "action": "mint a cert successfully",
+      "expectation": "the new cert appears at the top of the list",
+      "pass": true,
+      "detail": "expected \"deployer-20260907-000000\", got \"deployer-20260907-000000\""
+    },
+    {
+      "id": "L7-66",
+      "action": "mint a cert successfully",
+      "expectation": "the new cert row is flashed once it is on screen",
+      "pass": true,
+      "detail": "row background \"oklch(0.83 0.15 155 / 0.1)\""
+    },
+    {
       "id": "L7-34",
       "action": "mint against a failing minter",
       "expectation": "the server's error text is shown",
@@ -323,10 +337,23 @@
     },
     {
       "id": "L7-45",
-      "action": "press a start chip",
-      "expectation": "the chip reads Touch ID… while the mint is in flight",
+      "action": "press a start chip and look while it is in flight",
+      "expectation": "the chip reads Touch ID…",
       "pass": true,
-      "detail": "Touch ID…"
+      "detail": "expected \"Touch ID…\", got \"Touch ID…\""
+    },
+    {
+      "id": "L7-63",
+      "action": "press a start chip and look while it is in flight",
+      "expectation": "the chip is disabled until the broker answers",
+      "pass": true
+    },
+    {
+      "id": "L7-64",
+      "action": "wait for the start to land",
+      "expectation": "the chip goes back to its TTL",
+      "pass": true,
+      "detail": "expected \"1h\", got \"1h\""
     },
     {
       "id": "L7-46",

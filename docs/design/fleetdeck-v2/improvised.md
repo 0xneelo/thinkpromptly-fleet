@@ -369,7 +369,10 @@ the mock's own `chipTone('warn')` helper — the same tone the app already uses 
 state is new but the token is not.
 
 Today's `flash` class on a newly minted cert has no mock counterpart either; it is rendered as a
-1.2 s tint of the mock's `t.goodBg` token on the new row.
+1.2 s tint of the mock's `t.goodBg` token on the new row. It is applied from a **deadline**, not set
+once and cleared on a timer: the certificate rows are rebuilt on every paint, and a mint triggers
+several in quick succession (the optimistic paint, the `FD.setData` flush, the reload), so a
+one-shot tint landed on a row the very next repaint replaced. See the note under I-L7-08.
 
 Screenshot: `improvised/l7-broker-down.png`.
 
@@ -417,5 +420,12 @@ Every theme-dependent property on a cloned node is therefore re-derived from tha
 on each paint, rather than trusted from the clone. Proven by `verify/l7` L7-61 and L7-62, which
 flip the theme *after* the cards are painted and assert the computed colours actually changed —
 they fail against the previous implementation.
+
+**Transient state lives in the module, never on a node.** The rows are rebuilt from scratch on every
+paint, so a `disabled` flag or a busy label written straight onto a button is lost the moment
+anything repaints, and the handler's captured node goes stale. The cert dir being deleted, the train
+TTL being started, whether an End train is in flight, and the flash deadline are therefore all module
+state that each paint reads — which is also what DESIGN-35's rule 1 asks for. An earlier version held
+them in the DOM behind a `data-l7-busy` attribute; that hook is gone.
 
 Screenshot: `improvised/l7-certificates.png` (dark) and `improvised/l7-screen-light.png` (light).

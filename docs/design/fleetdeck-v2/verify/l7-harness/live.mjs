@@ -108,12 +108,17 @@ async function scenario(browser, port, opts, body) {
       posts.push({ path, body: parsed });
       const reply = opts.onPost ? opts.onPost(path) : { status: 200, body: { ok: true } };
       if (reply.abort) return route.abort('failed');
+      // A real in-flight window, so a busy-label check has something to observe.
+      if (reply.delayMs) await new Promise((r) => setTimeout(r, reply.delayMs));
       return route.fulfill({ status: reply.status, contentType: reply.contentType || 'application/json', body: typeof reply.body === 'string' ? reply.body : json(reply.body) });
     }
     gets.push(path);
     if (path === '/api/sshkeys') {
       if (offline) return route.abort('failed');
-      return route.fulfill({ status: 200, contentType: 'application/json', body: json(sshkeys) });
+      // Read through opts, not the destructured copy: a scenario whose response
+      // changes after a POST exposes it as a getter, and destructuring would
+      // have frozen the pre-POST value.
+      return route.fulfill({ status: 200, contentType: 'application/json', body: json(opts.sshkeys) });
     }
     if (path === '/api/ghtrain') {
       if (ghtrain && ghtrain.__status) {
@@ -289,6 +294,25 @@ async function main() {
       eq('L7-33', 'pick 4h and press Mint', "the POST body is today's {ttl, principals}", json(sent && sent.body), json({ ttl: '4h', principals: 'root,vibe' }));
     }));
 
+    // -- S8b a successful mint flashes the cert it just created --------------
+    // The reload has to bring the new dir back before the flash can land, so
+    // this stubs mint and the follow-up GET together. Without holding flashDir
+    // across that reload the highlight is dead code (it was).
+    const minted = { ...baseKeys.certs[0], dir: '/Users/misterislez/.ssh/deploy-certs/20260907-000000', keyId: 'deployer-20260907-000000' };
+    let mintedYet = false;
+    allNoise.push(...await scenario(browser, server.port, {
+      get sshkeys() { return mintedYet ? { certs: [minted, ...baseKeys.certs], keys: baseKeys.keys } : baseKeys; },
+      ghtrain: baseTrain,
+      onPost: (p) => { if (p === '/api/sshkeys/mint') { mintedYet = true; return { status: 200, body: { ok: true, outdir: minted.dir } }; } return { status: 200, body: { ok: true } }; },
+    }, async ({ page, keys }) => {
+      await card(keys, MINT).getByRole('button', { name: 'Mint', exact: true }).click();
+      await page.waitForTimeout(500);
+      const rows = card(keys, CERTS).locator('> div');
+      eq('L7-65', 'mint a cert successfully', 'the new cert appears at the top of the list', await text(rows.nth(0).locator('span').nth(2)), 'deployer-20260907-000000');
+      const bg = await rows.nth(0).evaluate((n) => n.style.background);
+      check('L7-66', 'mint a cert successfully', 'the new cert row is flashed once it is on screen', !!bg && bg !== 'transparent', `row background ${JSON.stringify(bg)}`);
+    }));
+
     // -- S9 mint failure surfaces the server's message ---------------------
     allNoise.push(...await scenario(browser, server.port, {
       sshkeys: baseKeys, ghtrain: baseTrain, expectHttpErrors: true,
@@ -369,12 +393,17 @@ async function main() {
     // -- S16 a start chip shows Touch ID… while it waits -------------------
     allNoise.push(...await scenario(browser, server.port, {
       sshkeys: baseKeys, ghtrain: { active: false, expiresAt: null },
-      onPost: (p) => p === '/api/ghtrain' ? { status: 200, body: { ok: true }, delay: true } : { status: 200, body: { ok: true } },
+      onPost: (p) => p === '/api/ghtrain' ? { status: 200, body: { ok: true }, delayMs: 1200 } : { status: 200, body: { ok: true } },
     }, async ({ page, keys }) => {
       const chip = card(keys, TRAIN).locator('button').nth(0);
       await chip.click();
+      await page.waitForTimeout(250);          // inside the 1.2 s stub delay
       const label = await text(chip);
-      check('L7-45', 'press a start chip', 'the chip reads Touch ID… while the mint is in flight', label === 'Touch ID…' || label === '1h', label);
+      const disabled = await chip.isDisabled();
+      eq('L7-45', 'press a start chip and look while it is in flight', 'the chip reads Touch ID…', label, 'Touch ID…');
+      check('L7-63', 'press a start chip and look while it is in flight', 'the chip is disabled until the broker answers', disabled);
+      await page.waitForTimeout(1400);         // let it land
+      eq('L7-64', 'wait for the start to land', 'the chip goes back to its TTL', await text(chip), '1h');
     }));
 
     // -- S17 train start failure -------------------------------------------

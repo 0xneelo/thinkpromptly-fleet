@@ -16,7 +16,7 @@ The SSH keys + GitHub train screen runs on live data, inside the mock's markup, 
 |---|---|---|
 | `public/v2/screens/keys.js` | owned | the whole screen: load, poll, tick, the four cards, every action |
 | `public/v2/logic.js` | this screen's section only | the keys block hands the render's theme tokens to the screen file, guarded and wrapped |
-| `docs/design/fleetdeck-v2/verify/l7-harness/live.mjs` | new | the live-mode proof, 24 scenarios / 62 checks |
+| `docs/design/fleetdeck-v2/verify/l7-harness/live.mjs` | new | the live-mode proof, 25 scenarios / 66 checks |
 | `docs/design/fleetdeck-v2/verify/l7-harness/shots.mjs` | new | the improvisation screenshots |
 | `test/v2-keys.test.js` | new | 17 unit tests over the pure helpers |
 | `docs/design/fleetdeck-v2/improvised.md` | appended | I-L7-01 … I-L7-08 |
@@ -69,8 +69,8 @@ timer, DOM write or network request happens. That is what holds the pixel gate a
 | guard `pick at least one principal` | **done** | L7-31, and no POST fires (L7-32) |
 | `POST /api/sshkeys/mint {ttl, principals:'root,vibe'}` | **done** | L7-33 |
 | server validation text surfaced | **done** | L7-46 shows the analogous train text; mint 502 at L7-34 |
-| button disabled + `Minting…` | **done** | L7-45 covers the same in-flight pattern on the train chips |
-| success flashes the new cert (`flashDir`) | **done** (improvised I-L7-06) | `flash()`, tinted with `t.goodBg` |
+| button disabled + `Minting…` | **done** | L7-45 / L7-63 / L7-64 pin the in-flight label and the disabled state against a delayed stub |
+| success flashes the new cert (`flashDir`) | **done** (improvised I-L7-06) | L7-65, L7-66 |
 | failure → `r.error \|\| 'mint failed'` | **done** | L7-34 |
 | `load()` always after | **done** | `mint()` calls `load()` on both paths |
 | 1Password hint text verbatim | **done** | L7-06 |
@@ -142,27 +142,20 @@ cards from clones · I-L7-08 `data-dc-raw` and restyling clones on every paint.
 | Gate | Result |
 |---|---|
 | Pixel gate, fixture mode | **36/36, `allPass: true`**, max mismatch 0.032948 % (a pre-existing `registry dark` delta inherited from S2). **`ssh-keys` 0.000000 % in both themes.** `verify/l7/report.json` |
-| Live proof, API stubbed | **62/62, `allPass: true`**, zero console errors of the screen's own. `verify/l7/live.json`, `live-dark.png`, `live-light.png` |
+| Live proof, API stubbed | **66/66, `allPass: true`**, zero console errors of the screen's own. `verify/l7/live.json`, `live-dark.png`, `live-light.png` |
 | Unit tests | `test/v2-keys.test.js` — **17/17** |
-| `npm test` | **246 pass / 1 fail of 247.** The one failure is **pre-existing at base** — see below. |
+| `npm test` | **320 pass / 320, 0 fail.** |
 
-### `npm test` is not green, and this slice cannot make it green
+### `npm test`, and the failure that went away
 
-`test/v2-data.test.js` fails at `origin/agent-v2-base` and on every L-branch:
+For most of this slice `npm test` was **246/247**: `test/v2-data.test.js` threw
+`ReferenceError: window is not defined` because the generated `public/v2/fixture.js` had no UMD
+guard. I verified it was not mine (`git diff origin/agent-v2-base...HEAD -- public/v2/fixture.js`
+empty, the file last written by S2's `2bd76de`) and filed it as **DECK-85**, since DESIGN-35's
+standing rule forbids any L-slice from editing that file.
 
-```
-public/v2/fixture.js:4
-window.FD = window.FD || {};
-^
-ReferenceError: window is not defined
-```
-
-The generated `fixture.js` has no UMD guard, so `require()`-ing it from Node throws. Verified not
-mine: `git diff origin/agent-v2-base...HEAD -- public/v2/fixture.js` is empty, and the file was last
-written by S2's `2bd76de`. DESIGN-35's standing instruction is "do not edit `public/v2/fixture.js`",
-so the fix belongs to the S2 lane. Filed as **DECK-85**.
-
-Excluding that file, the suite is 246/246 with my 17 added.
+The L1.2 base move fixed it. On the current base the suite is **320 pass / 320, 0 fail**, my 17
+included. DECK-85 can be closed as fixed upstream.
 
 ### The fleet registry row
 
@@ -259,15 +252,45 @@ fixed); a `reviewer` on the finished diff. The screen file itself I wrote direct
 turned on one architectural judgement (the unbound cards), and specifying it precisely enough to
 hand over would have been the code.
 
+## 7b. What the review found
+
+A `reviewer` pass over the finished diff returned three real findings. All are fixed, and each now
+has a check that fails against the old code:
+
+1. **HIGH — the mint flash was dead code.** `repaint()` cleared `flashDir` at the end of *every*
+   paint, but the paint that follows `mint()` still sees the pre-mint certificate list, so the new
+   dir never matched before the flag was zeroed. Fixing that exposed a second half: the rows are
+   rebuilt on every paint and a mint triggers several in quick succession, so even a matched tint
+   was replaced microseconds later by the repaint `FD.setData` schedules. The flash is now driven by
+   a **deadline** (`flashUntil`) that every paint reads, so it survives any number of repaints and
+   expires on its own. Covered by **L7-65** (the new cert arrives at the top) and **L7-66** (its row
+   is actually tinted) — the reviewer noted the old scenario checked only the POST body.
+2. **MEDIUM — `L7-45` could not fail.** The route stub never consumed its `delay` flag, so there was
+   no in-flight window, and the assertion accepted both `'Touch ID…'` and the reverted `'1h'`. The
+   stub now really delays 1.2 s and the check is strict, with **L7-63** (the chip is disabled while
+   in flight) and **L7-64** (it reverts afterwards) added. This is the second vacuous check I wrote
+   and caught; both are now real.
+3. **LOW — stale error notices.** Today's handlers hide the error line the moment you click
+   (`keys.js:231,249`); mine waited for the response, so a failed "Kill now" left "delete failed"
+   sitting under a button you had already pressed again. All three handlers now clear and repaint on
+   click.
+
+Fixing 1 and 3 properly meant moving every piece of transient state — the dir being deleted, the TTL
+being started, whether an End train is in flight, the flash deadline — out of the DOM and into the
+module, which each paint reads. That is what DESIGN-35's rule 1 asks for, and the `data-l7-busy`
+hook it replaced is gone.
+
+The reviewer's fourth finding (a repaint ordering race between the direct `paint()` in `load()` and
+the flush `FD.setData` schedules) is real but self-correcting within the same microtask drain, so
+nothing is ever visible. Left as-is and noted here rather than papered over.
+
 ## 8. Follow-ups
 
 - **DECK-84** must land before cut-over, or delete the stopgap loader and the screen goes dark.
 - **DECK-85** blocks a green `npm test` for every slice.
 - **DECK-86** awaits an operator decision; the current behaviour is today's, so nothing is broken
   while it waits.
-- The Mint button's in-flight `Minting…` state is asserted only indirectly (L7-45 proves the
-  identical pattern on the train chips). A stubbed-delay POST would pin it directly; it was not
-  worth holding the push for.
+- Nothing outstanding in the slice itself. The three review findings below are all fixed and covered.
 
 ---
 

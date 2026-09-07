@@ -43,6 +43,7 @@
   var POLL_MS = 30000;
   var TICK_MS = 1000;
   var COPIED_MS = 1500;
+  var FLASH_MS = 1200;      // how long a freshly minted cert stays tinted
 
   // Exactly what you paste after `ssh` to use this cert and nothing else from
   // the agent (keys.js:5-6).
@@ -121,6 +122,10 @@
   var trainError = '';
   var loadError = '';
   var minting = false;
+  var deletingDir = null;   // the cert dir whose delete is in flight
+  var startingTtl = null;   // the train TTL whose start is in flight
+  var ending = false;       // an End train is in flight
+  var flashUntil = 0;       // the flash is a deadline, not a one-shot (see mint)
   var ticks = [];        // {epoch, node} per live countdown, rebuilt each paint
 
   var ctx = null;        // theme tokens + mock style objects, handed over by logic.js
@@ -244,11 +249,11 @@
     var cards = kids(root);
     if (cards.length < 4) return;
     ticks = [];
+    if (flashDir && Date.now() >= flashUntil) flashDir = null;
     paintMint(cards[0]);
     paintTrain(cards[1]);
     paintCerts(cards[2]);
     paintKeys(cards[3]);
-    flashDir = null;
   }
 
   // §2 Mint ­— the TTL and principal chips are already bound to logic.js; this
@@ -295,11 +300,13 @@
     var btns = kids(row).filter(function (n) { return n.tagName === 'BUTTON'; });
     btns.slice(0, TTLS.length).forEach(function (b, i) {
       var v = TTLS[i];
-      if (b.getAttribute('data-l7-busy') !== '1') { b.textContent = v; b.disabled = false; }
-      b.onclick = function () { startTrain(b, v); };
+      var busy = startingTtl === v;
+      b.textContent = busy ? 'Touch ID…' : v;
+      b.disabled = busy;
+      b.onclick = function () { startTrain(v); };
     });
     var endBtn = btns[TTLS.length];
-    if (endBtn) { endBtn.hidden = !live; endBtn.onclick = function () { endTrain(endBtn); }; }
+    if (endBtn) { endBtn.hidden = !live; endBtn.disabled = ending; endBtn.onclick = endTrain; }
 
     dropNotices(card);
     if (down || trainError) {
@@ -348,12 +355,12 @@
       }
       if (btn) {
         btn.textContent = live ? 'Kill now' : 'Delete';
-        btn.disabled = false;
+        btn.disabled = deletingDir === c.dir;
         btn.style.borderColor = ctx.t.line;
         btn.style.color = live ? ctx.t.ink : ctx.t.ink75;
-        btn.onclick = function () { removeCert(c, live, btn); };
+        btn.onclick = function () { removeCert(c, live); };
       }
-      if (c.dir === flashDir) flash(row);
+      if (flashDir && c.dir === flashDir && Date.now() < flashUntil) flash(row);
       card.appendChild(row);
 
       if (live) {
@@ -404,10 +411,15 @@
 
   // The mock has no flash design; a brief tint in its own goodBg token marks the
   // cert that was just minted (improvised.md I-L7-06).
+  //
+  // Applied from a DEADLINE rather than set once and cleared on a timer. The
+  // rows are rebuilt on every paint, and a mint triggers several in quick
+  // succession (the optimistic paint, the FD.setData flush, the reload) — a
+  // one-shot tint was painted onto a row that the very next repaint replaced,
+  // so the flash never survived long enough to be seen.
   function flash(row) {
     row.style.background = ctx.t.goodBg;
     row.style.borderRadius = '8px';
-    setTimeout(function () { row.style.background = 'transparent'; }, 1200);
   }
 
   // Incoming rows are guarded before anything renders them: the deck can answer
@@ -460,45 +472,57 @@
     post(function () { return FD.data.mintCert({ ttl: ttl, principals: picked.join(',') }); })
       .then(function (r) {
         minting = false;
-        if (r.ok) flashDir = r.outdir;
-        else mintError = r.error || 'mint failed';
+        if (r.ok) {
+          flashDir = r.outdir;
+          flashUntil = Date.now() + FLASH_MS;
+          // Nothing else repaints once the tint expires, so ask for one.
+          setTimeout(paint, FLASH_MS + 30);
+        } else {
+          mintError = r.error || 'mint failed';
+        }
         paint();
         load();
       });
   }
 
-  function startTrain(btn, v) {
+  // Today's handlers hide the error line the moment you click (keys.js:231,
+  // 249), not when the response lands — so a stale 'could not start train'
+  // does not sit under a button you have already pressed again.
+  function startTrain(v) {
     trainError = '';
-    btn.disabled = true;
-    btn.textContent = 'Touch ID…';
-    btn.setAttribute('data-l7-busy', '1');
+    startingTtl = v;
+    paint();
     post(function () { return FD.data.startTrain({ ttl: v }); }).then(function (r) {
-      btn.removeAttribute('data-l7-busy');
-      btn.disabled = false;
-      btn.textContent = v;
+      startingTtl = null;
       if (!r.ok) trainError = r.error || 'could not start train';
+      paint();
       load();
     });
   }
 
-  function endTrain(btn) {
+  function endTrain() {
     trainError = '';
-    btn.disabled = true;
+    ending = true;
+    paint();
     post(function () { return FD.data.endTrain(); }).then(function (r) {
-      btn.disabled = false;
+      ending = false;
       if (!r.ok) trainError = r.error || 'could not end train';
+      paint();
       load();
     });
   }
 
   // Ruling O9: "Kill now" is this delete. Today's delete error lands in the
   // mint error line (keys.js:66 reuses errEl), so it stays there.
-  function removeCert(c, live, btn) {
+  function removeCert(c, live) {
     if (live && !confirm(KILL_CONFIRM)) return;
     mintError = '';
-    btn.disabled = true;
+    deletingDir = c.dir;
+    paint();
     post(function () { return FD.data.deleteKey({ dir: c.dir }); }).then(function (r) {
-      if (!r.ok) { mintError = r.error || 'delete failed'; btn.disabled = false; }
+      deletingDir = null;
+      if (!r.ok) mintError = r.error || 'delete failed';
+      paint();
       load();
     });
   }
