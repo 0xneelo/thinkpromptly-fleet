@@ -2399,7 +2399,8 @@ function redirect(res, location) {
 // rather not honour, including a multi-range or a unit that is not bytes.
 function parseByteRange(header, size) {
   if (!header) return null;
-  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim());
+  // The unit is case-insensitive ABNF (RFC 5234 §2.3), so Bytes=0-99 is a legal ask.
+  const m = /^bytes=(\d*)-(\d*)$/i.exec(String(header).trim());
   if (!m) return null;
   const [, rawStart, rawEnd] = m;
   if (rawStart === '' && rawEnd === '') return null;
@@ -2442,12 +2443,25 @@ function sendFile(res, file, req) {
       'content-length': st.size === 0 ? 0 : end - start + 1,
     };
     if (range) head['content-range'] = 'bytes ' + start + '-' + end + '/' + st.size;
-    res.writeHead(range ? 206 : 200, head);
-    if (st.size === 0) return res.end();
+    // An empty file has no stream to open — createReadStream would get end:-1 and throw.
+    if (st.size === 0) {
+      res.writeHead(range ? 206 : 200, head);
+      return res.end();
+    }
+    // stat succeeding does not mean the file opens: a chmod 000 file stats fine and
+    // then fails with EACCES. Holding the head back until the fd is open keeps that
+    // case a clean 404, the way the old readFile path answered it, rather than a
+    // 200 whose content-length promises a body the reset connection never delivers.
     const stream = fs.createReadStream(file, { start, end });
-    stream.on('error', () => res.destroy());
+    stream.on('open', () => {
+      res.writeHead(range ? 206 : 200, head);
+      stream.pipe(res);
+    });
+    stream.on('error', () => {
+      if (res.headersSent) return res.destroy();
+      send(res, 404, 'text/plain', 'not found');
+    });
     res.on('close', () => stream.destroy());
-    stream.pipe(res);
   });
 }
 
