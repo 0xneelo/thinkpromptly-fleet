@@ -264,10 +264,30 @@ something `BEHAVIOUR.md` requires, and the template is not L10's file to edit.
 
 **One rule governs all of them:** the improvisation is applied imperatively from
 `public/v2/screens/desktop.js`, in **live mode only**. In fixture mode (`?fixture=1`) the screen file
-returns before it wires anything, so the compiled logic renders `FD.fixture` exactly as the mock does
-and the pixel gate stays at 36/36 — verified, `verify/l10/report.json`, desktop-sessions 0.000000 % in
-both themes. Hooks placed on mock markup are `data-fd-l10="…"` attributes only; no class is ever
+returns before it wires anything, so `FD.screens.desktop` is not even defined there and the compiled
+logic renders `FD.fixture` exactly as the mock does. The pixel gate stays at 36/36 — verified,
+`verify/l10/report.json`, desktop-sessions 0.000000 % in both themes. Hooks placed on mock markup are `data-fd-l10="…"` attributes only; no class is ever
 grafted on, and no markup is hand-typed into the template.
+
+### After S2.2 — where the injected nodes now stand
+
+S2.2 closed the runtime audit's F3 with `data-dc-raw`: an element carrying it owns its own children,
+and the reconciler neither inserts nor removes inside it. L10 takes that offer in the one place it
+fits — the **filter row**, whose template children are static — so **I-L10-05** (count line) and
+**I-L10-07** (Refresh) are now sanctioned foreign children rather than tolerated ones.
+
+The **screen root** deliberately does not get the marker: its children are the group cards, which must
+keep reconciling as filters change their number, so **I-L10-06** (the notes panel) still depends on
+being re-derived every `apply()`. **I-L10-02** (chips) and **I-L10-04** (copy label) sit inside a
+positional `sc-for`; S2.2 also added `key="{{ }}"` support, but the key has to be written into
+`template.dc.html`, which is not this slice's file. Their mitigations therefore stand as built: chips
+are reconciled from data on every pass, and the copy label lives in a Map keyed by session id rather
+than in the DOM, so a positional reuse cannot strand it on the wrong session. Tracked as DECK-78.
+
+Every injected node — **its styles included** — is re-derived on each `apply()`. That is not only the
+F3/F1 mitigation: injected nodes originally copied their theme tokens once at creation, and a
+light/dark toggle left the Refresh button, the collected line, the notes and the chips near-invisible
+on the previous theme. The live proof's `theme-resync` check is the regression guard.
 
 ### I-L10-01 — The four filter selects are inert in the mock, so they are wired from the screen file
 

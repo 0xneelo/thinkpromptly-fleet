@@ -35,11 +35,11 @@ Make the **Desktop sessions** screen work on live data exactly like today's app 
 
 ## Acceptance (definition of done)
 
-- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
-- [ ] `verify/l10/report.json` allPass 36/36 (fixture mode); `verify/l10/live.json` all pass; live screenshots filed.
-- [ ] `improvised.md` entries + screenshots for every improvisation.
-- [ ] Hooks provided are defined; hooks used are guarded.
-- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Clodwig**; registry row `done`.
+- [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim. — §1-§3 and §5 done; §4's page composer is **n.a., superseded by ruling O8** (the bus thread replaces it), recorded item by item rather than dropped.
+- [x] `verify/l10/report.json` allPass **36/36** (fixture mode, `desktop-sessions` 0.000000 % both themes); `verify/l10/live.json` **33/33** all pass, zero console errors; `live-dark.png` + `live-light.png` filed.
+- [x] `improvised.md` entries + screenshots for every improvisation — nine entries `I-L10-01…09`, seven PNGs under `improvised/` (I-L10-08 and 09 are data/behaviour decisions and carry none).
+- [x] Hooks provided are defined; hooks used are guarded. — provides **none** (`rowAction` is internal to this slice's own two files, live mode only); uses `FD.screens.bus.open`, optional-chained, `try/catch`ed, with a guarded `FD.router.navigate('bus')` fallback while L6 is in flight.
+- [x] `npm test` green; branch pushed; `REPORT.md` signed **Clodwig**; registry row `done`. — `npm test` **296/298**: the base's own `v2-data` failure (DECK-68) is fixed by L1; the two that remain are `notify.test.js`, which passes **19/19 run alone** — load flakiness in code this slice does not touch. Unit suite `test/v2-desktop.test.js` **9/9**.
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

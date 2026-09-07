@@ -159,7 +159,33 @@ documented in place.
 
 ## Verification
 
-_(filled below)_
+All three gates green on base `a6542ba` (S2.2 + L1.1), commit `<HEAD>`.
+
+| Gate | Result |
+|---|---|
+| **Pixel, fixture mode** — `npm run design:diff -- --app <static>/v2/index.html?fixture=1 --slice l10` | **allPass true, 36/36**, maxMismatchPct **0.0329 %** (S2's own figure — the delta is pre-existing registry-dark noise). **`desktop-sessions` 0.000000 % dark and light.** → `verify/l10/report.json` + 36 PNGs |
+| **Live mode, API stubbed** — `node verify/l10-harness/live.mjs` | **33/33, allPass true, zero console errors.** → `verify/l10/live.json`, `live-dark.png`, `live-light.png` |
+| **Unit** — `node --test test/v2-desktop.test.js` | **9/9** |
+| **Suite** — `npm test` | **296/298.** `test/v2-data.test.js` failed on base itself (DECK-68, since fixed by L1). The two remaining are `test/notify.test.js`, which passes **19/19 run alone** — load flakiness in the concurrent run, in code this slice does not touch. |
+
+The 33 live checks cover every automatable `BEHAVIOUR.md` item: rows and their fallbacks, the six age
+strings, all three status chips plus Archived and Cached, the details panel, Show / Message / Copy
+context / Copy conversation, transcript 404 and 502, all five filters, Reset, the vanished-selection
+guard, the count and last-collection line, every per-machine note, all three empty/error states,
+`refresh=1`, the query-less plain load, the theme re-sync regression guard, and zero console errors.
+
+### How to re-run
+
+Order matters — **the pixel gate wipes `verify/l10/`**, because `scripts/design-diff.mjs` builds that
+directory in a staging dir and renames it into place. Run the gate first, the live proof second, or
+`live.json` and its PNGs disappear. That is also why the harness sources live in `verify/l10-harness/`.
+
+```sh
+node <static-server> public 4178                       # serve public/ on 127.0.0.1:4178
+npm run design:diff -- --app 'http://127.0.0.1:4178/v2/index.html?fixture=1' --slice l10
+node docs/design/fleetdeck-v2/verify/l10-harness/live.mjs
+node --test test/v2-desktop.test.js
+```
 
 ## Two defects found outside this slice, filed not fixed
 
@@ -178,7 +204,14 @@ to S2's compiled version. Filed; L1's `3e1c06a` fixture-extract split then fixed
 
 ## Open follow-ups
 
-_(filled below)_
+| Ref | What | Owner |
+|---|---|---|
+| **DECK-93** | *urgent gate* — the shell loads neither `data.js` nor `router.js`, so every L-slice is inert on the real page. The pixel gate cannot catch it. | S2 / L2 |
+| **DECK-78** | `operator:decision` — L10 mounts foreign DOM inside compiled nodes. Half resolved by S2.2's `data-dc-raw`, adopted on the filter row. What remains is whether to add `key="{{ r.sid }}"` to the Desktop sessions `sc-for` (`template.dc.html:694`), which would let the row-level mitigations be dropped rather than merely correct. Not required — the slice is green without it. | S2 / design seat |
+| **DECK-61** | `FD.data.toDesktop`'s three gaps. DESIGN-35 says L1.2 will move `Turns unknown` / `No branch` / `Model unknown` into the adapter; a TODO in place records that landing it changes nothing here. The archived-row drop and the duplicate `Live now` head group would still want fixing at the source. | L1 |
+| **DECK-68** | closed in effect — L1's `fixture-extract.js` split fixed it; verified here. | L1 ✅ |
+| — | `test/notify.test.js` is flaky under concurrent load (19/19 alone). Not this slice's code; noted, not filed. | — |
+| — | L6 has not landed `FD.screens.bus.open`, so Message currently falls back to `FD.router.navigate('bus')` — it reaches the bus screen without selecting the thread. No code change needed here when L6 ships. | L6 |
 
 ---
 

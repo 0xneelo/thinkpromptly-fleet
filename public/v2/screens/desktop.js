@@ -439,6 +439,16 @@
     const parts = rendered(el);
     const bar = parts[0];
     if (!bar) return;
+    // S2.2 closes audit F3 with data-dc-raw: an element carrying it owns its own
+    // children, and the reconciler neither inserts nor removes inside it. The filter
+    // row is the one place this slice can take that offer — its template children are
+    // static (an input, four selects, a span, Reset), so opting out of reconciliation
+    // there costs nothing and stops our Refresh button and collected line from
+    // depending on the reconciler merely happening not to touch them.
+    // The screen root deliberately does NOT get it: its children are the group cards,
+    // which must keep reconciling, so the notes panel still relies on being re-derived
+    // every apply(). That is the part of DECK-78 that stands.
+    if (!bar.hasAttribute('data-dc-raw')) bar.setAttribute('data-dc-raw', '');
     const cards = parts.slice(1);
     const view = visibleRows();
     syncSelects(bar);
