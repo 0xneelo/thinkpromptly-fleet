@@ -81,6 +81,10 @@ async function boot(plan = {}) {
       }
       return answer(plan.messages === undefined ? MESSAGES : plan.messages);
     }
+    if (url.startsWith('/api/desktop-sessions/transcript')) {
+      const r = typeof plan.transcript === 'function' ? plan.transcript() : (plan.transcript || { state: 'ok', turns: [] });
+      return answer(r, r.httpStatus || 200);
+    }
     if (url.startsWith('/api/sessions')) return answer(plan.sessions === undefined ? SESSIONS : plan.sessions);
     return answer({});
   };
@@ -557,4 +561,82 @@ test('delivering to an unknown target still refreshes, in case the rail is stale
   const after = calls.filter((c) => c.method === 'GET').length;
   assert.ok(after > before, 'a poll was kicked off: ' + before + ' -> ' + after);
   assert.strictEqual(bus._state().errs.x9, 'Delivery failed: unknown target');
+});
+
+// ---------------------------------------------------------------------------
+// The full Claude conversation of a Claude Desktop seat, merged into the thread.
+// ---------------------------------------------------------------------------
+const DESK_UUID = '22222222-2222-4222-8222-222222222222';
+const DESK_ID = 'id:' + DESK_UUID;
+const deskPlan = (turns, extra) => Object.assign({
+  messages: { messages: [], targets: [{ type: 'claude-desktop', session: DESK_ID }] },
+  transcript: { state: 'ok', turns },
+}, extra);
+
+test('wantTranscript fetches the seat by thread id and pushes it through FD.setData', async () => {
+  const { bus, FD, calls } = await boot(deskPlan([{ role: 'user', ts: '2026-09-06T10:00:00.000Z', text: 'go' }]));
+  assert.strictEqual(bus.wantTranscript(DESK_ID, true), true);
+  await settle();
+  assert.ok(calls.some((c) => c.url === '/api/desktop-sessions/transcript?seat=id%3A' + DESK_UUID + '&format=json'));
+  assert.deepStrictEqual(FD.fixture.busTranscripts[DESK_ID],
+    { state: 'ok', turns: [{ role: 'user', ts: '2026-09-06T10:00:00.000Z', text: 'go' }], omitted: 0,
+      at: FD.fixture.busTranscripts[DESK_ID].at });
+});
+
+test('a thread id that is a display name is sent as-is, and shows loading before it lands', async () => {
+  const NAME = '\u{1F39B} ORCHESTRATOR 28 = O45';
+  const { bus, FD, calls } = await boot({
+    messages: { messages: [], targets: [{ type: 'claude-desktop', session: NAME }] },
+    transcript: { state: 'ok', turns: [{ role: 'assistant', ts: '', text: 'hi' }] },
+  });
+  assert.strictEqual(bus.wantTranscript(NAME, true), true);
+  assert.strictEqual(FD.fixture.busTranscripts[NAME].state, 'loading', 'the note shows before the fetch lands');
+  await settle();
+  const query = new URLSearchParams({ seat: NAME, format: 'json' }).toString();
+  assert.ok(calls.some((c) => c.url === '/api/desktop-sessions/transcript?' + query), calls.map((c) => c.url).join(' '));
+  assert.strictEqual(FD.fixture.busTranscripts[NAME].state, 'ok');
+  assert.strictEqual(FD.fixture.busTranscripts[NAME].turns[0].text, 'hi');
+});
+
+test('busTranscripts keeps the last 300 turns and drops the malformed ones', async () => {
+  const turns = [];
+  for (let i = 0; i < 400; i++) turns.push({ role: i % 2 ? 'assistant' : 'user', ts: '', text: 't' + i });
+  turns.push({ role: 'system', ts: '', text: 'not a turn' }, { role: 'user', ts: '', text: 7 }, null);
+  const { bus, FD } = await boot(deskPlan(turns));
+  bus.wantTranscript(DESK_ID, true);
+  await settle();
+  const got = FD.fixture.busTranscripts[DESK_ID];
+  assert.strictEqual(got.turns.length, 300);
+  assert.strictEqual(got.omitted, 100);
+  assert.strictEqual(got.turns[0].text, 't100');
+  assert.strictEqual(got.turns[299].text, 't399');
+});
+
+test('a transcript the machine cannot render becomes a state, never a rejection', async () => {
+  const { bus, FD } = await boot(deskPlan([], { transcript: { state: 'not_found', httpStatus: 404 } }));
+  bus.wantTranscript(DESK_ID, true);
+  await settle();
+  assert.strictEqual(FD.fixture.busTranscripts[DESK_ID].state, 'not_found');
+  assert.deepStrictEqual(FD.fixture.busTranscripts[DESK_ID].turns, []);
+});
+
+test('wantTranscript refuses a tmux thread and stops fetching once it is off', async () => {
+  const { bus, calls } = await boot(deskPlan([]));
+  assert.strictEqual(bus.wantTranscript(THREAD, true), false);
+  bus.wantTranscript(DESK_ID, true);
+  await settle();
+  const before = calls.length;
+  bus.wantTranscript(DESK_ID, false);
+  assert.deepStrictEqual(bus._state().wantId, null);
+  await settle();
+  assert.strictEqual(calls.length, before);
+});
+
+test('wantTranscript is inert in fixture mode', async () => {
+  const { bus, FD, setData, calls } = await boot({ fixture: true });
+  assert.strictEqual(bus.wantTranscript(DESK_ID, true), false);
+  await settle();
+  assert.deepStrictEqual(setData, []);
+  assert.strictEqual(FD.fixture.busTranscripts, undefined);
+  assert.deepStrictEqual(calls, []);
 });

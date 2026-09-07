@@ -31,6 +31,11 @@
   var TOAST_MS = 7000;
   // BEHAVIOUR section 1: GET /api/messages?limit=50.
   var LIMIT = 50;
+  // The full Claude conversation of a desktop seat. Rendering it walks a .jsonl on the
+  // owning machine, so it refreshes no faster than this however often the bus polls.
+  var TRANSCRIPT_MS = 10000;
+  // Only the tail is merged into the thread; the rest is announced as a count.
+  var MAX_TURNS = 300;
 
   var DESKTOP = 'claude-desktop';
   var TMUX = 'tmux';
@@ -55,6 +60,10 @@
   var booted = false;      // has one poll ever landed
   var provisional = {};    // targets opened by hook before the server knows them
   var errs = {};           // message key -> receipt error string we own
+  var transcripts = {};    // thread id -> {state, turns, omitted, at}
+  var wantId = null;       // the one thread whose transcript is being shown
+  var transcriptAt = 0;
+  var transcriptFor = null; // the id whose fetch is in flight, so another id is not starved
   var sentIds = {};        // client send key -> [server message id], for pruning
 
   // ---------------------------------------------------------------------------
@@ -257,6 +266,32 @@
     return out;
   }
 
+  var TRANSCRIPT_STATES = { loading: 1, ok: 1, not_found: 1, unavailable: 1 };
+
+  function validTurn(t) {
+    if (!t || typeof t !== 'object' || typeof t.text !== 'string') return null;
+    if (t.role !== 'user' && t.role !== 'assistant') return null;
+    return { role: t.role, ts: str(t.ts), text: t.text };
+  }
+
+  function validTranscript(v) {
+    var turns = [];
+    (Array.isArray(v && v.turns) ? v.turns : []).forEach(function (t) { var x = validTurn(t); if (x) turns.push(x); });
+    var omitted = Math.max(0, turns.length - MAX_TURNS);
+    return {
+      state: TRANSCRIPT_STATES[v && v.state] ? v.state : 'unavailable',
+      turns: turns.slice(omitted),
+      omitted: omitted,
+      at: Number.isFinite(v && v.at) ? v.at : 0,
+    };
+  }
+
+  function validTranscripts(map) {
+    var out = {};
+    Object.keys(map || {}).forEach(function (id) { out[id] = validTranscript(map[id]); });
+    return out;
+  }
+
   function validRows(list) {
     var out = [];
     (Array.isArray(list) ? list : []).forEach(function (r) { var v = validRow(r); if (v) out.push(v); });
@@ -287,6 +322,33 @@
     if (!FD.fixture.busActiveDefault && built.rows.length) {
       FD.setData('busActiveDefault', built.rows[0].id);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // The full conversation of a Claude Desktop seat, merged into the thread by
+  // logic.js. Only the wanted thread is ever fetched, and only while it is wanted.
+  // ---------------------------------------------------------------------------
+  function setTranscript(id, value) {
+    transcripts = Object.assign({}, transcripts);
+    transcripts[id] = Object.assign({ at: Date.now() }, value);
+    FD.setData('busTranscripts', validTranscripts(transcripts));
+  }
+
+  function fetchTranscript(force) {
+    var id = wantId;
+    if (!id || transcriptFor === id || kinds[id] !== DESKTOP) return;
+    if (!force && Date.now() - transcriptAt < TRANSCRIPT_MS) return;
+    // The thread id is the seat's handle either way -- 'id:<uuid>' from the Desktop screen,
+    // otherwise its display name -- and the server resolves both (server.js desktopSeat).
+    transcriptFor = id;
+    transcriptAt = Date.now();
+    FD.data.transcript(id).then(function (res) {
+      if (wantId !== id) return;
+      var state = TRANSCRIPT_STATES[res && res.state] && res.state !== 'loading' ? res.state : 'unavailable';
+      setTranscript(id, { state: state, turns: state === 'ok' ? res.turns : [] });
+    }).catch(function () {
+      if (wantId === id) setTranscript(id, { state: 'unavailable', turns: [] });
+    }).then(function () { if (transcriptFor === id) transcriptFor = null; });
   }
 
   function totalUnread(unread) {
@@ -438,7 +500,15 @@
   // ---------------------------------------------------------------------------
   function tick() {
     if (!bus.live) return;
-    if (busOpen()) { refresh(); return; }
+    if (busOpen()) {
+      refresh();
+      // busActive also moves through a toast and a broadcast send, neither of which passes
+      // through the rail's own off-toggle. Left alone the poll would outlive the thread it
+      // belongs to, so it disarms itself once that thread is no longer the open one.
+      if (wantId && wantId !== activeId()) wantId = null;
+      fetchTranscript(false);
+      return;
+    }
     if (Date.now() - lastFetch >= POLL_SHELL_MS) refresh();
   }
 
@@ -592,6 +662,20 @@
     return true;
   };
 
+  // logic.js's 'Full conversation' toggle. Off stops the refetch; on restarts from
+  // 'loading', so the thread carries a note from the first frame rather than nothing.
+  bus.wantTranscript = function (id, on) {
+    if (!bus.live) return false;
+    if (!on) { if (wantId === id) wantId = null; return true; }
+    if (!id || kinds[id] !== DESKTOP) return false;
+    wantId = id;
+    // 'loading' before the request, so the thread shows a note instead of nothing while a
+    // fetch is in flight -- and so every path out of fetchTranscript ends in some state.
+    setTranscript(id, { state: 'loading', turns: [] });
+    fetchTranscript(true);
+    return true;
+  };
+
   bus.markSeen = function (id) {
     if (!bus.live || !id) return false;
     seen = Object.assign({}, seen);
@@ -691,7 +775,7 @@
   // ---------------------------------------------------------------------------
   bus.refresh = refresh;
   bus._state = function () {
-    return { targets: targets, rows: rows, threads: threads, seen: seen, pinned: pinned, errs: errs };
+    return { targets: targets, rows: rows, threads: threads, seen: seen, pinned: pinned, errs: errs, transcripts: transcripts, wantId: wantId };
   };
 
   // S2's shell (public/v2/index.html) loads runtime, fixture, logic, app and the
@@ -743,6 +827,7 @@
     FD.setData('seedThreads', {});
     FD.setData('busGroups', []);
     FD.setData('busUnreadDefault', {});
+    FD.setData('busTranscripts', {});
     refresh();
     // attach() also starts the timer, but it runs before the data layer has
     // loaded, so whichever of the two happens second does the work.

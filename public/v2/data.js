@@ -96,9 +96,14 @@
     endTrain: () => postJson('/api/ghtrain/end', {}),
     machines: (opts = {}) => getJson(refreshed('/api/machines', opts)),
     desktopSessions: (opts = {}) => getJson(refreshed('/api/desktop-sessions', opts)),
-    // Transcripts are plain text, not JSON — sessions.js:214 reads r.text().
-    transcript: ({ machine, account, org, id }) =>
-      getText('/api/desktop-sessions/transcript?' + new URLSearchParams({ machine, account, org, id })),
+    // Transcripts are plain text, not JSON — sessions.js:214 reads r.text(). A bus thread id
+    // asks for the per-turn JSON the message bus merges into a thread instead, and resolves a
+    // state rather than rejecting: the bus renders the state as a note.
+    transcript: (q) =>
+      typeof q === 'string'
+        ? getJson('/api/desktop-sessions/transcript?' + new URLSearchParams({ seat: q, format: 'json' }))
+          .catch((e) => ({ state: e && e.status === 404 ? 'not_found' : 'unavailable' }))
+        : getText('/api/desktop-sessions/transcript?' + new URLSearchParams({ machine: q.machine, account: q.account, org: q.org, id: q.id })),
     poll,
     theme,
     // Adapters — pure, defined below.

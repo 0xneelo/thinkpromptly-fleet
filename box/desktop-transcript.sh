@@ -14,10 +14,9 @@ MAX_FILE = 64 * 1024 * 1024
 MAX_TEXT = 4 * 1024 * 1024
 CLIP = 400
 
-def emit(state, text=None):
+def emit(state, **extra):
     out = {'v': 1, 'state': state}
-    if text is not None:
-        out['text'] = text
+    out.update(extra)
     print(json.dumps(out, separators=(',', ':')))
     sys.exit(0)
 
@@ -50,7 +49,7 @@ def result_text(content):
         return '\n'.join(b.get('text', '') for b in content if isinstance(b, dict) and b.get('type') == 'text')
     return ''
 
-out, title, meta, role, size = [], None, None, None, 0
+out, turns, title, meta, role, size = [], [], None, None, None, 0
 try:
     fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
     with os.fdopen(fd, 'r', encoding='utf-8', errors='replace') as source:
@@ -96,18 +95,23 @@ try:
                 role = kind
                 stamp = d.get('timestamp') if isinstance(d.get('timestamp'), str) else ''
                 out.append('\n## %s%s\n' % ('User' if kind == 'user' else 'Assistant', ' · ' + stamp if stamp else ''))
+                turns.append({'role': kind, 'ts': stamp, 'text': []})
             out.append('\n'.join(parts) + '\n')
+            turns[-1]['text'].append(out[-1])
             size += len(out[-1])
             if size > MAX_TEXT:
                 break
 except OSError:
     emit('unavailable')
 head = ['# ' + (title or 'Untitled session'), 'CLI session: ' + sid]
+where = {'cwd': '', 'branch': ''}
 for key, label in (('cwd', 'Directory'), ('branch', 'Branch')):
     if meta and isinstance(meta.get(key), str) and meta[key]:
+        where[key] = meta[key]
         head.append(label + ': ' + meta[key])
 text = '\n'.join(head) + '\n' + ''.join(out)
 if len(text) > MAX_TEXT:
     text = text[:MAX_TEXT] + '\n… transcript clipped at 4 MB\n'
-emit('ok', text)
+emit('ok', text=text, title=title or 'Untitled session', cwd=where['cwd'], branch=where['branch'],
+     turns=[{'role': t['role'], 'ts': t['ts'], 'text': ''.join(t['text']).rstrip('\n')} for t in turns])
 PY
