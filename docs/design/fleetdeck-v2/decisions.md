@@ -351,3 +351,25 @@ Final box gate on `79cd53a`: tests 551/551, pixel gate 36/36 max 0.0329 %. Route
 - **L11.2 (Alrun):** nav clicks switch the screen but never write the hash; reload/back/bookmark land wrong.
 Ledger D08 P2 ✅ (L6.1 `2f72f00`) recorded here since the earlier docs commit was declined. Next: merge both riders
 into `weave/fd-v2`, box gate, second one-liner `cd ~/remote-system && git merge --ff-only weave/fd-v2 && ./up.sh`.
+
+## 2026-09-07 late — live defect 3: landing scroll-scrub video (L11.3)
+
+Operator: "the scroll effect on the landing page doesn't work at all."
+
+**Diagnosis (headless Playwright, `scratchpad/probe-scroll.cjs`, viewport 1440×900, `/?view=land`):** the
+LandLogic draw loop runs (58 rAF/s, 174 drawImage/s), reveals toggle, the page scrolls (2520 px), but the
+canvas hash is identical at scroll 0 / 50 % / 100 % — the scrub always draws frame 0.
+
+**Root cause (proven):** `server.js` `sendFile` (weave/fd-v2 line 2395) reads the whole file and answers
+`200` with no `Accept-Ranges`, `Content-Length` or `Content-Range`, ignoring the `Range` header. Chrome
+therefore treats `/v2/media/hero-*.mp4` as non-seekable (`video.seekable` = [0, 0]); every `currentTime`
+seek snaps to 0 (`probe-seek.cjs`: seeks to 3 s and 6 s both report `currentTime 0`, three identical frame
+hashes), so `extractFrames` caches 90 identical frames. The mock worked because CloudFront serves byte
+ranges. Not a port/compile defect — logic.js is byte-identical and behaves exactly as designed.
+
+**Fix:** L11.3 to Alrun (server.js only): Range support in `sendFile` (206 + `Content-Range` +
+`Content-Length` + `Accept-Ranges: bytes`, 416 on unsatisfiable, `Content-Length` on 200), node test for
+200/206/416, headless proof with three distinct hashes. Sent over the bus 2026-09-07 (id c59bfd35).
+
+Gate note: the pixel gate runs with `fd-app-video=false` and reduced motion, so it can never see scroll
+scrub defects. A scroll probe (canvas hash at three positions) belongs in the verify set for landing slices.
