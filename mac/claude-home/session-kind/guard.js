@@ -241,7 +241,11 @@ function commandAddressesGoalkeeper(cmd) {
 // `recipient` are included as well: they are addressee-shaped aliases of the
 // same thing, and leaving an alias open would reopen the hole §9 is closing.
 // The §9 intent is preserved exactly — no body field is ever matched.
-const ADDRESSEE_KEYS = ['to', 'session_id', 'session', 'title', 'name', 'recipient'];
+// `agent` and `seat` were in the first cut and were dropped when this list was
+// narrowed to §9's names. They are addressee-shaped like the rest, and a seat is
+// exactly what one addresses, so they are back.
+const ADDRESSEE_KEYS = ['to', 'session_id', 'session', 'title', 'name', 'recipient',
+  'agent', 'seat'];
 
 function addressesGoalkeeper(input) {
   if (!input || typeof input !== 'object') return false;
