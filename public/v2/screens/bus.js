@@ -1,13 +1,19 @@
 // fd-v2 L6 bus: owned by that slice.
 //
 // Message bus threads + reply toast (ledger D13, D08). This file is the live
-// controller: it fetches, adapts and pushes data in through FD.setData, and it
-// owns every side effect the mock only simulates (send, retry, poll, unread,
-// pins, badge). In fixture mode it does nothing at all — the compiled logic
-// renders FD.fixture as-is and the pixel gate runs there (DESIGN-35, 2026-09-07).
+// controller for the Message bus screen: it fetches, adapts and pushes data in
+// through FD.setData, and it owns every side effect the mock only simulates --
+// send, retry, the inbound poll, unread, pins and the nav badge.
+//
+// In fixture mode it does NOTHING: `live` stays false, FD.setData is never
+// called and no timer starts, so the compiled logic renders FD.fixture as-is
+// and the pixel gate is untouched (DESIGN-35 broadcast, 2026-09-07).
 //
 // Hooks PROVIDED: FD.screens.bus.open(target)
 // Hooks USED (always guarded): FD.shell.setBadge (L2), FD.screens.windows.openMax (L3)
+//
+// Behaviour spec: docs/goals/fd-v2-l6/BEHAVIOUR.md. Improvisations are recorded
+// in docs/design/fleetdeck-v2/improvised.md as I-L6-01 .. I-L6-12.
 (function (global) {
   'use strict';
 
@@ -15,34 +21,568 @@
   FD.screens = FD.screens || {};
   var bus = FD.screens.bus = FD.screens.bus || {};
 
-  // `live` is the seam logic.js branches on. It stays false until attach()
-  // proves we are outside fixture mode, so nothing below can move a pixel of
-  // the fixture render.
+  // BEHAVIOUR section 7. Both keys are new in v2 -- today's bus stores nothing.
+  var SEEN_KEY = 'fd-bus-seen';
+  var PINNED_KEY = 'fd-bus-pinned';
+  // BEHAVIOUR section 7: 15 s while the bus screen is open, 60 s on the app shell.
+  var POLL_OPEN_MS = 15000;
+  var POLL_SHELL_MS = 60000;
+  // D08: the reply toast auto-dismisses after 7 s (mock L769-780).
+  var TOAST_MS = 7000;
+  // BEHAVIOUR section 1: GET /api/messages?limit=50.
+  var LIMIT = 50;
+
+  var DESKTOP = 'claude-desktop';
+  var TMUX = 'tmux';
+
+  // ---------------------------------------------------------------------------
+  // State. `host` is the AppLogic instance logic.js hands us on mount.
+  // ---------------------------------------------------------------------------
+  var host = null;
+  var timer = null;
+  var toastTimer = null;
+  var lastFetch = 0;
+  var inFlight = false;
+  var pendingOpen = null;
+
+  var targets = {};        // thread id -> {type, host?, session} for the POST body
+  var kinds = {};          // thread id -> 'tmux' | 'claude-desktop'
+  var rows = [];           // busSessions rows currently pushed to FD.fixture
+  var threads = {};        // thread id -> adapted messages, oldest first
+  var known = {};          // thread id -> { messageId: true }, for new-inbound detection
+  var seen = {};           // fd-bus-seen
+  var pinned = {};         // fd-bus-pinned, as a set
+  var booted = false;      // has one poll ever landed
+  var errs = {};           // message key -> receipt error string we own
+
+  // ---------------------------------------------------------------------------
+  // Storage. Never throws: private mode and Node both leave the defaults.
+  // ---------------------------------------------------------------------------
+  function readStore(key) {
+    try { return global.localStorage.getItem(key); } catch (e) { return null; }
+  }
+  function writeStore(key, value) {
+    try { global.localStorage.setItem(key, value); } catch (e) { /* nothing to write to */ }
+  }
+  function readJson(key, fallback) {
+    var raw = readStore(key);
+    if (raw === null) return fallback;
+    try {
+      var parsed = JSON.parse(raw);
+      return parsed === null || typeof parsed !== 'object' ? fallback : parsed;
+    } catch (e) { return fallback; }
+  }
+  function loadPrefs() {
+    seen = readJson(SEEN_KEY, {});
+    var list = readJson(PINNED_KEY, []);
+    pinned = {};
+    if (Array.isArray(list)) list.forEach(function (id) { pinned[id] = true; });
+  }
+  function savePinned() {
+    writeStore(PINNED_KEY, JSON.stringify(Object.keys(pinned).filter(function (id) { return pinned[id]; })));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Thread identity. L1's toThreads keys a thread by the OTHER party: the target
+  // session for a message we sent, the source session for a message we received
+  // (data.js:297-316). We key the same way so the adapter's `threads` object and
+  // ours agree -- see I-L6-01.
+  // ---------------------------------------------------------------------------
+  var isSessionSource = function (s) { return typeof s === 'string' && s.indexOf(':') > 0; };
+  var sourceSession = function (s) { return s.slice(s.indexOf(':') + 1); };
+  var sourceHost = function (s) { return s.slice(0, s.indexOf(':')); };
+
+  function threadIdOf(msg) {
+    var t = msg && msg.target ? msg.target : {};
+    return isSessionSource(msg.source) ? sourceSession(msg.source) : t.session;
+  }
+  function inboundOf(msg) { return isSessionSource(msg.source); }
+
+  // The mock's rail label. BEHAVIOUR section 2 quotes the old <option> labels
+  // verbatim: "Claude Desktop <dot> <label||'current chat'>" and
+  // "<host> <dot> <session>". The rail prints name and host in separate slots,
+  // so the tmux label is just the session name and `host` fills the meta slot
+  // (I-L6-02).
+  function labelFor(id, kind) {
+    return kind === DESKTOP ? 'Claude Desktop · ' + (id === 'current' ? 'current chat' : id) : id;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Building the rail from /api/messages + /api/sessions.
+  // ---------------------------------------------------------------------------
+  function noteTarget(id, target, kind) {
+    if (!id) return;
+    if (!targets[id]) targets[id] = target;
+    if (!kinds[id]) kinds[id] = kind;
+  }
+
+  function build(messagesRes, sessionsRes, now) {
+    var list = (messagesRes && messagesRes.messages) || [];
+    var declared = (messagesRes && messagesRes.targets) || [];
+    var live = (sessionsRes && sessionsRes.sessions) || [];
+
+    targets = {};
+    kinds = {};
+
+    // 1. Targets the server offers (server.js:2333-2340). A desktop session only
+    //    appears here while it is live, which is the only liveness signal the
+    //    desktop side has (I-L6-03).
+    var offered = {};
+    declared.forEach(function (t) {
+      if (!t || !t.session) return;
+      noteTarget(t.session, t, t.type || DESKTOP);
+      offered[t.session] = true;
+    });
+
+    // 2. Every live fleet tmux session, merged client-side exactly as today's
+    //    app.js:920-925 does.
+    var liveSet = {};
+    live.forEach(function (s) {
+      if (!s || !s.name || !s.live) return;
+      liveSet[s.host + ' ' + s.name] = true;
+      noteTarget(s.name, { type: TMUX, host: s.host, session: s.name }, TMUX);
+    });
+
+    // 3. Targets and sources only the message history knows about, so a thread
+    //    with a session that has since died still has a row and a POST body.
+    list.forEach(function (m) {
+      var id = threadIdOf(m);
+      if (!id) return;
+      if (inboundOf(m)) noteTarget(id, { type: TMUX, host: sourceHost(m.source), session: id }, TMUX);
+      else noteTarget(id, m.target, (m.target && m.target.type) || TMUX);
+    });
+
+    // 4. The adapter owns the per-message shape (L1, data.js:317-334). Its thread
+    //    arrays come out newest-first because /api/messages is created_at DESC,
+    //    while the mock's seedThreads are oldest-first and the thread body
+    //    scrolls to the bottom -- so each array is reversed (I-L6-04).
+    var adapted = FD.data.toThreads(messagesRes, now);
+    threads = {};
+    Object.keys(adapted.threads).forEach(function (id) {
+      threads[id] = adapted.threads[id].slice().reverse();
+    });
+
+    // 5. The rail: one row per thread id we know of, from any of the four sources.
+    var ids = {};
+    Object.keys(targets).forEach(function (id) { ids[id] = true; });
+    Object.keys(threads).forEach(function (id) { ids[id] = true; });
+    adapted.busSessions.forEach(function (s) { ids[s.id] = true; });
+
+    rows = Object.keys(ids).map(function (id) {
+      var kind = kinds[id] || TMUX;
+      var target = targets[id] || { type: kind, session: id };
+      var hostName = kind === DESKTOP ? '' : (target.host || '');
+      var row = {
+        id: id,
+        name: labelFor(id, kind),
+        host: hostName,
+        live: kind === DESKTOP ? !!offered[id] : !!liveSet[hostName + ' ' + id],
+      };
+      // The mock's rows carry `pinned` and isPinned() falls back to it, so the
+      // stored pin set needs no logic.js branch at all.
+      if (pinned[id]) row.pinned = true;
+      // Extra key, absent from every fixture row, so the branches that read it
+      // are provably inert in fixture mode.
+      row.kind = kind;
+      return row;
+    });
+
+    // 6. Unread, from the raw rows: inbound messages newer than fd-bus-seen
+    //    (BEHAVIOUR section 7). Computed off created_at, not the humanised `at`.
+    var unread = {};
+    var fresh = {};
+    list.forEach(function (m) {
+      var id = threadIdOf(m);
+      if (!id) return;
+      if (!fresh[id]) fresh[id] = {};
+      fresh[id][m.id] = true;
+      if (!inboundOf(m)) return;
+      var mark = seen[id];
+      if (mark && !(Date.parse(m.created_at) > Date.parse(mark))) return;
+      unread[id] = (unread[id] || 0) + 1;
+    });
+
+    return { rows: rows, threads: threads, unread: unread, fresh: fresh, list: list };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pushing into the render. Data enters ONLY through FD.setData.
+  // ---------------------------------------------------------------------------
+  function push(built) {
+    FD.setData('busSessions', built.rows);
+    FD.setData('seedThreads', built.threads);
+    // The API has no group concept (L1, data.js:311), so the mock's hard-coded
+    // train-84 group is replaced by an empty list; ad-hoc broadcast groups stay
+    // client-side in AppLogic.state.adhoc (I-L6-05).
+    FD.setData('busGroups', []);
+    FD.setData('busUnreadDefault', built.unread);
+    if (!FD.fixture.busActiveDefault && built.rows.length) {
+      FD.setData('busActiveDefault', built.rows[0].id);
+    }
+  }
+
+  function totalUnread(unread) {
+    return Object.keys(unread).reduce(function (a, k) { return a + (unread[k] || 0); }, 0);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fetch + apply.
+  // ---------------------------------------------------------------------------
+  function activeId() {
+    if (!host) return null;
+    return host.state.busActive || FD.fixture.busActiveDefault || null;
+  }
+
+  function busOpen() {
+    if (!host) return false;
+    var root = host.host;
+    var view = root && root.state ? root.state.view : 'app';
+    if (view !== 'app') return false;
+    var screen = host.state.screen != null ? host.state.screen
+      : (host.props && host.props.screen != null ? host.props.screen : 'bus');
+    return screen === 'bus';
+  }
+
+  function refresh() {
+    if (!bus.live || inFlight) return Promise.resolve();
+    inFlight = true;
+    lastFetch = Date.now();
+    return Promise.all([
+      FD.data.messages({ limit: LIMIT }),
+      // Liveness only. A failure here must not blank the rail, so it degrades
+      // to "no live sessions known" rather than rejecting the whole poll.
+      FD.data.sessions().catch(function () { return { sessions: [] }; }),
+    ]).then(function (res) {
+      apply(res[0], res[1]);
+    }).catch(function (e) {
+      // A dead /api/messages leaves the last good rail on screen; the next tick
+      // retries. Nothing is written to the console -- the live gate asserts zero
+      // console errors.
+      bus.lastError = e;
+    }).then(function () { inFlight = false; });
+  }
+
+  function apply(messagesRes, sessionsRes) {
+    var now = Date.now();
+    var previous = known;
+    var built = build(messagesRes, sessionsRes, now);
+    var open = activeId();
+
+    // A new inbound row for a thread other than the open one raises the reply
+    // toast (D08). Only rows the previous poll had not seen count, so the first
+    // poll after a reload never fires one.
+    var toast = null;
+    if (booted) {
+      for (var i = built.list.length - 1; i >= 0; i--) {
+        var m = built.list[i];
+        var id = threadIdOf(m);
+        if (!id || !inboundOf(m)) continue;
+        if (previous[id] && previous[id][m.id]) continue;
+        if (id === open) continue;
+        var row = matchRow(built.rows, id);
+        toast = { sid: id, from: row ? row.name : id, text: m.text };
+      }
+    }
+    known = built.fresh;
+    booted = true;
+
+    push(built);
+    bus.setBadge(totalUnread(built.unread));
+
+    if (!host) return;
+    host.setState(function (s) {
+      var next = { unread: built.unread };
+      // Drop the optimistic copy of a message the server has now confirmed,
+      // correlated by source + text (BEHAVIOUR section 7, broadcast rule).
+      var ex = s.extraMsgs || {};
+      var pruned = {};
+      var changed = false;
+      Object.keys(ex).forEach(function (tid) {
+        var server = built.threads[tid] || [];
+        pruned[tid] = ex[tid].filter(function (msg) {
+          var dup = server.some(function (sm) { return sm.dir === 'out' && sm.text === msg.text && sm.from === msg.from; });
+          if (dup) changed = true;
+          return !dup;
+        });
+      });
+      if (changed) next.extraMsgs = pruned;
+      // A status the server now reports wins over our optimistic override.
+      var stOv = s.stOv || {};
+      var keptSt = {};
+      var stChanged = false;
+      Object.keys(stOv).forEach(function (k) {
+        var mid = k.split(':')[0];
+        if (serverKnows(built.fresh, mid)) { stChanged = true; return; }
+        keptSt[k] = stOv[k];
+      });
+      if (stChanged) next.stOv = keptSt;
+      if (toast) next.toast = toast;
+      return next;
+    });
+    if (toast) armToast(toast);
+  }
+
+  function matchRow(list, id) {
+    for (var i = 0; i < list.length; i++) if (list[i].id === id) return list[i];
+    return null;
+  }
+
+  function serverKnows(fresh, id) {
+    var keys = Object.keys(fresh);
+    for (var i = 0; i < keys.length; i++) if (fresh[keys[i]][id]) return true;
+    return false;
+  }
+
+  function armToast(toast) {
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      if (!host) return;
+      host.setState(function (s) { return s.toast && s.toast.sid === toast.sid ? { toast: null } : {}; });
+    }, TOAST_MS);
+  }
+
+  // ---------------------------------------------------------------------------
+  // The poll. One timer: it fires every 15 s and only actually fetches on the
+  // shell once a minute has passed, which is the two cadences BEHAVIOUR section 7
+  // asks for without a second interval to keep in step (I-L6-06).
+  // ---------------------------------------------------------------------------
+  function tick() {
+    if (!bus.live) return;
+    if (busOpen()) { refresh(); return; }
+    if (Date.now() - lastFetch >= POLL_SHELL_MS) refresh();
+  }
+
+  function start() {
+    if (timer) return;
+    timer = setInterval(tick, POLL_OPEN_MS);
+  }
+  function stop() {
+    clearInterval(timer);
+    timer = null;
+    clearTimeout(toastTimer);
+    toastTimer = null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Receipts. The mock has no toast slot for the four send/retry strings
+  // BEHAVIOUR sections 2 and 3 quote, so they land verbatim in the message's own
+  // receipt line instead -- receipt() already renders `status . error` (I-L6-07).
+  // ---------------------------------------------------------------------------
+  function setReceipt(sid, key, status, err) {
+    if (err === undefined) err = null;
+    if (err === null) delete errs[key]; else errs[key] = err;
+    if (host) {
+      host.setState(function (s) {
+        var stOv = Object.assign({}, s.stOv || {});
+        stOv[key] = status;
+        var ex = s.extraMsgs || {};
+        var next = {};
+        var changed = false;
+        Object.keys(ex).forEach(function (tid) {
+          next[tid] = ex[tid].map(function (m) {
+            if (m.k !== key) return m;
+            changed = true;
+            var copy = Object.assign({}, m);
+            if (err === null) delete copy.err; else copy.err = err;
+            return copy;
+          });
+        });
+        var out = { stOv: stOv };
+        if (changed) out.extraMsgs = next;
+        return out;
+      });
+    }
+    // A server-side message lives in seedThreads, which only FD.setData reaches.
+    if (threads[sid]) {
+      var patched = threads[sid].map(function (m) {
+        if (m.k !== key) return m;
+        var copy = Object.assign({}, m);
+        if (err === null) delete copy.err; else copy.err = err;
+        return copy;
+      });
+      threads = Object.assign({}, threads);
+      threads[sid] = patched;
+      FD.setData('seedThreads', threads);
+    }
+  }
+
+  // {ok:false,error} bodies are displayed verbatim (BEHAVIOUR section 6).
+  function errText(e) {
+    if (!e) return 'unknown error';
+    var body = e.body;
+    if (body && typeof body === 'object' && body.error) return String(body.error);
+    if (typeof body === 'string' && body) return body;
+    return e.message || 'unknown error';
+  }
+
+  // ---------------------------------------------------------------------------
+  // The seam logic.js calls. Each returns true when it took the action, so the
+  // fixture path falls through to the mock's own simulation.
+  // ---------------------------------------------------------------------------
   bus.live = false;
 
-  // ---- hooks this slice PROVIDES ------------------------------------------
-  // Deep-link into a thread for {type, host?, session} (BEHAVIOUR §5, ruling O8).
-  // No-op until the live controller lands.
-  bus.open = function (target) {};
+  bus.attach = function (h) {
+    host = h;
+    if (!bus.live) return;
+    if (pendingOpen) { var p = pendingOpen; pendingOpen = null; bus.open(p); }
+    start();
+  };
 
-  // ---- seam the bus block in logic.js calls (all no-ops for now) ----------
-  bus.attach = function (host) {};
-  bus.detach = function (host) {};
-  bus.deliver = function (req) { return false; };
-  bus.retry = function (req) { return false; };
-  bus.markSeen = function (id) {};
-  bus.setPinned = function (id, on) {};
+  bus.detach = function (h) {
+    if (host === h) host = null;
+    stop();
+  };
 
-  // ---- hooks this slice USES, wrapped once so every call site is guarded ---
+  // BEHAVIOUR section 2: POST /api/messages {source, target, text}; ok ->
+  // delivered, else "Delivery failed: <error||'unknown error'>".
+  bus.deliver = function (req) {
+    if (!bus.live) return false;
+    var target = targets[req.sid];
+    if (!target) {
+      setReceipt(req.sid, req.key, 'failed', 'Delivery failed: unknown target');
+      return true;
+    }
+    FD.data.sendMessage({ source: req.source, target: target, text: req.text })
+      .then(function (res) {
+        if (res && res.ok) setReceipt(req.sid, req.key, 'delivered', null);
+        else setReceipt(req.sid, req.key, 'failed', 'Delivery failed: ' + ((res && res.error) || 'unknown error'));
+      })
+      .catch(function (e) {
+        setReceipt(req.sid, req.key, 'failed', 'Delivery failed: ' + errText(e));
+      })
+      .then(function () { return refresh(); });
+    return true;
+  };
+
+  // BEHAVIOUR section 3: POST /api/messages/retry {id}; "Retry failed: <error>".
+  bus.retry = function (req) {
+    if (!bus.live) return false;
+    FD.data.retryMessage(req.key)
+      .then(function (res) {
+        if (res && res.ok) setReceipt(req.sid, req.key, 'delivered', null);
+        else setReceipt(req.sid, req.key, 'failed', 'Retry failed: ' + ((res && res.error) || 'unknown error'));
+      })
+      .catch(function (e) {
+        setReceipt(req.sid, req.key, 'failed', 'Retry failed: ' + errText(e));
+      })
+      .then(function () { return refresh(); });
+    return true;
+  };
+
+  bus.markSeen = function (id) {
+    if (!bus.live || !id) return false;
+    seen = Object.assign({}, seen);
+    seen[id] = new Date().toISOString();
+    writeStore(SEEN_KEY, JSON.stringify(seen));
+    var unread = Object.assign({}, FD.fixture.busUnreadDefault || {});
+    delete unread[id];
+    FD.setData('busUnreadDefault', unread);
+    bus.setBadge(totalUnread(unread));
+    return true;
+  };
+
+  bus.setPinned = function (id, on) {
+    if (!bus.live || !id) return false;
+    if (on) pinned[id] = true; else delete pinned[id];
+    savePinned();
+    // Re-stamp the rows so isPinned()'s fallback to row.pinned agrees with the
+    // stored set even after the next poll replaces them.
+    rows = rows.map(function (r) {
+      if (r.id !== id) return r;
+      var copy = Object.assign({}, r);
+      if (on) copy.pinned = true; else delete copy.pinned;
+      return copy;
+    });
+    FD.setData('busSessions', rows);
+    return true;
+  };
+
+  // ---------------------------------------------------------------------------
+  // The hook this slice PROVIDES. BEHAVIOUR section 5 / ruling O8:
+  // setBusTarget() becomes a deep link that selects (or creates) the thread for
+  // {type, host?, session} and navigates to the bus screen.
+  // ---------------------------------------------------------------------------
+  bus.open = function (target) {
+    var id = target && (typeof target === 'string' ? target : target.session);
+    if (!id) return false;
+    if (!host) { pendingOpen = target; return false; }
+
+    if (bus.live && typeof target === 'object' && !targets[id]) {
+      // Today's setBusTarget stores the value and selects it on the next
+      // loadBus() when the option does not exist yet; the v2 equivalent is a
+      // provisional row that the next poll confirms or replaces (I-L6-08).
+      var kind = target.type || TMUX;
+      targets[id] = target;
+      kinds[id] = kind;
+      rows = rows.concat([{
+        id: id,
+        name: labelFor(id, kind),
+        host: kind === DESKTOP ? '' : (target.host || ''),
+        live: false,
+        kind: kind,
+      }]);
+      FD.setData('busSessions', rows);
+      if (!threads[id]) {
+        threads = Object.assign({}, threads);
+        threads[id] = [];
+        FD.setData('seedThreads', threads);
+      }
+    }
+
+    var root = host.host;
+    if (root && root.setState && root.state && root.state.view !== 'app') root.setState({ view: 'app' });
+    host.setState(function (s) {
+      var un = Object.assign({}, s.unread || {});
+      delete un[id];
+      return { screen: 'bus', busActive: id, unread: un, toast: null };
+    });
+    bus.markSeen(id);
+    if (FD.router && typeof FD.router.navigate === 'function') {
+      try { FD.router.navigate('bus'); } catch (e) { /* the hash is a nicety, not the navigation */ }
+    }
+    if (bus.live) refresh();
+    return true;
+  };
+
+  // ---------------------------------------------------------------------------
+  // Hooks this slice USES, wrapped once so every call site is guarded.
+  // ---------------------------------------------------------------------------
   bus.setBadge = function (n) {
     var shell = FD.shell;
     if (shell && typeof shell.setBadge === 'function') { try { shell.setBadge(n); } catch (e) {} }
   };
-  // tmux rows open the live terminal through L3; until L3 lands the caller
-  // falls back to the mock's own full-screen terminal.
-  bus.openMax = function (host, session) {
+
+  // A tmux row opens the live terminal through L3. Until L3 lands this returns
+  // false and the caller falls back to the mock's own full-screen terminal.
+  bus.openMax = function (hostName, session) {
     var w = FD.screens && FD.screens.windows;
-    if (w && typeof w.openMax === 'function') { try { w.openMax(host, session); return true; } catch (e) {} }
+    if (w && typeof w.openMax === 'function') {
+      try { w.openMax(hostName, session); return true; } catch (e) {}
+    }
     return false;
   };
+
+  // ---------------------------------------------------------------------------
+  // Boot. Fixture mode stops here, before the first FD.setData.
+  // ---------------------------------------------------------------------------
+  bus.refresh = refresh;
+  bus._state = function () {
+    return { targets: targets, rows: rows, threads: threads, seen: seen, pinned: pinned, errs: errs };
+  };
+
+  function boot() {
+    if (!FD.data || FD.data.isFixture()) return;
+    bus.live = true;
+    loadPrefs();
+    // Clear the mock's seed before the first paint so live mode never flashes
+    // fixture threads; FD.setData schedules a re-render on the microtask queue.
+    FD.setData('busSessions', []);
+    FD.setData('seedThreads', {});
+    FD.setData('busGroups', []);
+    FD.setData('busUnreadDefault', {});
+    refresh();
+    start();
+  }
+
+  boot();
 })(window);
