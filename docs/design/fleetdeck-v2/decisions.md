@@ -202,3 +202,12 @@ running" by `liveState`). The weave was never affected (3-way merge kept the bas
 and the three files identical to the base. Weave updated to `27da9eb`. Follow-up **L10.1** sent (two verbatim
 strings + live assertion; restore the five L1 tests if missing; keyed-reorder proof for the injected chips).
 Acceptance of D17 stands; L10.1 is a rider.
+
+## 2026-09-08 · weave integration check: tests green, the pixel gate runs on the box only
+
+`weave/fd-v2` @ `27da9eb` (base + L9 + L10) on the Mac: `npm test` 353/353. The pixel gate on the Mac fails every
+screen uniformly (0.67–3.65 %, landing and deck slides included, which no slice touched) because the committed
+baselines are box-rendered (Linux Chromium fonts/AA); `--baseline` on the Mac refuses to replace them (repeat limit
+0.05 %, "Baseline preserved"). Ruling: the gate is a box instrument. The design seat runs the weave gate on the
+german-box with a runner script (`fd-weave-gate.sh`, tmux `FD-weave-gate`); L11 phase 2 repeats it as the final
+gate. Mac runs are informative only and are not filed.
