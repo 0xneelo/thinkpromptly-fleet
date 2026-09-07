@@ -43,11 +43,12 @@ Make the **Machines cards** screen work on live data exactly like today's app (`
       `docs/design/fleetdeck-v2/improvised/`.
 - [x] Hooks provided: none, as specified. Hooks used: `FD.screens.registry.open` (L4), guarded and
       with a fallback.
-- [x] `npm test` — **350 pass** of 353 on the S2.2 base. The three failures are the `reaper` /
-      `lease` server suites failing with `EADDRINUSE` on their fixed 39xx ports, because other
-      agent sessions on this box run the same suites concurrently; sibling processes were holding
-      3917 and 39763 during the run. This branch touches no server file. Every v2 test passes:
-      `test/v2-data.test.js` **69/69**, `test/v2-machines.test.js` **55/55**.
+- [x] `npm test` — **343 pass of 358** on the final base. Every failure is in `test/reaper.test.js`
+      and `test/train-broker.test.js`, all `EADDRINUSE` on their fixed 39xx ports, which sibling
+      agent sessions on this box hold. The count varies run to run with no code change (1, then 3,
+      then 15) and `reaper` fails worse in isolation than under load — external contention, not a
+      defect. This branch touches no server file. Every v2 test passes: **129/129** across
+      `test/v2-machines.test.js` (55) and `test/v2-data.test.js` (74).
       (The `fixture.js` `window` break filed as DECK-80 is fixed by L1.1's `fixture-extract.js`.)
 - [x] Branch `agent-v2-l9` pushed; `REPORT.md` signed **Eckbert**.
 - [~] Registry row — **blocked on the operator, filed as DECK-102 (`operator:gate`).**

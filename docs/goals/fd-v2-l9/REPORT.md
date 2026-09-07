@@ -128,28 +128,34 @@ Every number below was produced by a command in this worktree, after the
 | Pixel, fixture mode | `npm run design:diff -- --app http://127.0.0.1:4197/v2/index.html?fixture=1 --slice l9` | **36/36, `allPass: true`**, max mismatch 0.032948 %. Machines dark **0.000000 %**, light **0.000000 %**. `verify/l9/report.json` |
 | Live mode, API stubbed | `node docs/design/fleetdeck-v2/verify/l9/live.mjs` | **46/46 rows pass**, exit 0. `verify/l9/live.json`, `live-dark.png`, `live-light.png` |
 | Unit | `node --test test/v2-machines.test.js` | **55 pass, 0 fail** |
-| Suite | `npm test` | **350 pass of 353** — the three failures are `EADDRINUSE` port collisions in the `reaper` / `lease` server suites. See below. |
+| Suite | `npm test` | **343 pass of 358** on the final base; the failures are `EADDRINUSE` port collisions in `reaper` / `train-broker`, and the count varies run to run with no code change. See below. |
 
-### The three failing tests are port collisions, not this slice
+### The failing tests are port collisions, not this slice
 
-`npm test` on the S2.2 base is **350 pass of 353**. The failures are all in `test/reaper.test.js`
-and `test/lease.test.js`, and they all read:
+`npm test` on the final base is **343 pass of 358**. Every failure is in `test/reaper.test.js`
+(13) and `test/train-broker.test.js` (1) — no v2 test fails. They read:
 
 ```
 Error: listen EADDRINUSE: address already in use 127.0.0.1:3900
 ```
 
-Those suites bind fixed ports in the 39xx range. This box runs many agent sessions at once, and
-`ss -ltnp` showed sibling processes holding 3917 and 39763 during the run. The suites fail *worse*
-in isolation than in the full run, which is the signature of an external squatter rather than a
-load flake. This branch modifies no server, reaper or lease file —
-`git diff origin/agent-v2-base --name-only` confirms it.
+Those suites bind fixed ports in the 39xx range, and this box runs many agent sessions at once:
+`ss -ltnp` showed sibling processes holding 3917 and 39763 during a run.
 
-Every v2 test passes: `test/v2-data.test.js` **69/69** and `test/v2-machines.test.js` **55/55**.
+Three things make this external contention rather than a defect:
+
+- the count **varies run to run with no code change** — 1 failure, then 3, then 15;
+- `reaper.test.js` fails *worse in isolation* (15 of 24) than inside the full suite, which is a
+  squatter's signature, not a load flake of its own making;
+- this branch modifies no server, reaper, lease or broker file —
+  `git diff origin/agent-v2-base --name-only` confirms it.
+
+Every v2 test passes: **129/129** across `test/v2-machines.test.js` (55) and `test/v2-data.test.js`
+(74 after L1.2 added its fallback cases).
 
 Earlier in this slice the suite was red for a real reason — `public/v2/fixture.js:4` used a bare
 `window`, so `test/v2-data.test.js` could not load at all. That was filed as **DECK-80** and is
-now **fixed by L1.1's `public/v2/fixture-extract.js`**, which arrived with the S2.2 base merge.
+now **fixed by L1.1's `public/v2/fixture-extract.js`**.
 
 ### Run the gate before the harness, never beside it
 
