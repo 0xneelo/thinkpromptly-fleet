@@ -359,6 +359,8 @@ class AppLogic extends Sub {
       const cut = path.lastIndexOf('/') + 1;
       // liveState is 'live' | 'offline' | 'unknown' and only the live feed sets it.
       const st = r.liveState || (r.live ? 'live' : 'offline');
+      // The two disabled texts, verbatim from sessions.js:246.
+      const offText = st === 'unknown' ? 'Live check unavailable' : 'Not running';
       return {
         title: r.title, dir: path.slice(0, cut), leaf: path.slice(cut), branch: r.branch, model: r.model, when: r.when, turns: r.turns,
         where: where ? g.name + ' · ' + g.machine : '',
@@ -370,9 +372,16 @@ class AppLogic extends Sub {
         stop: (e) => e.stopPropagation(),
         show: (e) => { e.stopPropagation(); if (dsAct) return dsAct('show', r, e.currentTarget); if (r.live && this._openTerm) this._openTerm(r.title, g.machine); },
         message: (e) => { e.stopPropagation(); if (dsAct) return dsAct('message', r, e.currentTarget); if (r.live) this.setState({ screen: 'bus', busActive: 'desktop' }); },
-        showTitle: r.live ? 'Show session' : 'Show — session is not running',
-        msgTitle: r.live ? 'Message this session' : 'Message — session is not running',
-        liveBtnStyle: r.live ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
+        // BEHAVIOUR §3: when a row cannot be messaged, today's app shows a text in the
+        // action cell — 'Live check unavailable' for liveState 'unknown', else 'Not
+        // running' (sessions.js:246). The mock replaced that cell with two icon buttons
+        // and a static aria-label, so `title` is the only slot left to carry it, and it
+        // carries the string verbatim. Live mode only (dsAct): in fixture mode there is
+        // no liveState and the mock's own copy is the mock's look, which also keeps the
+        // compiled DOM byte-identical for S2's attribute parity gate.
+        showTitle: st === 'live' ? 'Show session' : dsAct ? offText : 'Show — session is not running',
+        msgTitle: st === 'live' ? 'Message this session' : dsAct ? offText : 'Message — session is not running',
+        liveBtnStyle: st === 'live' ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
         details: [{ k: 'Created', v: r.created }, { k: 'CLI session', v: cli }, { k: 'Session', v: sid }, { k: 'Full path', v: path }]
           .concat(r.worktree ? [{ k: 'Worktree', v: r.worktree }] : [])
           .filter((d) => d.v),

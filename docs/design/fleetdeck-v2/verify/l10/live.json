@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slice": "l10",
-  "capturedAt": "2026-09-07T01:24:28.121Z",
+  "capturedAt": "2026-09-07T01:36:56.351Z",
   "base": "http://127.0.0.1:4178",
   "results": [
     {
@@ -45,6 +45,12 @@
       "id": "row-extra-chips",
       "action": "read the stale row's and the archived row's status cell",
       "expectation": "the stale row also shows Cached; the archived row also shows Archived",
+      "pass": true
+    },
+    {
+      "id": "action-disabled-text",
+      "action": "read the title attribute of the Show and Message buttons on every row",
+      "expectation": "a live row keeps \"Show session\" / \"Message this session\"; an unknown row reads \"Live check unavailable\" on both, an offline row \"Not running\" on both — verbatim",
       "pass": true
     },
     {
@@ -100,7 +106,7 @@
       "action": "read the count line and the last-collection line with no filters applied",
       "expectation": "\"<shown> of <total> sessions · <live> live\" and \"Last collection: <age>\"",
       "pass": true,
-      "detail": "last collection read from the newest machine stamp: Last collection: 1h ago"
+      "detail": "last collection read from the newest machine stamp: Last collection: 2h ago"
     },
     {
       "id": "filter-account",
@@ -200,6 +206,13 @@
       "pass": true
     },
     {
+      "id": "reorder-keeps-chips-with-rows",
+      "action": "record each session's extra chips, start a Copy on the cached row, then serve a payload whose activity stamps reorder the rows and click Refresh",
+      "expectation": "the rows genuinely move, and Archived / Cached / the transient copy label are all on the same session ids as before — nothing left behind on a reused row",
+      "pass": true,
+      "detail": "rows moved local_unknown-1 local_stale-1 local_archived-1 local_bare-1 local_offline-1 → local_unknown-1 local_archived-1 local_stale-1 local_bare-1 local_offline-1; chips and the copy label re-read 386ms into the 1500ms revert window"
+    },
+    {
       "id": "console-clean",
       "action": "watch console + pageerror on every page of the run",
       "expectation": "zero console errors",
@@ -207,7 +220,7 @@
       "detail": "filtered 6 browser resource error(s) for deliberately stubbed 4xx/5xx: [transcript-404] Failed to load resource: the server responded with a status of 404 (Not Found) | [transcript-502] Failed to load resource: the server responded with a status of 502 (Bad Gateway) | [first-load-500] Failed to load resource: the server responded with a status of 500 (Internal Server Error) | [first-load-500] [fd-v2 l10] desktop sessions load failed Error: HTTP 500 /api/desktop-sessions\n    at httpError (http://127.0.0.1:4178/v2/data.js:39:17)\n    at async request (http://127.0.0.1:4178/v2/data.js:47:25) | [refresh-500] Failed to load resource: the server responded with a status of 500 (Internal Server Error) | [refresh-500] [fd-v2 l10] desktop sessions load failed Error: HTTP 500 /api/desktop-sessions?refresh=1\n    at httpError (http://127.0.0.1:4178/v2/data.js:39:17)\n    at async request (http://127.0.0.1:4178/v2/data.js:47:25)"
     }
   ],
-  "total": 33,
-  "passed": 33,
+  "total": 35,
+  "passed": 35,
   "allPass": true
 }
