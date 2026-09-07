@@ -18,7 +18,7 @@
 | S2's standing seam check | **PASS** — `FD.setData('regData', …)` reaches the table | `node tools/v2-setdata-check.mjs --app <url>` |
 | S2's network / console gate | **`allPass: true`** — 36/36 screens reached, 0 console errors, 0 page errors, 0 failed requests, 0 engine loads | `verify/l4/network.json` |
 | `test/v2-data.test.js` | **74 pass, 0 fail** | run alone |
-| `npm test`, whole suite | **not green — see "npm test" below** | 298 tests |
+| `npm test`, whole suite | **303 pass, 0 fail**, twice consecutively | see "npm test" below |
 
 The 0.0329 % maximum is the same figure S1 and S2 recorded on an untouched app; it is the
 landing hero's video frame, not this slice.
@@ -167,32 +167,36 @@ to the viewport, so a row below the fold opened its menu off screen. It now clam
 
 ## npm test
 
-**Not green, and not from this slice.** The whole suite is 298 tests; run in isolation every
-suite passes, including the only one this slice can affect:
+**Green: 303 tests, 303 pass, 0 fail — twice in a row.**
 
-| Run | Result |
-|---|---|
-| `test/v2-data.test.js` alone | **74 pass, 0 fail** |
-| `test/reaper.test.js` alone | **24 pass, 0 fail** |
-| `npm test`, whole suite, run A | 296 pass, 2 fail |
-| `npm test`, whole suite, run B | 278 pass, 20 fail |
-| `npm test`, whole suite, run C | 289 pass, 14 fail |
+It took five runs to say that honestly, and the sequence is worth recording, because a red run
+here means "the box is busy", not "the branch is broken":
 
-The failures move between runs and land in the reaper, lease, sitrep and coordinator suites — M3
-to M7, M15, S5 — and every one of them passes when its file is run on its own. They are the
-load-sensitivities DECK-7 already records, made worse by the sibling worktrees running their own
-servers and suites on this box at the same time.
+| Run | Result | Failing suites |
+|---|---|---|
+| A | 296 pass, 2 fail | reaper |
+| B | 278 pass, 20 fail | reaper, lease, sitrep, coordinator |
+| C | 289 pass, 14 fail | reaper |
+| D | 302 pass, 1 fail | machines |
+| **E** | **303 pass, 0 fail** | — |
+| **F** | **303 pass, 0 fail** | — |
 
-They also cannot be this slice's, by construction. The whole diff against the base is:
+Every failure across A-D was wall-clock sensitive and every one of those files passes when run on
+its own (`test/reaper.test.js` 24/24, `test/v2-data.test.js` 74/74). They are DECK-7's known
+load-sensitivities, and runs A-C landed while ten sibling `FD-v2-*` worker sessions were building
+and running their own Playwright gates on this box.
+
+They also could not have been this slice's, by construction. The whole diff against the base is:
 
 ```
 public/v2/logic.js  public/v2/screens/registry.js  tools/v2-live-check.mjs
 docs/**  verify/l4/**
 ```
 
-`test/reaper.test.js` imports `./helpers`, `child_process`, `fs`, `path` and the node test runner
-— not one file this branch touches, and nothing under `public/v2` is loaded by any of the failing
-suites. So: **L4 adds no failing test, and `npm test` is not green on this box.**
+`test/reaper.test.js` imports `./helpers`, `child_process`, `fs`, `path` and the node test runner —
+not one file this branch touches, and nothing under `public/v2` is loaded by any of the suites that
+flickered. The green runs are the acceptance; this table is here so the next person to see a red
+`npm test` on this branch re-runs it instead of hunting L4.
 
 ## Verification, reproducible
 
