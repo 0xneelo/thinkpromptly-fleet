@@ -35,11 +35,16 @@ for (const badge of [ORCH, RES, DES, COORD, GK, WORKER, JUNK]) {
   fs.writeFileSync(path.join(MARKS, key(CWD[badge])), badge + '\n');
 }
 
-function runRaw(input) {
+function runRaw(input, envOverride) {
   const r = spawnSync(process.execPath, [GUARD], {
     input,
     encoding: 'utf8',
-    env: { ...process.env, CLAUDE_CONFIG_DIR: CFG, CLAUDE_SESSION_KIND_MARKS: MARKS },
+    env: {
+      ...process.env,
+      CLAUDE_CONFIG_DIR: CFG,
+      CLAUDE_SESSION_KIND_MARKS: MARKS,
+      ...envOverride,
+    },
   });
   assert.equal(r.status, 0, 'guard must always exit 0');
   return r.stdout;
@@ -607,4 +612,137 @@ test('adversarial: a quoted addressee that is not the seat is still allowed', ()
 test('adversarial: the JSON addressee shapes handle spaced values too', () => {
   assert.match(expectDeny(ORCH, bash(POST(`{"to": "${SEAT9}"}`))), REACHED);
   assert.match(expectDeny(ORCH, bash(POST('{"session_id": "goalkeeper 9"}'))), REACHED);
+});
+
+// ------------ 12. GK-M.3 item 1 — a `cd` in the same command cannot defeat the jail
+// Write targets used to resolve against the SESSION cwd only, so a `cd` into the jail in the
+// same command put bytes there with a target that is just `evil.md`. `cd`/`pushd` are now
+// tracked across `&&`, `;`, `|` and newlines. A `cd "$var"` cannot be resolved statically:
+// from there a relative target is unknowable, and the command is refused only when it names
+// the jail somewhere anchored — an ordinary relative write in another repo is never guessed at.
+test('GK-M.3 item 1: the PoC — `cd <jail> && echo pwned > evil.md` is denied', () => {
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME} && echo pwned > evil.md`)), INTO_GK);
+});
+
+test('GK-M.3 item 1: every sequencing operator carries the cd', () => {
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME} ; echo pwned >> thread.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME}\necho x > e.md`)), INTO_GK);
+});
+
+test('GK-M.3 item 1: a cd into a subdir, and pushd, are the same walk', () => {
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME}/audits && touch x.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`pushd ${GK_HOME} && echo x > e.md`)), INTO_GK);
+});
+
+test('GK-M.3 item 1: a cd elsewhere, or back out again, is allowed', () => {
+  expectAllow(ORCH, bash('cd /tmp && echo x > y.md'));
+  expectAllow(ORCH, bash(`cd ${GK_HOME} && cd /tmp && echo x > y.md`));
+  expectAllow(ORCH, bash('echo x > notes.md'));
+});
+
+test('GK-M.3 item 1: an unknowable cwd denies only when the jail is named anchored', () => {
+  // `cd "$D"` cannot be resolved, so a relative write must NOT be denied on a guess...
+  expectAllow(ORCH, bash('cd "$D" && echo x > y.md'));
+  // ...but the same unknowable cwd with the jail spelled out anchored is a write into it.
+  assert.match(expectDeny(ORCH, bash(`cd "$D" && cp ${GK_HOME}/thread.md .`)), INTO_GK);
+});
+
+// ------------ 13. GK-M.3 item 2 — `$HOME` is a spelling of `~`
+// `~/.claude/goalkeeper/x` denied while `$HOME/.claude/goalkeeper/x` — the same file — did not,
+// so the jail could be addressed by simply spelling it differently. norm() now expands `$HOME`,
+// `${HOME}`, `~` and `$CLAUDE_CONFIG_DIR`, which covers the Bash and the write-tool path alike.
+// This group needs a HOME where the jail really is `$HOME/.claude/goalkeeper`, so it runs the
+// guard with HOME and CLAUDE_CONFIG_DIR pointed at their own fixture.
+const HOMEFIX = fs.mkdtempSync(path.join(os.tmpdir(), 'gk-home-'));
+after(() => fs.rmSync(HOMEFIX, { recursive: true, force: true }));
+const HOME_CFG = path.join(HOMEFIX, '.claude');
+fs.mkdirSync(path.join(HOME_CFG, 'goalkeeper', 'audits'), { recursive: true });
+const HOME_ENV = { HOME: HOMEFIX, CLAUDE_CONFIG_DIR: HOME_CFG };
+
+function decideHome(payload) {
+  const out = runRaw(JSON.stringify({ cwd: CWD[ORCH], ...payload }), HOME_ENV);
+  if (!out) return null;
+  return JSON.parse(out).hookSpecificOutput.permissionDecisionReason;
+}
+const denyHome = (p) => {
+  const r = decideHome(p);
+  assert.ok(r, `expected deny: ${JSON.stringify(p)}`);
+  return r;
+};
+const allowHome = (p) => assert.equal(decideHome(p), null, `expected allow: ${JSON.stringify(p)}`);
+
+test('GK-M.3 item 2: `$HOME` and `${HOME}` reach the jail exactly as `~` does', () => {
+  assert.match(denyHome(bash('echo pwned > "$HOME/.claude/goalkeeper/evil.md"')), INTO_GK);
+  assert.match(denyHome(bash('echo pwned > "${HOME}/.claude/goalkeeper/evil.md"')), INTO_GK);
+  assert.match(denyHome(bash('echo pwned > ~/.claude/goalkeeper/evil.md')), INTO_GK);
+});
+
+test('GK-M.3 item 2: `$CLAUDE_CONFIG_DIR` is a spelling of the jail\'s parent', () => {
+  assert.match(denyHome(bash('echo pwned > "$CLAUDE_CONFIG_DIR/goalkeeper/evil.md"')), INTO_GK);
+  assert.match(denyHome(bash('echo pwned > "${CLAUDE_CONFIG_DIR}/goalkeeper/evil.md"')), INTO_GK);
+});
+
+test('GK-M.3 item 2: an ordinary `$HOME` write is untouched', () => {
+  allowHome(bash('echo x > "$HOME/notes.md"'));
+});
+
+test('GK-M.3 item 2: the expansion lives in norm(), so a write TOOL sees it too', () => {
+  assert.match(denyHome(write('$HOME/.claude/goalkeeper/x.md')), INTO_GK);
+});
+
+// ------------ 14. GK-M.3 item 3 — a copy reads its sources and writes its destination
+// Treating every argument of a copy as a target refused `cp <jail>/audits/… /tmp/copy.md` — an
+// orchestrator reading exactly the evidence it is meant to read. cp/mv/install/ln/dd write only
+// their destination; rm/mkdir/touch/truncate/chmod/chown/tee write every path argument.
+test('GK-M.3 item 3: the false positive — `cp <jail>/audits/2026-09-07.md /tmp/copy.md` is allowed', () => {
+  expectAllow(ORCH, bash(`cp ${GK_HOME}/audits/2026-09-07.md /tmp/copy.md`));
+});
+
+test('GK-M.3 item 3: reading out of the jail is allowed, writing into it is not', () => {
+  expectAllow(ORCH, bash(`mv ${GK_HOME}/old.md /tmp/old.md`));
+  assert.match(expectDeny(ORCH, bash(`cp /tmp/x.md ${GK_HOME}/x.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`mv /tmp/x.md ${GK_HOME}/x.md`)), INTO_GK);
+});
+
+test('GK-M.3 item 3: an explicit destination flag is a destination', () => {
+  assert.match(expectDeny(ORCH, bash(`cp -t ${GK_HOME} /tmp/x.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`cp --target-directory=${GK_HOME} /tmp/x.md`)), INTO_GK);
+});
+
+test('GK-M.3 item 3: dd writes `of=` and reads `if=`', () => {
+  assert.match(expectDeny(ORCH, bash(`dd if=/tmp/x of=${GK_HOME}/x`)), INTO_GK);
+  expectAllow(ORCH, bash(`dd if=${GK_HOME}/thread.md of=/tmp/x`));
+});
+
+test('GK-M.3 item 3: every path argument of the mutating family is a target', () => {
+  assert.match(expectDeny(ORCH, bash(`echo x | tee ${GK_HOME}/x.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`rm ${GK_HOME}/thread.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`touch ${GK_HOME}/x`)), INTO_GK);
+  // `newsub`, not `sub`: section 9 makes `<jail>/sub` a symlink pointing OUT of the jail, so
+  // that name resolves outside it — the symlink rule, correctly, rather than this one.
+  assert.match(expectDeny(ORCH, bash(`mkdir ${GK_HOME}/newsub`)), INTO_GK);
+});
+
+test('GK-M.3 item 3: plain reads and ordinary copies are untouched', () => {
+  expectAllow(ORCH, bash(`cat ${GK_HOME}/thread.md`));
+  expectAllow(ORCH, bash(`grep -r drift ${GK_HOME}/audits`));
+  expectAllow(ORCH, bash('cp /tmp/a /tmp/b'));
+});
+
+// ------------ 15. GK-M.3 item 4 — every addressee key
+// `agent` and `seat` were in the first cut and were dropped when the list was narrowed to §9's
+// names. A seat is exactly the thing one addresses, so the full list is asserted key by key:
+// dropping any one of them fails a test named after it.
+const ALL_ADDRESSEE_KEYS = ['to', 'session_id', 'session', 'title', 'name', 'recipient',
+  'agent', 'seat'];
+for (const k of ALL_ADDRESSEE_KEYS) {
+  test(`GK-M.3 item 4: \`${k}\` is an addressee key, in both spellings`, () => {
+    const into = /cannot be addressed by any seat/;
+    assert.match(expectDeny(ORCH, send({ [k]: 'goalkeeper', message: 'audit this' })), into);
+    assert.match(expectDeny(ORCH, send({ [k]: SEAT9, message: 'audit this' })), into);
+  });
+}
+
+test('GK-M.3 item 4: a body mention is still not an address', () => {
+  expectAllow(ORCH, send({ to: 'Giselher', message: 'the goalkeeper lane' }));
 });
