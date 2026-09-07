@@ -152,3 +152,12 @@ Julius pushed `3e64200` + `8abf779` (arrayKids reconciliation fix in `runtime.js
 `t3-substitutions.txt`, 34/34 interactions, gates green). Merged into `agent-v2-base` @ `42b56bb` (no conflicts),
 pushed, and all ten L-workers told to merge it. Still open in S2.1: keystroke interaction step, `logic.js sha256`
 label, `.claude/launch.json` / `.gitignore` scope cleanup. Preview follows the base.
+
+## 2026-09-08 · oracle audit of the shim → S2.2 (CRITICAL) + binding instructions to the nine
+
+Audit filed at `docs/design/fleetdeck-v2/audits/s2-shim-oracle-2026-09-08.md`. Two criticals (positional `sc-for`
+identity moves/drops foreign subtrees; a throw in `renderVals` blanks every screen), one high (child-list change
+deletes foreign nodes), two mediums (`<select>` sync, no update-depth guard), two lows. S2.2 sent to Julius ahead of
+S2.1's remainder; the three binding instructions broadcast to L2–L11 (mount xterm outside `#dc-root`; validate +
+throw-proof render sections; bind raw input state). Nine slices continue on `agent-v2-base` @ `42b56bb`; S2.2 will
+be folded into the base and broadcast when it lands.
