@@ -211,3 +211,12 @@ baselines are box-rendered (Linux Chromium fonts/AA); `--baseline` on the Mac re
 0.05 %, "Baseline preserved"). Ruling: the gate is a box instrument. The design seat runs the weave gate on the
 german-box with a runner script (`fd-weave-gate.sh`, tmux `FD-weave-gate`); L11 phase 2 repeats it as the final
 gate. Mac runs are informative only and are not filed.
+
+## 2026-09-08 · six more slices accepted (L2, L3, L4, L5, L7, L8)
+
+All with fixture gate 36/36 max 0.033 %, both base fixes as ancestors, scope clean, reports signed, improvisations
+logged with screenshots: L2 `e904077` (Renate, live 59/59), L3 `b6d94b5` (Gottlieb, live 37/37, adds
+`scripts/l3-live.mjs`), L4 `ecd6985` (Ruprecht, live 36/36), L5 `0edc033` (Dietlind, live 50/50), L7 `ca8b4a8`
+(Tankred, live 66/66), L8 `97bdbb2` (Kunhild, live 60/60). Ledger D03–D05, D09–D12, D14, D15 P2 ✅. Merged into
+`weave/fd-v2` (keep-both on shared lifecycle hooks and appended docs), pushed; parallel reviews staggered (L2, L3, L4
+first). Outstanding: L6 (Gerhild, bus + toast) and L11 phase 1; riders L10.1, any L4/L7 late pushes.
