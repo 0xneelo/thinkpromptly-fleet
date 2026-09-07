@@ -247,8 +247,8 @@ injection a no-op.
 
 | Check | Result |
 |---|---|
-| `npm test` (merged suite, S2's tests included) | **298 pass, 0 fail** |
-| `test/v2-data.test.js` alone | 69 pass (4 new: ownership split, S2 precedence, cold `fixtureFor`, undefined-vs-missing drift) |
+| `npm test` (merged suite, S2's tests included) | **303 pass, 0 fail** |
+| `test/v2-data.test.js` alone | 74 pass |
 | S2-owned seeds vs S2's file | 7/7 identical |
 | Overlap between the two fixture files | none |
 | `npm run v2:fixture` idempotent | yes |
@@ -288,6 +288,57 @@ exactly. If S2 ever switched to a top-level `const FD = {...}` that never touche
 top-level bindings are not own properties of the context and the seeds would read back as absent. Not
 a live bug — the tool already throws a named error saying its format changed — but a real blind spot
 worth knowing about.
+
+## L1.2 — design-seat corrections (2026-09-07)
+
+Four items from the independent review of `agent-v2-l1`. All four done.
+
+### 1–3 · `toDesktop` and `toAccounts` now match the current app and the ruling
+
+| Field | Was | Now | Why |
+|---|---|---|---|
+| `dsData[].rows[].turns` | `'0 turns'` when the count was null | `'Turns unknown'` | `'0 turns'` asserts something the API never said. Verbatim from `public/sessions.js:229`. A reported `0` still renders `'0 turns'`. |
+| `…rows[].branch` | literal `null` | `'No branch'` | `public/sessions.js:225`. Null on **313 of the 923** captured rows, so this is load-bearing, not an edge case. |
+| `…rows[].model` | literal `null` | `'Model unknown'` | `public/sessions.js:225`. |
+| `accounts[].trendPts` | the raw `{t, fh, sd, xu}` objects | `number[]` — `history[].sd` in `t` order | Design ruling: `sd` is the sampled seven-day percent, and that series is what `spark()` draws. |
+
+Five tests pin these: the null-fallback trio, that a real `0` is still `'0 turns'`, that no row in the
+whole capture carries a null `branch`/`model` or a `'0 turns'`, that `trendPts` is all numbers, and
+that the series takes `sd` (not `fh`) sorted by `t` rather than trusting the server's order.
+
+For the record, `completedTurns` is null on **43 of 923** captured rows (5%), not most — the fix is
+right either way, but the brief's framing overstated the rate. `branch` is the field that is mostly
+missing.
+
+Recorded as `improvised.md` **I-L1-13**, and I-L1-11 updated for `trendPts`.
+
+### 4 · Under `?fixture=1`, slices must not call `FD.setData` at all
+
+**Ruling, recorded here as asked.** `FD.setData(name, adapterOutput)` is how a live screen slice
+swaps a seed for real data. In fixture mode it must not be called: the whole point of the mode is that
+the page renders S2's seeds exactly, so the pixel gate compares like with like. A slice that calls
+`setData` under `?fixture=1` silently replaces a seed with adapter output and the gate then measures
+the adapter, not the design.
+
+**So the `FIXTURE_ROUTES` map (`data.js:125`) is deliberately one seed per endpoint**, not a
+reconstruction of the endpoint's response:
+
+| Fetcher | Resolves in fixture mode |
+|---|---|
+| `sessions()` | `groups` |
+| `messages()` | `busSessions` |
+| `sshkeys()` | `keyRows` |
+| `credits()` | `accounts` |
+| `machines()` | `machines` |
+| `desktopSessions()` | `dsData` |
+| `seats()`, `health()`, `ghtrain()`, `transcript()` | a response-shaped empty value — the mock seeds none of these |
+
+`sessions()` returning only `groups` (and not also `tiles`, `regData` or the org shapes, which the same
+endpoint feeds in live mode) would be a gap if a slice were expected to adapt and `setData` the result.
+Under the ruling it is not: a slice in fixture mode reads the seed it needs directly via
+`FD.data.fixtureFor(name)`, and the fetchers' single-seed mapping is only a convenience so a screen
+wired to a fetcher still renders. Both paths return the same objects, so neither can drift from the
+other.
 
 ## Still open, unchanged from L1
 
