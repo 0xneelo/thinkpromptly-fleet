@@ -188,6 +188,26 @@ asserts `'Turns unknown'`, so the test name, the assertion and the shipped behav
 Left alone for Clodwig: the override at `desktop.js:214` is now redundant with L1.2 and
 could be deleted, but it is not broken and it is not L11's file.
 
+### Second weave merge — L2 landed, DECK-79 did **not** close
+
+`origin/weave/fd-v2` advanced to `8431130`, bringing **L2** (the app shell) and an L10
+update. Merged; two conflicts, both append-shaped. `improvised.md` again kept both sides —
+five slice sections now. `test/v2-desktop.test.js` conflicted because Clodwig had made the
+**same** tripwire fix independently in his own file, so his wording was taken.
+
+| Proof | Result |
+|---|---|
+| `verify/l11/report.json` — fixture-mode pixel gate | **36/36**, max 0.033 % |
+| `verify/l11/live.json` | **20/22** — still |
+| `npm test` | **397/397** |
+
+**L2 shipped its shell without wiring the router.** `public/v2/screens/shell.js` is now 686
+lines, and `FD.router` appears nowhere in it — across all of `public/v2/`, the only files
+that name the router are `router.js` itself and L10's `desktop.js`. The shell still seeds its
+view from `props.startView`. This is the escalation condition this report set out in advance,
+so DECK-79 was escalated rather than worked around: L11 will not reach in and edit the shell
+to make its own acceptance box green.
+
 ### Still to do
 
 1. Wait for the rest of the weave (L2-L8) and merge again.
