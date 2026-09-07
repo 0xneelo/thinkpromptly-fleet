@@ -170,5 +170,15 @@ and the `census.py` half against the real census and real live desktop seats.
 
 ## Push
 
-Branch pushed with the broker token (`GH_TOKEN` in env only, never argv, URL, file or log).
-Pushed SHA recorded below from `git ls-remote`.
+Branch pushed with the broker token (`GH_TOKEN` in env only, never argv, URL, file or log; the
+askpass helper dir removed by the same trap the sweep now uses).
+
+```
+git ls-remote origin agent-giselher/goalkeeper-mac
+6665c5f930a24de1802284a3901ecc3701ac4d8c        refs/heads/agent-giselher/goalkeeper-mac
+```
+
+Six milestones, three green suites (54 node + 33 sh + 42 python), the installer idempotent on a
+re-run (`changed 0   unchanged 17`), and `~/.claude/goalkeeper/` live at data-repo commit
+`5a79257`. Open items are `G-2`, `G-5`, `G-7`, `G-9` (decisions) and `G-13` (gate) in
+LINEAR-PENDING.md — none of them block GK-D or the weave.
