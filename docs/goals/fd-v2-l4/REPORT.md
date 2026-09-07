@@ -16,6 +16,7 @@
 | Fixture-mode pixel gate | **36/36, `allPass: true`**, max mismatch **0.0329 %** | `verify/l4/report.json`, full run under `docs/design/fleetdeck-v2/verify/l4/` |
 | Live gate, API stubbed from `fixtures/api/` | **36/36, `allPass: true`** | `verify/l4/live.json`, tool `tools/v2-live-check.mjs` |
 | S2's standing seam check | **PASS** — `FD.setData('regData', …)` reaches the table | `node tools/v2-setdata-check.mjs --app <url>` |
+| S2's network / console gate | **`allPass: true`** — 36/36 screens reached, 0 console errors, 0 page errors, 0 failed requests, 0 engine loads | `verify/l4/network.json` |
 | `test/v2-data.test.js` | **74 pass, 0 fail** | run alone |
 | `npm test`, whole suite | **not green — see "npm test" below** | 298 tests |
 
