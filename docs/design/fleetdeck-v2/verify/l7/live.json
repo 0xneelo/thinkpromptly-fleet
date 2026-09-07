@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "mode": "live",
   "slice": "l7",
-  "capturedAt": "2026-09-07T01:24:21.535Z",
+  "capturedAt": "2026-09-07T02:13:04.083Z",
   "clock": {
     "fixedNow": 1788745984000,
     "iso": "2026-09-07T01:53:04.000Z",
@@ -13,8 +13,8 @@
     "width": 1440,
     "height": 900
   },
-  "total": 66,
-  "passed": 66,
+  "total": 71,
+  "passed": 71,
   "failed": 0,
   "allPass": true,
   "results": [
@@ -466,6 +466,41 @@
       "expectation": "the principals line is restyled too, not left on the dark ink",
       "pass": true,
       "detail": "rgba(255, 255, 255, 0.6) -> rgba(17, 17, 17, 0.62)"
+    },
+    {
+      "id": "L7-67",
+      "action": "load the keys screen",
+      "expectation": "the Certificates card is marked as owning its children",
+      "pass": true,
+      "detail": "expected \"\", got \"\""
+    },
+    {
+      "id": "L7-68",
+      "action": "navigate away and let three poll periods pass",
+      "expectation": "the sshkeys poll stops with the screen",
+      "pass": true,
+      "detail": "polled 0 more times while away"
+    },
+    {
+      "id": "L7-69",
+      "action": "return to the keys screen",
+      "expectation": "the guard is re-applied on the fresh subtree",
+      "pass": true,
+      "detail": "expected \"\", got \"\""
+    },
+    {
+      "id": "L7-70",
+      "action": "return to the keys screen",
+      "expectation": "the poll restarts and the new cert list is painted",
+      "pass": true,
+      "detail": "expected \"deployer-20260907-111111\", got \"deployer-20260907-111111\""
+    },
+    {
+      "id": "L7-71",
+      "action": "render repeatedly after returning",
+      "expectation": "the painted rows survive later renders",
+      "pass": true,
+      "detail": "expected \"deployer-20260907-111111\", got \"deployer-20260907-111111\""
     },
     {
       "id": "L7-60",

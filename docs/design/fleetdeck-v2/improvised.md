@@ -1543,11 +1543,19 @@ Two decisions, both consequences of I-L7-07.
 
 **The card owns its own children.** S2.2 added `data-dc-raw`: the reconciler neither inserts nor
 removes inside an element carrying it. The Certificates card's children are this screen's from the
-first paint onward, so it now carries the attribute — set from JavaScript in `capture()`, because
-the template is out of scope and `runtime.js:292` reads the live attribute rather than a compiled
-one. The reconciler already no-ops while a child set is unchanged, so this changes no behaviour
-today; it means a future change to that set cannot start deleting painted rows. Fixture mode never
-reaches it, because the module does not register there.
+first paint onward, so it carries the attribute — set from JavaScript in `capture()`, because the
+template is out of scope and `runtime.js:292` reads the live attribute rather than a compiled one.
+
+**It is re-applied on every capture, not once.** The first version set it only when the row
+prototypes were first captured. The `sc-if` that wraps this screen tears the whole subtree down when
+you navigate away, so every visit after the first got fresh nodes carrying no attribute and ran with
+no guard at all — the bug was invisible only because the reconciler happens to no-op while a child
+set is unchanged. `capture()` now re-applies it each time, and only to a card the reconciler has
+already populated, so an empty card is never frozen empty. Covered by `verify/l7` **L7-69** and
+**L7-71**, which leave the screen, return with a different certificate list, and assert both the
+guard and the painted rows; they fail against the previous version.
+
+Fixture mode never reaches any of this, because the module does not register there.
 
 **Clones carry the palette they were captured in.** A prototype cloned in dark mode keeps dark
 colours forever, so a theme flip inside a live session would leave the copy line's background, the
@@ -1556,6 +1564,14 @@ Every theme-dependent property on a cloned node is therefore re-derived from tha
 on each paint, rather than trusted from the clone. Proven by `verify/l7` L7-61 and L7-62, which
 flip the theme *after* the cards are painted and assert the computed colours actually changed —
 they fail against the previous implementation.
+
+**The poll and the tick belong to the screen.** Today's `keys.js` is a page that only exists while
+you are on it, so its 30 s `/api/sshkeys` poll and 1 s countdown tick end when you leave. The first
+version started both at module load, which in a SPA meant the deck polled for certificates forever
+from whatever screen you happened to be on. `logic.js` already hands `sync()` an `isKeys` flag, so
+the timers now start on enter and stop on leave, and `stop()` releases the poll handle rather than
+merely clearing an interval. Covered by `verify/l7` **L7-68** and by a mock-timer unit test that
+leaves the screen, advances five minutes and asserts no fetch.
 
 **Transient state lives in the module, never on a node.** The rows are rebuilt from scratch on every
 paint, so a `disabled` flag or a busy label written straight onto a button is lost the moment

@@ -142,9 +142,9 @@ cards from clones · I-L7-08 `data-dc-raw` and restyling clones on every paint.
 | Gate | Result |
 |---|---|
 | Pixel gate, fixture mode | **36/36, `allPass: true`**, max mismatch 0.032948 % (a pre-existing `registry dark` delta inherited from S2). **`ssh-keys` 0.000000 % in both themes.** `verify/l7/report.json` |
-| Live proof, API stubbed | **66/66, `allPass: true`**, zero console errors of the screen's own. `verify/l7/live.json`, `live-dark.png`, `live-light.png` |
-| Unit tests | `test/v2-keys.test.js` — **17/17** |
-| `npm test` | **320 pass / 320, 0 fail.** |
+| Live proof, API stubbed | **71/71, `allPass: true`**, zero console errors of the screen's own. `verify/l7/live.json`, `live-dark.png`, `live-light.png` |
+| Unit tests | `test/v2-keys.test.js` — **18/18** |
+| `npm test` | **490 pass / 490, 0 fail** (whole weave). |
 
 ### `npm test`, and the failure that went away
 
@@ -167,11 +167,40 @@ $ curl -s -X POST http://100.125.231.25:3131/api/registry -H 'Content-Type: appl
 unauthorized
 ```
 
-This is the known german-box behaviour — the closing registry POST is rejected from this host, and
-**XYZ-2137 already covers it**, so per that ruling I did not raise a gate for it and did not let it
-block the slice. The broker itself is reachable from here (`/api/ghtoken` answers 200), so this is
-an authorisation quirk of the registry endpoint, not a network problem. Linear DECK-44 carries the
-real status.
+The broker itself is reachable from here (`GET /api/ghtoken` answers **200**), so this is an
+authorisation failure, not a network one. I exhausted every credential the box actually has:
+
+| Attempt | Result |
+|---|---|
+| `POST /api/registry`, no auth header | **401 unauthorized** |
+| `POST /api/registry`, `Authorization: Bearer $(cat ~/.fleetdeck-bus-token)` | **401 unauthorized** |
+| `POST /api/registry`, `X-Fleet-Token: <bus token>` | **401 unauthorized** |
+| `POST /api/bus/ping` with the same bus token | **401 unauthorized** — but see the correction below |
+| `FLEET_TAILNET_KEY` in env, shell profiles, or any dotfile | **not present** |
+
+**Correction.** I first read that fourth line as "the bus token is worthless everywhere". It is not a
+valid control: `/api/bus/ping` is not a bus route. `server.js:572` defines
+`BUS_ROUTES = new Set(['/api/messages', '/api/messages/retry'])`, and the gate at `server.js:2989`
+is
+
+```js
+if (req.method === 'POST' && !BUS_ROUTES.has(p) && !notifyPath(p) && !tailnetAuthed(req))
+  return send(res, 401, 'text/plain', 'unauthorized');
+```
+
+Membership of `BUS_ROUTES` (or `notifyPath`) **short-circuits the auth check entirely** — an exempt
+route needs no credential at all, token or otherwise. So `/api/bus/ping` returned 401 because it is
+not exempt, which says nothing about the token.
+
+What stands is the first three rows: `/api/registry` rejects every credential this box has, because
+it is not exempt and `FLEET_TAILNET_KEY` is absent.
+
+So **the registry row is the one acceptance item this slice did not satisfy**, and it cannot be
+satisfied from german-box by any means available to a worker — it needs `FLEET_TAILNET_KEY`
+provisioned, or the row written by hand. That is **DECK-102** (`operator:gate`), which L9 raised
+first and L7 independently confirmed; DECK-44 is linked `blockedBy` it. I did not tick the box.
+
+DESIGN-35 accepted L7 on 2026-09-07 with this item outstanding.
 
 ### Running the gates, in order
 
@@ -283,6 +312,35 @@ hook it replaced is gone.
 The reviewer's fourth finding (a repaint ordering race between the direct `paint()` in `load()` and
 the flush `FD.setData` schedules) is real but self-correcting within the same microtask drain, so
 nothing is ever visible. Left as-is and noted here rather than papered over.
+
+## 7c. L7.1 — the DESIGN-35 follow-up
+
+Two defects found after L7 was accepted, both real, both fixed and covered by checks that fail
+against the previous code.
+
+1. **The poll and the tick ran for the whole session.** `boot()` started the 30 s
+   `/api/sshkeys` + `/api/ghtrain` poll and the 1 s countdown tick at module load, regardless of the
+   active screen — so the deck polled for certificates from wherever you happened to be. `logic.js`
+   already hands `sync()` an `isKeys` flag, so both now start on enter and stop on leave, and
+   `stop()` releases the poll handle and drops the tick node list rather than merely clearing an
+   interval. **L7-68** navigates away, lets three poll periods pass and asserts no further
+   `/api/sshkeys`; the unit test leaves the screen, advances five minutes on a mocked clock and
+   asserts no fetch at all.
+2. **`data-dc-raw` was applied once, on first capture.** The `sc-if` wrapping this screen tears the
+   subtree down on navigation, so every visit after the first ran with no guard — invisible only
+   because the reconciler no-ops while a child set is unchanged. It is now re-applied on every
+   capture, and only to a card the reconciler has already populated, so an empty card is never
+   frozen empty. **L7-69** / **L7-71** leave, return with a changed certificate list, and assert both
+   the guard and the painted rows.
+
+To make the lifecycle testable, `keys.js` now loads under Node the way `org.js` does instead of
+returning at a `typeof document === 'undefined'` guard, and `screenEl()` no-ops without a document.
+**Fixture mode still returns early** — that is what holds the pixel gate, and it is unchanged.
+
+**Falsification.** Given that I shipped two vacuous checks earlier in this slice, I reverted both
+fixes and re-ran: **L7-68, L7-69, L7-70 and L7-71 all fail** (67/71), and the unit test *hangs*,
+because the leaked interval keeps Node alive — the defect proving itself. Restored, everything is
+green again.
 
 ## 8. Follow-ups
 
