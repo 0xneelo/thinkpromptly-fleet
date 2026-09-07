@@ -211,11 +211,37 @@ The live gate is not self-confirming: with three deliberate mutations planted in
 save toast reworded, the tag toast shortened, the `gone · last seen ` prefix changed — it dropped
 to **33/36** and named exactly those three checks. Restored, it is 36/36 again.
 
+## The registry row, and a wrong belief it exposed
+
+The row **is** written — `200 {"ok":true}` for the registration and for the closing
+`status: done`. It took four `401`s to get there, and the reason is worth recording because it has
+already cost more than one lane a step it could have completed.
+
+`POST /api/registry` over the tailnet listener is not seat-fenced. It is gated by `tailnetAuthed()`
+(`server.js:497`): **every POST arriving over tailscale must carry the shared key** as
+`Authorization: Bearer <key>`. The launch prompt's curl recipe has no such header, so copying it
+verbatim always answers `401` — and the box has held the key all along, as `FD_TAILNET_KEY` in
+`~/.claude/fleet/fleet.env` (0600), put there by `mac/provision-fleet-secrets.sh`.
+
+I first read the `401` as XYZ-2137's seat fence — a note in my own memory said exactly that and told
+me to skip the step — and reported it as impossible twice. It is not. The header, kept out of `argv`
+because `ps` is world-readable:
+
+```sh
+. "$HOME/.claude/fleet/fleet.env"
+printf 'header = "Authorization: Bearer %s"\n' "$FD_TAILNET_KEY" | curl -sS -K - \
+  -X POST http://100.125.231.25:3131/api/registry -H "Content-Type: application/json" \
+  -d '{"host":"german-box","name":"FD-v2-l4","status":"done"}'
+```
+
+The tailnet listener carries only `/api/registry`, `/api/registry/delete`, `/api/coordinator/*` and
+the lease and credits routes, so the row cannot be read back from the box — `{"ok":true}` is the
+confirmation. **XYZ-2137 should be re-checked against this:** L1 recorded the same `401` and drew
+the same conclusion, so its "registry write is fenced for box workers" premise may simply be a
+missing header.
+
 ## Not done
 
-- **Fleet registry row.** `POST http://100.125.231.25:3131/api/registry` answers `401 unauthorized`
-  from the box; registry writes are seat-epoch fenced and a box worker holds no seat (XYZ-2137).
-  Same wall Juergen hit in L1. Recorded in `LINEAR-PENDING.md`, no new gate filed.
 - **The pack.** `docs/goals/fd-v2-l4/` shipped with only `BEHAVIOUR.md`. `PROTOCOL.md` is copied
   verbatim from `fd-v2-l1` and `README.md` is authored from the launch prompt's stop condition —
   L2 and L3 have the same gap and should be corrected at the source.

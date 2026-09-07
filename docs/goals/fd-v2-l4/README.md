@@ -55,8 +55,10 @@ No new server endpoints. No merge of another L-branch.
       eight screenshots under `docs/design/fleetdeck-v2/improvised/l4/`.
 - [x] Branch `agent-v2-l4` pushed.
 - [x] `REPORT.md` signed **Ruprecht**, with the behaviour checklist.
-- [x] Main Linear issue DECK-43 Done. — fleet registry row **not written**: `POST /api/registry`
-      answers `401 unauthorized` from the box (XYZ-2137), the same wall L1 hit.
+- [x] Main Linear issue DECK-43 Done; fleet registry row written — `200 {"ok":true}` for both the
+      registration and the closing `status: done`. The `401` three earlier attempts hit was a
+      missing `Authorization: Bearer $FD_TAILNET_KEY`, not the seat fence of XYZ-2137; the launch
+      recipe omits that header and the box has held the key all along.
 
 ## Constraints
 
