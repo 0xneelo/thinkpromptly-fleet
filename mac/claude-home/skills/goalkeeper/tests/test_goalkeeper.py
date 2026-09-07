@@ -281,6 +281,7 @@ class TestSweep(Fixture):
         self.assertIsInstance(data["swept_at"], str)
         self.assertIsInstance(data["since"], str)
         self.assertIsInstance(data["inbound_peer_msgs"], list)
+        self.assertIsInstance(data["tamper"], list)
         for project in data["projects"]:
             self.assertIsInstance(project["alias"], str)
             self.assertIsInstance(project["path"], str)
@@ -450,7 +451,8 @@ class TestAudit(Fixture):
         path = audit_path(out)
         self.assertEqual(path, os.path.join(self.home, "audits",
                                             today.strftime("%Y-%m-%d") + ".md"))
-        self.assertRegex(out.strip(), r"\(\d+ lines, \d+ KB\)$")
+        # the path line is first; an uncommitted fixture repo adds a TAMPER warning after it
+        self.assertRegex(out.strip().split("\n")[0], r"\(\d+ lines, \d+ KB\)$")
         with open(path, encoding="utf-8") as fh:
             body = fh.read()
         self.assertIn("## %s · day · fixtureproj" % today_id, body)
@@ -776,6 +778,164 @@ class TestSweepStaleAskpassDirs(unittest.TestCase):
 
     def test_missing_root_never_raises(self):
         gk.sweep_stale_askpass_dirs(tmpdir=os.path.join(self.root, "gone"))
+
+
+class TestTamper(Fixture):
+    """GK-M.4 item 2: the seat sees that its own records were changed, and says so first.
+
+    Every repo here is a mkdtemp fixture with GOALKEEPER_HOME pointed at it — the live
+    ~/.claude/goalkeeper is never opened, never committed to, never touched.
+    """
+
+    def setUp(self):
+        super(TestTamper, self).setUp()
+        write(os.path.join(self.home, "thread.md"),
+              "### T-2026-09-07-1 · Mon 2026-09-07 · day · fixtureproj\n\nkeep the thread\n")
+        git(self.home, "add", "-A")
+        git(self.home, "commit", "-q", "-m", "seed")
+
+    def state(self):
+        return json.loads(read(os.path.join(self.home, gk.STATE_FILE)))
+
+    def baseline(self):
+        """One sweep to establish sweep-state.json. Returns its last_clean_sha."""
+        data, _ = self.sweep()
+        self.assertEqual([e["kind"] for e in data["tamper"]], ["no_baseline"])
+        return self.state()["last_clean_sha"]
+
+    def audit(self):
+        code, out = run_cli(["audit", "--date", "2026-09-07"], self.env())
+        self.assertEqual(code, 0, out)
+        return read(audit_path(out)), out
+
+    def test_missing_sweep_state_reports_no_baseline_once(self):
+        """Not one `foreign_commit` per commit in the history — one honest entry."""
+        git(self.home, "commit", "-q", "--allow-empty", "-m", "second")
+        data, _ = self.sweep()
+        self.assertEqual([e["kind"] for e in data["tamper"]], ["no_baseline"])
+        self.assertIn("baseline", data["tamper"][0]["what"])
+
+    def test_clean_run_is_quiet(self):
+        sha = self.baseline()
+        self.assertRegex(sha, r"^[0-9a-f]{40}$")
+        data, out = self.sweep()
+        self.assertEqual(data["tamper"], [])
+        self.assertNotIn("TAMPER", out)
+        self.assertEqual(self.state()["last_clean_sha"],
+                         git(self.home, "rev-parse", "HEAD").strip())
+        self.assertRegex(self.state()["last_sweep_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        body, aout = self.audit()
+        self.assertNotIn("TAMPER", body)
+        self.assertNotIn("TAMPER", aout)
+
+    def test_the_seats_own_writes_do_not_self_report(self):
+        """sweep.json is untracked by design — without `written` every run would accuse
+        the run before it."""
+        self.baseline()
+        self.assertEqual(self.sweep()[0]["tamper"], [])
+        self.assertEqual(self.sweep()[0]["tamper"], [])
+        self.assertEqual(sorted(self.state()["written"]), ["sweep-state.json", "sweep.json"])
+
+    def test_foreign_commit(self):
+        sha = self.baseline()
+        with open(os.path.join(self.home, "thread.md"), "a", encoding="utf-8") as fh:
+            fh.write("\nsneaked in\n")
+        git(self.home, "add", "-A")
+        git(self.home, "commit", "-q", "-m", "fix the thread",
+            GIT_AUTHOR_NAME="Someone", GIT_AUTHOR_EMAIL="someone@else",
+            GIT_COMMITTER_NAME="Someone", GIT_COMMITTER_EMAIL="someone@else")
+        foreign = git(self.home, "rev-parse", "HEAD").strip()
+
+        data, out = self.sweep()
+        self.assertEqual([e["kind"] for e in data["tamper"]], ["foreign_commit"])
+        entry = data["tamper"][0]
+        self.assertEqual(entry["sha"], foreign)
+        self.assertEqual(entry["author"], "someone@else")
+        self.assertEqual(entry["subject"], "fix the thread")
+        self.assertRegex(entry["date"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+        self.assertIn("TAMPER", out)
+        # HEAD is not this seat's commit, so the baseline stays where it was
+        self.assertEqual(self.state()["last_clean_sha"], sha)
+
+        body, aout = self.audit()
+        self.assertTrue(body.startswith("# Audit 2026-09-07\n\n## ⚠ TAMPER\n"), body[:120])
+        self.assertIn("someone other than this seat changed the goalkeeper's records — treat "
+                      "the thread and audits since %s as unverified until the operator "
+                      "confirms them" % sha[:7], body)
+        self.assertIn("| commit by `someone@else` |", body)
+        self.assertIn(foreign[:7], body)
+        self.assertLess(body.index("## ⚠ TAMPER"), body.index("swept_at"))
+        self.assertIn("TAMPER", aout)
+
+    def test_uncommitted_edit(self):
+        self.baseline()
+        with open(os.path.join(self.home, "thread.md"), "a", encoding="utf-8") as fh:
+            fh.write("\nedited by hand\n")
+        data, _ = self.sweep()
+        self.assertEqual([e["kind"] for e in data["tamper"]], ["uncommitted"])
+        entry = data["tamper"][0]
+        self.assertEqual(entry["path"], "thread.md")
+        self.assertEqual(entry["status"].strip(), "M")
+        self.assertRegex(entry["mtime"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+        body, _ = self.audit()
+        self.assertIn("| uncommitted change to `thread.md` |", body)
+
+    def test_mtime_only_touch(self):
+        """Content unchanged, so git sees nothing: only check (c) can catch this one."""
+        self.baseline()
+        path = os.path.join(self.home, "thread.md")
+        future = time.time() + 60
+        os.utime(path, (future, future))
+        # sweep.json is the seat's own untracked output; nothing else is dirty
+        self.assertEqual(git(self.home, "status", "--porcelain").strip(), "?? sweep.json")
+
+        data, _ = self.sweep()
+        self.assertEqual([e["kind"] for e in data["tamper"]], ["mtime_after_commit"])
+        entry = data["tamper"][0]
+        self.assertEqual(entry["path"], "thread.md")
+        self.assertEqual(entry["last_commit"], git(self.home, "rev-parse", "HEAD").strip())
+        self.assertRegex(entry["last_commit_at"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+
+        body, _ = self.audit()
+        self.assertIn("| `thread.md` written after the last commit |", body)
+
+    def test_not_a_git_repo_degrades_to_check_failed(self):
+        home = os.path.join(self.root, "nogit")
+        os.makedirs(home)
+        shutil.copy(os.path.join(self.home, "projects.json"), home)
+        with contextlib.redirect_stderr(io.StringIO()):
+            code, _ = run_cli(["sweep", "--since", SINCE, "--no-fetch"],
+                              self.env(GOALKEEPER_HOME=home))
+        self.assertEqual(code, 0)
+        data = json.loads(read(os.path.join(home, "sweep.json")))
+        self.assertEqual({e["kind"] for e in data["tamper"]}, {"check_failed"})
+        self.assertEqual(sorted(e["check"] for e in data["tamper"]), sorted(gk.TAMPER_CHECKS))
+        self.assertEqual(json.loads(read(os.path.join(home, gk.STATE_FILE)))["last_clean_sha"],
+                         "")
+
+    def test_detect_tamper_on_a_missing_dir_never_raises(self):
+        entries = gk.detect_tamper(os.path.join(self.root, "does-not-exist"))
+        self.assertEqual({e["kind"] for e in entries}, {"check_failed"})
+
+    def test_gitignore_gets_the_state_file_and_keeps_existing_lines(self):
+        write(os.path.join(self.home, ".gitignore"), "*.bak")  # no trailing newline
+        git(self.home, "add", "-A")
+        git(self.home, "commit", "-q", "-m", "ignore backups")
+        self.sweep()
+        path = os.path.join(self.home, ".gitignore")
+        self.assertEqual(read(path).split("\n")[:2], ["*.bak", "sweep-state.json"])
+        self.sweep()
+        self.assertEqual(read(path).count("sweep-state.json"), 1)
+
+    def test_the_cli_commits_as_the_seat(self):
+        run_cli(["thread", "add", "a direction", "--horizon", "day",
+                 "--project", "fixtureproj"], self.env())
+        self.sweep()
+        code, _ = run_cli(["audit", "--date", "2026-09-07"], self.env())
+        self.assertEqual(code, 0)
+        self.assertEqual(set(git(self.home, "log", "--format=%ae", "-3").split()),
+                         {"goalkeeper@local"})
 
 
 if __name__ == "__main__":

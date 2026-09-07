@@ -26,6 +26,8 @@ import time
 MINT = "/Users/misterislez/remote-system/deploy-keys/mint-github-token.sh"
 US = "\x1f"  # git --format field separator; survives subjects containing | or tabs
 FETCH_TIMEOUT = 60
+SEAT_EMAIL = "goalkeeper@local"  # every commit this CLI makes; anything else is foreign
+STATE_FILE = "sweep-state.json"  # what the seat itself last did; gitignored in the data repo
 
 # Words too common to anchor a direction to a piece of activity.
 STOPWORDS = {
@@ -123,7 +125,8 @@ def commit_file(home, relpath, message):
     if not run(["git", "-C", home, "add", "--", relpath])[0]:
         sys.stderr.write("warning: git add failed — %s is written but uncommitted\n" % relpath)
         return False
-    if not run(["git", "-C", home, "commit", "-m", message])[0]:
+    if not run(["git", "-C", home, "-c", "user.name=goalkeeper",
+                "-c", "user.email=" + SEAT_EMAIL, "commit", "-m", message])[0]:
         sys.stderr.write("warning: git commit failed — %s is written but uncommitted\n" % relpath)
         return False
     return True
@@ -629,13 +632,186 @@ def cmd_thread_add(args, home):
     return 0
 
 
+# ---------------------------------------------------------- tamper detection
+
+TAMPER_CHECKS = ("uncommitted", "foreign_commit", "mtime_after_commit")
+
+
+def to_z(text):
+    """git's %aI carries a local offset; every tamper timestamp is recorded in Z."""
+    try:
+        return iso_z(parse_iso(text))
+    except ValueError:
+        return text
+
+
+def mtime_z(path):
+    try:
+        return iso_z(dt.datetime.fromtimestamp(os.path.getmtime(path), dt.timezone.utc))
+    except OSError:
+        return ""
+
+
+def check_uncommitted(home, written):
+    """(paths git reports, entries). One entry per `git status --porcelain` line."""
+    ok, out = run(["git", "-C", home, "status", "--porcelain"])
+    if not ok:
+        return set(), [{"kind": "check_failed", "check": "uncommitted",
+                        "why": "git status failed in %s" % home}]
+    paths, entries = set(), []
+    for line in out.splitlines():
+        if len(line) < 4:
+            continue
+        status, path = line[:2], line[3:].strip()
+        paths.add(path)
+        if path in written:
+            continue
+        entries.append({"kind": "uncommitted", "path": path, "status": status,
+                        "mtime": mtime_z(os.path.join(home, path))})
+    return paths, entries
+
+
+def check_foreign_commits(home, baseline):
+    """Commits since the baseline whose author is not this seat.
+
+    No baseline, or one this repo has never heard of (fresh repo, rewritten history), is
+    reported once as `no_baseline` — never as "every commit is foreign".
+    """
+    if not baseline or not run(["git", "-C", home, "cat-file", "-e",
+                                "%s^{commit}" % baseline])[0]:
+        return [{"kind": "no_baseline",
+                 "what": "no %s baseline — everything committed before now is unverified"
+                         % STATE_FILE}]
+    ok, out = run(["git", "-C", home, "log", "%s..HEAD" % baseline, "--date=iso-strict",
+                   "--format=%H" + US + "%ae" + US + "%aI" + US + "%s"])
+    if not ok:
+        return [{"kind": "check_failed", "check": "foreign_commit",
+                 "why": "git log %s..HEAD failed in %s" % (baseline, home)}]
+    entries = []
+    for line in out.splitlines():
+        parts = line.split(US)
+        if len(parts) != 4 or parts[1] == SEAT_EMAIL:
+            continue
+        entries.append({"kind": "foreign_commit", "sha": parts[0], "author": parts[1],
+                        "date": to_z(parts[2]), "subject": parts[3]})
+    return entries
+
+
+def check_mtimes(home, skip):
+    """Files touched after the last commit — the shape a `git commit --amend`-free edit,
+    a restored backup or an editor write leaves behind even when the tree hashes clean."""
+    ok, out = run(["git", "-C", home, "log", "-1", "--format=%H" + US + "%cI"])
+    parts = out.strip().split(US)
+    if not ok or len(parts) != 2:
+        return [{"kind": "check_failed", "check": "mtime_after_commit",
+                 "why": "no commit in %s to compare mtimes against" % home}]
+    sha, committed = parts
+    try:
+        cutoff = parse_iso(committed)
+    except ValueError:
+        return [{"kind": "check_failed", "check": "mtime_after_commit",
+                 "why": "unreadable commit date %r in %s" % (committed, home)}]
+    entries = []
+    for parent, dirs, files in os.walk(home):
+        if ".git" in dirs:
+            dirs.remove(".git")
+        for name in files:
+            path = os.path.join(parent, name)
+            rel = os.path.relpath(path, home)
+            if rel in skip:
+                continue
+            try:
+                # whole seconds: git records the commit second, so a file written
+                # 0.3s before its own commit must not read as newer than it
+                stamp = int(os.path.getmtime(path))
+            except OSError:
+                continue
+            if stamp > cutoff.timestamp():
+                entries.append({"kind": "mtime_after_commit", "path": rel,
+                                "mtime": mtime_z(path), "last_commit": sha,
+                                "last_commit_at": iso_z(cutoff)})
+    return sorted(entries, key=lambda e: e["path"])
+
+
+def detect_tamper(home):
+    """What changed in the data repo that this seat did not do (lane GK-M.4 item 2).
+
+    Three checks, all run before the sweep writes anything:
+      (a) `uncommitted`        — `git status --porcelain` is not empty
+      (b) `foreign_commit`     — a commit since sweep-state.json's last_clean_sha whose
+                                 author email is not goalkeeper@local
+      (c) `mtime_after_commit` — a file newer than the last commit that (a) did not report
+
+    The previous run's `written` list is excluded from (a) and (c): those paths are the
+    seat's own output — sweep.json is untracked by design — so without the exclusion every
+    run would report its own last run as tampering.
+
+    A check that cannot run yields a `check_failed` entry, never silence: silence must
+    never be mistaken for cleanliness.
+    """
+    state = read_json(os.path.join(home, STATE_FILE))
+    if not isinstance(state, dict):
+        state = {}
+    written = {w for w in (state.get("written") or []) if isinstance(w, str)}
+
+    if not is_git_repo(home):
+        return [{"kind": "check_failed", "check": check,
+                 "why": "%s is not a git repo" % home} for check in TAMPER_CHECKS]
+
+    dirty, entries = check_uncommitted(home, written)
+    entries += check_foreign_commits(home, state.get("last_clean_sha"))
+    return entries + check_mtimes(home, written | dirty)
+
+
+def ensure_gitignore(home):
+    """Keep sweep-state.json out of the data repo's history. True when the file changed."""
+    path = os.path.join(home, ".gitignore")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            body = fh.read()
+    except OSError:
+        body = ""
+    if STATE_FILE in [line.strip() for line in body.splitlines()]:
+        return False
+    with open(path, "a", encoding="utf-8") as fh:
+        if body and not body.endswith("\n"):
+            fh.write("\n")
+        fh.write(STATE_FILE + "\n")
+    return True
+
+
+def write_sweep_state(home, written, tamper):
+    """Record what this seat just did, so the next run can tell its writes from anyone's.
+
+        {"last_clean_sha": "<sha of the last commit this seat made>",
+         "last_sweep_at": "<ISO8601 Z>",
+         "written": ["sweep.json", "sweep-state.json", ...]}
+
+    A run that found a foreign commit does not advance last_clean_sha: HEAD is not this
+    seat's commit, and the audit's TAMPER line names that sha as the last one the operator
+    can trust. Every other outcome advances it — including the first run, which has no
+    baseline to keep.
+    """
+    previous = read_json(os.path.join(home, STATE_FILE))
+    sha = str(previous.get("last_clean_sha") or "") if isinstance(previous, dict) else ""
+    if not any(e.get("kind") == "foreign_commit" for e in tamper):
+        ok, out = run(["git", "-C", home, "rev-parse", "HEAD"])
+        if ok:
+            sha = out.strip()
+    state = {"last_clean_sha": sha, "last_sweep_at": now_z(), "written": sorted(written)}
+    with open(os.path.join(home, STATE_FILE), "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2, ensure_ascii=False)
+        fh.write("\n")
+
+
 # --------------------------------------------------------------------- sweep
 
 def cmd_sweep(args, home):
     since = iso_z(parse_iso(args.since))
+    tamper = detect_tamper(home)  # before this sweep writes anything of its own
     sessions = live_sessions()
     out = {"swept_at": now_z(), "since": since, "projects": [],
-           "inbound_peer_msgs": collect_inbound(sessions, home)}
+           "inbound_peer_msgs": collect_inbound(sessions, home), "tamper": tamper}
 
     for project in load_projects(home):
         path = os.path.abspath(os.path.expanduser(project.get("path", "")))
@@ -662,6 +838,12 @@ def cmd_sweep(args, home):
         json.dump(out, fh, indent=2, ensure_ascii=False)
         fh.write("\n")
 
+    written = ["sweep.json", STATE_FILE]
+    if ensure_gitignore(home):
+        written.append(".gitignore")
+        commit_file(home, ".gitignore", "sweep: gitignore %s" % STATE_FILE)
+    write_sweep_state(home, written, tamper)
+
     parts = ["sweep → sweep.json"]
     total = 0
     for p in out["projects"]:
@@ -671,6 +853,8 @@ def cmd_sweep(args, home):
                         len(p["sessions"]), len(p["operator_turns"]),
                         "fetched" if p["fetched_at"] else "STALE"))
     parts.append("total: %d commits, %d inbound peer msgs" % (total, len(out["inbound_peer_msgs"])))
+    if tamper:
+        parts.append("⚠ TAMPER: %d" % len(tamper))
     print("  |  ".join(parts))
     return 0
 
@@ -751,6 +935,51 @@ def evidence_rows(sweep):
     return rows
 
 
+TAMPER_LINE = ("someone other than this seat changed the goalkeeper's records — treat the "
+               "thread and audits since %s as unverified until the operator confirms them")
+NO_BASELINE = "the last verified commit (baseline missing)"
+
+
+def tamper_what(entry):
+    kind = entry.get("kind", "")
+    if kind == "uncommitted":
+        return "uncommitted change to `%s`" % entry.get("path", "")
+    if kind == "foreign_commit":
+        return "commit by `%s`" % entry.get("author", "")
+    if kind == "mtime_after_commit":
+        return "`%s` written after the last commit" % entry.get("path", "")
+    if kind == "check_failed":
+        return "check `%s` could not run" % entry.get("check", "")
+    return entry.get("what") or kind
+
+
+def tamper_locator(entry):
+    kind = entry.get("kind", "")
+    if kind == "uncommitted":
+        return "`%s %s`, mtime %s" % (entry.get("status", ""), entry.get("path", ""),
+                                      entry.get("mtime", ""))
+    if kind == "foreign_commit":
+        return "`%s` %s — \"%s\"" % (entry.get("sha", "")[:7], entry.get("date", ""),
+                                     entry.get("subject", ""))
+    if kind == "mtime_after_commit":
+        return "mtime %s, last commit `%s` %s" % (entry.get("mtime", ""),
+                                                  entry.get("last_commit", "")[:7],
+                                                  entry.get("last_commit_at", ""))
+    if kind == "check_failed":
+        return entry.get("why", "")
+    return "—"
+
+
+def tamper_block(home, tamper):
+    """The block `audit` opens with. Its sentence is the operator's, verbatim."""
+    state = read_json(os.path.join(home, STATE_FILE))
+    sha = str(state.get("last_clean_sha") or "") if isinstance(state, dict) else ""
+    rows = ["| %s | %s |" % (cell(tamper_what(e)), cell(tamper_locator(e)))
+            for e in tamper if isinstance(e, dict)]
+    return (["## ⚠ TAMPER", "", TAMPER_LINE % (sha[:7] if sha else NO_BASELINE), "",
+             "| what | locator |", "|---|---|"] + rows + [""])
+
+
 def cmd_audit(args, home):
     sweep = read_json(os.path.join(home, "sweep.json"))
     if not isinstance(sweep, dict):
@@ -770,6 +999,10 @@ def cmd_audit(args, home):
     matched = set()
 
     lines = ["# Audit %s" % stamp, ""]
+    tamper = sweep.get("tamper")
+    tamper = tamper if isinstance(tamper, list) else []
+    if tamper:  # before the metadata line and before any direction — nobody reads past it
+        lines += tamper_block(home, tamper)
     fetch_notes = ["%s %s" % (p.get("alias", ""),
                               p.get("fetched_at") or "null STALE")
                    for p in sweep.get("projects", [])]
@@ -845,6 +1078,9 @@ def cmd_audit(args, home):
     commit_file(home, os.path.join("audits", stamp + ".md"), "audit: %s" % stamp)
     size = len(body.encode("utf-8"))
     print("%s  (%d lines, %d KB)" % (target, body.count("\n"), (size + 1023) // 1024))
+    if tamper:
+        print("⚠ TAMPER: %d item(s) — the audit opens with the block; treat the records "
+              "as unverified" % len(tamper))
     return 0
 
 
