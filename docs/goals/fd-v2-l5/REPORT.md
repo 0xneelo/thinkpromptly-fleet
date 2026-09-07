@@ -263,4 +263,57 @@ post-audit is the negative control plus the 50-check live proof.
 
 ---
 
+---
+
+# L5.1 — DESIGN-35 follow-up (2026-09-07)
+
+Merged `origin/weave/fd-v2` first; clean, no `logic.js` conflict.
+
+### 1 · HIGH — the 1 s tick re-rendered the whole app forever (fixed)
+
+`org.js` ran `tickTimer` unconditionally once a load had cached, so after the org chart had been
+opened **once**, every screen after it re-rendered every second for the life of the page and
+`setLiveApi` kept overwriting the shared header pill. L2's `setLiveApi` has landed in `shell.js`, so
+this was live, not theoretical. `stop()` existed and was never called; the one-shot 50 ms probe
+cleared itself on first open, so re-entering the screen never reloaded either.
+
+Fixed in four places:
+
+| Where | Change |
+|---|---|
+| `tick()` | gated on `orgOpen()`, exactly like `pollTimer` |
+| `publish()` | returns early when closed — catches a load that resolves *after* the user left |
+| `render()` | returns early when closed; it calls `FD.setData('orgScopeData', …)` before `publish()`, and that re-renders on its own |
+| `watch()` | new: one 250 ms watcher turns the screen's presence in the DOM into enter → `start()` / leave → `stop()`. `unwatch()` tears it down. Boot now calls `watch()`, not `start()` |
+
+**Three new tests** in `test/v2-org.test.js`, using `t.mock.timers` and a stub document:
+*the 1 s tick renders only while the org screen is open* (open → ≥3 renders in 3 s; leave → **zero**
+`FD.setData` and **zero** `setLiveApi` across 60 s; re-enter → resumes), *watch() calls stop() on
+screen leave and start() on re-entry*, and *nothing is published while the screen is closed*.
+
+### 2 · MEDIUM — the scope select offered scopes with no kids (fixed)
+
+Took the first option: **filter the options**. `toOrg()` buckets every session including seat owners,
+which are roots and never kids, so `mac` was offered and selecting it gave a silently empty grid.
+`scopesWithKids()` filters `toOrg()`'s keys — the adapter stays the source. Added the belt to that
+brace: when nothing reports to a seat at all, a spine card says
+**"No sessions report to a seat. / Every row the fleet knows is in the unattached tab."**
+
+Recorded as **I-L5-13** with screenshot `improvised/l5-empty-scope.png`, including the one rough edge
+I did not paper over: with no offered scopes the `<select>` renders as an empty pill, and the mock has
+no empty-select treatment.
+
+### 3 · I-L5-05 — accepted as ruled. No change.
+
+### Re-proof
+
+| Gate | Result |
+|---|---|
+| `verify/l5/report.json` | **36/36 allPass** — Org chart **0.000000 %** dark and light |
+| `verify/l5/live.json` | **51/51 allPass** (new `F8`: `mac` is no longer offered) |
+| `test/v2-org.test.js` | **38/38** (35 + 3 new) |
+| every `test/v2-*.test.js` | **234/234** — the `logic.js` edit disturbs no other slice |
+
+---
+
 **Signed: Dietlind** · `frontend-developer` · `agent-dietlind` · 2026-09-07

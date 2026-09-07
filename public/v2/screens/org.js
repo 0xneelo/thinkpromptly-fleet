@@ -149,6 +149,8 @@
   var last = null; // the raw {sessions, seats, errors, fixture} of the last good load
   var tickTimer = null;
   var pollTimer = null;
+  var watchTimer = null;
+  var running = false; // true between screen enter and screen leave
 
   // app.js:12 — ?orgFixture=1 previews the committed M11 contract fixture.
   function orgFixtureMode() {
@@ -463,17 +465,44 @@
 
   /* ---- publish ---------------------------------------------------------- */
 
+  // Nothing is published while the screen is closed. FD.setData re-renders the
+  // WHOLE app and setLiveApi writes the shared header pill, so a publish from a
+  // background org screen would re-render every second and overwrite another
+  // screen's pill. An in-flight load that resolves after the user left lands
+  // here too, which is why the guard is in publish() and not only in the tick.
   function publish(payload) {
+    if (!orgOpen()) return;
     FD.setData('orgLive', payload);
     setLiveApi(payload.source.text, payload.source.tone);
     patchStats(payload.stats);
   }
 
+  // toOrg() buckets EVERY session, including the seat owners that are roots and
+  // never appear in the kids grid. Offering those scopes gave a silently empty
+  // grid — pick "mac" and nothing happens. The select drives the kids grid and
+  // nothing else, so it offers exactly the scopes that have a kid (I-L5-13).
+  function scopesWithKids(full, kids) {
+    var out = { machine: {}, project: {} };
+    ['machine', 'project'].forEach(function (axis) {
+      var key = axis === 'machine' ? 'mach' : 'proj';
+      Object.keys(full[axis] || {}).forEach(function (name) {
+        var has = kids.some(function (k) { return k[key] === name; });
+        if (has) out[axis][name] = full[axis][name];
+      });
+    });
+    return out;
+  }
+
   function render(now) {
     if (!last) return;
+    // Both FD.setData calls below re-render the whole app, so the closed check
+    // belongs here too, not only in publish().
+    if (!orgOpen()) return;
+    var payload = build(last, now);
+    var full = FD.data.toOrg({ sessions: last.sessions }, { seats: last.seats }, now).scope;
     // The mock identifier: the scope select and its option list read this.
-    FD.setData('orgScopeData', FD.data.toOrg({ sessions: last.sessions }, { seats: last.seats }, now).scope);
-    publish(build(last, now));
+    FD.setData('orgScopeData', scopesWithKids(full, payload.kids));
+    publish(payload);
   }
 
   function load() {
@@ -522,33 +551,54 @@
 
   /* ---- lifecycle (BEHAVIOUR.md §6) -------------------------------------- */
 
+  // One tick. Gated on orgOpen() exactly like the poll: a background org screen
+  // must not re-render the app every second (L5.1 finding 1).
+  function tick() {
+    if (!orgOpen()) return;
+    if (last) render(Date.now());
+    else patchStats((FD.fixture.orgLive || { stats: {} }).stats || {});
+  }
+
+  // Screen ENTER.
   function start() {
     if (pixelFixtureMode()) return; // the gate's mode: touch nothing.
-    if (tickTimer) return;
-    // setInterval(tickOrgTimes, 1000) always (app.js:1255).
-    tickTimer = setInterval(function () {
-      if (last) render(Date.now());
-      else patchStats((FD.fixture.orgLive || { stats: {} }).stats || {});
-    }, 1000);
+    if (running) return;
+    running = true;
+    // setInterval(tickOrgTimes, 1000) always (app.js:1255) — "always" scoped to
+    // the screen being open, which is what orgOpen() means in v2.
+    tickTimer = setInterval(tick, 1000);
     // setInterval(() => { if (orgOpen) loadOrg(); }, 30000) (app.js:1257-1259).
     pollTimer = setInterval(function () {
       if (orgOpen()) load();
     }, 30000);
-    // The shell renders on a microtask, so the screen may not exist yet.
-    var wait = setInterval(function () {
-      if (!orgOpen()) return;
-      clearInterval(wait);
-      load();
-    }, 50);
-    setTimeout(function () {
-      clearInterval(wait);
-    }, 10000);
+    load();
   }
 
+  // Screen LEAVE.
   function stop() {
+    running = false;
     clearInterval(tickTimer);
     clearInterval(pollTimer);
     tickTimer = pollTimer = null;
+  }
+
+  // The shell offers no per-screen mount hook, so the screen's presence in the
+  // DOM is the enter/leave signal. One cheap watcher drives start()/stop() —
+  // before this, start() ran once at load and stop() was never called at all.
+  function watch() {
+    if (pixelFixtureMode()) return; // the gate's mode: touch nothing.
+    if (watchTimer) return;
+    watchTimer = setInterval(function () {
+      var open = orgOpen();
+      if (open && !running) start();
+      else if (!open && running) stop();
+    }, 250);
+  }
+
+  function unwatch() {
+    clearInterval(watchTimer);
+    watchTimer = null;
+    stop();
   }
 
   FD.screens.org = {
@@ -557,6 +607,9 @@
     // Exposed for the org methods in logic.js and for verify/l5.
     start: start,
     stop: stop,
+    watch: watch,
+    unwatch: unwatch,
+    isRunning: function () { return running; },
     load: load,
     render: render,
     build: build,
@@ -577,14 +630,18 @@
     _reset: function () {
       last = null;
       loadId = 0;
+      unwatch();
     },
+    // Test seam: seed the cached load so the timer behaviour can be driven
+    // without a network round trip.
+    _setLast: function (data) { last = data; },
   };
 
   if (global.document) {
     if (global.document.readyState === 'loading') {
-      global.document.addEventListener('DOMContentLoaded', start);
+      global.document.addEventListener('DOMContentLoaded', watch);
     } else {
-      start();
+      watch();
     }
   }
 })(typeof globalThis === 'object' ? globalThis : this);

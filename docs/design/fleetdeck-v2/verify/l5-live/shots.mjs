@@ -52,6 +52,12 @@ async function main() {
     await openOrg(page, base);
     await shot('l5-empty-state.png');
 
+    // I-L5-13: the scope select offers only scopes that have an attached kid,
+    // and when nothing reports to a seat the grid says so instead of going blank.
+    scenario = 'noKids';
+    await openOrg(page, base);
+    await shot('l5-empty-scope.png');
+
     await ctx.close();
     console.log('wrote 4 screenshots to docs/design/fleetdeck-v2/improvised/');
   } finally {

@@ -1,11 +1,11 @@
 {
   "slice": "l5",
   "worker": "Dietlind",
-  "generatedAt": "2026-09-07T01:18:29.289Z",
+  "generatedAt": "2026-09-07T01:56:40.216Z",
   "app": "public/v2/index.html",
   "apiStub": "docs/design/fleetdeck-v2/fixtures/api/ + crafted error/empty/topology variants (verify/l5-live/stub.mjs)",
-  "total": 50,
-  "passed": 50,
+  "total": 51,
+  "passed": 51,
   "allPass": true,
   "consoleErrors": [],
   "suppressedMediaAborts": 64,
@@ -52,8 +52,9 @@
       "expectation": "that seat renders as a vacant root, \"No current owner row\"",
       "pass": true,
       "detail": [
-        "german-box",
-        "orchestrator"
+        "fleet",
+        "orchestrator",
+        "No sessions report to a seat."
       ]
     },
     {
@@ -222,12 +223,19 @@
     {
       "id": "F1",
       "action": "read the scope select",
-      "expectation": "its options are the machines in the live data",
+      "expectation": "its options are the machines that have an attached kid",
       "pass": true,
       "detail": [
-        "mac",
-        "german-box",
-        "onboarding-box"
+        "german-box"
+      ]
+    },
+    {
+      "id": "F8",
+      "action": "a host whose only sessions are seat owners",
+      "expectation": "is not offered as a scope (I-L5-13)",
+      "pass": true,
+      "detail": [
+        "german-box"
       ]
     },
     {
@@ -239,17 +247,25 @@
     },
     {
       "id": "F3",
-      "action": "select scope onboarding-box",
-      "expectation": "the kids grid empties (that host has no attached row)",
+      "action": "every offered scope",
+      "expectation": "yields a non-empty kids grid — no silent empty scope",
       "pass": true,
-      "detail": 0
+      "detail": {
+        "scopes": [
+          "german-box"
+        ],
+        "kids": 3
+      }
     },
     {
       "id": "F4",
-      "action": "select scope onboarding-box",
-      "expectation": "the head card retitles to the chosen scope",
+      "action": "the head card",
+      "expectation": "is titled with the selected scope",
       "pass": true,
-      "detail": "onboarding-box"
+      "detail": {
+        "head": "german-box",
+        "scope": "german-box"
+      }
     },
     {
       "id": "F5",
@@ -302,7 +318,7 @@
       "expectation": "the expiry countdown re-renders each second",
       "pass": true,
       "detail": {
-        "first": "54s left",
+        "first": "55s left",
         "second": "52s left"
       }
     },
