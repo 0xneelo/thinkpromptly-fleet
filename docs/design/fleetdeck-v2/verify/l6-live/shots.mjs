@@ -23,6 +23,13 @@ const VIEWPORT = { width: 1440, height: 900 };
 
 const MESSAGES = JSON.parse(readFileSync(join(API, 'messages.json'), 'utf8'));
 const SESSIONS = JSON.parse(readFileSync(join(API, 'sessions.json'), 'utf8'));
+const DESKTOP = JSON.parse(readFileSync(join(API, 'desktop-sessions.json'), 'utf8'));
+const LIVE_DESKTOP = (() => {
+  for (const g of DESKTOP.groups || []) {
+    for (const x of g.sessions || []) if (x.live && x.messageTarget) return x;
+  }
+  throw new Error('desktop-sessions fixture has no live row with a messageTarget');
+})();
 const THREAD = 'LC-wendelgard-clean-pure-voting';
 const HOST = 'german-box';
 
@@ -71,6 +78,7 @@ async function page(browser, url, plan = {}) {
     if (plan[name]) return plan[name](route);
     if (name === 'messages') return json(route, plan.messages_body || MESSAGES);
     if (name === 'sessions') return json(route, SESSIONS);
+    if (name === 'desktop-sessions') return json(route, DESKTOP);
     return json(route, {});
   });
   const p = await context.newPage();
@@ -174,6 +182,14 @@ async function main() {
       await p.evaluate(() => FD.screens.bus.refresh());
       await p.waitForTimeout(600);
       await shot(p, 'l6-reply-toast');
+      await context.close();
+    }
+    // I-L6-13: an id:<cliSessionId> thread, labelled with the session's title.
+    {
+      const { context, p } = await page(browser, server.url);
+      await open(p, LIVE_DESKTOP.messageTarget);
+      await p.waitForTimeout(500);
+      await shot(p, 'l6-desktop-id-thread');
       await context.close();
     }
   } finally {

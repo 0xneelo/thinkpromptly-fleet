@@ -20,6 +20,7 @@ const BUS_JS = path.join(ROOT, 'public/v2/screens/bus.js');
 const api = (name) => JSON.parse(fs.readFileSync(path.join(API, name + '.json'), 'utf8'));
 const MESSAGES = api('messages');
 const SESSIONS = api('sessions');
+const DESKTOP = api('desktop-sessions');
 
 const THREAD = 'LC-wendelgard-clean-pure-voting';
 const HOST = 'german-box';
@@ -82,6 +83,10 @@ async function boot(plan = {}) {
       return answer(plan.messages === undefined ? MESSAGES : plan.messages);
     }
     if (url.startsWith('/api/sessions')) return answer(plan.sessions === undefined ? SESSIONS : plan.sessions);
+    if (url.startsWith('/api/desktop-sessions')) {
+      if (plan.desktop === 'fail') return answer({ ok: false }, 500);
+      return answer(plan.desktop === undefined ? DESKTOP : plan.desktop);
+    }
     return answer({});
   };
 
@@ -309,7 +314,10 @@ test('open() on an unknown target adds a provisional row that survives a poll', 
 
 test('open() before attach is remembered, not dropped', async () => {
   const { bus } = await boot();
-  assert.strictEqual(bus.open({ type: 'tmux', host: HOST, session: THREAD }), false);
+  // L6.2: a well-formed target that has to wait for the host still reports true
+  // — the deep link was accepted, and it lands as soon as the shell attaches.
+  // false now means malformed, and nothing else.
+  assert.strictEqual(bus.open({ type: 'tmux', host: HOST, session: THREAD }), true);
   const host = fakeHost({ screen: 'registry' });
   bus.attach(host);
   assert.strictEqual(host.state.busActive, THREAD, 'the pending open replays on attach');
@@ -557,4 +565,136 @@ test('delivering to an unknown target still refreshes, in case the rail is stale
   const after = calls.filter((c) => c.method === 'GET').length;
   assert.ok(after > before, 'a poll was kicked off: ' + before + ' -> ' + after);
   assert.strictEqual(bus._state().errs.x9, 'Delivery failed: unknown target');
+});
+
+// ---------------------------------------------------------------------------
+// L6.2 — open() must accept every target the server accepts, and must not
+// depend on when screens/bus.js loaded relative to the shell (DESIGN-35).
+// ---------------------------------------------------------------------------
+
+// The messageTarget /api/desktop-sessions hands back for a live desktop row.
+const LIVE_DESKTOP = (() => {
+  for (const g of DESKTOP.groups || []) {
+    for (const x of g.sessions || []) if (x.live && x.messageTarget) return x;
+  }
+  throw new Error('the desktop-sessions fixture has no live row with a messageTarget');
+})();
+
+test('open() accepts the id:<uuid> messageTarget the Desktop screen passes', async () => {
+  const { bus, FD } = await boot();
+  const host = fakeHost({ screen: 'desktop' });
+  bus.attach(host);
+
+  const target = LIVE_DESKTOP.messageTarget;
+  assert.strictEqual(target.session.slice(0, 3), 'id:', 'the fixture really uses the id: form');
+  assert.strictEqual(bus.open(target), true, 'open() reports it took the deep link');
+  assert.strictEqual(host.state.screen, 'bus', 'and navigates to the bus screen');
+  assert.strictEqual(host.state.busActive, target.session);
+
+  const row = FD.fixture.busSessions.find((r) => r.id === target.session);
+  assert.ok(row, 'a thread row exists for it');
+  assert.strictEqual(row.kind, 'claude-desktop');
+  assert.deepStrictEqual(bus._state().targets[target.session], target, 'the POST body is the target verbatim');
+});
+
+test('an id:<uuid> thread is labelled with the session title once it resolves', async () => {
+  const { bus, FD } = await boot();
+  bus.attach(fakeHost());
+  const target = LIVE_DESKTOP.messageTarget;
+  bus.open(target);
+  // The title comes from /api/desktop-sessions, fetched on first sight.
+  await settle();
+  await settle();
+  const row = FD.fixture.busSessions.find((r) => r.id === target.session);
+  assert.strictEqual(row.name, 'Claude Desktop · ' + LIVE_DESKTOP.title);
+});
+
+test('an id:<uuid> thread falls back to the raw id when the title cannot be read', async () => {
+  const { bus, FD } = await boot({ desktop: 'fail' });
+  bus.attach(fakeHost());
+  const target = LIVE_DESKTOP.messageTarget;
+  bus.open(target);
+  await settle();
+  await settle();
+  const row = FD.fixture.busSessions.find((r) => r.id === target.session);
+  assert.strictEqual(row.name, 'Claude Desktop · ' + target.session);
+});
+
+test('open() accepts every target form the server accepts', async () => {
+  const { bus } = await boot();
+  bus.attach(fakeHost());
+  const cases = [
+    [{ type: 'tmux', host: HOST, session: THREAD }, { type: 'tmux', host: HOST, session: THREAD }],
+    [{ type: 'claude-desktop', session: 'current' }, { type: 'claude-desktop', session: 'current' }],
+    [{ type: 'claude-desktop', session: 'a named desktop chat' }, { type: 'claude-desktop', session: 'a named desktop chat' }],
+    [{ type: 'claude-desktop', session: 'id:0000-1111' }, { type: 'claude-desktop', session: 'id:0000-1111' }],
+  ];
+  for (const [target, expected] of cases) {
+    assert.strictEqual(bus.open(target), true, JSON.stringify(target));
+    assert.deepStrictEqual(bus._state().targets[target.session], expected, JSON.stringify(target));
+  }
+  // A bare string is a thread id; the two desktop-only forms are recognised.
+  assert.strictEqual(bus.open('current'), true);
+  assert.strictEqual(bus._state().targets.current.type, 'claude-desktop');
+  assert.strictEqual(bus.open('id:2222-3333'), true);
+  assert.strictEqual(bus._state().targets['id:2222-3333'].type, 'claude-desktop');
+});
+
+test('open() returns false only for a malformed target', async () => {
+  const { bus } = await boot();
+  bus.attach(fakeHost());
+  for (const bad of [null, undefined, '', {}, { type: 'tmux' }, { session: '' }, { session: 42 }, 7]) {
+    assert.strictEqual(bus.open(bad), false, JSON.stringify(bad) + ' should be rejected');
+  }
+});
+
+test('open() before the shell has attached is honoured, not dropped', async () => {
+  // The real load order: the shell mounts inside app.js, before screens/bus.js.
+  const { bus } = await boot();
+  const target = LIVE_DESKTOP.messageTarget;
+  assert.strictEqual(bus.open(target), true, 'the caller is told the link was accepted');
+  const host = fakeHost({ screen: 'desktop' });
+  bus.attach(host);
+  assert.strictEqual(host.state.screen, 'bus', 'and it lands as soon as the host arrives');
+  assert.strictEqual(host.state.busActive, target.session);
+});
+
+test('attach is idempotent — the shell calls it on mount and on every update', async () => {
+  const { bus } = await boot();
+  const host = fakeHost();
+  bus.attach(host);
+  bus.attach(host);
+  bus.attach(host);
+  assert.strictEqual(bus.open(LIVE_DESKTOP.messageTarget), true);
+  // A different host replaces the first rather than being ignored.
+  const second = fakeHost({ screen: 'registry' });
+  bus.attach(second);
+  bus.open({ type: 'tmux', host: HOST, session: THREAD });
+  assert.strictEqual(second.state.busActive, THREAD);
+});
+
+test('sending to an id:<uuid> thread posts that target verbatim', async () => {
+  const { bus, calls } = await boot();
+  bus.attach(fakeHost());
+  const target = LIVE_DESKTOP.messageTarget;
+  bus.open(target);
+  bus.deliver({ sid: target.session, key: 'x1', text: 'ping', index: 0, source: 'fleetdeck-ui' });
+  await settle();
+  const post = calls.find((c) => c.method === 'POST');
+  assert.deepStrictEqual(post.body.target, target);
+  assert.strictEqual(post.body.text, 'ping');
+});
+
+test('an id:<uuid> thread for a live desktop session is not shown as offline', async () => {
+  // The server's targets[] names desktop sessions and never carries the id:
+  // form, so without /api/desktop-sessions the row would read offline and the
+  // composer would say Queue for a session the Desktop screen just showed live.
+  const { bus, FD } = await boot();
+  bus.attach(fakeHost());
+  const target = LIVE_DESKTOP.messageTarget;
+  bus.open(target);
+  await settle();
+  await settle();
+  const row = FD.fixture.busSessions.find((r) => r.id === target.session);
+  assert.strictEqual(row.live, true);
 });

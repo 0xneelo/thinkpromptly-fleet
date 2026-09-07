@@ -262,7 +262,22 @@ class AppLogic extends Sub {
     try { const s = localStorage.getItem('fd-landing-dark'); if (s != null) return s === '1'; } catch (e) {}
     return true;
   }
+  // L6.2. The shell mounts inside app.js, BEFORE public/v2/screens/*.js load, so
+  // a componentDidMount-only attach always missed and `host` stayed null — every
+  // deep link (Desktop "Message session", Registry "Message", Org "Send a
+  // message", Windows full-screen Message) was dead while threads still painted.
+  // Two belts: publish ourselves on FD.screens.busHost so a screen file loading
+  // later can pick us up, and retry the attach on every render. Both idempotent;
+  // in fixture mode attach() returns without doing anything.
+  _busAttach() {
+    if (!window.FD) return;
+    FD.screens = FD.screens || {};
+    FD.screens.busHost = this;
+    const bus = FD.screens.bus;
+    if (bus && typeof bus.attach === 'function') bus.attach(this);
+  }
   componentDidUpdate() {
+    this._busAttach();
     if (this._video) this._video.playbackRate = this.props.videoSpeed ?? 1;
     if (this._thread && this._threadKey !== this._nextThreadKey) { this._threadKey = this._nextThreadKey; this._thread.scrollTop = this._thread.scrollHeight; }
     this._fdAfterRender();
@@ -282,10 +297,7 @@ class AppLogic extends Sub {
   componentDidMount() {
     this._fdAfterRender();
     if (this._thread) this._thread.scrollTop = this._thread.scrollHeight;
-    // L6 seam: hand the bus screen its host so public/v2/screens/bus.js can
-    // drive live threads. In fixture mode attach() returns without doing
-    // anything, so the compiled fixture render is untouched.
-    if (window.FD && FD.screens && FD.screens.bus && FD.screens.bus.attach) FD.screens.bus.attach(this);
+    this._busAttach();
     this._esc = (e) => {
       if (e.key !== 'Escape') return;
       if (this.state.termMenu) this.setState({ termMenu: false });
