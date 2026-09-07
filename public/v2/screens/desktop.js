@@ -181,6 +181,14 @@
       : { created: s.createdAt, cli: s.cliSessionId, sid: s.id, live: !!s.live };
     // Mock keys, with BEHAVIOUR.md §3's fallbacks baked in — the template prints
     // r.branch and r.model straight, so an empty value has to be the label already.
+    //
+    // TODO(L1.2, DESIGN-35 2026-09-07): Juergen is moving 'Turns unknown' / 'No
+    // branch' / 'Model unknown' into FD.data.toDesktop. These three lines are then
+    // redundant for NON-archived rows — but not removable: they are computed from
+    // the raw session, and archived rows never reach toDesktop (it drops them), so
+    // this is the only place they get their fallbacks. Recomputing the same string
+    // from the same source is idempotent, so landing L1.2 changes nothing here;
+    // re-check this comment when it merges.
     out.title = s.title || 'Untitled session';
     out.path = s.cwd || '';
     out.branch = s.branch || 'No branch';
