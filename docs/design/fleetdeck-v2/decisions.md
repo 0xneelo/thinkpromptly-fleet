@@ -192,3 +192,13 @@ Reviewer: contract scope clean, BEHAVIOUR texts byte-identical to `public/machin
 untouched, oracle rules followed, live checks substantive, tests 353/353. Notes for the weave: L9 adds calls in the
 shared `componentDidMount`/`componentDidUpdate` hooks (other slices will too → keep-both resolution); `weave/fd-v2`
 confirmed to carry L1.2's `data.js` (merge from base `6cb8e2d`).
+
+## 2026-09-08 · L10 review: NO on `3bdcaf5`, resolved on the tip
+
+Reviewer found a stale `agent-v2-l1` merge on the reviewed commit reverting L1.2 (data.js, five regression tests,
+L1's REPORT) and a real behaviour gap (Message/Show disabled texts must read "Live check unavailable" vs "Not
+running" by `liveState`). The weave was never affected (3-way merge kept the base's newer `data.js`, verified
+`Turns unknown`/`trendSeries` present). Clodwig's later `224f019` took L1.2; tip `05c3c5c` has `79a8cd8` as ancestor
+and the three files identical to the base. Weave updated to `27da9eb`. Follow-up **L10.1** sent (two verbatim
+strings + live assertion; restore the five L1 tests if missing; keyed-reorder proof for the injected chips).
+Acceptance of D17 stands; L10.1 is a rider.
