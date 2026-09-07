@@ -137,3 +137,11 @@ and no-engine artifacts are genuine. **Design-seat rulings:** runtime.js at 361 
 guideline); the missing hunter pass is replaced by an oracle audit run by the seat. Follow-up **S2.1** sent to Julius
 (regenerate proofs, green `v2:check`, hash label, keystroke interaction step, arrayKids fix, scope cleanup). The nine
 slices keep building on `agent-v2-base`; S2.1 will be merged into the base and broadcast when it lands.
+
+## 2026-09-08 · L1 independent review → L1.2
+
+`origin/agent-v2-l1`: tests 296/296, fetchers and router clean, server change scoped. Two data-correctness bugs
+(desktop `completedTurns` null → "0 turns"; accounts `trendPts` = raw history objects instead of numbers) plus
+`branch`/`model` null passthrough. Rulings: `trendPts = history[].sd` (numbers, time order); null turns → "Turns
+unknown", null branch → "No branch", null model → "Model unknown" (today's texts). Follow-up L1.2 sent to Juergen;
+Kunhild (L8) and Clodwig (L10) warned to build against the fixed shapes.
