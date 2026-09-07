@@ -75,12 +75,12 @@ in `handoff.md`). Building it now takes a day off the critical path.
 
 ## Acceptance (definition of done)
 
-- [ ] `public/v2/data.js`, `router.js`, `fixture.js`, `orgchart.js` present; `npm test` green including `test/v2-data.test.js`.
-- [ ] Fixture mode returns arrays byte-equal (deep-equal + key order) to the mock's seed arrays; `npm run v2:fixture` idempotent.
-- [ ] Every adapter output validated against the mock shapes (a shape table in `REPORT.md`, one row per array: keys, types, source field).
-- [ ] `/v2/` resolves (curl through `node server.js` on a scratch port shows 200 + the shell), change quoted in the commit.
-- [ ] No fetch to any host but the page origin; no call to the operator's deck.
-- [ ] `reviewer` pass clean; branch pushed; `REPORT.md` signed **Juergen**; registry `done`.
+- [x] `public/v2/data.js`, `router.js`, `fixture.js`, `orgchart.js` present; `npm test` green including `test/v2-data.test.js`. — 294 pass, 0 fail.
+- [x] Fixture mode returns arrays byte-equal (deep-equal + key order) to the mock's seed arrays; `npm run v2:fixture` idempotent. — read as the layer-1 projection (improvised.md I-L1-01); `v2:fixture -- --check` runs in `pretest`.
+- [x] Every adapter output validated against the mock shapes (a shape table in `REPORT.md`, one row per array: keys, types, source field).
+- [x] `/v2/` resolves (curl through `node server.js` on a scratch port shows 200 + the shell), change quoted in the commit `a918cc5`. The shell is S2's file; the test supplies a stand-in when it is absent.
+- [x] No fetch to any host but the page origin; no call to the operator's deck. — asserted by a test.
+- [x] `reviewer` pass clean (two passes, 14 findings, all fixed); branch pushed; `REPORT.md` signed **Juergen**; registry `done` — **not written**: `POST /api/registry` answers `unauthorized` from the box (XYZ-2137).
 
 ## Constraints
 

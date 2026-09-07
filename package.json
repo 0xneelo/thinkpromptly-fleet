@@ -10,7 +10,9 @@
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "design:diff": "node scripts/design-diff.mjs",
     "v2:compile": "node tools/dc-compile.mjs",
-    "v2:check": "node tools/dc-compile.mjs --check"
+    "v2:check": "node tools/dc-compile.mjs --check",
+    "v2:fixture": "node tools/extract-fixture.mjs",
+    "v2:fixture:check": "node tools/extract-fixture.mjs --check"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",

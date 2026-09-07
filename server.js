@@ -2842,7 +2842,10 @@ const server = http.createServer(async (req, res) => {
     return send(res, 500, 'text/plain', String(e.message));
   }
   if (VENDOR[p]) return sendFile(res, require.resolve(VENDOR[p]));
-  const rel = p === '/' ? 'index.html' : p.replace(/^\/+/, '');
+  // A directory URL serves its index.html, so /v2/ resolves like / does.
+  const rel = p === '/' ? 'index.html'
+    : p.endsWith('/') ? p.replace(/^\/+/, '') + 'index.html'
+    : p.replace(/^\/+/, '');
   const file = path.join(__dirname, 'public', rel);
   if (!file.startsWith(path.join(__dirname, 'public') + path.sep))
     return send(res, 403, 'text/plain', 'forbidden');
