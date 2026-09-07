@@ -291,3 +291,10 @@ mounted outside `#dc-root`; render section throw-proof. **Ruling:** inline style
 allowed when re-applied idempotently on every render and listed in `improvised.md`; data-* hook + stylesheet rule
 preferred. L8.1 to Kunhild: stop keying on the compiled `data-dc-tpl="573"` id (silent zero-match on template regen).
 DECK-87 = DECK-84 (L11).
+
+## 2026-09-08 · box gate green on the full weave `dba2c6a`
+
+`fd-weave-gate.sh`: HEAD dba2c6a, pixel gate fixture mode allPass 36/36 max 0.0329 %, no fails. `npm test` on the box
+487 pass / 2 fail (Mac: 489/489) — the failures are in the pre-existing non-v2 suites that the workers documented as
+port-collision flakes under concurrent runs (ten worker worktrees run the suite on the same box); named below once
+read. Nine slices proven together on the gate machine; L11 phase 2 is the last step before the weave is final.
