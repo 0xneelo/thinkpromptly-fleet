@@ -187,6 +187,25 @@ trailing-slash URL under `public/`, but changes behaviour only where an `index.h
 every other directory URL still 404s, just one `readFile` later. The traversal guard below it is
 untouched and still rejects anything escaping `public/`.
 
+### I-L1-13 — the desktop-row fallbacks are the current app's words
+
+**Serves:** ledger D17; design ruling 2026-09-07.
+
+`/api/desktop-sessions` leaves fields empty often enough that the fallback wording is part of the
+shape, not an edge case: on the 923 captured rows `branch` is null 313 times and `completedTurns` is
+null 43 times. The adapter uses the current app's exact strings, so the two UIs never disagree:
+
+| Field | Null becomes | Source |
+|---|---|---|
+| `branch` | `'No branch'` | `public/sessions.js:225` |
+| `model` | `'Model unknown'` | `public/sessions.js:225` |
+| `turns` | `'Turns unknown'` | `public/sessions.js:229` |
+
+The turn count matters most: it previously rendered `'0 turns'`, which asserts something the API never
+said — a session whose count is unknown is not a session with no turns. A reported `0` still renders
+`'0 turns'`. `sessions.js:229` tests `=== null`; the adapter folds in `undefined` too, since a missing
+key can only mean the same thing (the API always sends the key, so this is not observable today).
+
 ### I-L1-12 — human labels the API does not carry, and fixture mode is read-only
 
 **Serves:** ledger D15, D16; found by the reviewer pass on the adapters.
@@ -237,6 +256,13 @@ polyline. Consistent with I-L1-01.
 (`accounts[0].trendPts === ''`); the pack's convention for data the API cannot supply is `null`. The
 adapter uses `null`. Both are falsy, so the template's `showTrend` test behaves identically; the type
 differs only in the empty case.
+
+**`trendPts` is a `number[]`, not the raw history rows** (design ruling 2026-09-07). `/api/credits`
+returns `history[]` as `{t, fh, sd, xu}` samples; `sd` is the sampled seven-day percentage and is the
+series the sparkline draws. The adapter emits `history.map(h => h.sd)` sorted by `t`, dropping samples
+with no reading, so the value is a clean array of numbers the template hands straight to `spark()`.
+The raw objects never reach the seed. Sorting rather than trusting the server's order is defensive —
+the captured rows are already ordered, and staying ordered is what makes the line meaningful.
 
 Worth the design seat's attention: **O6 is narrower than it looks.** The ledger says "trend history
 does not exist server-side", but `/api/credits` returns a `history[]` of `{t, fh, sd, xu}` samples on
