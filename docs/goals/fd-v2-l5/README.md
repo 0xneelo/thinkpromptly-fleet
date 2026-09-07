@@ -46,11 +46,13 @@ Make the **Org chart on live seats + sessions** screen work on live data exactly
       `docs/design/fleetdeck-v2/improvised/`.
 - [x] Hooks provided are defined (**none** — L5 exposes no cross-slice hook); hooks used are guarded
       (`FD.shell.setLiveApi`, `FD.screens.bus.open`, both no-ops until L2/L6 land).
-- [~] `npm test`: **264 pass / 1 fail**. The one failure is `test/v2-data.test.js`, red on
-      `origin/agent-v2-base` before L5 and unchanged by it (generated `fixture.js` uses `window`
-      under Node — DECK-90). L5's own `test/v2-org.test.js` is **35/35**. Branch pushed;
-      `REPORT.md` signed **Dietlind**. Registry row: the deck answers `unauthorized` from this box
-      for every POST (XYZ-2137), so no row could be written.
+- [x] `npm test`: **332 pass / 1 fail of 333** on the S2.2 + L1.1 base. The one failure is
+      `EADDRINUSE` in `test/train-broker.test.js`, which passes **16/16** alone — this box runs many
+      worktrees and the lifecycle tests bind fixed ports. No test fails for a reason in the code.
+      L5's own `test/v2-org.test.js` is **35/35**. The pre-existing `test/v2-data.test.js` failure
+      (DECK-90) was fixed by L1.1. Branch pushed; `REPORT.md` signed **Dietlind**. Registry row:
+      the deck answers `unauthorized` (HTTP 401) to every POST from this box (XYZ-2137), so no row
+      could be written.
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

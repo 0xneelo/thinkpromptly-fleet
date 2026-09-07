@@ -3,8 +3,10 @@
 **Slice:** L5 · Org chart on live seats + sessions · ledger row **D11**
 **Worker:** Dietlind · `frontend-developer` · tag `agent-dietlind` · session `cli-worker`
 **Project / sub-project:** `remote-system` / `fleetdeck-v2`
-**Branch:** `agent-v2-l5`, off `origin/agent-v2-base` (merged twice: `origin/agent-v2-l1`, already
-contained; and the S2.2 base move on 2026-09-07 — no `logic.js` conflict either time)
+**Branch:** `agent-v2-l5`, off `origin/agent-v2-base`. Merged three times, no `logic.js` conflict on
+any of them: `origin/agent-v2-l1` (already contained in the base), the first S2 base move, and the
+S2.2 + L1.1 base move. Both gates were re-run after the final merge; the numbers below are from that
+tree.
 **Main issue:** DECK-54 · **Date:** 2026-09-07
 
 ---
@@ -16,7 +18,7 @@ contained; and the S2.2 base move on 2026-09-07 — no `logic.js` conflict eithe
 | Pixel gate, fixture mode | `report.json` allPass 36/36 | **36/36, allPass true**, max 0.0329 % (Registry dark, pre-existing); **Org chart 0.000000 % in BOTH themes** |
 | Live proof, API stubbed | `live.json` all pass | **50/50, allPass true**, zero unexpected console errors |
 | Unit tests | where applicable | `test/v2-org.test.js` **35/35** |
-| `npm test` | green | **see "The one red test" below — 1 pre-existing failure, not L5's** |
+| `npm test` | green | **332 pass / 1 fail**, the one failure `EADDRINUSE` — see "npm test" below |
 | improvised.md | entry + screenshot per improvisation | **12 entries (I-L5-01..12), 4 screenshots** |
 | Hooks | provided defined, used guarded | provided: **none**; used: 2, **both guarded** |
 
@@ -50,25 +52,28 @@ Exactly the two org rows, nothing else. So the 0.000000 % in the real run is evi
 artefact. `docs/design/fleetdeck-v2/verify/l5/org-chart-dark.png` was also read by eye: stats row
 `102 / 2 / 4 / 96`, the mock's three-card spine, the four kid cards.
 
-### The one red test
+### `npm test`
 
-`npm test` fails exactly one file, **`test/v2-data.test.js`**, and it fails identically before and
-after L5:
+**Best clean run, on the S2.2 + L1.1 base: 332 pass / 1 fail out of 333.** The single failure is a
+port collision, not a code fault:
 
 ```
-ReferenceError: window is not defined
-    at public/v2/fixture.js:4          ← window.FD = window.FD || {};
-    at test/v2-data.test.js:17         ← require('.../public/v2/fixture.js')
+test/train-broker.test.js — a foreign Host authority is refused
+  Error: listen EADDRINUSE: address already in use 127.0.0.1:33490
 ```
 
-Proof it is not mine: `git diff --stat origin/agent-v2-base -- public/v2/fixture.js public/v2/data.js
-test/v2-data.test.js` is **empty**; `fixture.js` has one commit in its whole history (`2bd76de`, S2)
-and is byte-identical on `agent-v2-l1` and `agent-v2-base`. L5 touched neither the file nor its test.
+That file passes **16/16** run on its own. A later full run on the same box degraded to 25 failures;
+every one of them is `EADDRINUSE` or `tailnet listener unavailable: EADDRINUSE` across
+`coordinator-api`, `reaper`, `seats-fencing` and `train-broker` — this box runs many agent worktrees
+at once and the lifecycle tests bind fixed ports (`127.0.0.1:39xx`, `127.0.0.2:18311`). Run alone,
+`coordinator-api` is 41/41, `seats-fencing` 21/21, `train-broker` 16/16. **No test fails for a reason
+in the code**, and none of the affected files is one L5 touches.
 
-The fix belongs in the preamble `tools/dc-compile.mjs` emits, and DESIGN-35 instructed slices not to
-hand-edit `public/v2/fixture.js`, so I left it alone and filed **DECK-90**. **I am not claiming
-`npm test` green.** Measured: **229 pass / 1 fail** before my changes, **264 pass / 1 fail** after
-(the +35 are `test/v2-org.test.js`); the failing file is the same one both times.
+**`test/v2-data.test.js` is fixed.** It was red when L5 started — generated `fixture.js` used
+`window` under Node, which I filed as **DECK-90** rather than hand-edit a generated file. L1.1 on the
+base resolved it; it passes now. DECK-90 should be closed against L1.1.
+
+L5's own `test/v2-org.test.js` is **35/35**, in the suite and standalone.
 
 ---
 
@@ -224,13 +229,14 @@ Filed out-of-scope findings:
 | Issue | What |
 |---|---|
 | **DECK-89** | `index.html` loads neither `data.js` nor `orgchart.js` — blocks every slice L2–L10 |
-| **DECK-90** | `test/v2-data.test.js` red: generated `fixture.js` uses `window` under Node |
+| **DECK-90** | `test/v2-data.test.js` red: generated `fixture.js` uses `window` under Node — **fixed by L1.1 on the base; close it** |
 | **DECK-91** | the org stats row is four unbound literals in the mock |
 | **DECK-92** | `design-diff` replaces `verify/<slice>/`, deleting anything else kept there |
 
 ## Open follow-ups
 
-1. **DECK-89** — delete the self-loading block in `org.js` once the shell loads `data.js`.
+1. **DECK-89** — delete the self-loading block in `org.js` once the shell loads `data.js`. Still
+   open after S2.2: `index.html` lists neither `data.js` nor `orgchart.js`.
 2. **DECK-91** — replace the imperative stats write with four template bindings.
 3. Depth is lost in the kids grid (**I-L5-02**); the mock has no nested affordance.
 4. `Open fixture preview` is text, not a link (**I-L5-07**); the mock's only in-card affordance has a
