@@ -6,15 +6,17 @@
 // Two modes, one screen:
 //   fixture (?fixture=1) — this file does nothing at all. The compiled logic
 //     renders FD.fixture as-is and the pixel gate runs there (DESIGN-35).
-//   live — this file owns the tiles: it loads /api/sessions through FD.data,
-//     feeds the mock's `tiles` identifier through FD.setData, and mounts one
-//     xterm per tile into the body box the template already drew.
+//   live — this file owns the terminals: it loads /api/sessions through FD.data,
+//     feeds the mock's `tiles` identifier through FD.setData, and paints one
+//     xterm per session in a layer of its own, aligned to the box the template
+//     drew for it.
 //
-// Data enters the template only through FD.setData. Everything this file adds
-// to the DOM is either an xterm mount point or an improvised node the mock
-// leaves out (stall line, dead overlay, empty state) — all painted from the
-// mock's own tokens, which logic.js publishes on FD.l3.tokens every render.
-// See docs/design/fleetdeck-v2/improvised.md, entries I-L3-01..I-L3-08.
+// Nothing this file creates is ever mounted inside a compiled node, and no
+// per-tile state is stored on one. The compiled tiles are positional sc-for
+// rows — not stable identities — so they are read for their geometry only, and
+// the model in this file is the sole source of truth (DESIGN-35 binding,
+// oracle audit s2-shim-oracle-2026-09-08.md items 1 and 2).
+// See docs/design/fleetdeck-v2/improvised.md, entries I-L3-01..I-L3-10.
 (function (global) {
   'use strict';
 
@@ -36,6 +38,10 @@
 
   var SCREEN_SEL = '[data-screen-label="Windows"]';
   var FULL_SEL = '[data-screen-label="Session full screen"]';
+  // Under the mock's full-screen overlay (z-index 55) when tiled, over it when
+  // maximized — the overlay paints the chrome, this layer paints the terminal.
+  var Z_TILED = 54;
+  var Z_MAX = 56;
 
   // app.js:67 — the dedupe key. A NUL keeps host and session unambiguous.
   function key(host, name) {
@@ -64,8 +70,7 @@
     return /[?&]fixture=1(?:&|$)/.test(location.search);
   }
 
-  // --- token access ---------------------------------------------------------
-  // logic.js republishes the mock's palette on every render, so improvised
+  // logic.js republishes the mock's palette on every render, so the improvised
   // nodes track the theme without this file knowing a single colour literal.
   function tk() {
     return FD.l3.tokens || {};
@@ -78,18 +83,33 @@
     return n;
   }
 
+  // --- validation -----------------------------------------------------------
+  // Everything crossing into FD.setData is validated first: one bad row used to
+  // be able to throw inside renderVals, and a throw there blanks every screen,
+  // not just this one (oracle audit item 2).
+  function str(v) {
+    return typeof v === 'string' ? v : v == null ? '' : String(v);
+  }
+
+  function validRow(s) {
+    return !!s && typeof s === 'object' && str(s.host) !== '' && str(s.name) !== '';
+  }
+
   // ==========================================================================
   // Tile model. `model` is the ordered source of truth; the template renders a
-  // projection of it and this file owns the terminals hanging off each entry.
+  // projection of it and this file owns the terminals aligned to it.
   // ==========================================================================
   var model = [];
   var byKey = Object.create(null);
   var booted = false;
   var sessionRows = [];
+  var layer = null;
+  var emptyBox = null;
+  var ro = null;
 
   function projection() {
     return model.map(function (r) {
-      // Live tile bodies are xterm mounts, so the template gets no seed lines.
+      // Live tile bodies are painted by the terminal layer, so no seed lines.
       return { name: r.name, box: r.host, foot1: r.foot1, foot2: r.foot2, lines: [] };
     });
   }
@@ -104,7 +124,8 @@
   // Live it has to say what is actually attached; the whole `titles` map is
   // copied so a sibling slice's entry is never dropped. I-L3-07.
   function publishTitle() {
-    var titles = FD.fixture.titles || {};
+    var titles = FD.fixture.titles;
+    if (!titles || typeof titles !== 'object') return;
     var entry = titles.windows || ['Windows', ''];
     var hosts = [];
     model.forEach(function (r) { if (hosts.indexOf(r.host) < 0) hosts.push(r.host); });
@@ -113,7 +134,7 @@
       : 'No tiles attached';
     if (entry[1] === sub) return;
     var next = Object.assign({}, titles);
-    next.windows = [entry[0], sub];
+    next.windows = [str(entry[0]) || 'Windows', sub];
     FD.setData('titles', next);
   }
 
@@ -123,8 +144,8 @@
   // (who this session is) and task (what it is on). Recorded as I-L3-05.
   function footFor(row) {
     if (!row) return { foot1: '', foot2: '' };
-    var left = [row.role, row.label].filter(Boolean).join(' · ');
-    return { foot1: left, foot2: row.task || '—' };
+    var left = [str(row.role), str(row.label)].filter(Boolean).join(' · ');
+    return { foot1: left, foot2: str(row.task) || '—' };
   }
 
   function rowFor(host, name) {
@@ -135,12 +156,12 @@
   }
 
   // ==========================================================================
-  // xterm assets. index.html belongs to the shell slice, so this file cannot
-  // add the vendor <script> tags there; it injects them once, on demand, from
-  // the same /vendor/* routes server.js already serves (server.js:2367-2370).
-  // Recorded as I-L3-01.
+  // Assets. index.html belongs to the shell slice, so this file cannot add the
+  // vendor tags there; it injects them once, on demand, from the /vendor/*
+  // routes server.js already serves (server.js:2367-2370). I-L3-01.
   // ==========================================================================
   var assetsPromise = null;
+  var dataPromise = null;
 
   function loadScript(src) {
     return new Promise(function (resolve, reject) {
@@ -172,9 +193,6 @@
     return assetsPromise;
   }
 
-  // data.js is not in the shell's script list either — same reason, same fix.
-  var dataPromise = null;
-
   function ensureData() {
     if (FD.data) return Promise.resolve();
     if (!dataPromise) dataPromise = loadScript('/v2/data.js');
@@ -194,26 +212,79 @@
   }
 
   // ==========================================================================
-  // One record per open tile: its terminal, socket and overlay state.
+  // The terminal layer — this file's own DOM, a sibling of #dc-root, never a
+  // child of a compiled node. Each session gets a box in it, positioned over
+  // whichever compiled box currently represents that session. I-L3-04.
+  // ==========================================================================
+  function ensureLayer() {
+    if (layer && layer.isConnected) return layer;
+    layer = el('div', {
+      position: 'fixed', left: '0', top: '0', width: '0', height: '0',
+      pointerEvents: 'none', zIndex: String(Z_TILED),
+    });
+    layer.setAttribute('data-l3-layer', '1');
+    document.body.appendChild(layer);
+    return layer;
+  }
+
+  function place(box, rect, z) {
+    box.style.left = rect.left + 'px';
+    box.style.top = rect.top + 'px';
+    box.style.width = rect.width + 'px';
+    box.style.height = rect.height + 'px';
+    box.style.zIndex = String(z);
+    box.style.visibility = 'visible';
+  }
+
+  function hide(box) {
+    box.style.visibility = 'hidden';
+  }
+
+  // The rect a terminal should occupy inside a compiled box: its content area,
+  // read only — the compiled node is never written to.
+  function contentRect(node) {
+    var r = node.getBoundingClientRect();
+    var cs = getComputedStyle(node);
+    var pl = parseFloat(cs.paddingLeft) || 0;
+    var pr = parseFloat(cs.paddingRight) || 0;
+    var pt = parseFloat(cs.paddingTop) || 0;
+    var pb = parseFloat(cs.paddingBottom) || 0;
+    return {
+      left: r.left + pl, top: r.top + pt,
+      width: Math.max(0, r.width - pl - pr), height: Math.max(0, r.height - pt - pb),
+    };
+  }
+
+  // On screen at all — no ancestor is display:none. Deliberately does NOT
+  // require a box: with no tiles the compiled Windows div has no children and
+  // collapses to zero height, and that is exactly when the empty state is due.
+  function displayed(node) {
+    if (!node || !node.isConnected) return false;
+    for (var n = node; n; n = n.parentElement) {
+      var cs = getComputedStyle(n);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+    }
+    return true;
+  }
+
+  // On screen and big enough to park a terminal in.
+  function visible(node) {
+    if (!displayed(node)) return false;
+    var r = node.getBoundingClientRect();
+    return !!(r.width && r.height);
+  }
+
+  // ==========================================================================
+  // Per-session record
   // ==========================================================================
   function makeRecord(host, name) {
     var foot = footFor(rowFor(host, name));
     return {
-      host: host,
-      name: name,
-      foot1: foot.foot1,
-      foot2: foot.foot2,
-      key: key(host, name),
-      term: null,
-      fit: null,
-      ws: null,
-      ro: null,
-      tail: '',
-      stallTimer: null,
-      mount: null, // the div xterm was opened on; it moves between tile and overlay
-      tileEl: null,
-      dead: false,
-      disposed: false,
+      host: host, name: name, key: key(host, name),
+      foot1: foot.foot1, foot2: foot.foot2,
+      term: null, fit: null, ws: null, tail: '', stallTimer: null,
+      box: null, mount: null, opened: false, dead: false, disposed: false,
+      rect: null,
     };
   }
 
@@ -227,28 +298,8 @@
       clearTimeout(rec.stallTimer);
       rec.stallTimer = null;
     }
-    var host = rec.mount && rec.mount.parentNode;
-    var s = host && host.querySelector('[data-l3-stall]');
+    var s = rec.box && rec.box.querySelector('[data-l3-stall]');
     if (s) s.remove();
-  }
-
-  function stallNode() {
-    var t = tk();
-    var n = el('div', {
-      position: 'absolute',
-      left: '0',
-      right: '0',
-      bottom: '0',
-      padding: '7px 12px',
-      fontFamily: t.mono || 'ui-monospace,monospace',
-      fontSize: '10.5px',
-      lineHeight: '1.5',
-      color: t.warn || '#c90',
-      background: t.panelHead || 'rgba(0,0,0,0.2)',
-      borderTop: '1px solid ' + (t.lineSoft || 'rgba(128,128,128,0.2)'),
-    }, STALL_TEXT);
-    n.setAttribute('data-l3-stall', '1');
-    return n;
   }
 
   function armStall(rec) {
@@ -256,52 +307,46 @@
       // The handle is deliberately NOT cleared here (app.js:1081-1086): the
       // next message tests it to decide whether a stall line is on screen and
       // has to be taken down. Nulling it strands the line forever.
-      var host = rec.mount && rec.mount.parentNode;
-      if (!host || host.querySelector('[data-l3-overlay]')) return;
-      host.appendChild(stallNode());
+      if (!rec.box || rec.box.querySelector('[data-l3-overlay]')) return;
+      var t = tk();
+      var n = el('div', {
+        position: 'absolute', left: '0', right: '0', bottom: '0',
+        padding: '7px 12px', fontFamily: t.mono || 'ui-monospace,monospace',
+        fontSize: '10.5px', lineHeight: '1.5', color: t.warn || '#c90',
+        background: t.panelHead || 'rgba(0,0,0,0.2)',
+        borderTop: '1px solid ' + (t.lineSoft || 'rgba(128,128,128,0.2)'),
+      }, STALL_TEXT);
+      n.setAttribute('data-l3-stall', '1');
+      rec.box.appendChild(n);
     }, STALL_MS);
   }
 
   // The mock draws no disconnected state, so this is improvised in its tokens
-  // and mirrors the old card exactly: title, optional 1Password note, button.
-  // I-L3-03.
+  // and mirrors the old card exactly: title, optional note, button. I-L3-03.
   function deadOverlay(rec) {
     var t = tk();
     var ov = el('div', {
-      position: 'absolute',
-      inset: '0',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: '3',
+      position: 'absolute', inset: '0', display: 'flex',
+      alignItems: 'center', justifyContent: 'center', zIndex: '3',
       background: t.termBg || 'rgba(10,10,10,0.55)',
       backdropFilter: 'blur(28px) saturate(150%)',
       WebkitBackdropFilter: 'blur(28px) saturate(150%)',
     });
     ov.setAttribute('data-l3-overlay', '1');
     var card = el('div', {
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      gap: '10px',
-      padding: '18px 22px',
-      borderRadius: '12px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px',
+      padding: '18px 22px', borderRadius: '12px',
       border: '1px solid ' + (t.line || 'rgba(128,128,128,0.3)'),
-      background: t.panel || 'rgba(255,255,255,0.08)',
-      textAlign: 'center',
+      background: t.panel || 'rgba(255,255,255,0.08)', textAlign: 'center',
     });
     card.appendChild(el('div', { fontSize: '14px', fontWeight: '500', color: t.ink }, DEAD_TITLE));
     if (rec.tail.indexOf(AGENT_LOCKED) >= 0 || rec.tail.indexOf(AGENT_REFUSED) >= 0) {
       card.appendChild(el('div', { fontSize: '12px', color: t.ink60 }, LOCKED_NOTE));
     }
     var btn = el('button', {
-      borderRadius: '9999px',
-      border: '1px solid ' + (t.line || 'transparent'),
-      background: t.ctaBg || '#fff',
-      color: t.ctaFg || '#0a0a0a',
-      fontSize: '12px',
-      padding: '6px 14px',
-      cursor: 'pointer',
+      borderRadius: '9999px', border: '1px solid ' + (t.line || 'transparent'),
+      background: t.ctaBg || '#fff', color: t.ctaFg || '#0a0a0a',
+      fontSize: '12px', padding: '6px 14px', cursor: 'pointer',
     }, RECONNECT);
     btn.setAttribute('data-l3-reconnect', '1');
     btn.onclick = function () {
@@ -315,17 +360,16 @@
 
   function die(rec) {
     clearStall(rec);
-    var host = rec.mount && rec.mount.parentNode;
-    if (!host || host.querySelector('[data-l3-overlay]')) return; // already dead
+    if (!rec.box || rec.box.querySelector('[data-l3-overlay]')) return; // already dead
     rec.dead = true;
-    if (rec.mount) rec.mount.style.opacity = '0.35';
-    if (rec.mount) rec.mount.style.filter = 'grayscale(1)';
-    host.appendChild(deadOverlay(rec));
+    rec.mount.style.opacity = '0.35';
+    rec.mount.style.filter = 'grayscale(1)';
+    rec.box.appendChild(deadOverlay(rec));
   }
 
   function sendResize(rec) {
-    if (!rec.fit || !rec.term) return;
-    try { rec.fit.fit(); } catch (e) {}
+    if (!rec.fit || !rec.term || !rec.opened) return;
+    try { rec.fit.fit(); } catch (e) { return; }
     if (rec.ws && rec.ws.readyState === 1) {
       rec.ws.send(JSON.stringify({ type: 'resize', cols: rec.term.cols, rows: rec.term.rows }));
     }
@@ -335,13 +379,10 @@
     if (rec.disposed) return;
     try { rec.fit.fit(); } catch (e) {}
     rec.dead = false;
-    if (rec.mount) {
-      rec.mount.style.opacity = '';
-      rec.mount.style.filter = '';
-      var host = rec.mount.parentNode;
-      var ov = host && host.querySelector('[data-l3-overlay]');
-      if (ov) ov.remove();
-    }
+    rec.mount.style.opacity = '';
+    rec.mount.style.filter = '';
+    var ov = rec.box.querySelector('[data-l3-overlay]');
+    if (ov) ov.remove();
     rec.tail = '';
     clearStall(rec);
     armStall(rec);
@@ -365,6 +406,15 @@
 
   function buildTerminal(rec) {
     var t = tk();
+    rec.box = el('div', {
+      position: 'absolute', overflow: 'hidden', pointerEvents: 'auto',
+      display: 'flex', flexDirection: 'column', visibility: 'hidden',
+    });
+    rec.mount = el('div', { flex: '1', minHeight: '0', width: '100%' });
+    rec.mount.setAttribute('data-l3-term', '1');
+    rec.box.appendChild(rec.mount);
+    ensureLayer().appendChild(rec.box);
+
     rec.term = new global.Terminal({
       scrollback: 5000,
       fontSize: 12,
@@ -376,9 +426,6 @@
     rec.fit = new global.FitAddon.FitAddon();
     rec.term.loadAddon(rec.fit);
     rec.term.loadAddon(new global.WebLinksAddon.WebLinksAddon());
-
-    rec.mount = el('div', { flex: '1', minHeight: '0', width: '100%' });
-    rec.mount.setAttribute('data-l3-term', rec.key);
 
     rec.term.onData(function (d) {
       if (rec.ws && rec.ws.readyState === 1) {
@@ -400,23 +447,18 @@
       }
       return true;
     });
-
-    rec.ro = new ResizeObserver(function () { sendResize(rec); });
   }
 
   // ==========================================================================
-  // DOM sync. The template owns the tile markup; this walks the rendered tiles
-  // in model order, stamps a data-* hook on each and parks the right terminal
-  // in the right box — the tile body normally, the full-screen body when the
-  // session is maximized. Moving the mount node moves the live terminal with
-  // it, so one Terminal survives maximize/restore (BEHAVIOUR §1). I-L3-04.
+  // Geometry sync. Reads the compiled tiles for their rects only — they are
+  // positional sc-for rows, so index is the only relationship that holds, and
+  // nothing is written to them or stored on them.
   // ==========================================================================
   var syncQueued = false;
 
   function scheduleSync() {
     if (syncQueued) return;
     syncQueued = true;
-    // Two microtasks: one for FD.setData's flush, one to land after it.
     Promise.resolve().then(function () {
       Promise.resolve().then(function () {
         syncQueued = false;
@@ -425,99 +467,127 @@
     });
   }
 
-  function tileBodies() {
+  function tileEls() {
     var root = document.querySelector(SCREEN_SEL);
     if (!root) return [];
     var grid = root.firstElementChild;
-    if (!grid) return [];
-    return Array.prototype.slice.call(grid.children);
+    return grid ? Array.prototype.slice.call(grid.children) : [];
   }
 
-  function emptyNode() {
-    var t = tk();
-    var n = el('div', {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '220px',
-      padding: '28px',
-      borderRadius: '12px',
-      border: '1px dashed ' + (t.line || 'rgba(128,128,128,0.3)'),
-      background: t.panel || 'rgba(255,255,255,0.05)',
-      boxShadow: t.panelShadow || 'none',
-      color: t.ink45 || 'rgba(255,255,255,0.45)',
-      fontSize: '13.5px',
-      textAlign: 'center',
-    }, EMPTY_TEXT);
-    n.setAttribute('data-l3-empty', '1');
-    return n;
+  function syncEmpty(root, shown) {
+    if (!shown || model.length) {
+      if (emptyBox) hide(emptyBox);
+      return;
+    }
+    if (!emptyBox) {
+      var t = tk();
+      emptyBox = el('div', {
+        position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        pointerEvents: 'none', boxSizing: 'border-box',
+        padding: '28px', borderRadius: '12px',
+        border: '1px dashed ' + (t.line || 'rgba(128,128,128,0.3)'),
+        background: t.panel || 'rgba(255,255,255,0.05)',
+        color: t.ink45 || 'rgba(255,255,255,0.45)',
+        fontSize: '13.5px', textAlign: 'center',
+      }, EMPTY_TEXT);
+      emptyBox.setAttribute('data-l3-empty', '1');
+      ensureLayer().appendChild(emptyBox);
+    }
+    var t2 = tk();
+    emptyBox.style.borderColor = t2.line || 'rgba(128,128,128,0.3)';
+    emptyBox.style.background = t2.panel || 'rgba(255,255,255,0.05)';
+    emptyBox.style.color = t2.ink45 || 'rgba(255,255,255,0.45)';
+    // With no tiles the compiled Windows box has no children and collapses to
+    // zero height, so it cannot be the anchor — the nearest ancestor that still
+    // has a content area is. Read-only, as everywhere else here.
+    var anchor = root;
+    var r = anchor.getBoundingClientRect();
+    while (anchor.parentElement && r.height < 60) {
+      anchor = anchor.parentElement;
+      r = anchor.getBoundingClientRect();
+    }
+    if (!r.width || !r.height) { hide(emptyBox); return; }
+    place(emptyBox, { left: r.left, top: r.top, width: r.width, height: Math.min(r.height, 240) }, Z_TILED);
   }
 
-  function syncEmpty(root) {
-    var existing = root.querySelector('[data-l3-empty]');
-    if (model.length) {
-      if (existing) existing.remove();
-      return;
-    }
-    if (existing) {
-      existing.textContent = EMPTY_TEXT; // keep the tokens fresh across themes
-      return;
-    }
-    root.appendChild(emptyNode());
+  function sameRect(a, b) {
+    return !!a && !!b && a.left === b.left && a.top === b.top &&
+      a.width === b.width && a.height === b.height;
   }
 
   function sync() {
+    if (!booted) return;
     var root = document.querySelector(SCREEN_SEL);
-    if (!root) return;
-    syncEmpty(root);
+    var shown = displayed(root);
+    syncEmpty(root, shown);
 
-    var els = tileBodies();
-    var full = document.querySelector(FULL_SEL);
-    var fullBody = FD.l3.termBody || null;
+    var els = tileEls();
+    var fullBody = FD.l3.termBody;
+    var fullShown = visible(document.querySelector(FULL_SEL)) && visible(fullBody);
+    var menuOpen = !!FD.l3.termMenu;
 
-    for (var i = 0; i < model.length && i < els.length; i++) {
+    for (var i = 0; i < model.length; i++) {
       var rec = model[i];
-      var tileEl = els[i];
-      rec.tileEl = tileEl;
-      tileEl.setAttribute('data-l3-key', rec.key);
-      if (!rec.term) continue;
+      if (!rec.box) continue;
 
-      // children are [header, body, footer] — the body is the mono log box.
-      var body = tileEl.children[1];
-      if (!body) continue;
-      if (body.style.position !== 'relative') body.style.position = 'relative';
-      if (body.style.padding !== '0px') body.style.padding = '0px';
+      var maxed = isMax(rec);
+      var target = maxed && fullShown ? fullBody : (i < els.length ? els[i].children[1] : null);
+      // While the ≡ menu is open it would overlap the terminal, and the menu
+      // lives inside the overlay's stacking context where this layer cannot
+      // reach. The terminal steps aside for it. I-L3-10.
+      var wanted = target && (maxed ? fullShown && !menuOpen : shown) ? target : null;
 
-      var wantHost = isMax(rec) && full && fullBody ? fullBody : body;
-      if (rec.mount.parentNode !== wantHost) {
-        if (wantHost === fullBody && wantHost.style.position !== 'relative') {
-          wantHost.style.position = 'relative';
-        }
-        wantHost.appendChild(rec.mount);
-        if (!rec.opened) {
-          rec.term.open(rec.mount);
-          rec.opened = true;
-          rec.ro.observe(tileEl);
-          connect(rec);
-        }
-        // A fixed-position move does not trip the observer, so refit here.
-        sendResize(rec);
-        if (isMax(rec)) rec.term.focus();
+      if (!wanted) { hide(rec.box); rec.rect = null; continue; }
+
+      var rect = contentRect(wanted);
+      if (!rect.width || !rect.height) { hide(rec.box); rec.rect = null; continue; }
+      place(rec.box, rect, maxed ? Z_MAX : Z_TILED);
+
+      if (!rec.opened) {
+        rec.term.open(rec.mount);
+        rec.opened = true;
+        rec.rect = rect;
+        if (ro) ro.observe(wanted);
+        connect(rec);
+        if (maxed) rec.term.focus();
+        continue;
       }
+      if (ro) ro.observe(wanted);
+      if (!sameRect(rect, rec.rect)) {
+        rec.rect = rect;
+        sendResize(rec);
+      }
+      if (maxed && document.activeElement !== rec.mount) rec.term.focus();
     }
   }
 
   // The mock's tile ✕ carries no handler (mock L235), and the compiled template
-  // belongs to S2, so the click is bound by delegation instead. I-L3-06.
+  // belongs to S2, so the click is bound by delegation. The tile is identified
+  // by its position among its siblings, computed at click time — a compiled row
+  // has no stable identity to store on it. I-L3-06.
   function bindTileChrome() {
+    /* The sidebar's Connect all button is drawn with no handler either
+     * (template.dc.html:182) and it drives this slice's hook, so it is bound
+     * the same way. Matched on its exact label because the mock gives it no id
+     * or title. I-L3-06. */
     document.addEventListener('click', function (e) {
-      var btn = e.target && e.target.closest && e.target.closest('button[title="Close tile (session keeps running)"]');
+      var go = e.target && e.target.closest && e.target.closest('button');
+      if (go && go.textContent.trim() === 'Connect all' && go.closest('aside')) {
+        connectAll();
+      }
+    });
+    document.addEventListener('click', function (e) {
+      var btn = e.target && e.target.closest &&
+        e.target.closest('button[title="Close tile (session keeps running)"]');
       if (!btn) return;
-      var tileEl = btn.closest('[data-l3-key]');
-      if (!tileEl) return;
-      var k = tileEl.getAttribute('data-l3-key');
-      var rec = byKey[k];
-      if (rec) closeTile(rec.host, rec.name);
+      var els = tileEls();
+      for (var i = 0; i < els.length; i++) {
+        if (els[i].contains(btn)) {
+          var rec = model[i];
+          if (rec) closeTile(rec.host, rec.name);
+          return;
+        }
+      }
     });
   }
 
@@ -525,6 +595,11 @@
   // Public hooks
   // ==========================================================================
   function openTile(host, name) {
+    // Fixture mode is byte-identical by construction: no entry point may write
+    // to FD.fixture there, not even one a future slice calls by mistake.
+    if (isFixture()) return;
+    host = str(host); name = str(name);
+    if (!host || !name) return;
     var k = key(host, name);
     if (byKey[k]) return; // app.js:1022 — an open tile is never reconnected
     var rec = makeRecord(host, name);
@@ -540,24 +615,27 @@
   }
 
   function openMax(host, name) {
+    if (isFixture()) return;
     openTile(host, name);
-    if (FD.l3.openTerm) FD.l3.openTerm(name, host, null);
+    if (FD.l3.openTerm) FD.l3.openTerm(str(name), str(host), null);
     scheduleSync();
   }
 
   function closeTile(host, name) {
-    var k = key(host, name);
+    if (isFixture()) return;
+    var k = key(str(host), str(name));
     var rec = byKey[k];
     if (!rec) return;
     rec.disposed = true;
     clearStall(rec);
-    if (rec.ro) rec.ro.disconnect();
     if (rec.ws) {
       rec.ws.onclose = null; // closing a tile is not a death
       try { rec.ws.close(); } catch (e) {}
+      rec.ws = null;
     }
     if (rec.term) rec.term.dispose();
-    if (rec.mount && rec.mount.parentNode) rec.mount.parentNode.removeChild(rec.mount);
+    if (rec.box && rec.box.parentNode) rec.box.parentNode.removeChild(rec.box);
+    rec.term = null; rec.fit = null; rec.box = null; rec.mount = null;
     delete byKey[k];
     model = model.filter(function (r) { return r !== rec; });
     // Nothing is sent to the server: the remote tmux session keeps running.
@@ -566,13 +644,15 @@
   }
 
   function connectAll() {
+    if (isFixture()) return Promise.resolve();
     return ensureData().then(function () {
       return FD.data.sessions();
     }).then(function (res) {
       var rows = (res && res.sessions) || res || [];
+      if (!Array.isArray(rows)) return;
       return rows.reduce(function (chain, s) {
         // hidden workers stay closed, and a dead row has nothing to attach to
-        if (!s.live || s.status === 'hidden') return chain;
+        if (!validRow(s) || !s.live || s.status === 'hidden') return chain;
         return chain.then(function () {
           openTile(s.host, s.name);
           // concurrent ssh handshakes race the 1Password agent; one gets refused
@@ -582,7 +662,6 @@
     }).catch(function (err) { console.error(err); });
   }
 
-  // Full-screen header ≡ menu and Message button both route through here.
   function messageCurrent() {
     var term = FD.l3.term;
     if (!term) return;
@@ -601,6 +680,7 @@
     _isFixture: isFixture,
     _footFor: footFor,
     _key: key,
+    _validRow: validRow,
   };
 
   FD.screens.windows = windows;
@@ -610,14 +690,14 @@
   // ==========================================================================
   function refreshSessions() {
     return FD.data.sessions().then(function (res) {
-      sessionRows = (res && res.sessions) || res || [];
+      var rows = (res && res.sessions) || res || [];
+      sessionRows = Array.isArray(rows) ? rows.filter(validRow) : [];
       // The ≡ switcher lists live sessions — the old sidebar drawer, in menu form.
       FD.setData('l3TermSessions', sessionRows.filter(function (s) {
         return s.live && s.status !== 'hidden';
       }).map(function (s) {
-        return { id: s.name, name: s.name, host: s.host, live: true };
+        return { id: str(s.name), name: str(s.name), host: str(s.host), live: true };
       }));
-      // Footers can only be filled once the registry rows are known.
       model.forEach(function (rec) {
         var foot = footFor(rowFor(rec.host, rec.name));
         rec.foot1 = foot.foot1;
@@ -636,15 +716,18 @@
     // read at render time because logic.js has no access to the session rows.
     FD.l3.footFull = function (host, name) {
       var row = rowFor(host, name);
-      return row ? [row.role, row.label, row.task].filter(Boolean).join(' · ') : '';
+      return row ? [str(row.role), str(row.label), str(row.task)].filter(Boolean).join(' · ') : '';
     };
+    ensureLayer();
     bindTileChrome();
-    /* Re-park terminals after every render — screen switches and theme flips
-     * rebuild the tile boxes. A DOM observer cannot be used for this: a live
-     * terminal rewrites its own rows constantly, so watching the subtree would
-     * re-enter sync on every byte of pty output. logic.js calls this hook once
-     * per render instead, which is exactly when the boxes can have moved. */
+    /* Re-align after every render, and whenever the boxes can have moved on
+     * their own. A DOM observer is not used for this: a live terminal rewrites
+     * its own rows constantly, so watching the subtree would re-enter sync on
+     * every byte of pty output. */
     FD.l3.onRender = scheduleSync;
+    if (global.ResizeObserver) ro = new ResizeObserver(function () { scheduleSync(); });
+    addEventListener('resize', scheduleSync);
+    addEventListener('scroll', scheduleSync, true); // scroll does not bubble
     ensureData()
       .then(refreshSessions)
       .then(function () { scheduleSync(); })

@@ -560,6 +560,15 @@ class AppLogic extends Sub {
      * l3Live is set by public/v2/screens/windows.js in live mode only; in
      * fixture mode it is absent and every branch below stays on the seed. */
     const l3 = (FD.l3 = FD.l3 || {});
+    /* Throw-proofing (oracle audit item 2): one exception raised inside any
+     * slice's renderVals blanks every screen, not just that slice's. Each L3
+     * value is produced through l3Try, which keeps the last good result and
+     * falls back to it rather than letting the render die. */
+    const l3Last = (l3.lastGood = l3.lastGood || { tiles: [], termSessions: [], termFoot: '' });
+    const l3Try = (k, fn) => {
+      try { const v = fn(); l3Last[k] = v; return v; }
+      catch (e) { console.error('fd-v2 L3:', e); return l3Last[k]; }
+    };
     l3.tokens = {
       ink: t.ink, ink75: t.ink75, ink60: t.ink60, ink45: t.ink45, ink35: t.ink35,
       line: t.line, lineSoft: t.lineSoft, panel: t.panel, panelHead: t.panelHead,
@@ -568,6 +577,7 @@ class AppLogic extends Sub {
       termBg: dark ? 'rgba(10,10,10,0.55)' : 'rgba(242,241,238,0.6)', mono, dark,
     };
     l3.term = term;
+    l3.termMenu = !!this.state.termMenu;
     /* One render-tick signal for the screen file: the tile boxes it parks its
      * terminals in are rebuilt by screen switches and theme flips, and this is
      * the only moment that can have happened. */
@@ -582,7 +592,7 @@ class AppLogic extends Sub {
       /* Live, the body is an xterm mount, so the template renders no lines and
        * termRef hands the box to the screen file to park the terminal in. */
       termLines: term ? (l3Live ? [] : termLinesFor(term.name)) : [],
-      termFoot: term ? (l3Live ? (l3.footFull ? l3.footFull(term.host, term.name) : '') : 'gpt-6-astra xhigh fast · ~/projects/remote-system/.claude/worktrees/' + term.name.replace(/^(LC|FD)-/, '').toLowerCase() + ' · Main [default]') : '',
+      termFoot: term ? (l3Live ? l3Try('termFoot', () => (l3.footFull ? l3.footFull(term.host, term.name) : '')) : 'gpt-6-astra xhigh fast · ~/projects/remote-system/.claude/worktrees/' + term.name.replace(/^(LC|FD)-/, '').toLowerCase() + ' · Main [default]') : '',
       termRef: (el) => {
         if (l3Live) { l3.termBody = el; if (FD.screens.windows) FD.screens.windows._sync(); return; }
         if (el) el.scrollTop = el.scrollHeight;
@@ -598,13 +608,13 @@ class AppLogic extends Sub {
       toggleTermMenu: () => this.setState({ termMenu: !this.state.termMenu }),
       termMenuBtnStyle: this.state.termMenu ? { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink } : iconBtn,
       /* The ≡ menu is the old sidebar drawer switcher: live sessions only. */
-      termSessions: (l3Live ? (FD.fixture.l3TermSessions || []) : busSessions).filter((s) => s.live && s.id !== 'desktop').map((s) => ({
+      termSessions: l3Try('termSessions', () => (l3Live ? (FD.fixture.l3TermSessions || []) : busSessions).filter((s) => s && s.live && s.id !== 'desktop').map((s) => ({
         name: s.name, host: s.host, dotStyle: dot(t.good),
         style: { display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: '1px solid ' + (term && term.name === s.name ? t.navActBorder : 'transparent'), background: term && term.name === s.name ? t.navActBg : 'transparent', color: t.ink, borderRadius: '8px', padding: '7px 9px', cursor: 'pointer', boxSizing: 'border-box' },
         /* Live, switching sessions must attach the tile first, not just swap
          * the header — openMax opens it (deduped) and maximizes it. */
         open: () => (l3Live && FD.screens.windows ? FD.screens.windows.openMax(s.host, s.name) : openTerm(s.name, s.host, s.id)),
-      })),
+      }))),
     };
     this._openTerm = openTerm;
     const busUnread = Object.values(unread).reduce((a, b) => a + b, 0);
@@ -830,7 +840,7 @@ class AppLogic extends Sub {
         { name: 'onboarding-box', st: 'reachable', tone: 'good' },
       ].map((b) => ({ name: b.name, st: b.st, dotStyle: dot(b.tone === 'good' ? t.good : t.warn), stStyle: { fontSize: '11px', color: t.ink45, whiteSpace: 'nowrap' } })),
       // windows — live tiles come from the screen file via FD.setData('l3Tiles')
-      tiles: (l3Live ? (FD.fixture.l3Tiles || []) : [
+      tiles: l3Try('tiles', () => (l3Live ? (FD.fixture.l3Tiles || []) : [
         { name: 'LC-cdx-readpath', box: 'german-box', foot1: 'gpt-5.6-sol xhigh · ~/projects/lowcap-connecto…', foot2: 'Pursuing goal (11m)', lines: [
           { t: 'Interacted with /root/xyz_1630_review', style: { color: t.ink75 } },
           { t: 'Ran cargo clippy -p lowcap-pools-management --tests --no-deps', style: { color: t.ink60 } },
@@ -859,7 +869,7 @@ class AppLogic extends Sub {
           { t: '— Worked for 30m 21s ———————', style: { color: t.ink45 } },
           { t: '› Ask Codex to do anything', style: { color: t.ink35 } },
         ]},
-      ]).map((tl) => ({ ...tl, openTerm: () => (l3Live && FD.screens.windows ? FD.screens.windows.openMax(tl.box, tl.name) : openTerm(tl.name, tl.box)) })),
+      ]).map((tl) => ({ ...tl, openTerm: () => (l3Live && FD.screens.windows ? FD.screens.windows.openMax(tl.box, tl.name) : openTerm(tl.name, tl.box)) }))),
       // org
       orgSort, orgScope,
       orgSortLabel: 'Sorted by ' + orgSort,

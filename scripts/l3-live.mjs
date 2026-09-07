@@ -140,13 +140,15 @@ async function newPage(browser, theme, { empty = false } = {}) {
   return { context, page, errors };
 }
 
-async function reachWindows(page) {
+async function reachWindows(page, { screenState = 'attached' } = {}) {
   await page.goto(APP + '/v2/index.html', { waitUntil: 'domcontentloaded' });
   await page.locator('[data-screen-label="Landing"]').waitFor({ state: 'visible' });
   await page.getByRole('link', { name: 'App', exact: true }).click();
   await page.locator('[data-screen-label="Fleetdeck app"]').waitFor({ state: 'visible' });
   await page.locator('aside button[title="Windows"]').click();
-  await page.locator('[data-screen-label="Windows"]').waitFor({ state: 'visible' });
+  // With no tiles the compiled Windows box has no children and so collapses to
+  // zero height — attached, not visible, is the right wait for the empty case.
+  await page.locator('[data-screen-label="Windows"]').waitFor({ state: screenState });
   await page.waitForFunction(() => window.FD && window.FD.screens && window.FD.screens.windows && window.FD.fixture.l3Live === true);
   await page.waitForFunction(() => Array.isArray(window.FD.fixture.l3TermSessions));
 }
@@ -157,8 +159,22 @@ const openMax = (page, host, name) =>
   page.evaluate(([h, n]) => window.FD.screens.windows.openMax(h, n), [host, name]);
 const closeTile = (page, host, name) =>
   page.evaluate(([h, n]) => window.FD.screens.windows.closeTile(h, n), [host, name]);
-const tileCount = (page) =>
-  page.locator('[data-screen-label="Windows"] [data-l3-key]').count();
+// The compiled tiles are counted, not the terminal layer: they are the thing
+// FD.setData drives, and the layer is aligned to them.
+const tileCount = (page) => page.evaluate(() => {
+  const root = document.querySelector('[data-screen-label="Windows"]');
+  const grid = root && root.firstElementChild;
+  return grid ? grid.children.length : 0;
+});
+const tilePart = (page, i, part) => page.evaluate(([n, p]) => {
+  const grid = document.querySelector('[data-screen-label="Windows"]').firstElementChild;
+  return grid.children[n].children[p].innerText;
+}, [i, part]);
+// Visible terminal boxes in this slice's own layer, with their z-index.
+const boxes = (page) => page.evaluate(() => [...document.querySelectorAll('[data-l3-layer] > div')]
+  .filter((b) => b.style.visibility === 'visible' && b.querySelector('[data-l3-term]'))
+  .map((b) => { const r = b.getBoundingClientRect();
+    return { z: Number(b.style.zIndex), top: r.top, bottom: r.bottom, w: r.width, h: r.height }; }));
 const settle = (page) => page.waitForTimeout(250);
 
 async function main() {
@@ -184,10 +200,14 @@ async function main() {
       const { context, page } = await newPage(browser, 'dark', { empty: true });
       await reachWindows(page);
       await settle(page);
+      await page.waitForTimeout(500);
       const text = await page.locator('[data-l3-empty]').innerText().catch(() => '');
       record('L3-01', 'load the Windows screen with no sessions',
         'the improvised empty state carries the ruling copy verbatim', text.trim() === EMPTY_TEXT, text.trim());
-      await page.locator('[data-screen-label="Windows"]').screenshot({ path: path.join(SHOTS, 'l3-empty-state.png') });
+      await page.screenshot({ path: path.join(SHOTS, 'l3-empty-state.png') });
+      const emptyShown = await page.locator('[data-l3-empty]').isVisible().catch(() => false);
+      record('L3-35', 'render the empty state with the grid collapsed',
+        'it is anchored to the nearest sized ancestor, so it is actually on screen', emptyShown);
       const noSetData = await page.evaluate(() => (window.FD.fixture.l3Tiles || []).length === 0);
       record('L3-02', 'inspect FD.fixture in live mode with no sessions',
         'l3Tiles is published and empty; no seed tiles leak into live mode', noSetData);
@@ -209,14 +229,11 @@ async function main() {
     await settle(page);
     record('L3-04', 'openTile(host, name)', 'one tile is rendered', (await tileCount(page)) === 1);
 
-    const header = await page.locator('[data-l3-key]').first().innerText();
+    const header = await tilePart(page, 0, 0);
     record('L3-05', 'read the tile header', 'the header shows the session name and its box',
       header.includes(a.name) && header.includes(a.host), header.split('\n').join(' · '));
 
-    const foot = await page.evaluate(() => {
-      const t = document.querySelector('[data-l3-key]');
-      return t.children[2].innerText;
-    });
+    const foot = await tilePart(page, 0, 2);
     const wantFoot2 = a.task || '—';
     record('L3-06', 'read the tile footer',
       'foot1 is the registry role · label, foot2 is the registry task',
@@ -285,11 +302,12 @@ async function main() {
     await openMax(page, a.host, a.name);
     await settle(page);
     const fullVisible = await page.locator('[data-screen-label="Session full screen"]').isVisible();
-    const movedIn = await page.evaluate(() =>
-      !!document.querySelector('[data-screen-label="Session full screen"] [data-l3-term]'));
+    const fullRect = await page.locator('[data-screen-label="Session full screen"]').boundingBox();
+    const overBoxes = await boxes(page);
+    const movedIn = overBoxes.some((b) => b.z === 56 && b.top > fullRect.y && b.bottom <= fullRect.y + fullRect.height + 1);
     record('L3-13', 'openMax(host, name)',
-      'the Session full screen overlay opens and the live terminal moves into it',
-      fullVisible && movedIn);
+      'the overlay opens and the live terminal is aligned over its body, above it in z',
+      fullVisible && movedIn, JSON.stringify(overBoxes));
 
     const fullFoot = await page.locator('[data-screen-label="Session full screen"]').innerText();
     record('L3-14', 'read the full-screen header and footer',
@@ -312,10 +330,9 @@ async function main() {
       'that session is attached (deduped) and becomes the maximized one',
       switched === b.name && (await tileCount(page)) === 2, String(switched));
 
-    const onlyOne = await page.evaluate(() =>
-      document.querySelectorAll('[data-screen-label="Session full screen"] [data-l3-term]').length);
+    const onlyOne = (await boxes(page)).filter((b) => b.z === 56).length;
     record('L3-17', 'with two tiles open and one maximized',
-      'exactly one terminal is parked in the full screen at a time', onlyOne === 1, String(onlyOne));
+      'exactly one terminal is raised over the full screen at a time', onlyOne === 1, String(onlyOne));
 
     // shift+Esc restores; plain Esc must not
     await page.keyboard.press('Escape');
@@ -362,8 +379,7 @@ async function main() {
       'a Disconnected overlay appears with the 1Password note and a Reconnect button',
       deadText.includes('Disconnected') && deadText.includes(LOCKED_NOTE) && deadText.includes('Reconnect'),
       deadText.split('\n').join(' · '));
-    await page.locator('[data-l3-key]').first().screenshot({ path: path.join(SHOTS, 'l3-dead-overlay.png') })
-      .catch(() => page.screenshot({ path: path.join(SHOTS, 'l3-dead-overlay.png') }));
+    await page.screenshot({ path: path.join(SHOTS, 'l3-dead-overlay.png') });
 
     const before = await page.evaluate(() => window.__ws.length);
     await page.locator('[data-l3-reconnect]').first().click();
@@ -387,7 +403,8 @@ async function main() {
       window.FD.screens.windows.closeTile(r.host, r.name)));
     await settle(page);
     const t0 = Date.now();
-    await page.evaluate(() => window.FD.screens.windows.connectAll());
+    // Clicked, not called: a hook the UI never reaches would pass vacuously.
+    await page.locator('aside button', { hasText: 'Connect all' }).first().click();
     await page.waitForFunction((n) => window.FD.screens.windows._model().length === n, expectLive,
       { timeout: expectLive * 1500 + 15000 });
     const elapsed = Date.now() - t0;
@@ -403,8 +420,23 @@ async function main() {
       !skipped.some((n) => hidden.includes(n)));
 
     await page.screenshot({ path: path.join(OUT, 'live-dark.png') });
-    await page.locator('[data-l3-key]').first().screenshot({ path: path.join(SHOTS, 'l3-tile-xterm.png') })
-      .catch(() => {});
+    await page.screenshot({ path: path.join(SHOTS, 'l3-tile-xterm.png') });
+
+    // The binding rule this layer exists for (oracle audit item 1).
+    const outside = await page.evaluate(() => {
+      const root = document.getElementById('dc-root');
+      const mounts = [...document.querySelectorAll('[data-l3-term]')];
+      return { n: mounts.length, inside: mounts.filter((m) => root && root.contains(m)).length };
+    });
+    record('L3-33', 'inspect where every xterm mount lives',
+      'no terminal is mounted inside a compiled node — the layer is a sibling of #dc-root',
+      outside.n > 0 && outside.inside === 0, JSON.stringify(outside));
+    const stamped = await page.evaluate(() => {
+      const root = document.querySelector('[data-screen-label="Windows"]');
+      return root ? root.querySelectorAll('[data-l3-key]').length : -1;
+    });
+    record('L3-34', 'inspect the compiled tiles for slice state',
+      'no per-row state is stored on a positional sc-for row', stamped === 0, String(stamped));
 
     record('L3-27', 'watch the console for the whole run', 'zero console errors',
       errors.length === 0, errors.slice(0, 3).join(' | ') || 'clean');
@@ -419,7 +451,7 @@ async function main() {
       const stall = await p2.locator('[data-l3-stall]').innerText().catch(() => '');
       record('L3-28', 'open a tile and send nothing for 15 s',
         'the stall line appears with its copy verbatim', stall.trim() === STALL_TEXT, stall.trim());
-      await p2.locator('[data-l3-key]').first().screenshot({ path: path.join(SHOTS, 'l3-stall.png') }).catch(() => {});
+      await p2.screenshot({ path: path.join(SHOTS, 'l3-stall.png') });
       await p2.evaluate(() => window.__wsMsg('output at last'));
       await p2.waitForTimeout(300);
       record('L3-29', 'the pty finally sends output',
@@ -458,11 +490,11 @@ async function main() {
       const inert = await p4.evaluate(() => ({
         live: window.FD.fixture.l3Live,
         tiles: window.FD.fixture.l3Tiles,
-        rendered: document.querySelectorAll('[data-screen-label="Windows"] [data-l3-key]').length,
+        rendered: document.querySelectorAll('[data-l3-layer]').length,
         seeded: document.querySelectorAll('[data-screen-label="Windows"] > div > div').length,
       }));
       record('L3-31', 'load the app with ?fixture=1',
-        'this slice never calls FD.setData in fixture mode and mounts nothing',
+        'this slice never calls FD.setData in fixture mode and builds no layer',
         inert.live === undefined && inert.tiles === undefined && inert.rendered === 0 && inert.seeded === 4,
         JSON.stringify(inert));
       record('L3-32', 'watch the network with ?fixture=1',
