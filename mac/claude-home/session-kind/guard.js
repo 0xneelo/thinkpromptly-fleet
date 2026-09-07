@@ -95,6 +95,87 @@ function segments(cmd) {
   return cmd.split(/\s*(?:&&|\|\||[;|\n])\s*/);
 }
 
+// Programs whose quoted arguments are TEXT — they emit or carry it, they do not
+// run it. On 2026-09-07T00:58Z the orchestrator's bus directive to this worker
+// was denied because the message it was CARRYING quoted a jail PoC. Item 9
+// taught the guard that a heredoc body is data; this is the same lesson for a
+// string literal.
+const TEXT_EMITTER = /^(?:echo|printf|say|tmux\s+display-message|git\s+commit\b[^|]*\s-[mF]\b|(?:\S*\/)?node\s+\S*fleet-(?:message|notify)(?:\.js)?\b)/i;
+// Programs whose quoted arguments EXECUTE. Never strip for these — the whole
+// point of the quotes there is that a shell reads them.
+const EXECUTOR = /^(?:(?:bash|sh|zsh)\s+-c|eval|xargs|tmux\s+send-keys|ssh|scp|python[0-9.]*|node\s+-e|perl|ruby|osascript|env\b)/i;
+
+// Blank the quoted literals of a text emitter, keeping everything outside them —
+// a redirect sits outside the quotes, so `echo "x" > <jail>/f` is still a write.
+//
+// Segment boundaries are found with the quotes honoured, because the message
+// being carried usually CONTAINS `&&` and `;`. Splitting on those first would
+// cut a literal in half and leave the second half looking like a command, which
+// is exactly the shape of the directive this fixes.
+function stripTextLiterals(cmd) {
+  const s = String(cmd);
+  const pieces = [];
+  let seg = 0;
+  let buf = '';
+  let i = 0;
+  function flush() {
+    if (buf) { pieces.push({ lit: false, seg: seg, text: buf }); buf = ''; }
+  }
+  while (i < s.length) {
+    const c = s.charAt(i);
+    if (c === "'" || c === '"') {
+      flush();
+      let lit = c;
+      i += 1;
+      while (i < s.length) {
+        if (c === '"' && s.charAt(i) === '\\' && i + 1 < s.length) {
+          lit += s.substr(i, 2); i += 2; continue;
+        }
+        lit += s.charAt(i);
+        const closed = s.charAt(i) === c;
+        i += 1;
+        if (closed) break;
+      }
+      // A redirect TARGET may itself be quoted — `echo x > "$HOME/.claude/…"`.
+      // The operator is outside the quotes, the path is inside them, so a
+      // literal that follows `>`, `>>` or `tee` is a destination, not prose.
+      const before = pieces.length ? pieces[pieces.length - 1] : null;
+      const isTarget = Boolean(before) && !before.lit
+        && /(?:>>?|\btee\b(?:\s+-a)?)\s*$/.test(before.text);
+      pieces.push({ lit: true, seg: seg, text: lit, target: isTarget });
+      continue;
+    }
+    if (c === ';' || c === '\n' || c === '|' || c === '&') {
+      flush();
+      let j = i;
+      while (j < s.length && ';\n|&'.indexOf(s.charAt(j)) !== -1) j += 1;
+      pieces.push({ lit: false, seg: seg, text: s.slice(i, j) });
+      i = j;
+      seg += 1;
+      continue;
+    }
+    buf += c;
+    i += 1;
+  }
+  flush();
+
+  const heads = {};
+  for (let k = 0; k < pieces.length; k += 1) {
+    const p = pieces[k];
+    if (p.lit || /^[;\n|&]+$/.test(p.text)) continue;
+    heads[p.seg] = (heads[p.seg] || '') + p.text;
+  }
+  const out = [];
+  for (let k = 0; k < pieces.length; k += 1) {
+    const p = pieces[k];
+    if (!p.lit || p.target) { out.push(p.text); continue; }
+    const head = (heads[p.seg] || '').replace(/^\s+/, '');
+    if (EXECUTOR.test(head) || !TEXT_EMITTER.test(head)) { out.push(p.text); continue; }
+    out.push(p.text.charAt(0) === "'" ? "''" : '""');
+  }
+  return out.join('');
+}
+
 // Expand the spellings a shell expands, ANYWHERE in the text — not just at the
 // front of a path, which is all norm() needs. A two-step
 // `cd "$HOME/.claude" && cd goalkeeper` hid the jail from every earlier check
@@ -204,7 +285,9 @@ function isPureRead(cmd) {
 // which destroys the source, is denied even though its destination is outside.
 // A command that does not name the directory is never touched by this check.
 function commandTouchesGoalkeeper(cmd, cfg, cwd) {
-  if (!commandNamesGoalkeeper(cmd, cfg, cwd)) return false;
+  // Prose a text emitter is carrying is not a command naming the jail.
+  const scanned = stripTextLiterals(cmd);
+  if (!commandNamesGoalkeeper(scanned, cfg, cwd)) return false;
   return !isPureRead(expandVars(cmd, cfg));
 }
 
