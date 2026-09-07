@@ -129,11 +129,20 @@ def fetch(path):
     """git fetch --prune origin with a freshly minted broker token.
 
     The token is minted and consumed inside one /bin/sh, so it never reaches argv, a
-    file, or our own output. Any failure (missing script, no network, timeout, non-zero)
+    file, or our own output — with ONE exception the mint script forces on us:
+    `--askpass` writes the live token in plaintext to a `$TMPDIR/tmp.ghXXXX/askpass.sh`
+    helper and prints "delete after use". A sweep runs per project, so without the
+    cleanup below every run would leave a readable token on disk. The trap fires on
+    success, failure and timeout alike.
+
+    Any failure (missing script, no network, timeout, non-zero)
     is a STALE sweep, not an error: the caller falls back to local refs.
     """
     quoted = shlex.quote(path)
     cmd = (
+        # Delete the askpass helper dir however this shell exits — the file in it
+        # holds the live token in plaintext.
+        'trap \'[ -n "$GIT_ASKPASS" ] && rm -rf -- "$(dirname "$GIT_ASKPASS")"\' EXIT INT TERM; '
         'eval "$(%s --broker --askpass)" && '
         "git -C %s -c credential.helper= "
         "-c credential.helper='!f(){ echo username=x-access-token; echo \"password=$GH_TOKEN\"; }; f' "
