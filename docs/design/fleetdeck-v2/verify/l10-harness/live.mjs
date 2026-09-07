@@ -260,6 +260,36 @@ const lastCollection = (body) =>
 const clipboard = (page) => page.evaluate(() => navigator.clipboard.readText());
 const copyLabel = (page, index) => rows(page).nth(index).locator('[data-fd-l10="copylabel"]');
 
+// Every row in DOM order as [session id, Show title, Message title]. The two titles
+// are read raw off the attribute, so the assertions below compare exact strings.
+const actionTitles = (page) => page.evaluate(() => {
+  const title = (el, aria) => {
+    const btn = el.querySelector(`button[aria-label="${aria}"]`);
+    return btn ? btn.getAttribute('title') : null;
+  };
+  return [...document.querySelectorAll('[data-screen-label="Desktop sessions"] [data-fd-l10-row]')]
+    .map((el) => [el.getAttribute('data-fd-l10-id'), title(el, 'Show session'), title(el, 'Message session')]);
+});
+
+// Every row in DOM order as {id, chips}: only the INJECTED extra chips, never the
+// template's own status pill (which carries no data-fd-l10).
+const rowChips = (page) => page.evaluate(() => {
+  const CHIPS = '[data-fd-l10="archived"], [data-fd-l10="cached"]';
+  return [...document.querySelectorAll('[data-screen-label="Desktop sessions"] [data-fd-l10-row]')].map((el) => ({
+    id: el.getAttribute('data-fd-l10-id'),
+    chips: [...el.querySelectorAll(CHIPS)].map((n) => n.textContent),
+  }));
+});
+
+// Key the reading by session id. The live row is rendered twice (pinned "Live now"
+// plus its own group), so a repeat is expected — and the two copies disagreeing is
+// itself the failure this check is looking for.
+const chipsById = (list) => list.reduce((acc, r) => {
+  if (acc[r.id]) assert.deepEqual(r.chips, acc[r.id], `session ${r.id} shows different chips in its two rows`);
+  acc[r.id] = r.chips;
+  return acc;
+}, {});
+
 // ---------------------------------------------------------------------------
 // The run
 // ---------------------------------------------------------------------------
@@ -350,6 +380,22 @@ async function mainRows(browser) {
       'the stale row also shows Cached; the archived row also shows Archived', () => {
         assert.deepEqual(snap.groups[1].rows.map((r) => r.chips), [
           ['Live'], ['Live unknown'], ['Offline', 'Cached'], ['Offline', 'Archived'],
+        ]);
+      });
+
+    // BEHAVIOUR §3: the mock's action cell is two icon buttons, so `title` is the slot
+    // that carries today's app's disabled text (sessions.js:246). Live mode only.
+    await check('action-disabled-text', 'read the title attribute of the Show and Message buttons on every row',
+      'a live row keeps "Show session" / "Message this session"; an unknown row reads "Live check unavailable" ' +
+      'on both, an offline row "Not running" on both — verbatim', async () => {
+        assert.deepEqual(await actionTitles(page), [
+          ['local_live-1', 'Show session', 'Message this session'], // pinned "Live now" copy
+          ['local_live-1', 'Show session', 'Message this session'],
+          ['local_unknown-1', 'Live check unavailable', 'Live check unavailable'],
+          ['local_stale-1', 'Not running', 'Not running'],
+          ['local_archived-1', 'Not running', 'Not running'],
+          ['local_bare-1', 'Not running', 'Not running'],
+          ['local_offline-1', 'Not running', 'Not running'],
         ]);
       });
 
@@ -683,6 +729,83 @@ async function mainStates(browser) {
           const account = (await snapshot(page)).selects[0];
           assert.equal(account.value, AYLIN);
           assert.deepEqual(account.options, ['All accounts', 'Daniel Tabor · be25ab11', 'Previously selected (unavailable)']);
+        });
+    } finally {
+      await context.close();
+    }
+  }
+
+  {
+    // DECK-78. sc-for rows are POSITIONAL: the runtime reuses a row element by index,
+    // so after a poll a given node can be showing a different session. The slice's
+    // defence is that every injection is re-derived from that row's own data on each
+    // apply(). This drives a real reorder and checks the defence holds.
+    const before = materialise(await states(), Date.now());
+    const after = JSON.parse(JSON.stringify(before));
+    // The lever a real poll pulls: newer activity on the archived session, older on the
+    // cached one, so build()'s own last-activity sort swaps the two chip-bearing rows
+    // past each other (and past the chipless unknown row).
+    const find = (body, id) => body.groups[0].sessions.filter((s) => s.id === id)[0];
+    const stale = find(after, 'local_stale-1');
+    const archived = find(after, 'local_archived-1');
+    [stale.lastActivityAt, archived.lastActivityAt] = [archived.lastActivityAt, stale.lastActivityAt];
+    // The live row is rendered twice: once in the pinned "Live now" group, once in its own.
+    const ORDER_BEFORE = ['local_live-1', 'local_live-1', 'local_unknown-1', 'local_stale-1', 'local_archived-1', 'local_bare-1', 'local_offline-1'];
+    const ORDER_AFTER = ['local_live-1', 'local_live-1', 'local_unknown-1', 'local_archived-1', 'local_stale-1', 'local_bare-1', 'local_offline-1'];
+    let reordered = false;
+    const { context, page } = await openScreen(browser, 'reorder', {
+      route: (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(reordered ? after : before) }),
+    });
+    try {
+      await check('reorder-keeps-chips-with-rows',
+        'record each session\'s extra chips, start a Copy on the cached row, then serve a payload whose activity stamps reorder the rows and click Refresh',
+        'the rows genuinely move, and Archived / Cached / the transient copy label are all on the same session ids as before — nothing left behind on a reused row', async () => {
+          const first = await rowChips(page);
+          assert.deepEqual(first.map((r) => r.id), ORDER_BEFORE);
+          const wanted = chipsById(first);
+          assert.deepEqual(wanted, {
+            'local_live-1': [], 'local_unknown-1': [], 'local_stale-1': ['Cached'],
+            'local_archived-1': ['Archived'], 'local_bare-1': [], 'local_offline-1': [],
+          });
+
+          // Tag the row ELEMENTS, so the assertions below can prove the runtime really
+          // handed a used node to another session — without that, a runtime that keyed
+          // its rows by identity would let this check pass while testing nothing.
+          await page.evaluate((was) => {
+            document.querySelectorAll('[data-screen-label="Desktop sessions"] [data-fd-l10-row]')
+              .forEach((el, i) => { el.__fdWas = was[i]; });
+          }, ORDER_BEFORE);
+
+          // The label lives for 1500 ms, so it has to be opened before the reorder.
+          await page.click(`${SCREEN} [data-fd-l10-id="local_stale-1"] button[aria-label="Copy session context"]`);
+          await page.locator(`${SCREEN} [data-fd-l10-id="local_stale-1"] [data-fd-l10="copylabel"]`)
+            .filter({ hasText: 'Copied' }).waitFor({ timeout: 1400 });
+
+          const started = Date.now();
+          reordered = true;
+          await page.click(`${SCREEN} [data-fd-l10="refresh"]`);
+          // data-fd-l10-id is stamped by the same apply() pass that reconciles the chips
+          // and repaints the label, so a changed id order IS the signal that pass ran.
+          await page.waitForFunction((was) => [...document.querySelectorAll('[data-screen-label="Desktop sessions"] [data-fd-l10-row]')]
+            .map((n) => n.getAttribute('data-fd-l10-id')).join(',') !== was, ORDER_BEFORE.join(','));
+          const elapsed = Date.now() - started;
+
+          const second = await rowChips(page);
+          assert.deepEqual(second.map((r) => r.id), ORDER_AFTER, 'the poll did not reorder the rows the way this check needs');
+          const reuse = await page.evaluate(() => [...document.querySelectorAll('[data-screen-label="Desktop sessions"] [data-fd-l10-row]')]
+            .map((el) => [el.__fdWas, el.getAttribute('data-fd-l10-id')]).filter(([was, now]) => was !== now));
+          assert.deepEqual(reuse, [['local_stale-1', 'local_archived-1'], ['local_archived-1', 'local_stale-1']],
+            'the two chip-bearing rows did not swap DOM nodes, so this check is no longer exercising positional row reuse');
+          assert.deepEqual(chipsById(second), wanted,
+            'REGRESSION public/v2/screens/desktop.js chips(): an extra chip stayed with the row ELEMENT across a reorder ' +
+            'instead of following its session — a stale Cached/Archived is now on the wrong conversation');
+          const labelled = await page.evaluate(() => [...document.querySelectorAll('[data-screen-label="Desktop sessions"] [data-fd-l10-row]')]
+            .filter((n) => n.querySelector('[data-fd-l10="copylabel"]'))
+            .map((n) => [n.getAttribute('data-fd-l10-id'), n.querySelector('[data-fd-l10="copylabel"]').textContent]));
+          assert.deepEqual(labelled, [['local_stale-1', 'Copied']],
+            `REGRESSION public/v2/screens/desktop.js copyLabel(): the copy label did not follow its session across the ` +
+            `reorder (read ${elapsed}ms into the 1500ms revert window)`);
+          return `rows moved ${ORDER_BEFORE.slice(2).join(' ')} → ${ORDER_AFTER.slice(2).join(' ')}; chips and the copy label re-read ${elapsed}ms into the 1500ms revert window`;
         });
     } finally {
       await context.close();

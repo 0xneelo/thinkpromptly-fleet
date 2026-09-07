@@ -277,6 +277,10 @@ class AppLogic extends Sub {
   componentDidMount() {
     this._fdAfterRender();
     if (this._thread) this._thread.scrollTop = this._thread.scrollHeight;
+    // L6 seam: hand the bus screen its host so public/v2/screens/bus.js can
+    // drive live threads. In fixture mode attach() returns without doing
+    // anything, so the compiled fixture render is untouched.
+    if (window.FD && FD.screens && FD.screens.bus && FD.screens.bus.attach) FD.screens.bus.attach(this);
     this._esc = (e) => {
       if (e.key !== 'Escape') return;
       if (this.state.termMenu) this.setState({ termMenu: false });
@@ -285,7 +289,11 @@ class AppLogic extends Sub {
     };
     window.addEventListener('keydown', this._esc);
   }
-  componentWillUnmount() { if (this._esc) window.removeEventListener('keydown', this._esc); if (this._busRO) this._busRO.disconnect(); }
+  componentWillUnmount() {
+    if (this._esc) window.removeEventListener('keydown', this._esc);
+    if (this._busRO) this._busRO.disconnect();
+    if (window.FD && FD.screens && FD.screens.bus && FD.screens.bus.detach) FD.screens.bus.detach(this);
+  }
   // ---- L5 · Org chart (Dietlind, agent-v2-l5) ------------------------------
   // "Send a message" deep-links into the bus thread (ruling O8). L6 owns the bus,
   // so the hook is guarded; until L6 lands we keep the mock's own behaviour.
@@ -476,6 +484,8 @@ class AppLogic extends Sub {
       const cut = path.lastIndexOf('/') + 1;
       // liveState is 'live' | 'offline' | 'unknown' and only the live feed sets it.
       const st = r.liveState || (r.live ? 'live' : 'offline');
+      // The two disabled texts, verbatim from sessions.js:246.
+      const offText = st === 'unknown' ? 'Live check unavailable' : 'Not running';
       return {
         title: r.title, dir: path.slice(0, cut), leaf: path.slice(cut), branch: r.branch, model: r.model, when: r.when, turns: r.turns,
         where: where ? g.name + ' · ' + g.machine : '',
@@ -487,9 +497,16 @@ class AppLogic extends Sub {
         stop: (e) => e.stopPropagation(),
         show: (e) => { e.stopPropagation(); if (dsAct) return dsAct('show', r, e.currentTarget); if (r.live && this._openTerm) this._openTerm(r.title, g.machine); },
         message: (e) => { e.stopPropagation(); if (dsAct) return dsAct('message', r, e.currentTarget); if (r.live) this.setState({ screen: 'bus', busActive: 'desktop' }); },
-        showTitle: r.live ? 'Show session' : 'Show — session is not running',
-        msgTitle: r.live ? 'Message this session' : 'Message — session is not running',
-        liveBtnStyle: r.live ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
+        // BEHAVIOUR §3: when a row cannot be messaged, today's app shows a text in the
+        // action cell — 'Live check unavailable' for liveState 'unknown', else 'Not
+        // running' (sessions.js:246). The mock replaced that cell with two icon buttons
+        // and a static aria-label, so `title` is the only slot left to carry it, and it
+        // carries the string verbatim. Live mode only (dsAct): in fixture mode there is
+        // no liveState and the mock's own copy is the mock's look, which also keeps the
+        // compiled DOM byte-identical for S2's attribute parity gate.
+        showTitle: st === 'live' ? 'Show session' : dsAct ? offText : 'Show — session is not running',
+        msgTitle: st === 'live' ? 'Message this session' : dsAct ? offText : 'Message — session is not running',
+        liveBtnStyle: st === 'live' ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
         details: [{ k: 'Created', v: r.created }, { k: 'CLI session', v: cli }, { k: 'Session', v: sid }, { k: 'Full path', v: path }]
           .concat(r.worktree ? [{ k: 'Worktree', v: r.worktree }] : [])
           .filter((d) => d.v),
@@ -582,8 +599,23 @@ class AppLogic extends Sub {
       meta: orgMeta(epoch, lease, leaseTone, age, exp, expTone),
     });
     // Bus: sessions, threads, composer
-    const busSessions = FD.fixture.busSessions;
-    const busGroups = [{ id: 'b-train84', name: 'train-84', members: ['constantin', 'ermenhild', 'christa', 'dorothea'], pinned: true }, ...(this.state.adhoc || [])];
+    // L6 seam. `busLive` is the live controller in public/v2/screens/bus.js; it
+    // is null in fixture mode, where every branch below falls through to the
+    // mock's own simulation and the render is byte-for-byte the seeded one.
+    const busLive = (typeof FD !== 'undefined' && FD.screens && FD.screens.bus && FD.screens.bus.live) ? FD.screens.bus : null;
+    // DESIGN-35 (binding, 2026-09-08): one throw inside any slice's renderVals
+    // blanks every screen, so each derived bus value is computed behind a guard
+    // that falls back to the last render's value. The rows themselves are
+    // validated in public/v2/screens/bus.js before they ever reach FD.fixture.
+    const busSafe = (key, fallback, fn) => {
+      const last = this._busLast || (this._busLast = {});
+      try { const v = fn(); last[key] = v; return v; }
+      catch (e) { return key in last ? last[key] : fallback; }
+    };
+    const busSessions = FD.fixture.busSessions || [];
+    const seedGroups = FD.fixture.busGroups
+      || [{ id: 'b-train84', name: 'train-84', members: ['constantin', 'ermenhild', 'christa', 'dorothea'], pinned: true }];
+    const busGroups = [...seedGroups, ...(this.state.adhoc || [])];
     const sById = (id) => busSessions.find((s) => s.id === id);
     const short = (id) => { const s = sById(id); if (!s) return id; return /^(LC|FD)-/.test(s.name) ? s.name.slice(3).split('-')[0] : s.name; };
     const seedThreads = FD.fixture.seedThreads;
@@ -595,8 +627,8 @@ class AppLogic extends Sub {
     const stLabel = { queued: 'queued', delivered: 'delivered', acked: 'acked', failed: 'failed', offline: 'queued · offline' };
     const receipt = (name, st, err) => ({ t: (name ? name + ' · ' : '') + stLabel[st] + (err && st === 'failed' ? ' · ' + err : ''), dotStyle: dot(stColor[st]), style: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: st === 'failed' ? t.bad : st === 'offline' ? t.warn : t.ink45, whiteSpace: 'nowrap', fontFamily: name ? mono : 'inherit' } });
     const setSt = (k, st) => this.setState((s) => ({ stOv: { ...(s.stOv || {}), [k]: st } }));
-    const unread = this.state.unread || { dorothea: 1 };
-    const active = this.state.busActive || 'ermenhild';
+    const unread = this.state.unread || FD.fixture.busUnreadDefault || { dorothea: 1 };
+    const active = this.state.busActive || FD.fixture.busActiveDefault || 'ermenhild';
     const busQ = (this.state.busQ || '').toLowerCase();
     const selecting = !!this.state.selecting;
     const busSel = this.state.busSel || {};
@@ -604,7 +636,8 @@ class AppLogic extends Sub {
     const isPinned = (x) => pins[x.id] != null ? pins[x.id] : !!x.pinned;
     const lastOf = (id) => { const th = thread(id); return th[th.length - 1]; };
     const arrive = (sid, text) => {
-      const name = sById(sid).name;
+      const known = sById(sid);
+      const name = known ? known.name : sid;
       this.setState((s) => {
         const ex = { ...(s.extraMsgs || {}) };
         ex[sid] = [...(ex[sid] || []), { k: 'r' + Date.now() + sid, dir: 'in', from: name, at: 'just now', m: 0, text }];
@@ -616,8 +649,10 @@ class AppLogic extends Sub {
       setTimeout(() => this.setState((s) => (s.toast && s.toast.from === name ? { toast: null } : null)), 7000);
     };
     const deliverTo = (sid, key, text, i) => {
+      // Live: one POST /api/messages per target, receipts from the response.
+      if (busLive && busLive.deliver({ sid, key, text, index: i, source: this.state.src ?? 'fleetdeck-ui' })) return;
       const s = sById(sid);
-      if (!s.live) return;
+      if (!s || !s.live) return;
       setTimeout(() => setSt(key, 'delivered'), 900 + i * 250);
       setTimeout(() => setSt(key, 'acked'), 3000 + i * 450);
       setTimeout(() => arrive(sid, 'ACK. Received: "' + text.slice(0, 72) + (text.length > 72 ? '…' : '') + '" — applying on this turn.'), 5200 + i * 800);
@@ -632,7 +667,7 @@ class AppLogic extends Sub {
         dotStyle: isGroup ? { width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, border: '1.5px solid ' + t.ink60, boxSizing: 'border-box', marginTop: '5px' } : { ...dot(x.live ? t.good : t.ink35), marginTop: '5px' },
         rowStyle: { display: 'flex', alignItems: 'flex-start', gap: '9px', width: '100%', textAlign: 'left', borderRadius: '10px', border: '1px solid ' + (act ? t.navActBorder : 'transparent'), background: act ? t.navActBg : 'transparent', padding: compact ? '6px 8px' : '8px 8px', cursor: 'pointer', boxSizing: 'border-box', color: t.ink, transition: 'background .15s' },
         nameStyle: { fontFamily: mono, fontSize: '12px', fontWeight: un ? 600 : 500, color: t.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
-        open: () => { const un2 = { ...unread }; un2[x.id] = 0; this.setState({ busActive: x.id, unread: un2 }); },
+        open: () => { const un2 = { ...unread }; un2[x.id] = 0; this.setState({ busActive: x.id, unread: un2 }); if (busLive) busLive.markSeen(x.id); },
         showCheck: selecting && !isGroup, checkStyle: { ...check(!!busSel[x.id]), marginTop: '1px' },
         toggleSel: (e) => { e.stopPropagation(); const b = { ...busSel }; b[x.id] = !b[x.id]; this.setState({ busSel: b }); },
       };
@@ -641,15 +676,15 @@ class AppLogic extends Sub {
     const pinnedItems = [...busGroups.filter(isPinned), ...busSessions.filter(isPinned)].filter(match);
     const recentItems = [...busGroups.filter((g) => !isPinned(g)), ...busSessions.filter((s) => !isPinned(s))].filter(match)
       .sort((a, b) => { const la = lastOf(a.id), lb = lastOf(b.id); return (la ? la.m : 1e9) - (lb ? lb.m : 1e9); });
-    const railGroups = [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length);
+    const railGroups = busSafe('railGroups', [], () => [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length));
     const actGroup = busGroups.find((g) => g.id === active);
-    const actS = sById(active) || busSessions[0];
+    const actS = sById(active) || busSessions[0] || { id: '', name: '', host: '', live: false };
     const thOffline = !actGroup && !actS.live;
     const reader = !!this.state.busReader;
     const busMax = !!this.state.busMax;
     const bubbleMe = dark ? 'rgba(255,255,255,0.16)' : 'rgba(17,17,17,0.09)';
     const bubbleThem = dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)';
-    const thMsgs = thread(active).map((m) => {
+    const thMsgs = busSafe('thMsgs', [], () => thread(active).map((m) => {
       const out = m.dir === 'out';
       const st = out && !m.per ? stOf(m) : null;
       const open = !out && reader;
@@ -667,9 +702,9 @@ class AppLogic extends Sub {
         footStyle: { display: 'flex', alignItems: 'center', gap: '6px 12px', flexWrap: 'wrap', justifyContent: out ? 'flex-end' : 'flex-start' },
         receipts: !out ? [] : m.per ? Object.keys(m.per).map((mid) => receipt(short(mid), stOf(m, mid))) : [receipt('', st, m.err)],
         canRetry: st === 'failed',
-        retry: () => { setSt(m.k, 'queued'); deliverTo(active, m.k, m.text, 0); },
+        retry: () => { setSt(m.k, 'queued'); if (busLive && busLive.retry({ sid: active, key: m.k })) return; deliverTo(active, m.k, m.text, 0); },
       };
-    });
+    }));
     this._nextThreadKey = active + ':' + thMsgs.length;
     const drafts = this.state.drafts || {};
     const draft = drafts[active] || '';
@@ -684,9 +719,9 @@ class AppLogic extends Sub {
       if (toRow) {
         tid = 'b-' + Date.now();
         adhoc = [...adhoc, { id: tid, name: selIds.map(short).join(', '), members: selIds }];
-        per = {}; selIds.forEach((id) => { per[id] = sById(id).live ? 'queued' : 'offline'; });
+        per = {}; selIds.forEach((id) => { const r = sById(id); per[id] = r && r.live ? 'queued' : 'offline'; });
       } else if (actGroup) {
-        per = {}; actGroup.members.forEach((id) => { per[id] = sById(id).live ? 'queued' : 'offline'; });
+        per = {}; actGroup.members.forEach((id) => { const r = sById(id); per[id] = r && r.live ? 'queued' : 'offline'; });
       }
       const msg = { k: key, dir: 'out', from: src, at: 'just now', m: 0, text, status: per ? undefined : (actS.live ? 'queued' : 'offline'), per };
       const ex = { ...extra }; ex[tid] = [...(ex[tid] || []), msg];
@@ -822,22 +857,25 @@ class AppLogic extends Sub {
       },
       busMax, notBusMax: !busMax,
       tipStyle: { position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 5, width: '220px', display: 'flex', flexDirection: 'column', gap: '3px', borderRadius: '10px', border: '1px solid ' + t.line, background: dark ? 'rgba(18,18,18,0.94)' : 'rgba(255,255,255,0.96)', padding: '9px 12px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', pointerEvents: 'none', textAlign: 'left' },
-      thActions: (() => {
+      thActions: busSafe('thActions', [], () => {
         const tip = this.state.tip;
         const onBtn = { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink };
         const offBtn = { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' };
         const pinned = isPinned(actGroup || actS);
-        const canShow = !actGroup && actS.live;
+        // Claude Desktop threads have no tmux terminal; the row carries `kind`
+        // only in live mode, so this is inert against the mock's seed rows.
+        const isDesktopRow = !actGroup && actS.kind === 'claude-desktop';
+        const canShow = !actGroup && actS.live && !isDesktopRow;
         const list = [
           { id: 'reader', label: reader ? 'Bubbles' : 'Reader view', desc: reader ? 'Show agent replies as chat bubbles again.' : 'Agent replies go full width, no box, larger text — like the desktop app.', style: reader ? onBtn : iconBtn, click: () => this.setState({ busReader: !reader }), isReader: true },
           { id: 'max', label: busMax ? 'Exit full view' : 'Maximize', desc: busMax ? 'Return the message bus to the page. Esc also works.' : 'Expand the whole message bus to fill the window. Esc to exit.', style: busMax ? onBtn : iconBtn, click: () => this.setState({ busMax: !busMax }), isMax: !busMax, isUnmax: busMax },
-          { id: 'pin', hide: narrow, label: pinned ? 'Unpin' : 'Pin thread', desc: pinned ? 'Move this thread back into Recent.' : 'Keep this thread at the top of the rail under Pinned.', style: pinned ? onBtn : iconBtn, click: () => { const p = { ...pins }; p[active] = !pinned; this.setState({ pins: p }); }, isPin: true },
-          { id: 'show', label: 'Show session', desc: actGroup ? 'Broadcasts have no single terminal. Open a member thread to show it.' : canShow ? 'Open this session\'s live terminal full screen.' : 'Session is not running, so there is no terminal to show.', style: canShow ? iconBtn : offBtn, click: () => { if (canShow) this.setState({ termOpen: { name: actS.name, host: actS.host, id: actS.id }, termMenu: false }); }, isShow: true },
+          { id: 'pin', hide: narrow, label: pinned ? 'Unpin' : 'Pin thread', desc: pinned ? 'Move this thread back into Recent.' : 'Keep this thread at the top of the rail under Pinned.', style: pinned ? onBtn : iconBtn, click: () => { const p = { ...pins }; p[active] = !pinned; this.setState({ pins: p }); if (busLive) busLive.setPinned(active, !pinned); }, isPin: true },
+          { id: 'show', label: 'Show session', desc: actGroup ? 'Broadcasts have no single terminal. Open a member thread to show it.' : isDesktopRow ? 'Claude Desktop threads have no tmux terminal to show.' : canShow ? 'Open this session\'s live terminal full screen.' : 'Session is not running, so there is no terminal to show.', style: canShow ? iconBtn : offBtn, click: () => { if (!canShow) return; if (busLive && busLive.openMax(actS.host, actS.name)) return; this.setState({ termOpen: { name: actS.name, host: actS.host, id: actS.id }, termMenu: false }); }, isShow: true },
           { id: 'copy', hide: narrow, label: 'Copy thread', desc: 'Copy every message in this thread as plain text.', style: iconBtn, click: () => { try { navigator.clipboard.writeText(thread(active).map((m) => '[' + m.at + '] ' + m.from + ': ' + m.text).join('\n\n')); } catch (e) {} }, isCopy: true },
         ];
         const ordered = list.filter((a) => a.id !== 'max').concat(list.filter((a) => a.id === 'max'));
         return ordered.filter((a) => !a.hide).map((a) => ({ ...a, tipOpen: tip === a.id, enter: () => this.setState({ tip: a.id }), leave: () => this.setState((s) => (s.tip === a.id ? { tip: null } : null)) }));
-      })(),
+      }),
       railStyle: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, borderRight: narrow ? 'none' : '1px solid ' + t.lineSoft, borderBottom: narrow ? '1px solid ' + t.lineSoft : 'none' },
       thMetaStyle: { fontSize: '12px', color: t.ink45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, display: narrow ? 'none' : 'inline' },
       notNarrow: !narrow,
@@ -859,9 +897,9 @@ class AppLogic extends Sub {
       thShowStyle: !actGroup && actS.live ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
       pinTitle: isPinned(actGroup || actS) ? 'Unpin' : 'Pin',
       pinBtnStyle: isPinned(actGroup || actS) ? { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink } : iconBtn,
-      togglePin: () => { const p = { ...pins }; p[active] = !isPinned(actGroup || actS); this.setState({ pins: p }); },
+      togglePin: () => { const next = !isPinned(actGroup || actS); const p = { ...pins }; p[active] = next; this.setState({ pins: p }); if (busLive) busLive.setPinned(active, next); },
       copyThread: () => { try { navigator.clipboard.writeText(thread(active).map((m) => '[' + m.at + '] ' + m.from + ': ' + m.text).join('\n\n')); } catch (e) {} },
-      toRow, toChips: selIds.map((id) => ({ t: short(id), dotStyle: dot(sById(id).live ? t.good : t.ink35), remove: () => { const b = { ...busSel }; delete b[id]; this.setState({ busSel: b }); } })),
+      toRow, toChips: busSafe('toChips', [], () => selIds.map((id) => { const r = sById(id); return { t: short(id), dotStyle: dot(r && r.live ? t.good : t.ink35), remove: () => { const b = { ...busSel }; delete b[id]; this.setState({ busSel: b }); } }; })),
       toChipStyle: { display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '9999px', border: '1px solid ' + t.line, background: t.chipBg, color: t.ink, padding: '3px 6px 3px 10px', fontSize: '11.5px', fontFamily: mono },
       warnDotStyle: dot(t.warn),
       draft, three: 3, zero: 0,
@@ -879,7 +917,7 @@ class AppLogic extends Sub {
       hasToast: !!toast, toastFrom: toast ? toast.from : '', toastText: toast ? toast.text : '',
       toastBg: dark ? 'rgba(18,18,18,0.82)' : 'rgba(255,255,255,0.9)',
       dismissToast: () => this.setState({ toast: null }),
-      openToast: () => { if (!toast) return; const un2 = { ...unread }; un2[toast.sid] = 0; this.setState({ screen: 'bus', busActive: toast.sid, unread: un2, toast: null }); },
+      openToast: () => { if (!toast) return; const un2 = { ...unread }; un2[toast.sid] = 0; this.setState({ screen: 'bus', busActive: toast.sid, unread: un2, toast: null }); if (busLive) busLive.markSeen(toast.sid); },
     };
     // Keys screen chips
     const ttl = this.state.ttl;

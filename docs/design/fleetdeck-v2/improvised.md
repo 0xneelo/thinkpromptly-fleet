@@ -1411,6 +1411,10 @@ no user field — there is nothing to read. The chips therefore stay the two-ent
 ivy`, `vibe` → `german-box`). Sourcing them for real needs a server change, which this slice's
 §Scope puts out of bounds. Filed as **DECK-86** so O9 is closed deliberately rather than forgotten.
 
+**Ruled by DESIGN-35, 2026-09-07:** `hosts.json` has no user field, so the chips stay the two
+constants `root` / `vibe` with today's titles. O9 is closed as an accepted improvisation, no code
+change. DECK-86 closed.
+
 Data-only decision; no screenshot.
 
 ### I-L7-02 — The screen loads `public/v2/data.js` itself, because the shell does not
@@ -1677,6 +1681,171 @@ when `FD.data` is missing. The id is shared, so nine slices asking for it still 
 
 This is a shell gap, not an L8 decision, and it is filed for the design seat as DECK-87 — the fix
 belongs in `index.html`, and once it lands the loader here becomes dead code and should be removed.
+
+---
+
+## L6 — message bus threads + reply toast (Gerhild, `agent-v2-l6`, 2026-09-07)
+
+Ledger rows **D13** (Message bus) and **D08** (Reply toast). Owned files:
+`public/v2/screens/bus.js` and this screen's methods in `public/v2/logic.js`.
+
+The old bus is a form, a table and four toasts (`index.html:108-113`, `app.js:911-979`,
+`1214-1233`). The mock replaces all of it with a two-pane chat. Every entry below is a gap
+that substitution opens.
+
+### I-L6-01 — a thread is keyed by the *other party*, which is a session name, not a target key
+
+**Serves:** `BEHAVIOUR.md` §7 ("group `messages[]` by target"), ledger D13. Data-only.
+
+`BEHAVIOUR.md` proposes `type\0host\0session` as the thread key. L1's shipped adapter does
+something different and better, and L6 follows it rather than fight it.
+
+`toThreads` (`data.js:297-316`) keys a message by the party that is *not us*: `target.session`
+for a message we sent, the session half of `source` for one we received. That matters because a
+reply from a fleet session to the desktop has `source: 'german-box:LC-x'` and
+`target: {type:'claude-desktop', session:'…'}`. Under the target key it would land in the
+desktop's thread; under L1's key it lands in `LC-x`'s thread, next to what we sent them. The
+second is the conversation a human is looking for.
+
+**Consequence, stated plainly:** the key is a bare session name, so two live sessions with the
+same name on different hosts share one rail row. `messages.json` has no such collision and the
+fleet's names are `LC-<person>-<task>`, so it is not reachable today — but it is a real limit of
+L1's keying, not something L6 can fix inside its own file. See also I-L6-11.
+
+### I-L6-02 — a Claude Desktop row keeps the old `<option>` label; a tmux row is split across two slots
+
+**Serves:** `BEHAVIOUR.md` §2 (option labels, verbatim). Screenshot:
+`improvised/l6-desktop-thread-label.png`.
+
+Today's `<select>` renders one string per target: `"Claude Desktop · <label||'current chat'>"`
+or `"<host> · <session>"`. The mock's rail has two slots — `s.name` on the row and `actS.host`
+in the thread header's meta position — so the second form is already split for us and needs no
+label at all: name is the session, host is the host.
+
+For a desktop target there is no host to put in the meta slot (`/api/messages` targets carry
+only `{type, session}`, and `/api/sessions` does not list desktop sessions), so the full old
+label goes in the name slot and the meta slot is empty. `'current'` still reads
+`'Claude Desktop · current chat'`, exactly as it does today.
+
+### I-L6-03 — a desktop session is live iff the server offers it as a target
+
+**Serves:** `BEHAVIOUR.md` §1, §7 (offline banner). Screenshot: `improvised/l6-desktop-thread-label.png`.
+
+tmux liveness comes from `/api/sessions` (`live: true`, matched on host **and** name). There is
+no equivalent for Claude Desktop: `/api/sessions` does not know about it. But `server.js:2333-2340`
+builds `targets[]` from the *currently connected* desktop sessions, so presence in `targets[]`
+is the liveness signal, and L6 uses it as one. A desktop thread whose session has disconnected
+keeps its row, loses its dot, and its composer reads `Queue`.
+
+### I-L6-04 — thread arrays are reversed; the adapter hands them back newest-first
+
+**Serves:** ledger D13. Screenshot: `improvised/l6-thread-order-and-receipts.png`.
+
+`/api/messages` is ordered `created_at DESC` (`message-bus.js:13-30`) and `toThreads` pushes in
+iteration order, so its arrays are newest-first. The mock's `seedThreads` are oldest-first and
+the thread body scrolls to `scrollHeight` on open, i.e. it expects the newest at the bottom.
+L6 reverses each array on the way in. Nothing else would read as a conversation.
+
+### I-L6-05 — the mock's `train-84` group is dropped; groups stay client-side
+
+**Serves:** `BEHAVIOUR.md` §7 (broadcast), ledger D13. Screenshot:
+`improvised/l6-thread-order-and-receipts.png` (the rail is all Recent).
+
+`logic.js` hard-codes one group, `train-84`, whose members are fixture session ids. The API has
+no group concept at all — `toThreads` returns `busGroups: []` and says so (`data.js:311`). In
+live mode L6 pushes `busGroups: []` through `FD.setData`, and `logic.js` reads
+`FD.fixture.busGroups` with the mock's literal as its fallback, so fixture mode is unchanged.
+
+Ad-hoc broadcast groups (Select mode) remain exactly what the mock made them: client-side rows
+in `AppLogic.state.adhoc`, never persisted. A broadcast is N independent `POST /api/messages`,
+one per recipient, which is what `BEHAVIOUR.md` §7 asks for.
+
+### I-L6-06 — one 15 s timer serves both poll cadences
+
+**Serves:** `BEHAVIOUR.md` §7 (15 s open / 60 s on the shell). Behaviour-only.
+
+Two intervals would drift apart and double-fetch whenever the user moved between screens. One
+15 s timer fires always; it fetches immediately when the bus screen is open, and otherwise only
+once 60 s have passed since the last fetch. Same two observed cadences, one timer to stop.
+
+### I-L6-07 — the four send/retry toast strings become receipt text
+
+**Serves:** `BEHAVIOUR.md` §2 and §3 (texts verbatim), ledger D13. Screenshot:
+`improvised/l6-receipt-error-strings.png`.
+
+`BEHAVIOUR.md` quotes `"Delivering message…"`, `"Message delivered"`,
+`"Delivery failed: <error||'unknown error'>"`, `"Retrying message…"` and
+`"Retry failed: <error>"`. The mock has exactly one toast, and its markup is fixed: a dot, a
+name, the literal word **replied**, a preview and **Open thread**. There is no slot for these
+five, and hand-typing markup is forbidden.
+
+The mock already answers the same question in a better place. `receipt()` renders
+`status · error` under each message, and `thMsgs` puts a **Retry** button on a failed one — the
+D13 redesign deliberately replaces a transient toast with a durable per-message receipt.
+
+**Decision:** the progress strings map onto receipt states (`queued` → `delivered`), and the two
+*error* strings — the ones that carry information a user cannot reconstruct — are preserved
+**verbatim** as the receipt's error text: a failed send reads
+`failed · Delivery failed: <error||'unknown error'>`, a failed retry
+`failed · Retry failed: <error>`. Nothing is lost; the error stops vanishing after four seconds.
+
+### I-L6-08 — `FD.screens.bus.open()` on an unknown target makes a provisional thread
+
+**Serves:** `BEHAVIOUR.md` §5, ruling O8. Screenshot: `improvised/l6-provisional-thread.png`.
+
+Today's `setBusTarget` (`app.js:901-909`) stores the target and selects it *if the option
+exists, else on the next `loadBus()`* — the deep link never fails, it just waits. The v2
+equivalent is a provisional rail row: created immediately with `live: false` and an empty
+thread, kept in a `provisional` map so the next poll cannot drop it, and replaced by the real
+row as soon as the server mentions that session. The composer works the whole time, because a
+message to a session with no history is the normal way a thread starts.
+
+### I-L6-09 — the bus screen loads `public/v2/data.js` itself
+
+**Serves:** the whole slice. Behaviour-only. **Wants a shell owner** (filed as DECK-103).
+
+S2's `public/v2/index.html` loads `runtime.js`, `fixture.js`, `logic.js`, `app.js` and the nine
+screen files — but not L1's `data.js`, and nothing else in the browser does either
+(`grep -rn 'v2/data.js' --include='*.html'` finds nothing). Without it `FD.data` is undefined
+and no screen can go live. The shell is not L6's to edit, so `bus.js` appends the script tag
+once, tagged `data-fd-dep="data"` so a second slice doing the same reuses it, and boots when it
+loads. In fixture mode it is never requested — the fixture check is made locally first, so the
+pixel gate pays nothing for it.
+
+This should become one line in `index.html` and this improvisation should then be deleted.
+
+### I-L6-10 — every row is validated before it reaches `FD.setData`
+
+**Serves:** DESIGN-35 binding directive, 2026-09-08. Data-only.
+
+"One throw in any slice blanks ALL screens." So nothing reaches `FD.fixture` until it has the
+exact types the compiled logic reads: a rail row is `{id, name, host: string, live: boolean}`,
+a message is the adapter's key set with `at` a string and `m` a finite number. A row that cannot
+be coerced is dropped rather than half-rendered. On the render side, `logic.js`'s four
+throw-prone derived values (`railGroups`, `thMsgs`, `thActions`, `toChips`) each compute behind
+`busSafe()`, which returns the previous render's value if the computation throws.
+
+### I-L6-11 — the message history wins over a same-named live session
+
+**Serves:** I-L6-01's consequence. Data-only.
+
+The rail is a union of four sources, and when two disagree about a session's host the order
+decides. History runs first: a thread that actually happened on `german-box` keeps `german-box`,
+so a same-named session on another box neither captures the thread nor makes it look live.
+Sessions from `/api/sessions` still add rows for every name the history has never seen — which
+is how today's client-side merge behaves (`app.js:920-925`).
+
+### I-L6-12 — an offline target queues, it does not disable the composer
+
+**Serves:** `BEHAVIOUR.md` §7 ("banner + `Queue` … or disable send; pick one, document").
+Screenshot: `improvised/l6-offline-queue.png`.
+
+**Chosen: queue.** The mock already decided this — `sendLabel` is
+`thOffline ? 'Queue' : 'Send'` and the banner text is baked into the template: *"Session is
+offline. The message queues and delivers when it returns."* Disabling send would contradict
+markup we are not allowed to change. The message posts, the server tries and fails, the receipt
+reads `failed` with the server's reason, and **Retry** is there when the session comes back —
+which is what the banner promises.
 
 
 ## L11 — cut-over: routes, deletions, docs, gate hardening (Alrun, `agent-v2-l11`, 2026-09-07)

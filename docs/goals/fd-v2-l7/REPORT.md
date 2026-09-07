@@ -286,11 +286,18 @@ nothing is ever visible. Left as-is and noted here rather than papered over.
 
 ## 8. Follow-ups
 
-- **DECK-84** must land before cut-over, or delete the stopgap loader and the screen goes dark.
-- **DECK-85** blocks a green `npm test` for every slice.
-- **DECK-86** awaits an operator decision; the current behaviour is today's, so nothing is broken
-  while it waits.
-- Nothing outstanding in the slice itself. The three review findings below are all fixed and covered.
+All three are resolved. Nothing is outstanding in the slice itself; the review findings are fixed
+and covered.
+
+- **DECK-84 — assigned to L11 (Alrun).** The shell gets its `data.js` and `router.js` tags there, and
+  L11 removes this screen's stopgap loader. The guard stays as written: `if (FD.data) boot()` runs
+  first, so once the shell loads the data layer the injection never fires, and the loader can be
+  deleted whenever L11 gets to it without a flag day.
+- **DECK-85 — fixed upstream.** The L1.2 base move repaired the `fixture.js` UMD guard; `npm test`
+  is 320/320.
+- **DECK-86 — ruled, closed.** DESIGN-35, 2026-09-07: `hosts.json` has no user field, so the
+  principal chips stay the two constants `root` / `vibe` with today's titles. Accepted as
+  improvisation I-L7-01; no code change.
 
 ---
 
