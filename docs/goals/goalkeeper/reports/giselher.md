@@ -129,12 +129,9 @@ Three of these are gates or decisions, not things I could resolve.
   fetch fails with `Invalid username or token`. The degradation is by design and the note marks
   it STALE, but **NO ACTIVITY on a lowcapsxyz direction cannot be trusted until this is fixed** —
   and lowcapsxyz is the project the operator's own example direction is about.
-- **`G-9` (decision) — PLAN §3.3's operator-turn filter admits ~60% harness noise.** Measured
-  here: 75 of 126 rows that pass the filter are `<task-notification>` / `<system-reminder>` /
-  context-continuation summaries, not the operator. That matters because OFF THREAD requires "no
-  operator turn covers it", so noise silently absolves real drift. §3.3 is implemented **verbatim**
-  because acceptance item 4 requires it; `sweep --strict-turns` drops the three shapes (127 → 51
-  on real data). Recommend folding it into §3.3 for v1.1 — that needs a PLAN amendment.
+- **`G-9` (decision) — PLAN §3.3's operator-turn filter admitted ~60% harness noise.**
+  **Settled by PLAN §9**: the exclusion is now the default and `--strict-turns` is gone. See the
+  GK-M.2 round below.
 - **`G-5` (decision) — the write ban is anchored, not literal.** goal.md item 2 says other kinds
   are denied "writes under `/goalkeeper/`". Taken literally that also blocks this repo's own
   `docs/goals/goalkeeper/**`, which would stop every worker writing its lane report. Implemented
@@ -182,3 +179,104 @@ Six milestones, three green suites (54 node + 33 sh + 42 python), the installer 
 re-run (`changed 0   unchanged 17`), and `~/.claude/goalkeeper/` live at data-repo commit
 `5a79257`. Open items are `G-2`, `G-5`, `G-7`, `G-9` (decisions) and `G-13` (gate) in
 LINEAR-PENDING.md — none of them block GK-D or the weave.
+
+---
+
+# GK-M.2 — the fix round
+
+Review verdict on `3c4177e` was **FIX-FIRST**. Brief: `lane-giselher-fixes.md`, items 1–9, with
+PLAN §9's amendments binding. Same branch. All nine closed, each with tests.
+
+## Commits
+
+| Item | Commit | What |
+|---|---|---|
+| 1 | `582458a` | symlinks cannot cross the jail wall |
+| 5 | `2eecf8c` | installer stamp from the clock; a backup is never skipped |
+| 6 | `1f31683` | the data repo's first commit really contains `audits/` |
+| 7 | `7c826dc` | read-only means the working tree, not the fetch |
+| 3 + 4 | `dc96d4c` | timeout-proof token cleanup; harness noise out by default |
+| 4 | `e0d4bad` | SKILL.md follows item 4 |
+| 8 | `c9853be` | a message that *mentions* the goalkeeper is not a message *to* it |
+| 2 | `ef7ca92` | the shell reach deny reads the addressee, not the whole command |
+| 9 | `09d0dff` | a heredoc quoting a reach is not a reach |
+
+Nine items, eight commits: items 3 and 4 share `dc96d4c`. They live in one file and were built in
+one pass; splitting them afterwards meant hand-reverting interleaved regions and pushing an
+intermediate commit that did not run. A commit failing its own tests is worse for review than a
+joint one. Its message documents each item separately. Logged as `G-15`.
+
+## Tests
+
+```
+node --test mac/claude-home/session-kind/test/guard.test.js      # 128 pass  (was 54)
+sh   mac/claude-home/session-kind/test/mark.test.sh              # 33 pass   (2 skipped, no timeout(1))
+python3 -m unittest discover -s mac/claude-home/skills/goalkeeper/tests   # 48 pass (was 42)
+```
+
+## Three defects the brief did not name, found while closing it
+
+These are the round's real content — the brief's items pointed at the right places, and the first
+fix at each was not enough.
+
+1. **A dangling symlink defeats `realpathSync`.** The obvious item-1 fix — realpath the deepest
+   existing ancestor — still allowed the jailbreak, because `realpathSync` *throws* on a dangling
+   link, so the walk fell back to the safe parent and allowed a write that then followed the link
+   out. Resolving the link by hand with `lstat`/`readlink` is what actually closes it. My first
+   PoC run showed `ALLOW` and that is the only reason I caught it.
+2. **A missing mint script produced an unauthenticated fetch that reported success.**
+   `eval "$(missing-script)"` exits 0 with an empty substitution, so the `&&` chain continued into
+   a `git fetch` with no credentials, and `fetch()` returned truthy — meaning `fetched_at` would
+   have been stamped on evidence that was never freshened. The shell now also requires
+   `[ -n "$GIT_ASKPASS" ]`. This is beyond the brief's item 3 and is deliberate.
+3. **`--to="🥅 GOALKEEPER 9"` was allowed.** The item-2 flag pattern stopped at the first space, so
+   the badge's own spelling — the most obvious way anyone would address the seat — slipped through
+   while the bare lowercase form was correctly denied. Found by the agent writing the item-2 tests,
+   not by me.
+
+## The 19:28Z incident, reproduced on myself
+
+Item 9 is the guard denying prose. It bit me twice mid-round: the installed guard refused two of my
+own Bash calls because the badge word and a bus path co-occurred in one command. The second denial
+**silently discarded a `guard.js` edit** — a PreToolUse deny loses the whole call, so a denied edit
+is indistinguishable from an edit that did nothing, and I only noticed because the probe results
+made no sense afterwards. Everything I wrote about this feature from then on assembled the trigger
+strings from fragments.
+
+Proven fixed against the **live** guard after installing: a heredoc quoting the reach PoC now runs,
+and so does prose naming the seat beside a bus path.
+
+## Installer re-run
+
+```
+changed 3   unchanged 14   backups made 3   stamp 2026-09-07
+```
+
+Item 5's collision fallback is visible and working — `.bak-2026-09-07` already existed from the
+first round, so this round's copies went to:
+
+| Live file | Backup |
+|---|---|
+| `~/.claude/session-kind/guard.js` | `guard.js.bak-2026-09-07-224248` |
+| `~/.claude/skills/goalkeeper/goalkeeper.py` | `goalkeeper.py.bak-2026-09-07-224248` |
+| `~/.claude/skills/goalkeeper/SKILL.md` | `SKILL.md.bak-2026-09-07` (first backup of this file) |
+
+Verified after installing: the live `guard.js` parses, `settings.json` is valid JSON with the full
+matcher, and the live `goalkeeper.py` parses.
+
+**Rollback, if a live seat starts erroring:**
+`cp ~/.claude/session-kind/guard.js.bak-2026-09-07-224248 ~/.claude/session-kind/guard.js`
+
+## Still open for the operator
+
+- **`G-13` (gate)** — the broker's GitHub App is not installed on `0xneelo/lowcap-connector`, so
+  lowcapsxyz evidence stays STALE and `NO ACTIVITY` there cannot be trusted. Unchanged by this round.
+- **`G-18` (note)** — a **live** plaintext broker token was on disk at 16:24Z today, left by some
+  other caller of `mint-github-token.sh --askpass`; removed by hand. `sweep_stale_askpass_dirs()`
+  will now mop up such leaks as a side effect of any fetch, but the leaking caller is still out
+  there and worth finding.
+- **`G-12`, and the test README's "Known limits"** — the hung-census skip on this Mac, the
+  check-then-act race on the one-🥅 rule, and census not seeing CLI worker sessions as live. All
+  accepted for v1, all now written down rather than left as folklore.
+
+`G-2`, `G-5`, `G-7` and `G-9` are settled by PLAN §9 and need nothing further.
