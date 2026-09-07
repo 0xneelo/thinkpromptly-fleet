@@ -21,12 +21,17 @@ say "init $DEST$([ "$DRY" -eq 1 ] && echo '  [DRY RUN]')"
 
 if [ "$DRY" -eq 0 ]; then mkdir -p "$DEST/audits"; fi
 
-for rel in projects.json thread.md README.md; do
+# audits/.gitkeep FIRST: without a tracked file in it, git records no audits/
+# directory at all and the seat's first commit silently lacks it.
+for rel in projects.json thread.md README.md audits/.gitkeep; do
   if [ -f "$DEST/$rel" ]; then
     say "     exists, kept: $rel"
   else
     act "create: $rel"
-    [ "$DRY" -eq 0 ] && cp "$SRC/$rel" "$DEST/$rel"
+    if [ "$DRY" -eq 0 ]; then
+      mkdir -p "$(dirname "$DEST/$rel")"
+      cp "$SRC/$rel" "$DEST/$rel"
+    fi
   fi
 done
 
