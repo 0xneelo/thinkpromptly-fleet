@@ -536,7 +536,7 @@ function desktopSessions() {
       if (typeof j.name !== 'string' || typeof j.messagingSocketPath !== 'string') continue;
       process.kill(j.pid, 0);
       if (!fs.existsSync(j.messagingSocketPath)) continue;
-      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId: desktopUuid(j.sessionId) });
+      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId: desktopUuid(j.sessionId), cwd: typeof j.cwd === 'string' ? j.cwd : '' });
     } catch {}
   }
   return live;
@@ -2257,6 +2257,25 @@ async function deliverTmux(message) {
   deliveryError('tmux submit failed', submitted);
 }
 
+// The goalkeeper audits the fleet's files; the fleet never addresses it back. One choke point
+// here refuses every caller that names a session — /api/notify, loopback POST /api/messages and
+// the sessions page all deliver through this function — so there is no second check to drift
+// (operator ruling 2026-09-07). The one path it cannot see is target.session === 'current':
+// deliverClaudeDesktop hands that to the macOS AX bridge, which types into whichever Desktop
+// window is frontmost and resolves no session row at all, so there is nothing here to test.
+// Tracked as P11 in docs/goals/goalkeeper/LINEAR-PENDING.md; pinned by a test in
+// test/goalkeeper-refusal.test.js so a future change cannot quietly widen it.
+const GOALKEEPER_DIR = path.join(HOME, '.claude', 'goalkeeper').toLowerCase();
+// Refusing one message too many is harmless; missing one is not, so both tests read wide. The
+// name is stripped of leading whitespace AND invisible format characters — a zero-width space
+// before the badge would otherwise walk straight past a bare startsWith. The cwd is compared
+// case-folded because the deck runs on the Mac, where the same directory has many spellings.
+function isGoalkeeper(row) {
+  if (row.name.replace(/^[\s\p{Cf}]+/u, '').startsWith('🥅')) return true;
+  const cwd = typeof row.cwd === 'string' && row.cwd ? path.resolve(row.cwd).toLowerCase() : '';
+  return cwd === GOALKEEPER_DIR || cwd.startsWith(GOALKEEPER_DIR + path.sep);
+}
+
 // The desktop's own cross-session channel, as a Claude session speaks it: two JSON lines on the
 // receiver's unix socket — an auth line carrying the receiver's published token, then the user
 // turn. The receiver answers nothing; a clean close is delivery. `from` is what the receiver
@@ -2273,6 +2292,15 @@ function deliverDesktopSession(message) {
   const matches = desktopSessions().filter((s) => id ? s.sessionId === id : s.name === name);
   const row = matches.length === 1 ? matches[0] : null;
   if (!row) throw new Error('Claude Desktop session "' + name + '" is not live');
+  if (isGoalkeeper(row)) {
+    // `source` is the sender's own `from` text off the wire: logged for the audit trail,
+    // quoted so it cannot forge a log line, and trusted for nothing.
+    console.log('goalkeeper refused a message from ' + JSON.stringify(message.source) + ' to ' + JSON.stringify(row.name));
+    const error = new Error('goalkeeper accepts no messages');
+    error.code = 403;
+    error.refused = true;
+    throw error;
+  }
   const key = fs.readdirSync(CLAUDE_SESSIONS_DIR).find((f) => f.startsWith(row.pid + '.') && f.endsWith('.key'));
   if (!key) throw new Error('no peer key published for Claude Desktop session "' + name + '"');
   const { peerToken } = JSON.parse(fs.readFileSync(path.join(CLAUDE_SESSIONS_DIR, key), 'utf8'));
