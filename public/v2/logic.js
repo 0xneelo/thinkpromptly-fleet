@@ -666,6 +666,11 @@ class AppLogic extends Sub {
     const ttl = this.state.ttl;
     const prin = this.state.prin;
     const selChip = (on) => ({ borderRadius: '9999px', border: '1px solid ' + (on ? t.navActBorder : t.line), background: on ? t.navActBg : 'transparent', color: on ? t.ink : t.ink60, padding: '8px 16px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s', fontWeight: on ? 500 : 400 });
+    // L7: the GitHub-train and Certificates cards carry no bindings in the mock,
+    // so screens/keys.js paints them from the mock's own nodes after each flush.
+    // It needs this render's theme tokens. Guarded: undefined in fixture mode,
+    // where that file returns before registering and the mock renders verbatim.
+    if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({ t, dark, isKeys: screen === 'keys' });
     // Org chart scope
     const orgSort = this.state.orgSort || 'machine';
     const orgScopeData = FD.fixture.orgScopeData;
