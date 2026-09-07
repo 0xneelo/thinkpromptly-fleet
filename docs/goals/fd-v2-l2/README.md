@@ -36,11 +36,11 @@ Make the **app shell: sidebar · page header · right rail** screen work on live
 
 ## Acceptance (definition of done)
 
-- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
-- [ ] `verify/l2/report.json` allPass 36/36 (fixture mode); `verify/l2/live.json` all pass; live screenshots filed.
-- [ ] `improvised.md` entries + screenshots for every improvisation.
-- [ ] Hooks provided are defined; hooks used are guarded.
-- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Renate**; registry row `done`.
+- [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim. Six items are **n.a.** with a stated reason (the drawer, Escape, the old DOM ids, the org timers) and three are **partial** with the departure named (grouping, the `€` colour, the health pill split).
+- [x] `verify/l2/report.json` allPass **36/36**, max 0.032948 % (fixture mode); `verify/l2/live.json` **55/55**, zero console errors; `verify/l2/live-dark.png` + `live-light.png` filed.
+- [x] `improvised.md` entries + screenshots for every improvisation — 15 entries (I-L2-01 … I-L2-15), 6 screenshots in `improvised/`.
+- [x] Hooks provided are defined (as no-ops in the first commit, `4da1a09`); hooks used are guarded, each with a stated fallback.
+- [ ] `npm test` green — **246/247**. The one failure is `test/v2-data.test.js`, inherited from `origin/agent-v2-base` and proven there with no L2 code present; filed as **DECK-81**. Branch pushed ✅; `REPORT.md` signed **Renate** ✅; registry row — `POST /api/registry` answers 401 from the box (XYZ-2137), see `LINEAR-PENDING.md`.
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

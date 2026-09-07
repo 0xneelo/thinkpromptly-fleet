@@ -25,3 +25,18 @@ curl -s -X POST http://100.125.231.25:3131/api/registry -H "Content-Type: applic
   -d '{"host":"german-box","name":"FD-v2-l2","group":"fd-v2","task":"DECK-56","label":"fd-v2 L2 shell","role":"frontend-developer","worker":"Renate"}'
 → unauthorized (HTTP 401)
 ```
+
+## Issues filed
+
+| Issue | Kind | What |
+|---|---|---|
+| DECK-56 | main | `[Renate · frontend-developer] fd-v2 L2 app shell: sidebar · page header · right rail` |
+| DECK-57 | sub | §1 Sessions list — groups, hidden toggle, row actions |
+| DECK-58 | sub | §2 Health pills → right-rail "Boxes" |
+| DECK-59 | sub | §3 Accounts mini → right-rail bars |
+| DECK-60 | sub | §4/§5/§6 Nav, page header, theme, keys and timers |
+| DECK-81 | `needs:general` | the generated `public/v2/fixture.js` is not requirable, so `npm test` is red on `agent-v2-base` (65 L1 tests dead) |
+| DECK-82 | `operator:decision` | page-header subtitles are mock copy and read false on live data |
+
+DECK-81 and DECK-82 are out of L2's scope and were filed rather than fixed, per the pack's
+"out-of-scope work → Linear issue for the operator".
