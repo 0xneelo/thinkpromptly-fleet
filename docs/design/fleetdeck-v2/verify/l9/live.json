@@ -1,0 +1,284 @@
+{
+  "schemaVersion": 1,
+  "slice": "l9",
+  "capturedAt": "2026-09-07T01:03:31.478Z",
+  "allPass": true,
+  "results": [
+    {
+      "id": "cards-order",
+      "action": "load the Machines screen on the stubbed /api/machines",
+      "expectation": "one card per payload machine, in payload order, MacBook Pro first",
+      "pass": true
+    },
+    {
+      "id": "kind-chip-ssh",
+      "action": "read german-box's kind chip",
+      "expectation": "reads \"windows+wsl · ssh gb-deploy\" (machines.js:177 ssh alias)",
+      "pass": true
+    },
+    {
+      "id": "kind-chip-push",
+      "action": "read ROG Strix's kind chip",
+      "expectation": "reads \"windows · push\"",
+      "pass": true
+    },
+    {
+      "id": "session-chip-plural",
+      "action": "read german-box's session-count chip",
+      "expectation": "reads \"77 sessions\" (machines.js:179)",
+      "pass": true
+    },
+    {
+      "id": "no-sessions-no-chip",
+      "action": "read MacBook Pro's header (0 sessions)",
+      "expectation": "no session chip and no Open-in-Registry button",
+      "pass": true
+    },
+    {
+      "id": "reported-ago",
+      "action": "serve german-box reported_at = now - 3 h",
+      "expectation": "the reported span reads exactly \"reported 3 h ago\", not the template's \"reported just now\"",
+      "pass": true
+    },
+    {
+      "id": "reported-empty",
+      "action": "read ROG Strix's reported span (no reported_at)",
+      "expectation": "the span is empty (machines.js:187 only appends when reported_at)",
+      "pass": true
+    },
+    {
+      "id": "push-status-row",
+      "action": "read ROG Strix's first card row",
+      "expectation": "reads \"no report yet — cron this on that machine:\" with the copyable push command and title=\"click to copy\"",
+      "pass": true
+    },
+    {
+      "id": "gb-row-shape",
+      "action": "read german-box's card rows",
+      "expectation": "four client columns contribute 5 rows: Claude CLI x2, Codex CLI x2, Claude desktop x1, Codex desktop x0",
+      "pass": true
+    },
+    {
+      "id": "not-installed-dropped",
+      "action": "read german-box's Claude desktop column (local side is not_installed)",
+      "expectation": "exactly one row and no row rendered as the em dash",
+      "pass": true
+    },
+    {
+      "id": "env-tags",
+      "action": "read the env cell on german-box vs MacBook Pro rows",
+      "expectation": "german-box rows carry WSL/Windows with the client beside them; MacBook Pro rows show the client name and no env tag",
+      "pass": true
+    },
+    {
+      "id": "identity-mono-email",
+      "action": "read german-box's Claude CLI/WSL identity",
+      "expectation": "the email is the primary in a monospace font and the person is the secondary",
+      "pass": true
+    },
+    {
+      "id": "chips-order",
+      "action": "read german-box's Claude CLI/WSL chips",
+      "expectation": "exactly plan, tier, proof: claude_max, Max 20×, token-proved",
+      "pass": true
+    },
+    {
+      "id": "config-only-no-state-chip",
+      "action": "read german-box's Claude CLI/Windows chips (state config_only, proof config)",
+      "expectation": "the proof chip \"config only\" only — config_only is not in STATE (machines.js:12-19), so no state chip",
+      "pass": true
+    },
+    {
+      "id": "bar-labels",
+      "action": "read german-box's Claude CLI/WSL bar labels",
+      "expectation": "WIN_ORDER first, then unknown windows by name: 5 hour, 7 day, seven day fable",
+      "pass": true
+    },
+    {
+      "id": "bar-rights",
+      "action": "read german-box's Claude CLI/WSL bar right cells",
+      "expectation": "the fixture's percentages: 29%, 62%, 100%",
+      "pass": true
+    },
+    {
+      "id": "bar-stale",
+      "action": "read german-box's Claude CLI/Windows \"5 hour\" bar right cell",
+      "expectation": "a stale window reads \"stale\" instead of a percentage",
+      "pass": true
+    },
+    {
+      "id": "note-joined",
+      "action": "read german-box's Claude CLI/WSL note",
+      "expectation": "carries \"token valid \", \"5 hour resets in \" and ends with \"77 sessions run as Lafayette Tabor\"",
+      "pass": true
+    },
+    {
+      "id": "note-codex-refreshed",
+      "action": "read german-box's Codex CLI/WSL note",
+      "expectation": "carries \"refreshed \" (machines.js:115)",
+      "pass": true
+    },
+    {
+      "id": "note-stale-windows",
+      "action": "read german-box's Claude desktop/Windows note",
+      "expectation": "carries \"last active \" and ends with \" — older than the window it measured, so these have reset since\"",
+      "pass": true
+    },
+    {
+      "id": "note-no-usage",
+      "action": "read MacBook Pro's Codex desktop note (usage: null)",
+      "expectation": "carries \"no usage data\" (machines.js:92)",
+      "pass": true
+    },
+    {
+      "id": "default-expanded",
+      "action": "read german-box on first live load",
+      "expectation": "the card is expanded: chips and bars are rendered, no collapsed summary",
+      "pass": true
+    },
+    {
+      "id": "collapse-click",
+      "action": "click the german-box card header",
+      "expectation": "chips and bars are gone and the collapsed summary appears",
+      "pass": true
+    },
+    {
+      "id": "expand-again",
+      "action": "click the german-box card header a second time",
+      "expectation": "chips and bars are back and the summary is gone",
+      "pass": true
+    },
+    {
+      "id": "open-in-registry",
+      "action": "click german-box's Open in Registry button",
+      "expectation": "FD.screens.registry.open receives { q: \"german-box\" } and the screen does not switch",
+      "pass": true
+    },
+    {
+      "id": "first-load-no-force",
+      "action": "watch the first /api/machines request",
+      "expectation": "the poll never forces: no refresh=1 on the first load (machines.js:222)",
+      "pass": true
+    },
+    {
+      "id": "refresh-forces",
+      "action": "click the header Refresh button",
+      "expectation": "issues /api/machines?refresh=1 (machines.js:230 -> load(true))",
+      "pass": true
+    },
+    {
+      "id": "refresh-disabled",
+      "action": "read the Refresh button while the forced request is in flight",
+      "expectation": "disabled during the request and enabled again after (machines.js:220,226)",
+      "pass": true
+    },
+    {
+      "id": "poll-interval",
+      "action": "read FD.screens.machines._.POLL_MS",
+      "expectation": "the poll is 60 000 ms (machines.js:232)",
+      "pass": true
+    },
+    {
+      "id": "copy-cleared",
+      "action": "refresh with rog-strix now reporting, so its status row disappears",
+      "expectation": "the reused note node keeps no title=\"click to copy\" and no copy text: the first row is a client row",
+      "pass": true
+    },
+    {
+      "id": "status-error",
+      "action": "serve a push machine with error set",
+      "expectation": "the status row shows the error text and no push command (machines.js:181 wins over :183)",
+      "pass": true
+    },
+    {
+      "id": "status-no-report-ssh",
+      "action": "serve a no_report machine whose route is ssh",
+      "expectation": "the status row reads \"no report yet\" with no command (machines.js:186)",
+      "pass": true
+    },
+    {
+      "id": "session-chip-singular",
+      "action": "serve a machine with exactly one session",
+      "expectation": "the session chip reads \"1 session\" (machines.js:179)",
+      "pass": true
+    },
+    {
+      "id": "plan-business-hidden",
+      "action": "serve a client with plan \"business\"",
+      "expectation": "no plan chip; tier and proof still render (machines.js:135)",
+      "pass": true
+    },
+    {
+      "id": "state-token-expired",
+      "action": "serve a client with state \"token_expired\"",
+      "expectation": "a \"token expired\" chip renders (machines.js:13)",
+      "pass": true
+    },
+    {
+      "id": "shares-note",
+      "action": "serve a client with shares set",
+      "expectation": "its note carries \"same login as CLI\" (machines.js:146)",
+      "pass": true
+    },
+    {
+      "id": "identity-unknown",
+      "action": "serve a client with no label, email, config_email or org",
+      "expectation": "the primary reads \"signed in, account unknown\" (machines.js:132)",
+      "pass": true
+    },
+    {
+      "id": "identity-unmapped-org",
+      "action": "serve the same client with an org",
+      "expectation": "the primary reads \"<first 8 of org> · unmapped org\" (machines.js:132)",
+      "pass": true
+    },
+    {
+      "id": "validate-drops-malformed",
+      "action": "serve a machine whose label and host are numbers, not strings",
+      "expectation": "validate() coerces every field before FD.setData: nothing throws, the card still renders, and the seam carries strings and an array of cols",
+      "pass": true
+    },
+    {
+      "id": "fetch-error-card",
+      "action": "abort /api/machines and load the screen",
+      "expectation": "a single card titled \"cannot reach fleetdeck\" (machines.js:224) whose empty kind chip is hidden",
+      "pass": true
+    },
+    {
+      "id": "fixture-no-fetch",
+      "action": "load /v2/index.html?fixture=1",
+      "expectation": "the screen makes no /api/machines request at all",
+      "pass": true
+    },
+    {
+      "id": "fixture-seed-cards",
+      "action": "read the cards in fixture mode",
+      "expectation": "the mock's two seed cards render unchanged",
+      "pass": true
+    },
+    {
+      "id": "fixture-collapsed",
+      "action": "read the seed cards' open state in fixture mode",
+      "expectation": "they stay collapsed: no chips, no bars, collapsed summaries shown",
+      "pass": true
+    },
+    {
+      "id": "fixture-reported-literal",
+      "action": "read the reported span in fixture mode",
+      "expectation": "the template's literal \"reported just now\" is untouched",
+      "pass": true
+    },
+    {
+      "id": "light-theme-renders",
+      "action": "load the Machines screen in the light theme",
+      "expectation": "the same six cards render for the light screenshot",
+      "pass": true
+    },
+    {
+      "id": "console-clean",
+      "action": "watch console and page errors across every navigation in this run",
+      "expectation": "zero console errors and zero page errors, apart from the deliberately aborted /api/machines and the blocked hero video",
+      "pass": true
+    }
+  ]
+}
