@@ -176,3 +176,12 @@ split) merged with it into `agent-v2-base`; pushed; ten workers told to merge; p
 `agent-v2-l1` @ `79a8cd8` (desktop-row fallbacks, `trendPts` numbers) merged → `agent-v2-base` moved; pushed; ten
 workers told to merge (L8/L10 to drop their interim shims). L1 accepted in full; Juergen's name released after his
 registry row shows done. No further base moves planned; the next integration point is `weave/fd-v2`.
+
+## 2026-09-08 · first slices accepted: L9 (Machines), L10 (Desktop sessions)
+
+- **L9** `origin/agent-v2-l9` @ `9054f5b` (Eckbert): fixture gate 36/36 max 0.033 %, live proof 46/46 with the API
+  stubbed, BEHAVIOUR checklist complete, improvisations I-L9-* logged with screenshots, re-gated after merging the base.
+- **L10** `origin/agent-v2-l10` @ `3bdcaf5` (Clodwig): fixture gate 36/36 max 0.033 %, live proof 33/33, harness under
+  `verify/l10-harness/`, nine improvisations with screenshots, hardened per the oracle audit, L1.2 strings adopted.
+- Ledger D16, D17 P2 ✅. Both merged into `weave/fd-v2` (from `agent-v2-base` @ `6cb8e2d`), pushed as a branch (never
+  main). Parallel reviews launched; findings go back as follow-ups. Preview now follows `weave/fd-v2`.
