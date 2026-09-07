@@ -1025,3 +1025,106 @@ for (const [label, cmd] of GKM5_WT_DENY) {
     assert.match(denyHome(bash(cmd), ORCH, HOME_WT), TOUCH_GK);
   });
 }
+
+// ------------ 20. GK-M.6 item 1 — a literal that executes is not prose
+// Item 6 blanks a text emitter's quoted arguments before the NAMES scan. But a DOUBLE-quoted
+// literal is only prose while it is inert: `$(…)`, `${…}` and backticks are evaluated by the
+// shell BEFORE `echo` (or `git commit -m`, or the bus) ever sees the text, so
+// `echo "$(rm -rf <jail>)"` deletes the jail. literalExecutes() now keeps such a literal in the
+// scan. Single quotes substitute nothing and stay blanked, and the escape test counts the
+// backslashes in front of the token, so `\$(` in prose is still prose.
+//
+// The trigger sequences are assembled from fragments here on purpose: a contiguous `$(` next to
+// a jail path in this file's own text is exactly what the installed guard denies.
+const SUB = '$' + '(';               // command substitution
+const PAR = '$' + '{';               // parameter expansion
+const BQ = String.fromCharCode(96);  // backtick
+
+const GKM6_EXEC_DENY = [
+  ['echo carrying a command substitution', `echo "${SUB}rm -rf ${JAIL})"`],
+  ['git commit -m carrying one', `git commit -m "${SUB}rm -rf ${JAIL})"`],
+  ['printf carrying one', `printf "%s" "${SUB}cat ${JAIL}/thread.md > /tmp/x)"`],
+  ['the bus directive form carrying one',
+    `node bin/fleet-message.js --to mac:x --text "${SUB}rm ${JAIL}/thread.md)"`],
+  ['a backtick pair', `echo "${BQ}rm -rf ${JAIL}${BQ}"`],
+  ['a parameter expansion with a default', `echo "${PAR}X:-${JAIL}/thread.md}"`],
+  ['a substitution in the middle of a sentence',
+    `echo "the fix is ${SUB}rm ${JAIL}/x) applied"`],
+];
+for (const [label, cmd] of GKM6_EXEC_DENY) {
+  test(`GK-M.6 item 1 DENY: ${label}`, () => {
+    assert.match(denyHome(bash(cmd), ORCH, HOME_REPO), TOUCH_GK);
+  });
+}
+
+// Inert literals are prose exactly as before — item 6 is not weakened.
+const GKM6_EXEC_ALLOW = [
+  ['prose with no substitution at all', 'echo "the PoC was rm goalkeeper/x"'],
+  ['the PoC quoted in full', 'echo "cd ~/.claude && rm goalkeeper/thread.md is the PoC"'],
+  ['single quotes do not substitute', `git commit -m 'cost ${SUB}5)'`],
+  ['a single-quoted literal naming the jail', `echo 'rm ${JAIL}/thread.md was the PoC'`],
+  ['an ESCAPED substitution is prose', `echo "literally \\\\${SUB}rm x) in prose"`],
+];
+for (const [label, cmd] of GKM6_EXEC_ALLOW) {
+  test(`GK-M.6 item 1 ALLOW: ${label}`, () => allowHome(bash(cmd), ORCH, HOME_REPO));
+}
+
+// ------------ 21. GK-M.6 item 2 — a `cd` whose TARGET is the config dir
+// After the rule-3 correction (a repo's own `.claude/` is not the config dir) the two-step
+// `cd $HOME && cd .claude && rm -rf goalkeeper` was allowed: `$HOME` is substituted away and a
+// bare relative `.claude` was never the config dir. mentionsConfigDir() is now also true when a
+// `cd`/`pushd` TARGET is `.claude`, `./.claude`, ends in `/.claude`, or equals the config dir
+// (lexical or realpath). Targets are read quoted or bare and a trailing slash is ignored.
+// `cd .claude/worktrees/x` is not a target of that shape, so the GK-M.5 worktree fix stands.
+//
+// One case needs the seat standing in $HOME itself, so that cwd gets its own mark.
+fs.writeFileSync(path.join(MARKS, key(HOMEFIX)), ORCH + '\n');
+
+const GKM6_CD_DENY = [
+  ['the two-step hop through $HOME', 'cd $HOME && cd .claude && rm -rf goalkeeper', HOME_REPO],
+  ['standing in $HOME already, a bare `cd .claude`', 'cd .claude && rm -rf goalkeeper', HOMEFIX],
+  ['`cd ./.claude`', 'cd ./.claude && rm -rf goalkeeper', HOMEFIX],
+  ['`pushd .claude`', 'pushd .claude && rm -rf goalkeeper', HOMEFIX],
+  ['a quoted target', "cd '.claude' && rm -rf goalkeeper", HOMEFIX],
+  ['a trailing slash', 'cd .claude/ && rm -rf goalkeeper', HOMEFIX],
+  ['the absolute config dir as the target', `cd ${HOME_CFG} && rm -rf goalkeeper`, HOME_REPO],
+];
+for (const [label, cmd, cwd] of GKM6_CD_DENY) {
+  test(`GK-M.6 item 2 DENY: ${label}`, () => {
+    assert.match(denyHome(bash(cmd), ORCH, cwd), TOUCH_GK);
+  });
+}
+
+// The GK-M.5 worktree fix, re-asserted against the new target test: `<repo>/.claude/worktrees/x`
+// is neither `.claude` nor a path ending in `/.claude`, so every worker keeps its pack work.
+const GKM6_CD_ALLOW = [
+  ['cd into the worktree, then git status', `cd ${HOME_WT} && git status`, HOME_WT],
+  ['a relative cd into a worktree', 'cd .claude/worktrees/x && ls', HOME_REPO],
+  ['cd into the worktree, then stage the pack',
+    `cd ${HOME_WT} && git add docs/goals/goalkeeper/LINEAR-PENDING.md`, HOME_WT],
+  ['a relative worktree cd, then stage the pack',
+    'cd .claude/worktrees/x && git add docs/goals/goalkeeper/x', HOME_REPO],
+];
+for (const [label, cmd, cwd] of GKM6_CD_ALLOW) {
+  test(`GK-M.6 item 2 ALLOW: ${label}`, () => allowHome(bash(cmd), ORCH, cwd));
+}
+
+// ------------ 22. Accepted limits — pinned, not fixed
+// GK-M.6 is the last guard round (lane brief, the stop rule). Static analysis of shell text is
+// never complete, and PLAN §9 addendum already states that the guard prevents accidents while
+// `goalkeeper.py sweep` tamper detection is the guarantee. These assertions therefore document
+// what the guard does NOT catch — a change of behaviour here is a change of behaviour, not a
+// broken test. See test/README.md, "Accepted limits — the guard stops here".
+
+test('Accepted limit, NOT a guarantee: a glob never spells the directory, so it is ALLOWED', () => {
+  allowHome(bash('cd ~/.claude/goal*eeper && rm -rf audits'), ORCH, HOME_REPO);
+  allowHome(bash('rm -rf ~/.claude/goal*eeper'), ORCH, HOME_REPO);
+});
+
+test('Accepted limit, NOT a guarantee: a path assembled from variables is ALLOWED', () => {
+  allowHome(bash('C=.claude; G=goalkeeper; cd "$HOME/$C/$G" && rm -rf audits'), ORCH, HOME_REPO);
+  // A variable that SPELLS the jail is denied — the text still names the directory, so this
+  // one is caught. Pinned so the limit above is not read as wider than it is.
+  assert.match(denyHome(bash('D=~/.claude/goalkeeper; cd "$D" && rm -rf audits'), ORCH, HOME_REPO),
+    TOUCH_GK);
+});
