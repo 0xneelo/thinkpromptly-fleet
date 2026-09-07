@@ -673,7 +673,7 @@ class AppLogic extends Sub {
     // Every style handed over is built by the mock's own pill()/dot()/selChip()
     // helpers, so the painted cards carry the mock's tokens and nothing new.
     if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({
-      t, dark, isKeys: screen === 'keys', ttl, prin,
+      t, dark, isKeys: screen === 'keys', ttl, prin, logic: this,
       pills: {
         good: chipTone('good'), goodDot: dot(t.good),
         dim: { ...chipTone('neutral'), color: t.ink45 }, dimDot: dot(t.ink35),

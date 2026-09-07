@@ -32,10 +32,6 @@
   var FD = global.FD = global.FD || {};
   FD.screens = FD.screens || {};
 
-  // Fixture mode renders the mock verbatim. Register nothing, start no timers,
-  // touch no DOM — this is what keeps the pixel gate at 36/36.
-  if (!FD.data || FD.data.isFixture()) return;
-
   // ---- constants, verbatim from today's keys.js ---------------------------
   var TTLS = ['1h', '4h', '8h'];
   // root = the VPS boxes' login (think-box, onboarding-app-box, ivy-box),
@@ -65,6 +61,55 @@
   }
   function pad(n) { return String(n).padStart(2, '0'); }
 
+  // Today's post() reads the body whatever the status: a 400 hands back the
+  // server's {ok:false,error}, and a body that will not parse becomes
+  // 'HTTP <status>' (keys.js:178-186). FD.data throws on any non-2xx instead,
+  // so unwrap it back into that shape rather than losing the server's message.
+  function unwrapError(e) {
+    if (e && e.status) {
+      if (e.body && typeof e.body === 'object') return e.body;
+      return { ok: false, error: 'HTTP ' + e.status };
+    }
+    // No status means the request never landed; the caller's own default text
+    // then applies, exactly as `r.error || '<default>'` does today.
+    return { ok: false };
+  }
+
+  // A status means the deck answered and today's fetch().json() would have read
+  // this body — a 503 from a dead broker is data, not a transport failure.
+  // Without a status nothing landed, which is the 'cannot reach fleetdeck' case.
+  function httpBody(e) { if (e && e.status) return e.body; throw e; }
+
+  // The pure half is exported for test/v2-keys.test.js, which runs in Node with
+  // no DOM. Everything below the guard needs a document and never loads there.
+  if (typeof module === 'object' && module.exports) {
+    module.exports = { left: left, pad: pad, sshOpts: sshOpts, unwrapError: unwrapError, httpBody: httpBody, TTLS: TTLS, PRINCIPALS: PRINCIPALS, PRINCIPAL_TITLE: PRINCIPAL_TITLE, KILL_CONFIRM: KILL_CONFIRM, POLL_MS: POLL_MS, TICK_MS: TICK_MS, COPIED_MS: COPIED_MS };
+  }
+
+  // Fixture mode renders the mock verbatim. Register nothing, start no timers,
+  // load no script, touch no DOM — this is what keeps the pixel gate at 36/36.
+  // No document means Node, where only the exports above are wanted.
+  //
+  // The fixture test is inlined rather than delegated to FD.data.isFixture()
+  // because it has to answer BEFORE data.js is fetched below; it mirrors
+  // data.js:563-567 exactly. Getting this wrong would put a network request on
+  // the pixel-gate page, so it is deliberately the first thing decided.
+  if (typeof document === 'undefined') return;
+  if (isFixtureMode()) return;
+
+  function isFixtureMode() {
+    try { if (localStorage.getItem('fd-fixture') === '1') return true; } catch (e) { /* storage off */ }
+    var search = global.location && global.location.search;
+    return typeof search === 'string' && /[?&]fixture=1(&|$)/.test(search);
+  }
+
+  // The shell (public/v2/index.html) loads runtime, fixture, logic, app and the
+  // screen files, but NOT public/v2/data.js — so FD.data, which L1 built and
+  // every live screen needs, is simply absent. index.html is out of this
+  // slice's scope, so this screen fetches the data layer itself rather than
+  // shipping a screen that cannot load. See improvised.md I-L7-02 and DECK-45:
+  // the shell should load it for everyone at the L11 cut-over, and this loader
+  // then becomes a no-op because FD.data is already there.
   // ---- module state -------------------------------------------------------
   var state = { certs: [], keys: [] };
   var train = { active: false, expiresAt: null };
@@ -81,6 +126,7 @@
   var ctx = null;        // theme tokens + mock style objects, handed over by logic.js
   var repaintQueued = false;
   var proto = null;      // deep clones of the mock's own nodes, used as row prototypes
+  var seeded = false;    // live mode has restored today's principal default
 
   // ---- the seam with logic.js --------------------------------------------
   // logic.js calls this from its keys section on every render, before the
@@ -93,6 +139,20 @@
       // The TTL and principal chips stay bound to logic.js — it owns their
       // state and their selected styling. This module only reads the choice.
       if (next.ttl) ttl = next.ttl;
+      // BEHAVIOUR §2: both principals are selected by default — one cert serves
+      // the vps-deploy and gb-deploy aliases. The mock seeds only root, and
+      // fixture mode has to keep that or its screenshot moves, so live mode
+      // restores today's default once, on the first render (improvised.md
+      // I-L7-03). setState re-renders and this runs again with both set.
+      if (!seeded && next.logic && next.prin) {
+        seeded = true;
+        if (!PRINCIPALS.every(function (p) { return next.prin[p]; })) {
+          var all = {};
+          PRINCIPALS.forEach(function (p) { all[p] = true; });
+          next.logic.setState({ prin: all });
+          return;
+        }
+      }
       if (next.prin) principals = next.prin;
       queueRepaint();
     },
@@ -199,8 +259,9 @@
     var row = kids(card)[1];
     if (!row) return;
     var parts = kids(row);
-    var down = !!train && train.ok === false;
-    var live = !down && !!train.active && train.expiresAt > Date.now();
+    var tr = train || {};
+    var down = tr.ok === false;
+    var live = !down && !!tr.active && tr.expiresAt > Date.now();
 
     if (down) setPill(parts[0], ctx.pills.warn, ctx.pills.warnDot, 'BROKER DOWN');
     else if (live) setPill(parts[0], ctx.pills.good, ctx.pills.goodDot, 'ACTIVE');
@@ -209,7 +270,7 @@
     var cd = parts[1];
     if (cd) {
       cd.hidden = !live;
-      if (live) { cd.textContent = left(train.expiresAt); ticks.push({ epoch: train.expiresAt, node: cd }); }
+      if (live) { cd.textContent = left(tr.expiresAt); ticks.push({ epoch: tr.expiresAt, node: cd }); }
     }
 
     var btns = kids(row).filter(function (n) { return n.tagName === 'BUTTON'; });
@@ -224,7 +285,7 @@
     dropNotices(card);
     if (down || trainError) {
       // keys.js:139 — a broker that is down explains itself even with no click yet.
-      card.appendChild(notice(trainError || train.error || 'the train broker is not answering', ctx.t.bad));
+      card.appendChild(notice(trainError || tr.error || 'the train broker is not answering', ctx.t.bad));
     }
   }
 
@@ -316,28 +377,11 @@
   }
 
   // ---- talking to the API -------------------------------------------------
-  // Today's post() reads the body whatever the status: a 400 hands back the
-  // server's {ok:false,error}, and a body that will not parse becomes
-  // 'HTTP <status>' (keys.js:178-186). FD.data throws on any non-2xx instead,
-  // so unwrap it back into that shape rather than losing the server's message.
   function post(call) {
     return call().then(function (r) {
       return r && typeof r === 'object' ? r : { ok: false };
-    }, function (e) {
-      if (e && e.status) {
-        if (e.body && typeof e.body === 'object') return e.body;
-        return { ok: false, error: 'HTTP ' + e.status };
-      }
-      // No status means the request never landed; the caller's own default text
-      // then applies, exactly as `r.error || '<default>'` does today.
-      return { ok: false };
-    });
+    }, unwrapError);
   }
-
-  // A status means the deck answered and today's fetch().json() would have read
-  // this body — a 503 from a dead broker is data, not a transport failure.
-  // Without a status nothing landed, which is the 'cannot reach fleetdeck' case.
-  function httpBody(e) { if (e && e.status) return e.body; throw e; }
 
   // ---- load + poll --------------------------------------------------------
   function load() {
@@ -348,7 +392,10 @@
       var s = r[0], tr = r[1];
       if (!s || typeof s !== 'object' || (!s.certs && !s.keys)) return fail();
       state = { certs: s.certs || [], keys: s.keys || [] };
-      train = tr && typeof tr === 'object' ? tr : { ok: false, error: '' };
+      // The deck answers /api/ghtrain as JSON today, but a proxy that hands back
+      // a plain-text 503 would otherwise lose the broker's own sentence. Keep it.
+      train = tr && typeof tr === 'object' ? tr
+        : { ok: false, error: typeof tr === 'string' ? tr.trim() : '' };
       loadError = '';
       // The one identifier this screen owns in the mock's seed data.
       FD.setData('keyRows', FD.data.toKeys(s, train).keyRows);
@@ -414,18 +461,28 @@
 
   FD.screens.keys.load = load;
 
-  // Countdowns tick locally between the 30 s polls; a cert crossing zero
-  // repaints so the badge flips and the Delete button appears (keys.js:158-166).
-  setInterval(function () {
-    var expired = false;
-    for (var i = 0; i < ticks.length; i++) {
-      var s = left(ticks[i].epoch);
-      if (s) ticks[i].node.textContent = s;
-      else expired = true;
-    }
-    if (expired) paint();
-  }, TICK_MS);
+  function boot() {
+    // Countdowns tick locally between the 30 s polls; a cert crossing zero
+    // repaints so the badge flips and the Delete button appears (keys.js:158-166).
+    setInterval(function () {
+      var expired = false;
+      for (var i = 0; i < ticks.length; i++) {
+        var s = left(ticks[i].epoch);
+        if (s) ticks[i].node.textContent = s;
+        else expired = true;
+      }
+      if (expired) paint();
+    }, TICK_MS);
+    FD.data.poll(load, POLL_MS);
+    load();
+  }
 
-  FD.data.poll(load, POLL_MS);
-  load();
-})(window);
+  // Last statement in the file, so every declaration above has already run.
+  if (FD.data) boot();
+  else {
+    var tag = document.createElement('script');
+    tag.src = '/v2/data.js';
+    tag.onload = function () { if (FD.data && !FD.data.isFixture()) boot(); };
+    document.head.appendChild(tag);
+  }
+})(typeof globalThis === 'object' ? globalThis : this);
