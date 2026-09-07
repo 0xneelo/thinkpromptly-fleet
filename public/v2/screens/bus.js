@@ -570,7 +570,46 @@
     return { targets: targets, rows: rows, threads: threads, seen: seen, pinned: pinned, errs: errs };
   };
 
+  // S2's shell (public/v2/index.html) loads runtime, fixture, logic, app and the
+  // nine screen files, but never L1's public/v2/data.js -- nothing in the browser
+  // does. The shell is not ours to edit, so the screen that needs the data layer
+  // fetches it, once, and any other slice that does the same reuses this tag
+  // (I-L6-09). Filed for the shell owner as DECK-71.
+  var DATA_SRC = '/v2/data.js';
+  function withDataLayer(cb) {
+    if (FD.data) { cb(); return; }
+    if (typeof document === 'undefined') return;
+    var el = document.querySelector('script[data-fd-dep="data"]');
+    if (!el) {
+      el = document.createElement('script');
+      el.setAttribute('data-fd-dep', 'data');
+      el.src = DATA_SRC;
+      document.head.appendChild(el);
+    }
+    var done = false;
+    var fire = function () { if (done) return; done = true; if (FD.data) cb(); };
+    el.addEventListener('load', fire);
+    // A missing data layer means live mode is impossible. Stay inert rather than
+    // throw: the live gate asserts zero console errors.
+    el.addEventListener('error', function () { done = true; });
+    if (FD.data) fire();
+  }
+
+  // Mirrors FD.data.isFixture() (data.js:isFixture) so the fixture page never
+  // pays for a data.js request it will not use -- the pixel gate runs there and
+  // an extra round trip is an extra way for it to differ.
+  function fixtureMode() {
+    try { if (global.localStorage.getItem('fd-fixture') === '1') return true; } catch (e) {}
+    var search = global.location && global.location.search;
+    return typeof search === 'string' && /[?&]fixture=1(&|$)/.test(search);
+  }
+
   function boot() {
+    if (fixtureMode()) return;
+    withDataLayer(start2);
+  }
+
+  function start2() {
     if (!FD.data || FD.data.isFixture()) return;
     bus.live = true;
     loadPrefs();
@@ -581,7 +620,12 @@
     FD.setData('busGroups', []);
     FD.setData('busUnreadDefault', {});
     refresh();
-    start();
+    // attach() also starts the timer, but it runs before the data layer has
+    // loaded, so whichever of the two happens second does the work.
+    if (host) {
+      if (pendingOpen) { var p = pendingOpen; pendingOpen = null; bus.open(p); }
+      start();
+    }
   }
 
   boot();
