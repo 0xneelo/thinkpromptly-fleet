@@ -248,8 +248,18 @@ function deny(reason) {
 function norm(p, cwd) {
   if (typeof p !== 'string' || p === '') return '';
   let s = p;
-  if (s === '~') s = os.homedir();
-  else if (s.startsWith('~/')) s = path.join(os.homedir(), s.slice(2));
+  // Expand the spellings a shell expands, before any comparison. `~` alone was
+  // handled; `$HOME/.claude/goalkeeper/x` reaches exactly the same file and was
+  // not, so the jail could be addressed by simply spelling it differently.
+  const home = os.homedir();
+  s = s.replace(/^\$\{HOME\}/, home).replace(/^\$HOME(?=\/|$)/, home);
+  const cfgEnv = process.env.CLAUDE_CONFIG_DIR;
+  if (cfgEnv) {
+    s = s.replace(/^\$\{CLAUDE_CONFIG_DIR\}/, cfgEnv)
+      .replace(/^\$CLAUDE_CONFIG_DIR(?=\/|$)/, cfgEnv);
+  }
+  if (s === '~') s = home;
+  else if (s.startsWith('~/')) s = path.join(home, s.slice(2));
   try {
     return path.resolve(cwd || process.cwd(), s);
   } catch (e) {
