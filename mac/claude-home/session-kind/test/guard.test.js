@@ -101,6 +101,13 @@ test('goalkeeper: every message is denied, goalkeeper mention or not', () => {
     send({ to: '🎛 ORCHESTRATOR 34', message: 'findings ready' }),
     mcpSend({ session_id: 'self', message: 'hi' }),
     mcpSend({ to: 'anyone', message: 'anything' }),
+    // The §9 addressee narrowing applies to OTHER kinds only. The 🥅 seat's own deny-all
+    // is unchanged: a payload naming nobody, and one whose body only talks about the
+    // goalkeeper, are both denied — the seat messages no one, ever.
+    send({}),
+    send({ message: 'no addressee at all' }),
+    mcpSend({ to: 'Giselher', message: 'working on the goalkeeper lane' }),
+    send({ to: 'Giselher', message: 'ping 🥅 GOALKEEPER 9' }),
   ]) assert.match(expectDeny(GK, p), /a goalkeeper never messages a seat/);
 });
 
@@ -142,20 +149,53 @@ test('goalkeeper: unguarded tools and non-builder subagents allowed', () => {
 });
 
 // ---------------------------------------------------------------- 3. every other stamped kind cannot reach the 🥅 seat
+// PLAN.md §9 (§3.4.2 as amended): for a non-goalkeeper kind the message deny matches the
+// ADDRESSEE fields only — `to`, `session_id`, `session`, `title`, `name`, `recipient`,
+// `target.session` and a bare-string `target` — case-insensitively. Addressing the seat is
+// forbidden; talking ABOUT it is not.
+const ADDRESSEE_KEYS = ['to', 'session_id', 'session', 'title', 'name', 'recipient'];
+
 for (const badge of [ORCH, RES, DES, COORD, WORKER]) {
   test(`${badge}: cannot reach the goalkeeper`, () => {
     assert.match(expectDeny(badge, send({ to: '🥅 GOALKEEPER 9', message: 'audit this' })),
       /cannot be addressed by any seat/);
-    assert.match(expectDeny(badge, send({ to: 'orchestrator', message: 'ask 🥅 for the audit' })),
-      /cannot be addressed by any seat/);
     assert.match(expectDeny(badge, mcpSend({ to: '🥅 GOALKEEPER 9', message: 'audit this' })),
-      /cannot be addressed by any seat/);
-    assert.match(expectDeny(badge, mcpSend({ to: 'x', message: 'relay to 🥅 please' })),
       /cannot be addressed by any seat/);
     assert.match(expectDeny(badge, bash('curl -s localhost:3131/api/messages -d \'{"to":"🥅 GOALKEEPER 9"}\'')),
       /cannot be reached over the fleet bus/);
     assert.match(expectDeny(badge, write(CFG + '/goalkeeper/thread.md')), /belongs to the 🥅 seat alone/);
     assert.match(expectDeny(badge, edit(CFG + '/goalkeeper/audits/2026-09-07.md')), /belongs to the 🥅 seat alone/);
+    // §9: a message to SOMEBODY ELSE that only mentions the 🥅 seat in its body is allowed.
+    // The first cut matched the whole payload and denied these — a false positive that stopped
+    // an orchestrator naming the goalkeeper lane to a worker. This project is *named* goalkeeper.
+    expectAllow(badge, send({ to: 'orchestrator', message: 'ask 🥅 for the audit' }));
+    expectAllow(badge, mcpSend({ to: 'x', message: 'relay to 🥅 please' }));
+  });
+
+  // One case per addressee key, so a future edit that drops a key fails loudly.
+  for (const k of ADDRESSEE_KEYS) {
+    test(`${badge}: the 🥅 seat named in \`${k}\` is denied`, () => {
+      assert.match(expectDeny(badge, send({ [k]: '🥅 GOALKEEPER 9', message: 'audit this' })),
+        /cannot be addressed by any seat/);
+      // ...and in lowercase, which is every bit the same reach.
+      assert.match(expectDeny(badge, mcpSend({ [k]: 'goalkeeper', message: 'audit this' })),
+        /cannot be addressed by any seat/);
+    });
+  }
+
+  test(`${badge}: a \`target\` naming the 🥅 seat is denied, nested or bare`, () => {
+    assert.match(expectDeny(badge, send({ target: { session: 'goalkeeper' }, message: 'hi' })),
+      /cannot be addressed by any seat/);
+    assert.match(expectDeny(badge, mcpSend({ target: '🥅 GOALKEEPER 9', message: 'hi' })),
+      /cannot be addressed by any seat/);
+  });
+
+  test(`${badge}: a body-only mention is allowed in both spellings`, () => {
+    expectAllow(badge, send({ to: 'Giselher', message: 'your branch is the 🥅 GOALKEEPER 9 lane' }));
+    expectAllow(badge, send({ to: 'Giselher', message: 'working on the goalkeeper lane' }));
+    expectAllow(badge, mcpSend({ session_id: 'abc', message: 'the 🥅 GOALKEEPER 9 audit landed' }));
+    // ...and a message naming no seat at all was never in scope.
+    expectAllow(badge, send({ to: 'Giselher', message: 'rebased onto main' }));
   });
 
   test(`${badge}: normal bus access unaffected`, () => {
@@ -305,10 +345,13 @@ for (const badge of [ORCH, COORD, WORKER]) {
   });
 
   test(`adversarial: ${badge} may still say "goalkeeper" in a message BODY`, () => {
-    // The project itself is named "goalkeeper" — a lowercase mention in the body is not a
-    // reach, only an addressee field is. The badge spelling stays denied anywhere.
+    // The project itself is named "goalkeeper" — a mention in the body is not a reach, only an
+    // addressee field is (§9). BOTH spellings are allowed in the body, the badge form included:
+    // denying it was the false positive §9 removes.
     expectAllow(badge, send({ to: 'Giselher', message: 'working on the goalkeeper lane' }));
-    assert.match(expectDeny(badge, send({ to: 'Giselher', message: 'ping 🥅 GOALKEEPER 9' })),
+    expectAllow(badge, send({ to: 'Giselher', message: 'ping 🥅 GOALKEEPER 9' }));
+    // The same badge spelling in the ADDRESSEE field is still denied.
+    assert.match(expectDeny(badge, send({ to: '🥅 GOALKEEPER 9', message: 'ping' })),
       /cannot be addressed by any seat/);
   });
 }

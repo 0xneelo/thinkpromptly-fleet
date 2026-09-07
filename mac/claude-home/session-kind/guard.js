@@ -55,21 +55,36 @@ const MSG_TOOLS = ['SendMessage', 'mcp__ccd_session_mgmt__send_message'];
 // Shell routes that reach another seat: the fleet bus, the deck API, the
 // session registry.
 const REACH = /fleet-notify|fleet-message|api\/notify|api\/messages|\.claude\/sessions\//;
-// A 🥅 seat named as the target of a message or a shell reach. PLAN.md v2 §3.4.2
-// specifies this literally against the serialised input, so the word matches in
-// any position and case-sensitively — an all-caps GOALKEEPER is the badge form.
-const GK_TARGET = /GOALKEEPER|🥅/;
-// ...which a lowercase `to: "goalkeeper"` would slip past. Addressee fields are
-// therefore also matched case-insensitively: naming the seat as the RECIPIENT is
-// always a reach, however it is spelled. Mentioning it in a body is not.
-const ADDRESSEE_KEYS = ['to', 'target', 'recipient', 'session', 'session_id', 'name', 'agent', 'seat'];
+// Naming the seat. Case-insensitive, because `to: "goalkeeper"` is every bit a
+// reach as the all-caps badge form.
 const GK_NAME_I = /goalkeeper|🥅/i;
+// The badge spelling, still used by the Bash reach path below (item 2 narrows
+// that path to addressee-shaped tokens).
+const GK_TARGET = /GOALKEEPER|🥅/;
+
+// PLAN.md v2 §3.4.2 as amended by §9: for a non-goalkeeper kind the deny matches
+// the ADDRESSEE FIELDS ONLY, never the whole serialised input. The first cut
+// matched the whole payload, which denied an orchestrator telling a worker "your
+// branch is the 🥅 GOALKEEPER lane" — a message to somebody else that merely
+// mentions the seat. Addressing it is the thing that is forbidden; talking about
+// it is not, and this project is *named* goalkeeper.
+// §9 names to, session_id, title, target.session and name. `session` and
+// `recipient` are included as well: they are addressee-shaped aliases of the
+// same thing, and leaving an alias open would reopen the hole §9 is closing.
+// The §9 intent is preserved exactly — no body field is ever matched.
+const ADDRESSEE_KEYS = ['to', 'session_id', 'session', 'title', 'name', 'recipient'];
 
 function addressesGoalkeeper(input) {
-  if (GK_TARGET.test(JSON.stringify(input))) return true;
+  if (!input || typeof input !== 'object') return false;
   for (const k of ADDRESSEE_KEYS) {
     if (typeof input[k] === 'string' && GK_NAME_I.test(input[k])) return true;
   }
+  // target.session — the nested form the bus uses.
+  const t = input.target;
+  if (t && typeof t === 'object' && typeof t.session === 'string'
+      && GK_NAME_I.test(t.session)) return true;
+  // A bare string target is an addressee too.
+  if (typeof t === 'string' && GK_NAME_I.test(t)) return true;
   return false;
 }
 
