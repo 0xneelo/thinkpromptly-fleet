@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice": "l11",
   "mode": "live-stubbed",
-  "capturedAt": "2026-09-07T02:42:01.303Z",
+  "capturedAt": "2026-09-07T03:18:34.061Z",
   "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api/",
   "results": [
     {
@@ -188,9 +188,114 @@
       "action": "GET /app#desktop against the real API",
       "expectation": "the desktop screen renders and logs no console error",
       "pass": true
+    },
+    {
+      "id": "U-windows",
+      "action": "click the Windows nav button",
+      "expectation": "the URL becomes #windows and Windows is on screen",
+      "pass": true,
+      "detail": "hash #windows, rendered Windows"
+    },
+    {
+      "id": "U-org",
+      "action": "click the Org chart nav button",
+      "expectation": "the URL becomes #org and Org chart is on screen",
+      "pass": true,
+      "detail": "hash #org, rendered Org chart"
+    },
+    {
+      "id": "U-registry",
+      "action": "click the Registry nav button",
+      "expectation": "the URL becomes #registry and Registry is on screen",
+      "pass": true,
+      "detail": "hash #registry, rendered Registry"
+    },
+    {
+      "id": "U-bus",
+      "action": "click the Message bus nav button",
+      "expectation": "the URL becomes #bus and Message bus is on screen",
+      "pass": true,
+      "detail": "hash #bus, rendered Message bus"
+    },
+    {
+      "id": "U-keys",
+      "action": "click the SSH keys nav button",
+      "expectation": "the URL becomes #keys and SSH keys is on screen",
+      "pass": true,
+      "detail": "hash #keys, rendered SSH keys"
+    },
+    {
+      "id": "U-accounts",
+      "action": "click the Accounts nav button",
+      "expectation": "the URL becomes #accounts and Accounts is on screen",
+      "pass": true,
+      "detail": "hash #accounts, rendered Accounts"
+    },
+    {
+      "id": "U-machines",
+      "action": "click the Machines nav button",
+      "expectation": "the URL becomes #machines and Machines is on screen",
+      "pass": true,
+      "detail": "hash #machines, rendered Machines"
+    },
+    {
+      "id": "U-desktop",
+      "action": "click the Desktop sessions nav button",
+      "expectation": "the URL becomes #desktop and Desktop sessions is on screen",
+      "pass": true,
+      "detail": "hash #desktop, rendered Desktop sessions"
+    },
+    {
+      "id": "B-machines",
+      "action": "press Back from #desktop",
+      "expectation": "the URL and the screen both return to machines",
+      "pass": true,
+      "detail": "hash #machines, rendered Machines, wanted Machines"
+    },
+    {
+      "id": "B-accounts",
+      "action": "press Back from #machines",
+      "expectation": "the URL and the screen both return to accounts",
+      "pass": true,
+      "detail": "hash #accounts, rendered Accounts, wanted Accounts"
+    },
+    {
+      "id": "B-keys",
+      "action": "press Back from #accounts",
+      "expectation": "the URL and the screen both return to keys",
+      "pass": true,
+      "detail": "hash #keys, rendered SSH keys, wanted SSH keys"
+    },
+    {
+      "id": "B-bus",
+      "action": "press Back from #keys",
+      "expectation": "the URL and the screen both return to bus",
+      "pass": true,
+      "detail": "hash #bus, rendered Message bus, wanted Message bus"
+    },
+    {
+      "id": "B-registry",
+      "action": "press Back from #bus",
+      "expectation": "the URL and the screen both return to registry",
+      "pass": true,
+      "detail": "hash #registry, rendered Registry, wanted Registry"
+    },
+    {
+      "id": "B-org",
+      "action": "press Back from #registry",
+      "expectation": "the URL and the screen both return to org",
+      "pass": true,
+      "detail": "hash #org, rendered Org chart, wanted Org chart"
+    },
+    {
+      "id": "B-windows",
+      "action": "press Back from #org",
+      "expectation": "the URL and the screen both return to windows",
+      "pass": true,
+      "detail": "hash #windows, rendered Windows, wanted Windows"
     }
   ],
   "allPass": true,
-  "passed": 30,
-  "total": 30
+  "passed": 45,
+  "total": 45
 }
