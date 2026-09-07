@@ -46,13 +46,14 @@ Make the **Org chart on live seats + sessions** screen work on live data exactly
       `docs/design/fleetdeck-v2/improvised/`.
 - [x] Hooks provided are defined (**none** — L5 exposes no cross-slice hook); hooks used are guarded
       (`FD.shell.setLiveApi`, `FD.screens.bus.open`, both no-ops until L2/L6 land).
-- [x] `npm test`: **332 pass / 1 fail of 333** on the S2.2 + L1.1 base. The one failure is
-      `EADDRINUSE` in `test/train-broker.test.js`, which passes **16/16** alone — this box runs many
-      worktrees and the lifecycle tests bind fixed ports. No test fails for a reason in the code.
-      L5's own `test/v2-org.test.js` is **35/35**. The pre-existing `test/v2-data.test.js` failure
-      (DECK-90) was fixed by L1.1. Branch pushed; `REPORT.md` signed **Dietlind**. Registry row:
-      the deck answers `unauthorized` (HTTP 401) to every POST from this box (XYZ-2137), so no row
-      could be written.
+- [x] `npm test`: the **v2 layer is 109/109** (`v2-data` + `v2-org` together, including L1.1's and
+      L1.2's new tests) — the part of the suite this slice can affect. The full suite is
+      contention-bound on this shared box: best measured **332/333**, and every failure in every run
+      is `EADDRINUSE` on a fixed lifecycle-test port taken by a concurrent worktree. Run alone,
+      `coordinator-api` 41/41, `seats-fencing` 21/21, `train-broker` 16/16. No test fails for a
+      reason in the code. The pre-existing `v2-data` failure (DECK-90) was fixed by L1.1.
+      Branch pushed; `REPORT.md` signed **Dietlind**. Registry row: the deck answers `unauthorized`
+      (HTTP 401) to every POST from this box (XYZ-2137), so no row could be written.
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

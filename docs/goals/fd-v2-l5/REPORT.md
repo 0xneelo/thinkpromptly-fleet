@@ -5,8 +5,9 @@
 **Project / sub-project:** `remote-system` / `fleetdeck-v2`
 **Branch:** `agent-v2-l5`, off `origin/agent-v2-base`. Merged three times, no `logic.js` conflict on
 any of them: `origin/agent-v2-l1` (already contained in the base), the first S2 base move, and the
-S2.2 + L1.1 base move. Both gates were re-run after the final merge; the numbers below are from that
-tree.
+S2.2 + L1.1 base move, and the L1.2 base move (`toDesktop` / `toAccounts` fallbacks — `toOrg` is
+untouched by it, and L5 added no shims to remove). Both gates were re-run after the final merge; the
+numbers below are from that tree.
 **Main issue:** DECK-54 · **Date:** 2026-09-07
 
 ---
@@ -18,7 +19,7 @@ tree.
 | Pixel gate, fixture mode | `report.json` allPass 36/36 | **36/36, allPass true**, max 0.0329 % (Registry dark, pre-existing); **Org chart 0.000000 % in BOTH themes** |
 | Live proof, API stubbed | `live.json` all pass | **50/50, allPass true**, zero unexpected console errors |
 | Unit tests | where applicable | `test/v2-org.test.js` **35/35** |
-| `npm test` | green | **332 pass / 1 fail**, the one failure `EADDRINUSE` — see "npm test" below |
+| `npm test` | green | v2 layer **109/109**; full suite varies with box contention, best **332/333**, every failure `EADDRINUSE` — see below |
 | improvised.md | entry + screenshot per improvisation | **12 entries (I-L5-01..12), 4 screenshots** |
 | Hooks | provided defined, used guarded | provided: **none**; used: 2, **both guarded** |
 
@@ -54,26 +55,32 @@ artefact. `docs/design/fleetdeck-v2/verify/l5/org-chart-dark.png` was also read 
 
 ### `npm test`
 
-**Best clean run, on the S2.2 + L1.1 base: 332 pass / 1 fail out of 333.** The single failure is a
-port collision, not a code fault:
+**The v2 layer is fully green: `test/v2-data.test.js` + `test/v2-org.test.js` = 109 pass / 0 fail**,
+run together, including the tests L1.1 and L1.2 added. That is the part of the suite this slice can
+affect.
 
-```
-test/train-broker.test.js — a foreign Host authority is refused
-  Error: listen EADDRINUSE: address already in use 127.0.0.1:33490
-```
+The **full** suite is not a stable number on this box, and the reason is not code. Measured across
+the session:
 
-That file passes **16/16** run on its own. A later full run on the same box degraded to 25 failures;
-every one of them is `EADDRINUSE` or `tailnet listener unavailable: EADDRINUSE` across
-`coordinator-api`, `reaper`, `seats-fencing` and `train-broker` — this box runs many agent worktrees
-at once and the lifecycle tests bind fixed ports (`127.0.0.1:39xx`, `127.0.0.2:18311`). Run alone,
-`coordinator-api` is 41/41, `seats-fencing` 21/21, `train-broker` 16/16. **No test fails for a reason
-in the code**, and none of the affected files is one L5 touches.
+| Run | Result | Failures |
+|---|---|---|
+| before L5's changes | 229 / 230 | `v2-data` (`window` under Node — DECK-90, since fixed by L1.1) |
+| after L5, pre-S2.2 | 264 / 265 | same one |
+| post-S2.2 + L1.1 | **332 / 333** | 1 × `EADDRINUSE` |
+| post-L1.2, busy box | 322 / 338 | 16 × `EADDRINUSE` |
+
+Every failure in the last two rows is `listen EADDRINUSE` or `tailnet listener unavailable:
+EADDRINUSE`, in `coordinator-api`, `reaper`, `seats-fencing` and `train-broker`. This box runs many
+agent worktrees at once and those lifecycle tests bind **fixed** ports (`127.0.0.1:39xx`,
+`127.0.0.2:18311`), so a concurrent session takes them. Run alone they pass: `coordinator-api`
+41/41, `seats-fencing` 21/21, `train-broker` 16/16.
+
+**No test fails for a reason in the code**, and none of the affected files is one L5 touches. The
+honest summary: L5 leaves the suite exactly as it found it, plus 35 new passing tests.
 
 **`test/v2-data.test.js` is fixed.** It was red when L5 started — generated `fixture.js` used
-`window` under Node, which I filed as **DECK-90** rather than hand-edit a generated file. L1.1 on the
-base resolved it; it passes now. DECK-90 should be closed against L1.1.
-
-L5's own `test/v2-org.test.js` is **35/35**, in the suite and standalone.
+`window` under Node, filed as **DECK-90** rather than hand-editing a generated file. L1.1 resolved
+it. DECK-90 should be closed against L1.1.
 
 ---
 
