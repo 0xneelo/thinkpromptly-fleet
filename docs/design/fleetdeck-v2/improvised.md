@@ -253,3 +253,92 @@ and legacy redirects in **L11**. L1 implements the pack: the two are not in conf
 different phases — `?view=` is how the shell selects a view while v2 lives beside the old UI at
 `/v2/`, and L11 maps the final `/` and `/app` routes onto it. Recorded so L11 does not read the query
 scheme as a contradiction of the ruling.
+
+---
+
+## L11 — cut-over: routes, deletions, docs, gate hardening (Alrun, `agent-v2-l11`, 2026-09-07)
+
+All four entries are data- and behaviour-only: L11 writes no markup and adds no pixels, so per this
+log's own rule they carry no screenshots. Their proof is on the wire, in
+`verify/l11/live.json` (22 checks) and `verify/l11/report.json` (36/36 fixture-mode pixel gate).
+
+### I-L11-01 — a pretty path canonicalises itself into the query, rather than the router learning paths
+
+**Serves:** `README.md` §Scope 1, ledger rows D18, D19, D20. Continues I-L1-10.
+
+`public/v2/router.js:28` reads the view from the query string only, and never looks at the pathname.
+`router.js` is L1's file and the shell is L11's **Out** list, so the cut-over could not teach either
+one about paths. The server closes the gap instead: each path states which view it means, and
+redirects only when the router's own default (`'app'`, `router.js:20`) would be wrong.
+
+| URL | Answer |
+|---|---|
+| `/` | 302 → `/?view=land`, then the shell |
+| `/app` | 200, the shell — the router already defaults to `app` |
+| `/deck` | 302 → `/deck?view=deck`, then the shell |
+
+**Why not 200 everywhere.** Serving the shell at `/` with no query would render the app view, because
+that is the router's default — the landing page would be unreachable at the URL that is supposed to
+show it. **Why not redirect `/app` too**, for symmetry: it would put a redirect on the deck's own
+entry point, the URL in `.claude/launch.json` and in every operator's muscle memory, to change
+nothing. The rule is therefore stated once, as a fact about the router rather than a table of paths:
+*redirect when the resolved view differs from the view this path names.* A path and a stale query that
+disagree (`/app?view=deck`) resolve to the path, because the path is what the operator typed.
+
+Every other query parameter survives the hop — `/?fixture=1` becomes `/?fixture=1&view=land` — so
+fixture mode reaches the landing page. Without that, a design-gate capture of `/` would have called
+the live API.
+
+### I-L11-02 — each old page URL maps to the screen that replaced it, in one hop
+
+**Serves:** `README.md` §Scope 1.
+
+`/index.html` → `/app#windows`, `/keys.html` → `/app#keys`, `/accounts.html` → `/app#accounts`,
+`/machines.html` → `/app#machines`, `/sessions.html` → `/app#desktop`.
+
+Two are not literal renames. The old `index.html` was the tiles page, so it lands on `windows`, the
+screen that holds the tiles — not on the app's default screen, which would silently move an old
+bookmark. `sessions.html` was the *Desktop sessions* page, so it lands on `desktop`; `windows` is the
+tmux tiles, an unrelated screen with a confusingly close name.
+
+The redirect names the fragment itself (`/app#keys`) rather than relying on a browser to re-attach the
+original one. Browsers do preserve a fragment across a redirect whose target has none, but that is a
+courtesy of the redirect, not of the server, and it costs one line to be explicit.
+
+### I-L11-03 — the gate's settle is bounded, and the hardening did not earn a re-baseline
+
+**Serves:** `README.md` §Scope 4 (gate hardening S0.1).
+
+`networkidle` waits on every connection, so a single live WebSocket or EventSource holds it open until
+the timeout. The replacement counts **only** `fetch` and `xhr`, and is bounded: 300 ms of quiet, giving
+up after 5 s. The numbers are chosen so a hung request costs one screen rather than the whole run —
+the capture continues and that screen fails with its reason recorded, which is more useful than 36
+screens dying together. Websocket and eventsource resource types are never counted, which is the
+specific failure `networkidle` had.
+
+**The CDN mirror is keyed on presence, deliberately.** The same slice deletes the vendored
+React/ReactDOM/Babel, so their mirror entries have no file to serve and the request goes out exactly as
+before; the entries stay because the mock still names those URLs, and a future re-vendoring should not
+need a code change. The Inter entries *are* live: `public/v2/vendor/inter.css` and its `.woff2` remain,
+so both sides now render text from the same local font file instead of whatever Google serves that day.
+
+**No re-baseline.** The pack says to re-baseline only if the PNGs change. A full baseline run after the
+hardening passed 36/36 at max 0.033 %, inside the 0.05 % reproducibility target, and 35 of the 36 files
+came back **byte-identical** to the committed baseline. The one that differed, `registry-dark.png`, is
+the same screen that carries the run-to-run noise, and it moved by that same 0.033 %. So the hardening
+is pixel-neutral and the approved baseline was restored untouched — re-baselining on capture noise
+would have thrown away the approval for nothing.
+
+### I-L11-04 — the old desktop-sessions acceptance script is deleted, not repointed
+
+**Serves:** `README.md` §Scope 5.
+
+`scripts/verify-desktop-sessions-ui.js` served `/sessions.html`, `/sessions.js`, `/style.css` and
+`/index.html` from `public/` and drove that page's own selectors (`#sessions-count`, `.desktop-group`).
+All four files are deleted here and none of those selectors exists in v2, so there was nothing to
+repoint it at: rebuilding it against the v2 Desktop sessions screen means writing a test for another
+slice's screen, which the cross-slice contract forbids. It goes, and its README paragraph with it.
+
+What replaces it: the design gate captures that screen in both themes as `desktop-sessions-*`, and
+`verify/l11/live.json` proves the screen's route and a clean console. The screen's own behavioural
+coverage belongs to the slice that owns it.

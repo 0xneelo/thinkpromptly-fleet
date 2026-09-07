@@ -213,10 +213,13 @@ async function reachScreen(page, screen) {
   }, screen.label);
 }
 
+// Returns false when the bounded wait gave up rather than reaching quiet, so the
+// caller can say so: a screenshot taken mid-load must not be reported as a plain
+// pixel mismatch with no trace of why.
 async function settle(page, quiet) {
   await page.mouse.move(0, 0);
   await blur(page);
-  await quiet();
+  const quiesced = await quiet();
   await page.evaluate(() => document.fonts.ready);
   await page.waitForFunction(() => [...document.querySelectorAll('[data-reveal]')].every(el => {
     const r = el.getBoundingClientRect();
@@ -240,6 +243,7 @@ async function settle(page, quiet) {
     }));
     await new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)));
   });
+  return quiesced;
 }
 
 async function capture(browser, url, screen, theme) {
@@ -264,7 +268,7 @@ async function capture(browser, url, screen, theme) {
     const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
     if (!response?.ok()) throw new Error(`Document HTTP ${response?.status() ?? 'missing response'}`);
     await reachScreen(page, screen);
-    await settle(page, quiet);
+    const quiesced = await settle(page, quiet);
     const checkRuntime = async () => {
       const runtimeErrors = await page.locator('.sc-has-error, .sc-logic-error, .sc-placeholder-error').count();
       if (runtimeErrors) throw new Error(`Design runtime reported ${runtimeErrors} error marker(s)`);
@@ -273,7 +277,7 @@ async function capture(browser, url, screen, theme) {
     await checkRuntime();
     const image = await page.screenshot({ type: 'png', fullPage: false, animations: 'disabled', caret: 'hide' });
     await checkRuntime();
-    return image;
+    return { image, quiesced };
   } finally { await context.close(); }
 }
 
@@ -340,7 +344,10 @@ export async function run(options) {
       const filename = `${screen.id}-${theme}.png`;
       const result = { screen: screen.id, label: screen.label, theme, mismatchPct: null, pass: false };
       try {
-        const actual = await capture(browser, url, screen, theme);
+        const { image: actual, quiesced } = await capture(browser, url, screen, theme);
+        // A screen that never went quiet is still compared, but it is never allowed
+        // to look like an ordinary result: the reason a diff exists must be visible.
+        if (!quiesced) result.settleTimedOut = true;
         png(actual);
         await writeFile(join(staging, filename), actual);
         result.sha256 = sha256(actual);

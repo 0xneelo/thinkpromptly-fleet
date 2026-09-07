@@ -2860,19 +2860,25 @@ const server = http.createServer(async (req, res) => {
       const r = await trainProxy('POST', '/api/ghtrain', b, req);
       return json(res, r.body, r.code);
     }
-    // A legacy page URL keeps its meaning: one 302 to the screen that replaced it.
-    // The browser re-attaches nothing here -- the screen travels in the fragment.
-    if (LEGACY_PAGES[p]) return redirect(res, '/app#' + LEGACY_PAGES[p]);
-    if (Object.prototype.hasOwnProperty.call(PAGE_VIEWS, p)) {
-      const want = PAGE_VIEWS[p];
-      const asked = url.searchParams.get('view');
-      const shown = V2_VIEWS.includes(asked) ? asked : ROUTER_DEFAULT_VIEW;
-      if (shown !== want) {
-        // Every other query parameter survives, so /?fixture=1 stays fixture mode.
-        url.searchParams.set('view', want);
-        return redirect(res, p + '?' + url.searchParams.toString());
+    // Pages answer reads only. Anything else falls through to the static handler
+    // exactly as it did before these routes existed, rather than a POST to /app
+    // quietly getting the same answer as a GET.
+    if (req.method === 'GET' || req.method === 'HEAD') {
+      // A legacy page URL keeps its meaning: one 302 to the screen that replaced it.
+      // The fragment is named here rather than left to the browser to re-attach.
+      if (LEGACY_PAGES[p]) return redirect(res, '/app#' + LEGACY_PAGES[p]);
+      if (Object.prototype.hasOwnProperty.call(PAGE_VIEWS, p)) {
+        const want = PAGE_VIEWS[p];
+        // First-wins on a repeated view, matching public/v2/router.js:28 exactly.
+        const asked = url.searchParams.get('view');
+        const shown = V2_VIEWS.includes(asked) ? asked : ROUTER_DEFAULT_VIEW;
+        if (shown !== want) {
+          // Every other query parameter survives, so /?fixture=1 stays fixture mode.
+          url.searchParams.set('view', want);
+          return redirect(res, p + '?' + url.searchParams.toString());
+        }
+        return sendFile(res, path.join(__dirname, ...V2_SHELL));
       }
-      return sendFile(res, path.join(__dirname, ...V2_SHELL));
     }
   } catch (e) {
     return send(res, 500, 'text/plain', String(e.message));

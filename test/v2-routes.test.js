@@ -75,6 +75,22 @@ test('each old page URL becomes one hop to the screen that replaced it', async (
   }
 });
 
+test('a repeated view parameter is first-wins, like the client router', async () => {
+  // public/v2/router.js:28 reads it with URLSearchParams.get, which takes the first.
+  // The server has to agree, or the redirect it sends disagrees with what the shell
+  // then reads out of the URL it was sent to.
+  assert.strictEqual((await srv.get('/app?view=deck&view=app')).headers.location, '/app?view=app');
+  assert.strictEqual((await srv.get('/app?view=app&view=deck')).status, 200);
+});
+
+test('a page route answers reads only', async () => {
+  // A POST falls through to the static handler, where the deleted page is a 404 --
+  // it must not be served or redirected as though it were a GET.
+  const r = await srv.post('/app', {});
+  assert.strictEqual(r.status, 404);
+  assert.strictEqual((await srv.post('/keys.html', {})).status, 404);
+});
+
 test('the old UI files are gone from disk, not merely unrouted', async () => {
   for (const gone of ['index.html', 'app.js', 'style.css', 'keys.html', 'keys.js',
     'accounts.html', 'accounts.js', 'machines.html', 'machines.js',
