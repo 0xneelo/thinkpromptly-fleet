@@ -239,8 +239,18 @@ bug, an over-anchored engine regex), and two were ruled with reasons.
 `scripts/design-diff.mjs` publishes by renaming a staging directory over `verify/<slice>/` and deleting
 the old one (`publish()`, L244-251). It therefore **destroys every sibling report in that directory**. It
 silently removed `parity.json`, `interactions.json` and `network.json` on one run here. **Run the pixel
-gate first, then the other three**, or give `design-diff` its own output directory. The ordering is baked
-into how the final runs were sequenced, and all six artifacts now coexist.
+gate first, then the other three**, or give `design-diff` its own output directory. It bit twice here:
+once destroying `parity.json`, `interactions.json` and `network.json`, and once destroying
+`logic-roundtrip.txt` and `t3-substitutions.txt`, which `v2:compile` writes *before* the pixel gate runs.
+The second time a `git add -A` committed the deletion. Both proofs were regenerated with `npm run
+v2:compile` afterwards, and that run changed no build output — which is itself a second demonstration
+that the compiler is idempotent. All six artifacts now coexist.
+
+One cosmetic inaccuracy in the generated proofs, left as-is because the hashes are the real evidence:
+`logic-roundtrip.txt` reports "source bytes 205150" and "body bytes 92669" where the files are 205602 and
+93067 bytes. Those figures are UTF-16 code-unit counts labelled as bytes; the ~450 difference is
+multi-byte UTF-8 characters in the template. The sha256 values are computed over the real bytes and do
+match, and I verified byte-identity independently by byte-offset extraction.
 
 ## Commits
 
