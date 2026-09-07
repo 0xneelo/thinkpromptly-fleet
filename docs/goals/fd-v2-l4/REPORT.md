@@ -154,12 +154,23 @@ suite passes, including the only one this slice can affect:
 | `test/reaper.test.js` alone | **24 pass, 0 fail** |
 | `npm test`, whole suite, run A | 296 pass, 2 fail |
 | `npm test`, whole suite, run B | 278 pass, 20 fail |
+| `npm test`, whole suite, run C | 289 pass, 14 fail |
 
 The failures move between runs and land in the reaper, lease, sitrep and coordinator suites — M3
-to M7, M15, S5 — none of which touch `public/v2`. They are the load-sensitivities DECK-7 already
-records, made worse by the sibling worktrees running their own servers and suites on this box at
-the same time. I did not chase them: they are outside this slice and they do not reproduce alone.
-The honest statement is that **L4 adds no failing test, and `npm test` is not green on this box.**
+to M7, M15, S5 — and every one of them passes when its file is run on its own. They are the
+load-sensitivities DECK-7 already records, made worse by the sibling worktrees running their own
+servers and suites on this box at the same time.
+
+They also cannot be this slice's, by construction. The whole diff against the base is:
+
+```
+public/v2/logic.js  public/v2/screens/registry.js  tools/v2-live-check.mjs
+docs/**  verify/l4/**
+```
+
+`test/reaper.test.js` imports `./helpers`, `child_process`, `fs`, `path` and the node test runner
+— not one file this branch touches, and nothing under `public/v2` is loaded by any of the failing
+suites. So: **L4 adds no failing test, and `npm test` is not green on this box.**
 
 ## Verification, reproducible
 
