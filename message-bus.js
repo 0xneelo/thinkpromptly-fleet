@@ -130,7 +130,7 @@ class MessageBus {
     const previous = this.queues.get(key) || Promise.resolve();
     const task = previous.catch(() => {}).then(() => this.deliverOne(message));
     this.queues.set(key, task);
-    task.finally(() => this.queues.get(key) === task && this.queues.delete(key));
+    task.finally(() => this.queues.get(key) === task && this.queues.delete(key)).catch(() => {});
     return task;
   }
 
@@ -142,6 +142,9 @@ class MessageBus {
       this.markDelivered.run(stamp, stamp, message.id);
     } catch (error) {
       this.markFailed.run(String(error.message || error).slice(0, 1000), this.clock(), message.id);
+      // A refusal is a verdict, not a transport failure: it is recorded like any failure but
+      // rethrown so the caller sees its HTTP status instead of a queued-then-failed 200.
+      if (error.refused) throw error;
     }
     return this.get(message.id);
   }

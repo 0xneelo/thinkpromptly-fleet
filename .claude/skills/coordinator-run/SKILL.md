@@ -135,5 +135,8 @@ write the marker or the board.
   quote under its ID, or a link. Never a paraphrase.
 - Never sit on a critical path. Anything time-bounded goes seat→operator direct; the Coordinator is
   copied asynchronously.
+- Never address a 🥅 GOALKEEPER seat — no SendMessage, notify, bus message, or sitrep to it. Never
+  write under `~/.claude/goalkeeper/`. The goalkeeper reads your files; you never read or reach it
+  (operator ruling 2026-09-07).
 
 The board must stay rebuildable from git history alone.
