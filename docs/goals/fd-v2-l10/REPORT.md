@@ -159,7 +159,7 @@ documented in place.
 
 ## Verification
 
-All three gates green on base `a6542ba` (S2.2 + L1.1), commit `<HEAD>`.
+All three gates green on base `a6542ba` (S2.2 + L1.1), commit `186edf7`.
 
 | Gate | Result |
 |---|---|
