@@ -3,7 +3,7 @@
   "mode": "verify",
   "slice": "l10",
   "status": "complete",
-  "capturedAt": "2026-09-07T01:34:58.810Z",
+  "capturedAt": "2026-09-07T02:14:32.059Z",
   "source": "http://127.0.0.1:4178/v2/index.html?fixture=1",
   "viewport": {
     "width": 1440,
