@@ -121,22 +121,55 @@ function expandVars(s, cfg) {
 // stay writable for workers (G-5); every lane report and the goal pack itself
 // live there, so the bare reading would stop the fleet rather than the seat.
 //
-// Two shapes count:
-//   - the config dir's own `goalkeeper` directory, in any spelling that
-//     expands to it, plus the `.claude/goalkeeper` literal for a non-default
-//     CLAUDE_CONFIG_DIR;
-//   - a bare relative `cd goalkeeper` / `pushd goalkeeper`, which is how a
-//     two-step hop reaches the jail without ever writing its full path.
-const GK_RELATIVE_CD = /(?:^|[\s;&|(){])(?:cd|pushd)\s+['"]?\.?\/?goalkeeper\/?['"]?(?:\s|$|[;&|)}])/i;
+// Recognising only the ABSOLUTE jail path left a hole: after `cd "$HOME/.claude"`
+// a bare relative `goalkeeper/thread.md` names the jail and was invisible. The
+// fix must not become "any segment spelled goalkeeper" — that is what would
+// catch `docs/goals/goalkeeper/` and the branch `agent-giselher/goalkeeper-mac`
+// again. So a relative segment counts only when the command ALSO shows the seat
+// standing in, or reaching into, the config dir.
+//
+// Five ways a command names the directory:
+//   1. the absolute jail path, realpath or lexical;
+//   2. the `.claude/goalkeeper` literal;
+//   3. the config dir mentioned anywhere AND a `goalkeeper` segment anywhere;
+//   4. a `cd`/`pushd` whose target starts with `goalkeeper`;
+//   5. the session's own cwd is already inside the config dir, and the command
+//      contains any `goalkeeper` segment.
 const GK_DOT_CLAUDE = /\.claude\/goalkeeper(?![A-Za-z0-9_-])/i;
+// A `goalkeeper` PATH SEGMENT: bounded left by a separator, and on the right
+// either a `/` or the end of the token. `goalkeeper-mac` is not a match.
+const GK_SEGMENT_ANY = /(?:^|[\s'"=:;&|(){}/])\.{0,2}\/?goalkeeper(?:\/|(?![A-Za-z0-9_-]))/i;
+// The config dir named as a path segment, for the default `~/.claude` spelling.
+const CONFIG_SEGMENT = /(?:^|[\s'"=:;&|(){}/])\.claude(?:\/|(?![A-Za-z0-9_-]))/i;
+const GK_CD_PREFIX = /(?:^|[\s;&|(){])(?:cd|pushd)\s+['"]?\.{0,2}\/?goalkeeper(?:\/|['"]?(?:\s|$|[;&|)}]))/i;
 
-function commandNamesGoalkeeper(cmd, cfg) {
+function mentionsConfigDir(s, cfg) {
+  if (CONFIG_SEGMENT.test(s)) return true;
+  const c = String(cfg || '');
+  return Boolean(c) && s.toLowerCase().indexOf(c.toLowerCase()) !== -1;
+}
+
+// Is this session already standing inside the config dir? A stamped
+// non-goalkeeper seat has no business there, so a bare `goalkeeper/...` from
+// that cwd is the jail and nothing else.
+function cwdInsideConfig(cwd, cfg) {
+  const here = resolved(cwd, cwd);
+  if (!here) return false;
+  const c = realDeep(path.resolve(cfg));
+  return here === c || here.startsWith(c + path.sep);
+}
+
+function commandNamesGoalkeeper(cmd, cfg, cwd) {
   const s = expandVars(cmd, cfg);
-  if (GK_RELATIVE_CD.test(s) || GK_DOT_CLAUDE.test(s)) return true;
-  const gk = goalkeeperDir(cfg);
+  const gk = goalkeeperDir(cfg);                                   // 1
   if (gk && s.toLowerCase().indexOf(gk.toLowerCase()) !== -1) return true;
   const lexical = path.resolve(cfg, 'goalkeeper');
-  return s.toLowerCase().indexOf(lexical.toLowerCase()) !== -1;
+  if (s.toLowerCase().indexOf(lexical.toLowerCase()) !== -1) return true;
+  if (GK_DOT_CLAUDE.test(s)) return true;                          // 2
+  if (GK_CD_PREFIX.test(s)) return true;                           // 4
+  if (!GK_SEGMENT_ANY.test(s)) return false;
+  if (mentionsConfigDir(s, cfg)) return true;                      // 3
+  return cwdInsideConfig(cwd, cfg);                                // 5
 }
 
 // Anything that can write, relocate, or run code. Static analysis of shell text
@@ -170,8 +203,8 @@ function isPureRead(cmd) {
 // refused, wherever the jail appears in it — so `mv <jail>/thread.md /tmp/x`,
 // which destroys the source, is denied even though its destination is outside.
 // A command that does not name the directory is never touched by this check.
-function commandTouchesGoalkeeper(cmd, cfg) {
-  if (!commandNamesGoalkeeper(cmd, cfg)) return false;
+function commandTouchesGoalkeeper(cmd, cfg, cwd) {
+  if (!commandNamesGoalkeeper(cmd, cfg, cwd)) return false;
   return !isPureRead(expandVars(cmd, cfg));
 }
 
@@ -385,7 +418,7 @@ try {
       deny(NO_REACH_TO_GK);
     } else if (isWrite && writePath && underGoalkeeper(writePath, cfg, cwd)) {
       deny(NO_WRITE_TO_GK);
-    } else if (command && commandTouchesGoalkeeper(scan, cfg)) {
+    } else if (command && commandTouchesGoalkeeper(scan, cfg, cwd)) {
       deny(NO_TOUCH_GK);
     } else if (!kind) {
       // A worker (or any other badge): the goalkeeper rules above are the only
