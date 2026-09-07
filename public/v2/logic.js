@@ -885,29 +885,40 @@ class AppLogic extends Sub {
       chipBtnStyle: selChip(false),
       headCheckStyle: check(selCount > 0 && selCount === filtered.length),
       // sidebar
-      groups: [
-        { box: 'onboarding-box', n: 1, items: [{ n: 'ops', dotStyle: dot(t.good) }] },
-        { box: 'german-box', n: gbSessions.length, items: gbSessions.map((n) => ({ n, dotStyle: dot(t.good) })) },
-      ],
-      miniAccounts: [
+      /* L2 (D03): live rows arrive as FD.setData('l2Groups', …). The seed below is
+       * the mock's, so fixture mode renders exactly as before. A live item may carry
+       * `tone` — 'muted' idle, 'good' tile open, 'warn' kill-requested (BEHAVIOUR §1). */
+      groups: (Array.isArray(FD.fixture.l2Groups) ? FD.fixture.l2Groups : [
+        { box: 'onboarding-box', n: 1, items: [{ n: 'ops' }] },
+        { box: 'german-box', n: gbSessions.length, items: gbSessions.map((n) => ({ n })) },
+      ]).map((g) => ({
+        box: g && g.box, n: g && g.n,
+        items: (g && Array.isArray(g.items) ? g.items : []).map((s) => ({ n: s && s.n, dotStyle: dot(s && s.tone === 'warn' ? t.warn : s && s.tone === 'muted' ? t.ink35 : t.good) })),
+      })),
+      /* L2 (D05): live bars arrive as FD.setData('l2Accounts', …); an item may carry
+       * a ready-made `txt` (BEHAVIOUR §3 prints '—' where the mock prints 'no data'). */
+      miniAccounts: (Array.isArray(FD.fixture.l2Accounts) ? FD.fixture.l2Accounts : [
         { prov: 'gpt', name: 'admin@deus.finance', pct: 80 }, { prov: 'claude', name: 'admin@deus.finance', pct: 71 }, { prov: 'claude', name: 'neelo@vibe.trading', pct: null }, { prov: 'claude', name: 'lafayette@infinite-holdings.llc', pct: null }, { prov: 'claude', name: 'aylianator@gmail.com', pct: null },
-      ].map((a) => {
+      ]).map((a0) => {
+        const a = a0 || {};
         const has = a.pct != null;
         return {
-          name: a.name, txt: has ? a.pct + '%' : 'no data',
+          name: a.name, txt: a.txt != null ? a.txt : (has ? a.pct + '%' : 'no data'),
           isGpt: a.prov === 'gpt', isClaude: a.prov === 'claude', provTitle: a.prov === 'gpt' ? 'ChatGPT' : 'Claude',
           provStyle: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '14px', height: '14px', color: has ? t.ink75 : t.ink35 },
           nameStyle: { fontFamily: mono, fontSize: '11px', color: has ? t.ink75 : t.ink45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
           txtStyle: { fontSize: '11px', color: has ? (a.pct >= 70 ? t.warn : t.ink75) : t.ink35, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' },
-          fillStyle: barFill(a.pct, has && a.pct >= 70 ? t.warn : t.good),
+          fillStyle: barFill(a.pct, has ? (a.pct > 90 ? t.bad : a.pct >= 70 ? t.warn : t.good) : t.good),
         };
       }),
       gptLogoStyle: { width: '12px', height: '12px', objectFit: 'contain', display: 'block', filter: dark ? 'invert(1)' : 'none', opacity: 0.85 },
       claudeLogoStyle: { width: '12px', height: '12px', objectFit: 'contain', display: 'block' },
-      boxRows: [
+      /* L2 (D05): live health arrives as FD.setData('l2Boxes', …); tone 'bad' is the
+       * red pill of BEHAVIOUR §2, which the mock's two seed rows never reach. */
+      boxRows: (Array.isArray(FD.fixture.l2Boxes) ? FD.fixture.l2Boxes : [
         { name: 'german-box', st: 'holder OK', tone: 'good' },
         { name: 'onboarding-box', st: 'reachable', tone: 'good' },
-      ].map((b) => ({ name: b.name, st: b.st, dotStyle: dot(b.tone === 'good' ? t.good : t.warn), stStyle: { fontSize: '11px', color: t.ink45, whiteSpace: 'nowrap' } })),
+      ]).map((b0) => (b0 || {})).map((b) => ({ name: b.name, st: b.st, dotStyle: dot(b.tone === 'good' ? t.good : b.tone === 'bad' ? t.bad : t.warn), stStyle: { fontSize: '11px', color: t.ink45, whiteSpace: 'nowrap' } })),
       // windows
       tiles: [
         { name: 'LC-cdx-readpath', box: 'german-box', foot1: 'gpt-5.6-sol xhigh · ~/projects/lowcap-connecto…', foot2: 'Pursuing goal (11m)', lines: [
@@ -988,6 +999,12 @@ class AppLogic extends Sub {
       clearSel: () => this.setState({ sel: {} }),
       // bus
       ...busVals, ...termVals,
+      /* L2 (D03): the sidebar nav badge is shell chrome. L6 owns the count and
+       * reports it through FD.shell.setBadge(n); until it does, busVals wins. */
+      ...(typeof FD.fixture.l2Badge !== 'number' ? {} : {
+        hasBusUnread: FD.fixture.l2Badge > 0,
+        navBadgeText: leftOpen ? String(FD.fixture.l2Badge) : '',
+      }),
       // keys
       ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
       prinChips: ['root', 'vibe'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),

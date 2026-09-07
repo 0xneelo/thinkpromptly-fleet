@@ -1,0 +1,66 @@
+{
+  "rows": [
+    {
+      "kind": "claude",
+      "id": "a1",
+      "email": "neelo@vibe.trading",
+      "label": "Reiner Garrecht",
+      "source": "oauth",
+      "windows": {
+        "five_hour": {
+          "pct": 95
+        },
+        "seven_day": {
+          "pct": 12
+        }
+      },
+      "credit": {
+        "used": 12.5,
+        "limit": 20,
+        "decimals": 2,
+        "currency": "EUR",
+        "capped": false
+      }
+    },
+    {
+      "kind": "claude",
+      "id": "a2",
+      "email": "lafayette@infinite-holdings.llc",
+      "label": "Lafayette Tabor",
+      "source": "oauth",
+      "windows": {
+        "five_hour": {
+          "pct": 71
+        },
+        "seven_day": {
+          "pct": 6
+        }
+      },
+      "credit": {
+        "used": 9,
+        "limit": 9,
+        "decimals": 0,
+        "currency": "EUR",
+        "capped": true
+      }
+    },
+    {
+      "kind": "claude",
+      "id": "a3",
+      "email": "aylianator@gmail.com",
+      "label": "Aylin Yeter",
+      "windows": {}
+    },
+    {
+      "kind": "codex",
+      "id": "a4",
+      "email": "admin@deus.finance",
+      "label": "Daniel Tabor (personal \u00b7 ChatGPT)",
+      "source": "codex",
+      "weekly": {
+        "pct": 80
+      },
+      "windows": {}
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "sessions": [
+    {
+      "host": "onboarding-box",
+      "name": "ops",
+      "status": "active",
+      "live": true,
+      "active_at": "2026-09-06T23:00:00.000Z"
+    },
+    {
+      "host": "german-box",
+      "name": "FD-v2-l2",
+      "label": "fd-v2 L2 shell",
+      "status": "active",
+      "live": true,
+      "active_at": "2026-09-06T23:20:00.000Z"
+    },
+    {
+      "host": "german-box",
+      "name": "FD-v2-l3",
+      "status": "kill-requested",
+      "live": true,
+      "active_at": "2026-09-06T22:00:00.000Z"
+    },
+    {
+      "host": "german-box",
+      "name": "FD-retired",
+      "status": "hidden",
+      "live": true,
+      "active_at": "2026-09-05T10:00:00.000Z"
+    },
+    {
+      "host": "german-box",
+      "name": "FD-also-retired",
+      "status": "hidden",
+      "live": true,
+      "active_at": "2026-09-05T09:00:00.000Z"
+    },
+    {
+      "host": "german-box",
+      "name": "FD-dead",
+      "status": "active",
+      "live": false,
+      "active_at": "2026-09-01T09:00:00.000Z"
+    }
+  ],
+  "errors": []
+}

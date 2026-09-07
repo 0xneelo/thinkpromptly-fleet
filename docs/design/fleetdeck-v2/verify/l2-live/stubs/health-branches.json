@@ -1,0 +1,34 @@
+{
+  "hosts": [
+    {
+      "host": "mac",
+      "agentLocked": true,
+      "holderOk": true,
+      "wslAlive": true
+    },
+    {
+      "host": "onboarding-box",
+      "kind": "linux",
+      "reachable": false,
+      "agentLocked": false
+    },
+    {
+      "host": "lab-box",
+      "kind": "linux",
+      "reachable": true,
+      "agentLocked": false
+    },
+    {
+      "host": "quiet-box",
+      "holderOk": null,
+      "wslAlive": true,
+      "agentLocked": false
+    },
+    {
+      "host": "german-box",
+      "holderOk": false,
+      "wslAlive": true,
+      "agentLocked": false
+    }
+  ]
+}
