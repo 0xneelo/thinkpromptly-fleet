@@ -670,7 +670,17 @@ class AppLogic extends Sub {
     // so screens/keys.js paints them from the mock's own nodes after each flush.
     // It needs this render's theme tokens. Guarded: undefined in fixture mode,
     // where that file returns before registering and the mock renders verbatim.
-    if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({ t, dark, isKeys: screen === 'keys' });
+    // Every style handed over is built by the mock's own pill()/dot()/selChip()
+    // helpers, so the painted cards carry the mock's tokens and nothing new.
+    if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({
+      t, dark, isKeys: screen === 'keys', ttl, prin,
+      pills: {
+        good: chipTone('good'), goodDot: dot(t.good),
+        dim: { ...chipTone('neutral'), color: t.ink45 }, dimDot: dot(t.ink35),
+        warn: chipTone('warn'), warnDot: dot(t.warn),
+      },
+      chipBtn: selChip(false), chipBtnSel: selChip(true),
+    });
     // Org chart scope
     const orgSort = this.state.orgSort || 'machine';
     const orgScopeData = FD.fixture.orgScopeData;

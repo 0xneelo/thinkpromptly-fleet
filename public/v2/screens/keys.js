@@ -78,17 +78,22 @@
   var minting = false;
   var ticks = [];        // {epoch, node} per live countdown, rebuilt each paint
 
-  var theme = null;      // handed over by logic.js sync()
-  var painting = false;
+  var ctx = null;        // theme tokens + mock style objects, handed over by logic.js
   var repaintQueued = false;
+  var proto = null;      // deep clones of the mock's own nodes, used as row prototypes
 
   // ---- the seam with logic.js --------------------------------------------
   // logic.js calls this from its keys section on every render, before the
   // reconciler runs. Repainting in a microtask therefore lands immediately
   // after flush() has restored the template's static nodes.
   FD.screens.keys = {
-    sync: function (ctx) {
-      theme = ctx && ctx.t ? ctx.t : theme;
+    sync: function (next) {
+      if (!next) return;
+      ctx = next;
+      // The TTL and principal chips stay bound to logic.js — it owns their
+      // state and their selected styling. This module only reads the choice.
+      if (next.ttl) ttl = next.ttl;
+      if (next.prin) principals = next.prin;
       queueRepaint();
     },
     // Exposed for verify/l7 and test/v2-keys.test.js.
@@ -97,6 +102,7 @@
       sshOpts: sshOpts,
       get state() { return state; },
       get train() { return train; },
+      get errors() { return { mint: mintError, train: trainError, load: loadError }; },
     },
   };
 
@@ -106,19 +112,303 @@
     Promise.resolve().then(function () { repaintQueued = false; paint(); });
   }
 
-  function paint() { /* filled in by the card milestones */ }
+  // ---- DOM helpers --------------------------------------------------------
+  function css(node, style) { if (node && style) Object.assign(node.style, style); }
+  function kids(node) { return node ? Array.prototype.slice.call(node.children) : []; }
+  function screenEl() { return document.querySelector('[data-screen-label="SSH keys"]'); }
+
+  // The pill is <span style=pill><span style=dot></span>TEXT</span>: set the
+  // wrapper style, the dot style, and the trailing text node.
+  function setPill(node, style, dotStyle, text) {
+    if (!node) return;
+    css(node, style);
+    var dot = node.firstElementChild;
+    if (dot) { dot.removeAttribute('style'); css(dot, dotStyle); }
+    var last = node.lastChild;
+    if (last && last.nodeType === 3) last.nodeValue = text;
+  }
+
+  // A notice line, cloned from the mock's own hint paragraph so the type scale,
+  // margins and font all come from the mock. Improvised: this screen's mock has
+  // no error or empty-state design at all (improvised.md I-L7-04).
+  function notice(text, colour) {
+    if (!proto || !proto.hint) return null;
+    var p = proto.hint.cloneNode(true);
+    p.replaceChildren(document.createTextNode(text));
+    p.style.color = colour;
+    p.setAttribute('data-l7-notice', '1');
+    return p;
+  }
+
+  // Capture the mock's own nodes once, before anything is rewritten, and reuse
+  // them as prototypes for every painted row. This is why no markup is typed by
+  // hand anywhere in this slice.
+  function capture(root) {
+    if (proto) return true;
+    var cards = kids(root);
+    if (cards.length < 4) return false;
+    var mintRow = kids(cards[0])[1];
+    var certRows = kids(cards[2]);
+    if (!mintRow || certRows.length < 4) return false;
+    proto = {
+      hint: kids(cards[0])[2].cloneNode(true),        // <p> hint under Mint
+      certLive: certRows[1].cloneNode(true),          // active cert row
+      certCopy: certRows[2].cloneNode(true),          // copy line + Copy button
+      certDead: certRows[3].cloneNode(true),          // expired cert row
+    };
+    return true;
+  }
+
+  // ---- paint --------------------------------------------------------------
+  function paint() {
+    var root = screenEl();
+    if (!root || !ctx || !capture(root)) return;
+    var cards = kids(root);
+    ticks = [];
+    paintMint(cards[0]);
+    paintTrain(cards[1]);
+    paintCerts(cards[2]);
+    paintKeys(cards[3]);
+    flashDir = null;
+  }
+
+  // §2 Mint ­— the TTL and principal chips are already bound to logic.js; this
+  // adds the titles, the aria state, the Mint click and the error line.
+  function paintMint(card) {
+    var row = kids(card)[1];
+    if (!row) return;
+    var btns = kids(row).filter(function (n) { return n.tagName === 'BUTTON'; });
+    var prinBtns = btns.slice(TTLS.length, TTLS.length + PRINCIPALS.length);
+    prinBtns.forEach(function (b, i) {
+      var p = PRINCIPALS[i];
+      b.title = PRINCIPAL_TITLE[p];
+      b.setAttribute('aria-pressed', String(!!principals[p]));
+    });
+    var mintBtn = btns[btns.length - 1];
+    if (mintBtn) {
+      mintBtn.textContent = minting ? 'Minting…' : 'Mint';
+      mintBtn.disabled = minting;
+      mintBtn.onclick = mint;
+    }
+    dropNotices(card);
+    if (mintError) card.appendChild(notice(mintError, ctx.t.bad));
+  }
+
+  // §3 GitHub train — three states, countdown, start chips, End train.
+  function paintTrain(card) {
+    var row = kids(card)[1];
+    if (!row) return;
+    var parts = kids(row);
+    var down = !!train && train.ok === false;
+    var live = !down && !!train.active && train.expiresAt > Date.now();
+
+    if (down) setPill(parts[0], ctx.pills.warn, ctx.pills.warnDot, 'BROKER DOWN');
+    else if (live) setPill(parts[0], ctx.pills.good, ctx.pills.goodDot, 'ACTIVE');
+    else setPill(parts[0], ctx.pills.dim, ctx.pills.dimDot, 'INACTIVE');
+
+    var cd = parts[1];
+    if (cd) {
+      cd.hidden = !live;
+      if (live) { cd.textContent = left(train.expiresAt); ticks.push({ epoch: train.expiresAt, node: cd }); }
+    }
+
+    var btns = kids(row).filter(function (n) { return n.tagName === 'BUTTON'; });
+    btns.slice(0, TTLS.length).forEach(function (b, i) {
+      var v = TTLS[i];
+      if (b.getAttribute('data-l7-busy') !== '1') { b.textContent = v; b.disabled = false; }
+      b.onclick = function () { startTrain(b, v); };
+    });
+    var endBtn = btns[TTLS.length];
+    if (endBtn) { endBtn.hidden = !live; endBtn.onclick = function () { endTrain(endBtn); }; }
+
+    dropNotices(card);
+    if (down || trainError) {
+      // keys.js:139 — a broker that is down explains itself even with no click yet.
+      card.appendChild(notice(trainError || train.error || 'the train broker is not answering', ctx.t.bad));
+    }
+  }
+
+  // §4 Certificates — rebuilt from the mock's own active / expired / copy rows.
+  function paintCerts(card) {
+    var head = kids(card)[0];
+    card.replaceChildren(head);
+    if (loadError) { card.appendChild(notice(loadError, ctx.t.bad)); return; }
+
+    // The `current` alias symlink duplicates the newest cert; hide it so Kill
+    // always hits a real dir (keys.js:141).
+    var certs = (state.certs || []).filter(function (c) { return c && c.dir && !/\/current$/.test(c.dir); });
+    if (!certs.length) { card.appendChild(notice('no certs yet — mint one above', ctx.t.ink45)); return; }
+
+    certs.forEach(function (c, i) {
+      var live = !!c.validToEpoch && c.validToEpoch > Date.now();
+      var row = (live ? proto.certLive : proto.certDead).cloneNode(true);
+      var parts = kids(row);
+      // The mock's expired row carries the separator; give it to every row but
+      // the first so a list of any length reads like the mock's two-row card.
+      row.style.borderTop = i ? '1px solid ' + ctx.t.lineSoft : 'none';
+      row.style.paddingTop = i ? '14px' : '0';
+
+      setPill(parts[0], live ? ctx.pills.good : ctx.pills.dim,
+        live ? ctx.pills.goodDot : ctx.pills.dimDot, live ? 'ACTIVE' : 'EXPIRED');
+      parts[1].textContent = c.keyId || c.dir;
+      parts[2].textContent = ((c.principals || []).join(', ') || 'no principals') +
+        ' · until ' + (c.validTo || '?');
+
+      var btn = kids(row).filter(function (n) { return n.tagName === 'BUTTON'; })[0];
+      if (live) {
+        var cd = parts[3];
+        cd.textContent = left(c.validToEpoch);
+        ticks.push({ epoch: c.validToEpoch, node: cd });
+      }
+      if (btn) {
+        btn.textContent = live ? 'Kill now' : 'Delete';
+        btn.disabled = false;
+        btn.onclick = function () { removeCert(c, live, btn); };
+      }
+      if (c.dir === flashDir) flash(row);
+      card.appendChild(row);
+
+      if (live) {
+        var copy = proto.certCopy.cloneNode(true);
+        var code = copy.querySelector('code');
+        var copyBtn = copy.querySelector('button');
+        if (code) code.textContent = sshOpts(c.dir);
+        if (copyBtn) {
+          copyBtn.textContent = 'Copy';
+          copyBtn.onclick = function () {
+            navigator.clipboard.writeText(code ? code.textContent : '').then(function () {
+              copyBtn.textContent = 'Copied';
+              setTimeout(function () { copyBtn.textContent = 'Copy'; }, COPIED_MS);
+            }, function () {});
+          };
+        }
+        card.appendChild(copy);
+      }
+    });
+  }
+
+  // §5 Keys table — the mock hard-codes ED25519 in the Type cell and the
+  // template is out of scope, so the real algorithm is written in after render
+  // (improvised.md I-L7-05). Row order matches toKeys(), which maps in order.
+  function paintKeys(card) {
+    var rows = kids(card).slice(2);
+    var keys = state.keys || [];
+    rows.forEach(function (row, i) {
+      var k = keys[i];
+      if (!k) return;
+      var cell = kids(row)[1];
+      if (cell) cell.textContent = k.type || '?';
+      var fp = kids(row)[2];
+      if (fp && !k.fingerprint) fp.textContent = '?';
+    });
+  }
+
+  function dropNotices(card) {
+    kids(card).forEach(function (n) { if (n.getAttribute('data-l7-notice')) card.removeChild(n); });
+  }
+
+  // The mock has no flash design; a brief tint in its own goodBg token marks the
+  // cert that was just minted (improvised.md I-L7-06).
+  function flash(row) {
+    row.style.background = ctx.t.goodBg;
+    row.style.borderRadius = '8px';
+    setTimeout(function () { row.style.background = 'transparent'; }, 1200);
+  }
+
+  // ---- talking to the API -------------------------------------------------
+  // Today's post() reads the body whatever the status: a 400 hands back the
+  // server's {ok:false,error}, and a body that will not parse becomes
+  // 'HTTP <status>' (keys.js:178-186). FD.data throws on any non-2xx instead,
+  // so unwrap it back into that shape rather than losing the server's message.
+  function post(call) {
+    return call().then(function (r) {
+      return r && typeof r === 'object' ? r : { ok: false };
+    }, function (e) {
+      if (e && e.status) {
+        if (e.body && typeof e.body === 'object') return e.body;
+        return { ok: false, error: 'HTTP ' + e.status };
+      }
+      // No status means the request never landed; the caller's own default text
+      // then applies, exactly as `r.error || '<default>'` does today.
+      return { ok: false };
+    });
+  }
+
+  // A status means the deck answered and today's fetch().json() would have read
+  // this body — a 503 from a dead broker is data, not a transport failure.
+  // Without a status nothing landed, which is the 'cannot reach fleetdeck' case.
+  function httpBody(e) { if (e && e.status) return e.body; throw e; }
 
   // ---- load + poll --------------------------------------------------------
   function load() {
-    return Promise.all([FD.data.sshkeys(), FD.data.ghtrain()]).then(function (r) {
-      state = r[0] || { certs: [], keys: [] };
-      train = r[1] || { active: false, expiresAt: null };
+    return Promise.all([
+      FD.data.sshkeys().catch(httpBody),
+      FD.data.ghtrain().catch(httpBody),
+    ]).then(function (r) {
+      var s = r[0], tr = r[1];
+      if (!s || typeof s !== 'object' || (!s.certs && !s.keys)) return fail();
+      state = { certs: s.certs || [], keys: s.keys || [] };
+      train = tr && typeof tr === 'object' ? tr : { ok: false, error: '' };
       loadError = '';
+      // The one identifier this screen owns in the mock's seed data.
+      FD.setData('keyRows', FD.data.toKeys(s, train).keyRows);
       paint();
-    }, function () {
-      // keys.js:170 — the whole certs area is replaced by one line.
-      loadError = 'cannot reach fleetdeck';
-      paint();
+    }, fail);
+  }
+
+  // keys.js:170 — the whole certificates area is replaced by one line.
+  function fail() { loadError = 'cannot reach fleetdeck'; paint(); }
+
+  // ---- actions ------------------------------------------------------------
+  function mint() {
+    mintError = '';
+    var picked = PRINCIPALS.filter(function (p) { return principals[p]; });
+    if (!picked.length) { mintError = 'pick at least one principal'; paint(); return; }
+    minting = true;
+    paint();
+    post(function () { return FD.data.mintCert({ ttl: ttl, principals: picked.join(',') }); })
+      .then(function (r) {
+        minting = false;
+        if (r.ok) flashDir = r.outdir;
+        else mintError = r.error || 'mint failed';
+        paint();
+        load();
+      });
+  }
+
+  function startTrain(btn, v) {
+    trainError = '';
+    btn.disabled = true;
+    btn.textContent = 'Touch ID…';
+    btn.setAttribute('data-l7-busy', '1');
+    post(function () { return FD.data.startTrain({ ttl: v }); }).then(function (r) {
+      btn.removeAttribute('data-l7-busy');
+      btn.disabled = false;
+      btn.textContent = v;
+      if (!r.ok) trainError = r.error || 'could not start train';
+      load();
+    });
+  }
+
+  function endTrain(btn) {
+    trainError = '';
+    btn.disabled = true;
+    post(function () { return FD.data.endTrain(); }).then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) trainError = r.error || 'could not end train';
+      load();
+    });
+  }
+
+  // Ruling O9: "Kill now" is this delete. Today's delete error lands in the
+  // mint error line (keys.js:66 reuses errEl), so it stays there.
+  function removeCert(c, live, btn) {
+    if (live && !confirm(KILL_CONFIRM)) return;
+    mintError = '';
+    btn.disabled = true;
+    post(function () { return FD.data.deleteKey({ dir: c.dir }); }).then(function (r) {
+      if (!r.ok) { mintError = r.error || 'delete failed'; btn.disabled = false; }
+      load();
     });
   }
 
