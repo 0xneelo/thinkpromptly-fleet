@@ -16,22 +16,30 @@ const HOLDER_TIP =
 // The shell is a classic browser script. Loading it under a stub window whose
 // storage reports fixture mode stops it before it touches the network or the
 // document, and leaves FD.shell.__pure behind.
-function load() {
-  const store = { 'fd-fixture': '1' };
+const SOURCE = readFileSync(SHELL, 'utf8');
+
+function load({ store = {}, search = '' } = {}) {
   const sandbox = { console };
   sandbox.window = sandbox;
   sandbox.localStorage = {
     getItem: (k) => (k in store ? store[k] : null),
     setItem: (k, v) => { store[k] = String(v); },
   };
-  sandbox.location = { search: '' };
+  sandbox.location = { search };
+  // Enough of a document that a boot attempt gets as far as appending the tag.
+  const appended = [];
+  sandbox.document = {
+    head: { appendChild: (el) => appended.push(el) },
+    createElement: () => ({}),
+    addEventListener: () => {},
+  };
   vm.createContext(sandbox);
-  vm.runInContext(readFileSync(SHELL, 'utf8'), sandbox, { filename: 'shell.js' });
+  vm.runInContext(SOURCE, sandbox, { filename: 'shell.js' });
   assert.ok(sandbox.FD && sandbox.FD.shell, 'shell.js publishes FD.shell');
-  return sandbox.FD.shell;
+  return { shell: sandbox.FD.shell, FD: sandbox.FD, appended };
 }
 
-const shell = load();
+const { shell } = load({ store: { 'fd-fixture': '1' } });
 const pure = shell.__pure;
 
 // Everything the shell returns is built inside the vm realm, so its prototypes
@@ -48,9 +56,25 @@ test('the four hooks L2 promises exist and are safe to call before the slice is 
   assert.doesNotThrow(() => shell.refresh());
 });
 
-test('fixture mode leaves the page alone — no data layer, no listeners', () => {
-  // load() ran with fd-fixture = 1; a live boot would have created FD.__dataLoading.
-  assert.ok(!shell.__pure.__loaded, 'no boot side effects');
+test('fixture mode stops the slice before it loads or fetches anything', () => {
+  // Both routes into fixture mode: the stored flag and the query parameter.
+  for (const opts of [{ store: { 'fd-fixture': '1' } }, { search: '?fixture=1' }, { search: '?a=1&fixture=1' }]) {
+    const { FD, appended } = load(opts);
+    assert.strictEqual(FD.__dataLoading, undefined, 'no data layer requested: ' + JSON.stringify(opts));
+    assert.strictEqual(appended.length, 0, 'no script appended: ' + JSON.stringify(opts));
+  }
+});
+
+test('and the same check lets a live boot through — so it is not simply always true', () => {
+  const { FD, appended } = load({ store: {}, search: '' });
+  assert.ok(FD.__dataLoading, 'a live boot starts the data layer');
+  assert.strictEqual(appended.length, 1, 'exactly one <script> appended');
+  assert.strictEqual(appended[0].src, '/v2/data.js');
+});
+
+test('a fixture-shaped query that is not the flag does not count as fixture mode', () => {
+  const { FD } = load({ search: '?fixture=0' });
+  assert.ok(FD.__dataLoading, '?fixture=0 is a live boot');
 });
 
 test('norm supplies exactly the defaults today\'s app supplies (app.js:182)', () => {

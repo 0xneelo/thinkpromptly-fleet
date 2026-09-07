@@ -476,6 +476,25 @@ async function main() {
       await context.close();
     }
 
+    {
+      const { context, page } = await open(browser, server.port, {
+        routes: { ...base, '/api/sessions': await stub('sessions-unkeyable.json') },
+      });
+      await settled(page);
+      await check('C05-unkeyable-rows',
+        'answer /api/sessions with three live rows that have no host or no name',
+        'none reaches FD.setData, and "no sessions" still shows rather than an empty list',
+        async () => {
+          const rowCount = await rows(page).count();
+          const groups = await page.evaluate(() => window.FD.fixture.l2Groups);
+          const txt = await page.locator('#fd-l2-listfoot div').allTextContents();
+          return (rowCount === 0 && Array.isArray(groups) && groups.length === 0
+                  && JSON.stringify(txt) === JSON.stringify(['no sessions']))
+            || { detail: `rows=${rowCount} groups=${JSON.stringify(groups)} foot=${JSON.stringify(txt)}` };
+        });
+      await context.close();
+    }
+
     /* ================= D · health branches ================================ */
     {
       const { context, page } = await open(browser, server.port, {
@@ -576,6 +595,29 @@ async function main() {
         return JSON.stringify(got) === JSON.stringify(['0', 'light']) || { detail: JSON.stringify(got) };
       });
       shots.light = await page.screenshot({ type: 'png', animations: 'disabled', caret: 'hide' });
+      await context.close();
+    }
+    {
+      // Today's app holds ?theme= in a variable and only the toggle writes
+      // storage (app.js:11-20 vs 60-63). The stored choice must survive.
+      const { context, page } = await open(browser, server.port, {
+        routes: base, storage: { 'fd-landing-dark': '1' }, query: '?theme=light',
+      });
+      await settled(page);
+      await check('F05-url-theme-wins', 'load with ?theme=light over a stored dark', 'the page is light for this visit', async () => {
+        const got = await page.evaluate(() => document.documentElement.dataset.theme);
+        return got === 'light' || { detail: got };
+      });
+      await check('F06-url-theme-not-persisted', 'read storage after ?theme=light', 'fd-landing-dark is still the stored 1', async () => {
+        const got = await page.evaluate(() => localStorage.getItem('fd-landing-dark'));
+        return got === '1' || { detail: got };
+      });
+      await check('F07-toggle-still-wins', 'click the theme toggle after a URL override', 'the toggle takes over and does persist', async () => {
+        await page.locator('[data-dc-tpl="132"]').click();
+        await page.waitForTimeout(150);
+        const got = await page.evaluate(() => [localStorage.getItem('fd-landing-dark'), document.documentElement.dataset.theme]);
+        return JSON.stringify(got) === JSON.stringify(['1', 'dark']) || { detail: JSON.stringify(got) };
+      });
       await context.close();
     }
     {

@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "slice": "l2",
   "mode": "live",
-  "capturedAt": "2026-09-07T01:04:01.472Z",
+  "capturedAt": "2026-09-07T01:10:47.565Z",
   "harness": "docs/design/fleetdeck-v2/verify/l2-live/live.mjs",
   "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api + docs/design/fleetdeck-v2/verify/l2-live/stubs",
-  "total": 55,
-  "passed": 55,
+  "total": 59,
+  "passed": 59,
   "allPass": true,
   "results": [
     {
@@ -283,6 +283,13 @@
       "detail": null
     },
     {
+      "id": "C05-unkeyable-rows",
+      "action": "answer /api/sessions with three live rows that have no host or no name",
+      "expectation": "none reaches FD.setData, and \"no sessions\" still shows rather than an empty list",
+      "pass": true,
+      "detail": null
+    },
+    {
       "id": "D01-health-texts",
       "action": "answer /api/health with every branch",
       "expectation": "the five status words of app.js:112-129, in order",
@@ -370,6 +377,27 @@
       "id": "F01-theme-migration",
       "action": "boot with only the legacy fleetTheme = light",
       "expectation": "fd-landing-dark becomes 0 and the page is light (D06)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "F05-url-theme-wins",
+      "action": "load with ?theme=light over a stored dark",
+      "expectation": "the page is light for this visit",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "F06-url-theme-not-persisted",
+      "action": "read storage after ?theme=light",
+      "expectation": "fd-landing-dark is still the stored 1",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "F07-toggle-still-wins",
+      "action": "click the theme toggle after a URL override",
+      "expectation": "the toggle takes over and does persist",
       "pass": true,
       "detail": null
     },

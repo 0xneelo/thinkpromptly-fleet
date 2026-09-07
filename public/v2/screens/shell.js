@@ -102,6 +102,7 @@
   var sessionErrors = [];
   var rowIndex = [];              // flat list of shown rows, in render order
   var hiddenCount = 0;
+  var liveCount = 0;             // live rows that survived validation, not raw rows
   var showHidden = false;
   var boxTips = [];               // right-rail box row tooltips, in render order
   var accountMeta = [];           // right-rail account tooltips + capped flags
@@ -142,17 +143,20 @@
 
   /* ---- theme (BEHAVIOUR §5, ledger D06) ---------------------------------- */
 
+  var urlDark = null;   // ?theme=, for this visit only — never written to storage
+
   function applyTheme() {
     var url = new URLSearchParams(global.location.search).get('theme');
-    if (url === 'light' || url === 'dark') write('fd-landing-dark', url === 'dark' ? '1' : '0');
+    if (url === 'light' || url === 'dark') urlDark = url === 'dark';
     else if (read('fd-landing-dark') === null && read('fleetTheme') === null) {
       // Neither key set: today's app asks the OS (app.js:11-20); FD.data.theme()
-      // would default to dark without asking.
+      // would default to dark without asking. Seeding the key here is the D06
+      // migration doing its job — the mock reads no other source.
       var light = global.matchMedia && global.matchMedia('(prefers-color-scheme: light)').matches;
       write('fd-landing-dark', light ? '0' : '1');
     }
-    var dark = FD.data.theme();   // runs the fleetTheme -> fd-landing-dark migration
-    syncThemeAttrs(dark);
+    FD.data.theme();   // runs the fleetTheme -> fd-landing-dark migration
+    syncThemeAttrs(isDark());
   }
 
   function syncThemeAttrs(dark) {
@@ -160,7 +164,13 @@
     document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
   }
 
+  /* `?theme=` wins for this visit and is never persisted — today's app holds it
+   * in a variable and only the toggle writes storage (app.js:11-20 vs 60-63).
+   * The mock's own isDark() reads state.dark first, so the override is handed to
+   * AppLogic once, on mount, and the next toggle simply replaces it. */
   function isDark() {
+    if (logic && logic.state && logic.state.dark != null) return logic.state.dark;
+    if (urlDark != null) return urlDark;
     return read('fd-landing-dark') !== '0';
   }
 
@@ -187,11 +197,13 @@
   }
 
   function renderSessions() {
-    var out = groupSessions(sessions.filter(usable), showHidden, openKeys());
+    var rows = sessions.filter(usable);
+    liveCount = rows.filter(function (s) { return s.live; }).length;
+    var out = groupSessions(rows, showHidden, openKeys());
     hiddenCount = out.hiddenCount;
     rowIndex = out.rowIndex;
     FD.setData('l2Groups', out.groups);
-    paint();
+    repaint();
   }
 
   /* A row with no host or no name cannot be attached to and cannot be keyed, so
@@ -272,11 +284,11 @@
       var rows = hosts.filter(function (h) { return !!h && typeof h === 'object'; }).map(healthRow);
       boxTips = rows.map(function (r) { return r.tip; });
       FD.setData('l2Boxes', rows.map(function (r) { return { name: r.name, st: r.st, tone: r.tone }; }));
-      paint();
+      repaint();
     }, function () {
       boxTips = [''];
       FD.setData('l2Boxes', [{ name: 'health unreachable', st: '', tone: 'bad' }]);
-      paint();
+      repaint();
     });
   }
 
@@ -305,11 +317,11 @@
       var rows = ((d && d.rows) || []).filter(function (r) { return !!r && typeof r === 'object'; });
       accountMeta = rows.map(accountMetaFor);
       FD.setData('l2Accounts', rows.map(accountBar));
-      paint();
+      repaint();
     }, function () {
       accountMeta = [{ tip: '', capped: false }];
       FD.setData('l2Accounts', [{ prov: '', name: 'accounts unavailable', pct: null, txt: '' }]);
-      paint();
+      repaint();
     });
   }
 
@@ -371,13 +383,19 @@
       proto[name] = function () {
         var out = inner ? inner.apply(this, arguments) : undefined;
         logic = this;
+        // Once, and only while the user has not chosen for themselves: the
+        // audit's ruling 3 forbids an unconditional setState in a lifecycle hook.
+        if (urlDark != null && !urlApplied && this.state && this.state.dark == null) {
+          urlApplied = true;
+          this.setState({ dark: urlDark });
+        }
         try { paint(); } catch (e) { console.error('[l2] paint failed', e); }
         return out;
       };
     });
   }
 
-  var logic = null;
+  var logic = null, urlApplied = false;
 
   /* renderVals() rebuilds the theme table `t` on every call and returns it
    * spread; it is the only way to reach the mock's tokens from outside the
@@ -403,6 +421,16 @@
       sideSolid: v.bgAll || (dark ? '#0a0a0a' : '#f2f1ee'),
     };
     return tokenCache;
+  }
+
+  /* FD.setData schedules its re-render on a microtask (runtime.js), so painting
+   * straight away would read the previous render's DOM against the new data.
+   * Queued after it instead — and it still covers the case where the app view is
+   * not mounted, so no componentDidUpdate arrives to drive the paint. */
+  function repaint() {
+    Promise.resolve().then(function () {
+      try { paint(); } catch (e) { console.error('[l2] paint failed', e); }
+    });
   }
 
   function paint() {
@@ -569,7 +597,7 @@
     var parts = [];
     if (hiddenCount) parts.push({ toggle: true, text: showHidden ? 'hide hidden' : 'show ' + hiddenCount + ' hidden' });
     sessionErrors.forEach(function (e) { parts.push({ text: e.host + ': ' + e.message }); });
-    if (!sessions.filter(function (s) { return s.live; }).length && !sessionErrors.length) parts.push({ text: 'no sessions' });
+    if (!liveCount && !sessionErrors.length) parts.push({ text: 'no sessions' });
     return parts;
   }
 
@@ -633,6 +661,12 @@
       hoveredRow = row;
       if (ready) paintLayer(tokens());
     }, true);
+
+    // The pointer can leave the window without crossing another element, which
+    // would strand the ⤢ over the last row it saw.
+    var clearHover = function () { if (!hoveredRow) return; hoveredRow = null; if (ready) paintLayer(tokens()); };
+    document.addEventListener('mouseleave', clearHover);
+    window.addEventListener('blur', clearHover);
 
     var reflow = function () { if (ready) paintLayer(tokens()); };
     window.addEventListener('resize', reflow);
