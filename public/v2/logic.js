@@ -754,7 +754,7 @@ class AppLogic extends Sub {
     // while the poll kept running on the old one.
     const busTranscript = !!active && this.state.busTranscript === active;
     const trAll = FD.fixture.busTranscripts;
-    const tr = busTranscript && tinted && actS.kind === 'claude-desktop' && trAll ? trAll[active] : null;
+    const tr = busTranscript && tinted && trAll ? trAll[active] : null;
     // A bus message stores `m` as minutes-ago (data.js minutesAgo), so a thread reads
     // oldest-first when it is sorted by m descending -- and a transcript turn joins it by
     // the same measure. Sort is stable, so a turn and a message of the same age keep order.
@@ -993,9 +993,9 @@ class AppLogic extends Sub {
           { id: 'reader', label: reader ? 'Bubbles' : 'Reader view', desc: reader ? 'Show agent replies as chat bubbles again.' : 'Agent replies go full width, no box, larger text — like the desktop app.', style: reader ? onBtn : iconBtn, click: () => this.setState({ busReader: !reader }), isReader: true },
           { id: 'max', label: busMax ? 'Exit full view' : 'Maximize', desc: busMax ? 'Return the message bus to the page. Esc also works.' : 'Expand the whole message bus to fill the window. Esc to exit.', style: busMax ? onBtn : iconBtn, click: () => this.setState({ busMax: !busMax }), isMax: !busMax, isUnmax: busMax },
           { id: 'pin', hide: narrow, label: pinned ? 'Unpin' : 'Pin thread', desc: pinned ? 'Move this thread back into Recent.' : 'Keep this thread at the top of the rail under Pinned.', style: pinned ? onBtn : iconBtn, click: () => { const p = { ...pins }; p[active] = !pinned; this.setState({ pins: p }); if (busLive) busLive.setPinned(active, !pinned); }, isPin: true },
-          isDesktopRow
-            ? { id: 'show', label: busTranscript ? 'Bus only' : 'Full conversation', desc: busTranscript ? 'Back to the Fleetdeck bus messages only.' : 'Show the whole Claude session — operator turns and agent replies — merged with the bus messages.', style: busTranscript ? onBtn : iconBtn, click: () => { const next = !busTranscript; this.setState({ busTranscript: next ? active : null }); if (busLive) busLive.wantTranscript(active, next); }, isShow: true }
-            : { id: 'show', label: 'Show session', desc: actGroup ? 'Broadcasts have no single terminal. Open a member thread to show it.' : canShow ? 'Open this session\'s live terminal full screen.' : 'Session is not running, so there is no terminal to show.', style: canShow ? iconBtn : offBtn, click: () => { if (!canShow) return; if (busLive && busLive.openMax(actS.host, actS.name)) return; this.setState({ termOpen: { name: actS.name, host: actS.host, id: actS.id }, termMenu: false }); }, isShow: true },
+          // The transcript toggle is its own header button, injected by screens/bus.js: the
+          // compiled template's icon set is frozen, so the eye keeps its one job.
+          { id: 'show', label: 'Show session', desc: actGroup ? 'Broadcasts have no single terminal. Open a member thread to show it.' : isDesktopRow ? 'Claude Desktop threads have no tmux terminal to show.' : canShow ? 'Open this session\'s live terminal full screen.' : 'Session is not running, so there is no terminal to show.', style: canShow ? iconBtn : offBtn, click: () => { if (!canShow) return; if (busLive && busLive.openMax(actS.host, actS.name)) return; this.setState({ termOpen: { name: actS.name, host: actS.host, id: actS.id }, termMenu: false }); }, isShow: true },
           { id: 'copy', hide: narrow, label: 'Copy thread', desc: 'Copy every message in this thread as plain text.', style: iconBtn, click: () => { try { navigator.clipboard.writeText(copyText()); } catch (e) {} }, isCopy: true },
         ];
         const ordered = list.filter((a) => a.id !== 'max').concat(list.filter((a) => a.id === 'max'));

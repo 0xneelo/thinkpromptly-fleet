@@ -479,9 +479,25 @@
   }
 
   // ---------------------------------------------------------------------------
-  // The full conversation of a Claude Desktop seat, merged into the thread by
-  // logic.js. Only the wanted thread is ever fetched, and only while it is wanted.
+  // The full Claude conversation behind a thread -- a Claude Desktop seat, or a
+  // fleet tmux worker -- merged into the thread by logic.js. Only the wanted
+  // thread is ever fetched, and only while it is wanted.
   // ---------------------------------------------------------------------------
+
+  // A tmux session name means nothing on its own: the same name can run on two
+  // boxes, so the machine rides along and the route resolves the pair. A desktop
+  // seat's thread id is already unique, and sends no host at all.
+  function transcriptHost(id) {
+    var target = targets[id];
+    return kinds[id] === TMUX && target && target.host ? target.host : '';
+  }
+
+  function canTranscribe(id) {
+    if (!id) return false;
+    if (kinds[id] === DESKTOP) return true;
+    return kinds[id] === TMUX && !!transcriptHost(id);
+  }
+
   function setTranscript(id, value) {
     transcripts = Object.assign({}, transcripts);
     transcripts[id] = Object.assign({ at: Date.now() }, value);
@@ -490,13 +506,13 @@
 
   function fetchTranscript(force) {
     var id = wantId;
-    if (!id || transcriptFor === id || kinds[id] !== DESKTOP) return;
+    if (!id || transcriptFor === id || !canTranscribe(id)) return;
     if (!force && Date.now() - transcriptAt < TRANSCRIPT_MS) return;
     // The thread id is the seat's handle either way -- 'id:<uuid>' from the Desktop screen,
     // otherwise its display name -- and the server resolves both (server.js desktopSeat).
     transcriptFor = id;
     transcriptAt = Date.now();
-    FD.data.transcript(id).then(function (res) {
+    FD.data.transcript(id, transcriptHost(id)).then(function (res) {
       if (wantId !== id) return;
       var state = TRANSCRIPT_STATES[res && res.state] && res.state !== 'loading' ? res.state : 'unavailable';
       setTranscript(id, { state: state, turns: state === 'ok' ? res.turns : [] });
@@ -836,8 +852,8 @@
   // 'loading', so the thread carries a note from the first frame rather than nothing.
   bus.wantTranscript = function (id, on) {
     if (!bus.live) return false;
-    if (!on) { if (wantId === id) wantId = null; return true; }
-    if (!id || kinds[id] !== DESKTOP) return false;
+    if (!on) { if (wantId === id) wantId = null; scheduleApply(); return true; }
+    if (!canTranscribe(id)) return false;
     wantId = id;
     // 'loading' before the request, so the thread shows a note instead of nothing while a
     // fetch is in flight -- and so every path out of fetchTranscript ends in some state.
@@ -1112,6 +1128,135 @@
     }
     return false;
   };
+
+  // ---------------------------------------------------------------------------
+  // The 'Full conversation' toggle, injected into the thread header.
+  //
+  // The compiled template renders one frozen glyph per action flag, so a new header
+  // button cannot come from logic.js at all -- it is a find-or-create DOM patch, the
+  // same improvisation screens/desktop.js makes for UI the mock cannot express, with
+  // that file's safety rig against audit F5: the tgObserver is disconnected around our
+  // own writes AND honours an `tgApplying` flag, and applies are counted per macrotask
+  // so a write/observe loop halts instead of spinning the tab.
+  //
+  // No state lives in the node: the button is re-derived from `wantId` and the open
+  // thread on every apply, so a reconciler sweep that drops it self-heals on the next
+  // render. Live mode only -- startToggle() is called from start2().
+  // ---------------------------------------------------------------------------
+  var BTN_ATTR = 'data-fd-l6';
+  // A document with lines: visibly neither the eye beside it nor the clipboard after it.
+  var BTN_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" '
+    + 'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+    + '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>'
+    + '<path d="M14 2v6h6"></path><path d="M8 13h8"></path><path d="M8 17h5"></path></svg>';
+  // The active-button look, which is what logic.js's onBtn is (logic.js:454, :467, :976).
+  var ACTIVE = {
+    dark: 'background:rgba(255,255,255,0.11);border-color:rgba(255,255,255,0.22);color:#ffffff',
+    light: 'background:rgba(0,0,0,0.07);border-color:rgba(0,0,0,0.18);color:#111111',
+  };
+  var MAX_APPLIES_PER_TASK = 50;
+  var tgObserver = null;
+  var tgApplying = false;
+  var applyQueued = false;
+  var applyCount = 0;
+  var applyHalted = false;
+
+  // The eye is the anchor: the new button goes immediately after it, which is before
+  // the clipboard, and its inline style is the sibling style to copy. The eye wears
+  // logic.js's offBtn on a row with no terminal, so the two keys offBtn adds are
+  // overridden back -- what is left is iconBtn either way.
+  function eyeButton() {
+    if (typeof document === 'undefined') return null;
+    var screen = document.querySelector('[data-screen-label="Message bus"]');
+    return screen ? screen.querySelector('button[aria-label="Show session"]') : null;
+  }
+
+  function toggleTranscript() {
+    var id = activeId();
+    if (!id) return;
+    var on = wantId !== id;
+    if (!bus.wantTranscript(id, on)) return;
+    if (host) host.setState({ busTranscript: on ? id : null });
+  }
+
+  function applyToggle() {
+    var eye = eyeButton();
+    var slot = eye && eye.parentNode;   // the tooltip wrapper the template puts round it
+    var row = slot && slot.parentNode;  // the header's action row
+    var id = activeId();
+    var btn = row ? row.querySelector('button[' + BTN_ATTR + ']') : null;
+    if (!row || !canTranscribe(id)) {
+      if (btn && btn.parentNode) btn.parentNode.removeChild(btn);
+      return;
+    }
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.setAttribute(BTN_ATTR, 'transcript');
+      btn.innerHTML = BTN_SVG;
+      btn.addEventListener('click', toggleTranscript);
+    }
+    if (btn.previousSibling !== slot) row.insertBefore(btn, slot.nextSibling);
+    var on = wantId === id;
+    // Re-read every apply: a light/dark flip rewrites the sibling's inline style, and a
+    // button that copied it once at creation would stay on the old theme.
+    var css = eye.style.cssText + ';opacity:1;cursor:pointer' + (on ? ';' + ACTIVE[host && host.isDark && host.isDark() ? 'dark' : 'light'] : '');
+    if (btn.__fdSrc !== css || btn.style.cssText !== btn.__fdOut) {
+      btn.style.cssText = css;
+      btn.__fdSrc = css;
+      btn.__fdOut = btn.style.cssText;
+    }
+    var label = on ? 'Bus only' : 'Full conversation';
+    if (btn.getAttribute('title') !== label) {
+      btn.setAttribute('title', label);
+      btn.setAttribute('aria-label', label);
+    }
+  }
+
+  function scheduleApply() {
+    if (tgApplying || applyHalted || applyQueued) return;
+    applyQueued = true;
+    // A microtask, so it lands after the runtime's own flush (queued first by setData).
+    Promise.resolve().then(function () { applyQueued = false; safeApply(); });
+  }
+
+  function safeApply() {
+    if (tgApplying || applyHalted) return;
+    if (applyCount === 0) {
+      // The budget refills on the next macrotask; 50 applies inside one task is a loop.
+      setTimeout(function () { applyCount = 0; applyHalted = false; }, 0);
+    }
+    if (++applyCount > MAX_APPLIES_PER_TASK) {
+      applyHalted = true;
+      if (global.console) {
+        global.console.error('[fd-v2 l6] apply() ran ' + MAX_APPLIES_PER_TASK
+          + ' times in one task; stopping until the next task (audit F5)');
+      }
+      return;
+    }
+    tgApplying = true;
+    if (tgObserver) tgObserver.disconnect(); // our own writes must not re-trigger us
+    try {
+      applyToggle();
+    } catch (err) {
+      if (global.console) global.console.error('[fd-v2 l6] the Full conversation button failed', err);
+    }
+    tgApplying = false;
+    if (tgObserver) observe();
+  }
+
+  function observe() {
+    var el = document.getElementById('dc-root') || document.body;
+    if (el && tgObserver) tgObserver.observe(el, { childList: true, subtree: true });
+  }
+
+  function startToggle() {
+    if (tgObserver || typeof document === 'undefined' || typeof MutationObserver !== 'function') return;
+    // The callback ignores records raised by our own writes; disconnect() already empties
+    // the queue, this is the belt to that pair of braces.
+    tgObserver = new MutationObserver(function () { if (!tgApplying) scheduleApply(); });
+    observe();
+    scheduleApply();
+  }
 
   // ---------------------------------------------------------------------------
   // L12 filter menu. Live only, and injected rather than templated: the compiled
@@ -1508,6 +1653,7 @@
     FD.setData('busGroups', []);
     FD.setData('busUnreadDefault', {});
     FD.setData('busTranscripts', {});
+    startToggle();
     refresh();
     // attach() also starts the timer, but it runs before the data layer has
     // loaded, so whichever of the two happens second does the work.
