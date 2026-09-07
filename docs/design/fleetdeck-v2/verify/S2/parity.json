@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "startedAt": "2026-09-07T00:15:55.636Z",
-  "finishedAt": "2026-09-07T00:16:42.576Z",
+  "startedAt": "2026-09-07T00:35:21.713Z",
+  "finishedAt": "2026-09-07T00:36:09.248Z",
   "mode": "parity",
   "sources": {
     "a": "http://127.0.0.1:3217/v2/pass1/index.html",
