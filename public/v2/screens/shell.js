@@ -384,10 +384,13 @@
    * logic, since `t` is a local. Cached per theme (I-L2-02). */
   function tokens() {
     var dark = isDark();
-    if (tokenCache && tokenCache.dark === dark) return tokenCache;
+    if (tokenCache && tokenCache.dark === dark && tokenCache.fromLogic) return tokenCache;
     var v = {};
     try { v = (logic && logic.renderVals()) || {}; } catch (e) { v = {}; }
     tokenCache = {
+      // Before the app view mounts there is no logic to ask, so that answer is
+      // the quoted fallback and must not be cached as if it were the real table.
+      fromLogic: !!v.ink,
       dark: dark,
       ink: v.ink || (dark ? '#ffffff' : '#111111'),
       ink45: v.ink45 || (dark ? 'rgba(255,255,255,0.45)' : 'rgba(17,17,17,0.47)'),
@@ -503,7 +506,7 @@
     return ui;
   }
 
-  var hoveredRow = null;
+  var hoveredRow = null, footSig = null;
 
   function paintLayer(t) {
     var u = layerUi();
@@ -539,14 +542,17 @@
   function paintListFoot(u, t) {
     var list = tpl(TPL.sessionList);
     var parts = footParts();
-    if (!list || !parts.length) { u.foot.style.display = 'none'; return; }
+    if (!list || !parts.length) { u.foot.style.display = 'none'; footSig = null; return; }
     var r = list.getBoundingClientRect();
     u.foot.style.display = 'flex';
     u.foot.style.left = Math.round(r.left) + 'px';
     u.foot.style.width = Math.round(r.width) + 'px';
     u.foot.style.background = t.sideSolid;
     u.foot.style.borderTop = '1px solid ' + t.lineSoft;
-    u.foot.replaceChildren.apply(u.foot, parts.map(function (p) {
+    /* Scrolling the sidebar repositions this strip on every event; rebuilding
+     * its children each time would be pure churn. */
+    var sig = t.dark + '|' + parts.map(function (p) { return (p.toggle ? 'T' : 'E') + p.text; }).join('\u0000');
+    if (sig !== footSig) { footSig = sig; u.foot.replaceChildren.apply(u.foot, parts.map(function (p) {
       var el = document.createElement(p.toggle ? 'button' : 'div');
       el.textContent = p.text;
       el.style.cssText = p.toggle
@@ -554,7 +560,7 @@
         : 'font-size:11px;line-height:1.5;padding:2px 0;color:' + t.bad + ';';
       if (p.toggle) el.setAttribute('data-fd-hidden-toggle', '1');
       return el;
-    }));
+    })); }
     // Measured after the children are in, so the strip hugs its own content.
     u.foot.style.top = Math.round(r.bottom - u.foot.offsetHeight) + 'px';
   }
