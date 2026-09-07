@@ -1,6 +1,6 @@
 # fd-v2-l7 — launch record
 
-Worker **Tankred** (`frontend-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l7`, worktree `~/projects/remote-system/.claude/worktrees/v2-l7`, branch `agent-v2-l7`, base `origin/agent-v2-s2`.
+Worker **Tankred** (`frontend-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l7`, worktree `~/projects/remote-system/.claude/worktrees/v2-l7`, branch `agent-v2-l7`, base `origin/agent-v2-base`.
 Launch condition: S2 pushed with parity 36/36 + report.json allPass, L1 merges cleanly.
 
 ```bash
@@ -8,7 +8,7 @@ ssh german-box "wsl tee /home/vibe/launch/launch-tankred.txt" < docs/goals/fd-v2
 ```
 
 ```bash
-ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Tankred v2-l7 origin/agent-v2-s2
+ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Tankred v2-l7 origin/agent-v2-base
 ```
 
 ```bash

@@ -4,7 +4,7 @@
 |---|---|
 | Project / sub-project | `remote-system` / `fleetdeck-v2` |
 | Worker | **Tankred** · `frontend-developer` · tag `agent-tankred` · Claude, high · `/goal` |
-| Branch | `agent-v2-l7` off `origin/agent-v2-s2`; first action `git merge --no-edit origin/agent-v2-l1` |
+| Branch | `agent-v2-l7` off `origin/agent-v2-base`; first action `git merge --no-edit origin/agent-v2-l1` |
 | Ledger rows | D14 (`docs/design/fleetdeck-v2/diff.md`) |
 | Owned file | `public/v2/screens/keys.js` + this screen's methods in `logic.js` |
 | Data identifiers | keyRows + cert/train state ← FD.data.toKeys(sshkeys, ghtrain) |
@@ -43,7 +43,7 @@ Make the **SSH keys + GitHub train** screen work on live data exactly like today
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 
-- Base `origin/agent-v2-s2` (S2: plain-JS compile — `public/v2/index.html`, `runtime.js`, `logic.js`, `app.js`, `fixture.js`, `template.dc.html`, `FD.setData(name,value)`, `FD.fixture`, and empty `public/v2/screens/<screen>.js` files wired in the shell). First action: `git merge --no-edit origin/agent-v2-l1` (L1: `public/v2/data.js` fetchers + adapters, `router.js`, fixture extractor, API fixtures under `docs/design/fleetdeck-v2/fixtures/api/`).
+- Base `origin/agent-v2-base` (S2: plain-JS compile — `public/v2/index.html`, `runtime.js`, `logic.js`, `app.js`, `fixture.js`, `template.dc.html`, `FD.setData(name,value)`, `FD.fixture`, and empty `public/v2/screens/<screen>.js` files wired in the shell). First action: `git merge --no-edit origin/agent-v2-l1` (L1: `public/v2/data.js` fetchers + adapters, `router.js`, fixture extractor, API fixtures under `docs/design/fleetdeck-v2/fixtures/api/`).
 - You own exactly ONE file, `public/v2/screens/keys.js`, plus your own screen's methods in `logic.js`. Never edit the shell, `runtime.js`, `app.js`, the template, `data.js`, other screens' methods or files. Need something from another slice? Call its hook guarded (`FD.screens?.bus?.open?.(t)`) and note the dependency in `REPORT.md`; never merge another L-branch.
 - Data enters only through `FD.setData(<mock identifier>, adapterOutput)`; fixture mode (`?fixture=1`) stays untouched and pixel-identical.
 - Hooks you PROVIDE (define in your first commit, no-ops until wired): none

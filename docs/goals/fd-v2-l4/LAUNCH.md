@@ -1,6 +1,6 @@
 # fd-v2-l4 — launch record
 
-Worker **Ruprecht** (`frontend-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l4`, worktree `~/projects/remote-system/.claude/worktrees/v2-l4`, branch `agent-v2-l4`, base `origin/agent-v2-s2`.
+Worker **Ruprecht** (`frontend-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l4`, worktree `~/projects/remote-system/.claude/worktrees/v2-l4`, branch `agent-v2-l4`, base `origin/agent-v2-base`.
 Launch condition: S2 pushed with parity 36/36 + report.json allPass, L1 merges cleanly.
 
 ```bash
@@ -8,7 +8,7 @@ ssh german-box "wsl tee /home/vibe/launch/launch-ruprecht.txt" < docs/goals/fd-v
 ```
 
 ```bash
-ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Ruprecht v2-l4 origin/agent-v2-s2
+ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Ruprecht v2-l4 origin/agent-v2-base
 ```
 
 ```bash

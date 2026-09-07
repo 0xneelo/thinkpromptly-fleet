@@ -4,7 +4,7 @@
 |---|---|
 | Project / sub-project | `remote-system` / `fleetdeck-v2` |
 | Worker | **Dietlind** · `frontend-developer` · tag `agent-dietlind` · Claude, high · `/goal` |
-| Branch | `agent-v2-l5` off `origin/agent-v2-s2`; first action `git merge --no-edit origin/agent-v2-l1` |
+| Branch | `agent-v2-l5` off `origin/agent-v2-base`; first action `git merge --no-edit origin/agent-v2-l1` |
 | Ledger rows | D11 (`docs/design/fleetdeck-v2/diff.md`) |
 | Owned file | `public/v2/screens/org.js` + this screen's methods in `logic.js` |
 | Data identifiers | orgScopeData + spine/kids/unattached arrays ← FD.data.toOrg(sessions, seats) (wraps FleetOrgChart.buildTree under public/v2/) |
@@ -43,7 +43,7 @@ Make the **Org chart on live seats + sessions** screen work on live data exactly
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 
-- Base `origin/agent-v2-s2` (S2: plain-JS compile — `public/v2/index.html`, `runtime.js`, `logic.js`, `app.js`, `fixture.js`, `template.dc.html`, `FD.setData(name,value)`, `FD.fixture`, and empty `public/v2/screens/<screen>.js` files wired in the shell). First action: `git merge --no-edit origin/agent-v2-l1` (L1: `public/v2/data.js` fetchers + adapters, `router.js`, fixture extractor, API fixtures under `docs/design/fleetdeck-v2/fixtures/api/`).
+- Base `origin/agent-v2-base` (S2: plain-JS compile — `public/v2/index.html`, `runtime.js`, `logic.js`, `app.js`, `fixture.js`, `template.dc.html`, `FD.setData(name,value)`, `FD.fixture`, and empty `public/v2/screens/<screen>.js` files wired in the shell). First action: `git merge --no-edit origin/agent-v2-l1` (L1: `public/v2/data.js` fetchers + adapters, `router.js`, fixture extractor, API fixtures under `docs/design/fleetdeck-v2/fixtures/api/`).
 - You own exactly ONE file, `public/v2/screens/org.js`, plus your own screen's methods in `logic.js`. Never edit the shell, `runtime.js`, `app.js`, the template, `data.js`, other screens' methods or files. Need something from another slice? Call its hook guarded (`FD.screens?.bus?.open?.(t)`) and note the dependency in `REPORT.md`; never merge another L-branch.
 - Data enters only through `FD.setData(<mock identifier>, adapterOutput)`; fixture mode (`?fixture=1`) stays untouched and pixel-identical.
 - Hooks you PROVIDE (define in your first commit, no-ops until wired): none

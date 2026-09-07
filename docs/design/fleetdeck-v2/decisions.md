@@ -97,3 +97,17 @@ $0 lane is gone until 2026-09-12, so the breed ruling (Astra for L7, L8, L9, L11
 **L2–L11 all run as Claude high** (`fd-launch-claude.sh`). S0.1 (gate hardening) folds into L11's scope; S0 stays
 accepted at `cf88d29`; Gisbert's name released. Risk: eleven Claude sessions on the box account — a `usage_limited`
 report from any worker is escalated to the operator immediately (no Astra fallback exists).
+
+## 2026-09-08 (early) · S2 accepted, base branch, nine launches
+
+- **S2** `origin/agent-v2-s2` @ `f370e4e` (Julius): compile + T3 landed; proofs `verify/S2/`: parity 36/36 identical,
+  interaction parity 34/34, pixel gate 36/36 max 0.033 %, no React/Babel/dc-runtime loads; `FD.setData` seam proven
+  by `tools/v2-setdata-check.mjs`; nine empty `public/v2/screens/*.js` wired. Accepted without a design-seat reviewer
+  pass (Mac subagent session limit until 03:20; Julius ran his own reviewer + hunter loop, 8 findings closed).
+- **L1** `origin/agent-v2-l1` @ `93bc722` (Juergen): data.js, router.js, extractor, tests, REPORT — accepted;
+  reviewer pass deferred (same limit). Follow-up L1.1 sent: extractor writes `fixture-extract.js`, check compares
+  the seven S2 seeds.
+- **Merge conflict** S2 + L1 on `public/v2/fixture.js` (add/add) and `package.json` (scripts): resolved once by the
+  design seat → `origin/agent-v2-base` @ `66e81e0` (S2's fixture.js, scripts unioned). The nine L-slices branch
+  from `agent-v2-base` (packs updated from `agent-v2-s2`); their first-action merge of L1 is a no-op.
+- Rule for L2–L10: in fixture mode (`?fixture=1`) never call `FD.setData`; only live mode loads data.

@@ -1,6 +1,6 @@
 # fd-v2-l10 — launch record
 
-Worker **Clodwig** (`frontend-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l10`, worktree `~/projects/remote-system/.claude/worktrees/v2-l10`, branch `agent-v2-l10`, base `origin/agent-v2-s2`.
+Worker **Clodwig** (`frontend-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l10`, worktree `~/projects/remote-system/.claude/worktrees/v2-l10`, branch `agent-v2-l10`, base `origin/agent-v2-base`.
 Launch condition: S2 pushed with parity 36/36 + report.json allPass, L1 merges cleanly.
 
 ```bash
@@ -8,7 +8,7 @@ ssh german-box "wsl tee /home/vibe/launch/launch-clodwig.txt" < docs/goals/fd-v2
 ```
 
 ```bash
-ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Clodwig v2-l10 origin/agent-v2-s2
+ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Clodwig v2-l10 origin/agent-v2-base
 ```
 
 ```bash
