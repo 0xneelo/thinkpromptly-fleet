@@ -253,3 +253,199 @@ and legacy redirects in **L11**. L1 implements the pack: the two are not in conf
 different phases — `?view=` is how the shell selects a view while v2 lives beside the old UI at
 `/v2/`, and L11 maps the final `/` and `/app` routes onto it. Recorded so L11 does not read the query
 scheme as a contradiction of the ruling.
+
+---
+
+## L9 — Machines cards (Eckbert, `agent-v2-l9`, 2026-09-07)
+
+Ledger row **D16**. Spec: `docs/goals/fd-v2-l9/BEHAVIOUR.md`, i.e. `public/machines.js` as it ships
+today. Every entry below is something the mock leaves open, and every one is live-mode only —
+fixture mode renders the mock's seed untouched and the pixel gate is 36/36 at 0.000000 % on both
+Machines shots (`verify/l9/report.json`).
+
+### I-L9-01 — `reported <ago>` is written into the slot the template hard-codes
+
+**Serves:** `README.md` §Scope 1 ("reported <ago>"), BEHAVIOUR §2 (`machineCell`, `machines.js:187`).
+**Screenshot:** `improvised/l9-reported-ago.png`.
+
+The mock's card header ends with a fixed string, not a binding:
+
+```js
+h("span", { key: k1+"|1422", "data-dc-tpl": "618", style: a337(v1) },
+  t(k1+"|1423", "reported just now"))          // app.js:2422-2424
+```
+
+There is no `{{ m.reported }}`. The compiled `app.js` and `template.dc.html` are out of this slice's
+scope, so the value cannot arrive through the data seam. On a monitoring screen the string is not
+cosmetic: leaving it would tell the operator a machine that last called in nine days ago reported
+just now.
+
+**Decision.** The screen finishes its own render. `FD.screens.machines.afterRender()` runs from
+`AppLogic`'s `componentDidMount`/`componentDidUpdate` and writes the real
+`'reported ' + ago(m.reported_at)` into that same span, found by the compiled template's own
+`data-dc-tpl` id — a `data-*` hook, never a class grafted onto mock markup. No node is created and
+no markup is typed.
+
+**Why this is stable, not a race.** `runtime.js`'s `t()` rewrites a keyed text node whenever its
+data differs from the compiled literal, so a one-shot patch would be undone on the next flush.
+`flush()` runs `syncChildren` → `sweep` → refs → `componentDidUpdate` in one synchronous pass, so
+re-applying from the lifecycle hook lands after the runtime every time and the mock's string never
+reaches a paint. This is the same escape hatch `runtime.js` documents for the deck's `splitWords()`
+edits.
+
+**Follow-up for the design seat:** binding this span to `{{ m.reported }}` in the mock would delete
+this entry outright. Filed as a ledger note on D16, not fixed here — the mock is not this slice's.
+
+### I-L9-02 — Open in Registry filters by host; the header Refresh button gets its click
+
+**Serves:** `README.md` §Scope 1 and 2. **Screenshot:** `improvised/l9-open-in-registry.png`.
+
+Two header controls the mock draws but never wires.
+
+`Open in Registry` is bound to `m.openRegistry`, which in the mock only switches screens. It now
+calls the L4 hook, guarded, and keeps the mock's own switch as the fallback until L4 defines it:
+
+```js
+const q = mach.host || mach.name;
+if (FD.screens && FD.screens.registry && typeof FD.screens.registry.open === 'function') { FD.screens.registry.open({ q }); return; }
+this.setState({ screen: 'registry' });
+```
+
+`m.host` is the deck join key and is `null` for a machine absent from `hosts.json`, so the machine's
+own name is the fallback filter. The button only appears when the card has sessions, which is the
+mock's condition and matches today's screen, where a machine with no sessions has nothing to look up.
+
+The header `Refresh` button (`data-dc-tpl="241"`) carries **no** `onClick` in the compiled template,
+on any screen. BEHAVIOUR §3 requires a forcing refresh, so this screen attaches its own listener in
+`afterRender`. Because the template never sets that prop, the runtime never removes the listener and
+the node is reused by key, so it binds once. It is inert on every other screen: the handler returns
+early unless the Machines block is in the DOM. If the shell later claims that button, this listener
+should be deleted in favour of the shell's hook — noted for L2/L11.
+
+### I-L9-03 — live cards default to expanded
+
+**Serves:** `README.md` §Scope 2 ("default expanded (improvise + document)").
+**Screenshot:** `improvised/l9-default-expanded.png`.
+
+Today's Machines page is a table with every fact visible at once; the mock's cards start collapsed,
+showing one summary line per row. Opening six cards by hand to see what the old page showed on load
+would be a regression in a screen whose whole job is a fleet-wide glance.
+
+**Decision.** On live data a card is open unless the operator has closed it; the fixture's seed
+keeps the mock's collapsed cards, so the pixel gate is unmoved.
+
+```js
+const open = mOpen[idx] === undefined ? !!mLive : !!mOpen[idx];
+```
+
+`mOpen[idx]` is only ever set by a click, so the first click on a live card closes it and the
+mock's collapsed look is one click away. No new state key and no storage: today's screen has no
+`localStorage` at all (BEHAVIOUR §3) and this adds none.
+
+### I-L9-04 — the machine-level facts lead the card as one status cell
+
+**Serves:** `README.md` §Scope 1 (the push line and its copyable command), §Scope 2 (error text
+placement). **Screenshot:** `improvised/l9-machine-status-row.png`.
+
+`machineCell` (`machines.js:181-186`) has three machine-level branches — `m.error`, the push
+machine's `no report yet — cron this on that machine:` with its copyable command, and a plain
+`no report yet`. The mock's card is a header plus a grid of *client* rows and has no slot for any
+of them; a `no_report` machine reports no clients at all, so its card body would otherwise be empty.
+
+**Decision.** They become the first cell of the grid, in the row shape the mock already draws:
+`env` carries the one improvised label `Status`, `primary` carries the text verbatim, and the push
+command rides in the row's note. Error text is toned with the mock's own `t.bad`, as its `.err`
+class is today. The command keeps today's click-to-copy and its `title="click to copy"`, attached
+in `afterRender` — the mock's note is a plain `<p>` with no click binding, and copying a cron line
+by hand off a screen is exactly the friction the affordance exists to remove.
+
+### I-L9-05 — one note per row: the joined line, and where a reset time goes
+
+**Serves:** BEHAVIOUR §2 (freshness, `shares`, `note`, the sampled-age line, session attribution)
+and §2 (usage bar tails). **Screenshot:** `improvised/l9-note-joined.png`.
+
+Today's client cell stacks up to five separate lines under the chips. The mock's row has exactly one
+`note`. Its own seed shows how it handles that — it joins with ` · `
+(`'token valid in 6 h · 65 sessions run as Daniel Tabor'`), so this screen joins the same way, in
+today's DOM order: freshness, `same login as CLI`, the client's own note, `no usage data` /
+`no usage windows reported`, the reset times, the sampled-age line, then the session attribution.
+
+The reset time is the one that needed a decision. Today each bar carries its own tail
+(`resets in 3h 20m · stale`); the mock's machine bar row is a three-column grid of label, track and
+right cell with no tail slot, and `stale` already occupies the right cell. Dropping the reset times
+would lose a real fact, and the mock's seed puts one in the note. With up to three windows on a row,
+an unlabelled `resets in 3h 20m` would be ambiguous, so each is named: `5 hour resets in 2h 10m`.
+The `bar()` helper's `resets` argument is populated too, so binding it in the template later would
+need no data change.
+
+### I-L9-06 — the fetch error is a card with only a title
+
+**Serves:** `README.md` §Scope 2 ("error text"), BEHAVIOUR §3.
+**Screenshot:** `improvised/l9-error-card.png`.
+
+`load()`'s catch (`machines.js:223-224`) replaces the whole table with one `.err` div reading
+`cannot reach fleetdeck`. The mock has no empty state for this screen.
+
+**Decision.** The list becomes a single card whose name is that string verbatim, with no rows —
+in the mock's panel style, and it replaces the machines rather than sitting beside stale ones,
+which is what today's screen does. The card's kind chip is empty, and an empty chip is still a
+bordered pill, so `afterRender` hides it. Recovery is automatic: the next 60 s poll that succeeds
+puts the machines back.
+
+### I-L9-07 — the per-session lines are not ported; the count chip and Open in Registry replace them
+
+**Serves:** ledger D16, BEHAVIOUR §2 (`.sess` lines). Data-only decision, no screenshot.
+
+Today's machine cell prints one line per session, `[name, worker, role||label, status].join(' · ')`.
+For german-box that is 77 lines inside one table cell. D16 and `README.md` §Scope 1 both describe
+the mock's header as a session-*count* chip plus `Open in Registry` — the mock deliberately moved
+the list to the Registry screen, which is the screen that exists to show it.
+
+**Decision.** Follow the mock: the count chip states how many, the button goes and shows them,
+filtered to the host. Recorded because it is the one BEHAVIOUR §2 item this slice does not render;
+`REPORT.md` marks it *partial, by design*. If the design seat wants the lines back, they belong in a
+collapsed sub-list, not in the card header.
+
+### I-L9-08 — `collecting` / `collect_started_at` stay unrendered
+
+**Serves:** `README.md` §Scope 2 ("collecting indicator (decide; today none)"). Data-only decision.
+
+`/api/machines` returns both, and BEHAVIOUR §3 records that today's screen renders neither.
+A sweep is bounded by the deck's own 300 s TTL and the rows on screen stay readable throughout, so
+an indicator would flicker on a poll without telling the operator anything actionable.
+
+**Decision.** Not rendered, matching today exactly. The fields reach the screen and are one line
+away if the design seat wants a spinner later.
+
+### I-L9-09 — the data seam is `machinesLive`, and `FD.data.toMachines` is thinner than BEHAVIOUR
+
+**Serves:** `README.md` §Cross-slice contract. Data-only decision.
+
+Two things the pack's data path did not anticipate.
+
+**The key.** `README.md` names the identifier `machines`, but S2 could not byte-safely substitute
+the mock's `machines` literal (it calls the theme helper `mSec()` and its anchor is ambiguous), so
+there is no `FD.fixture.machines` to overwrite. Per the DESIGN-35 broadcast of 2026-09-07 this slice
+publishes its own key instead — `FD.setData('machinesLive', cards)` — and `logic.js` falls back to
+the mock's seed when it is absent. That is what keeps fixture mode byte-identical.
+
+**The adapter.** `FD.data.toMachines()` (L1) supplies the card list, its names and the
+group-by-client structure, and this screen uses it for exactly that. It does not carry BEHAVIOUR's
+wording for the rest, so those are computed in the screen, where `improvised.md` I-L1-01 already
+puts the presentation layer:
+
+| BEHAVIOUR §2 | `toMachines` today | This screen |
+|---|---|---|
+| `kind` chip: `ssh <ssh>` for an ssh route | `m.os + ' · ' + m.route` — the alias is dropped | `windows+wsl · ssh gb-deploy` |
+| session chip pluralises | always `N sessions` | `1 session` / `N sessions` |
+| `PROOF.profile` → `token-proved` | `profile` → `profile only`, `warn` | today's map wins |
+| `STATE` chips (`token expired`, `busy (429)`, `signed out`, `api key`, `never used`, `read failed`) | not emitted at all | emitted |
+| plan `business` is suppressed | emitted | suppressed |
+| windows sorted by `WIN_ORDER`, unknown ones after by name | raw `Object.keys` order | sorted |
+| freshness, `shares`, sampled age, session attribution | only `c.note` or a bare sampled age | full note |
+| `m.error`, `m.state`, `reported_at`, `push_url`, `m.host` | not carried | carried |
+
+None of this is a defect in L1 — it emits the fields `diff.md` §"Binding map" names. It is recorded
+so the next screen author does not assume an adapter is a complete port of its screen, and so the
+design seat can decide whether these belong in `data.js` instead. **This slice does not edit
+`data.js`.**
