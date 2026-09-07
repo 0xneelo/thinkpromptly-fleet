@@ -238,21 +238,60 @@
     if (FD.data) return Promise.resolve(FD.data);
     if (!root.document) return Promise.reject(new Error('no document'));
     if (!ensureData._p) {
+      // A rejection is NOT memoized: one transient failure must not leave the screen
+      // stuck on 'cannot reach fleetdeck' for the rest of the session — the next 60 s
+      // poll retries the script as well as the fetch.
       ensureData._p = new Promise(function (resolve, reject) {
         var s = root.document.createElement('script');
         s.src = '/v2/data.js';
         s.onload = function () { FD.data ? resolve(FD.data) : reject(new Error('data.js loaded without FD.data')); };
         s.onerror = function () { reject(new Error('cannot load /v2/data.js')); };
         root.document.head.appendChild(s);
-      });
+      }).catch(function (e) { ensureData._p = null; throw e; });
     }
     return ensureData._p;
   }
 
   // --- state, loading and the 60 s poll ----------------------------------------
-  var state = { cards: [], loading: false, poll: null, started: false };
+  var state = { cards: [], loading: false, poll: null, started: false, seq: 0, done: 0 };
+
+  // DESIGN-35 binding instruction 2 (S2 shim audit F2): nothing leaves this file
+  // unvalidated. Every field the template will touch is coerced to the type its binding
+  // expects, so a shape change on /api/machines cannot throw inside renderVals and blank
+  // all nine screens. A card that cannot be coerced is dropped, not rendered half-built.
+  var str = function (v) { return typeof v === 'string' ? v : v == null ? '' : String(v); };
+
+  function validate(cards) {
+    if (!Array.isArray(cards)) return [];
+    var out = [];
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i];
+      if (!c || typeof c !== 'object') continue;
+      out.push({
+        name: str(c.name), kind: str(c.kind), sessions: str(c.sessions),
+        reported: str(c.reported), host: str(c.host),
+        status: c.status && typeof c.status === 'object'
+          ? { label: str(c.status.label), text: str(c.status.text), copy: str(c.status.copy), tone: str(c.status.tone) }
+          : null,
+        cols: (Array.isArray(c.cols) ? c.cols : []).filter(Boolean).map(function (col) {
+          return {
+            client: str(col.client),
+            sections: (Array.isArray(col.sections) ? col.sections : []).filter(Boolean).map(function (sc) {
+              return {
+                env: str(sc.env), name: str(sc.name), email: str(sc.email), note: str(sc.note),
+                chips: (Array.isArray(sc.chips) ? sc.chips : []).filter(Array.isArray),
+                bars: (Array.isArray(sc.bars) ? sc.bars : []).filter(Array.isArray),
+              };
+            }),
+          };
+        }),
+      });
+    }
+    return out;
+  }
 
   function publish() {
+    state.cards = validate(state.cards);
     FD.setData('machinesLive', state.cards);
   }
 
@@ -265,13 +304,17 @@
   // #refresh -> load(true); the poll never forces (BEHAVIOUR.md §3).
   function load(force) {
     if (isFixture()) return Promise.resolve();
+    // The 60 s poll and a forced Refresh can be in flight together. Today's screen lets
+    // whichever settles last win and re-enables its button either way; sequencing keeps
+    // the newest answer and the button honest without changing anything else.
+    var mine = ++state.seq;
     setBusy(true);
     return ensureData()
       .then(function (data) { return data.machines(force ? { refresh: true } : {}); })
-      .then(function (payload) { state.cards = toCards(payload, Date.now()); })
-      .catch(function () { state.cards = [errorCard()]; })
+      .then(function (payload) { if (mine > state.done) { state.done = mine; state.cards = toCards(payload, Date.now()); } })
+      .catch(function () { if (mine > state.done) { state.done = mine; state.cards = [errorCard()]; } })
       .then(function () {
-        setBusy(false);
+        if (mine === state.seq) setBusy(false);
         publish();
       });
   }
@@ -279,6 +322,12 @@
   function start() {
     if (state.started || isFixture()) return Promise.resolve();
     state.started = true;
+    // Publish the empty list SYNCHRONOUSLY, before the first fetch. logic.js falls back
+    // to the mock's seed while this key is absent, so without it a live page paints
+    // fabricated machines and logins ('Reiner Garrecht', 'neelo@vibe.trading') until the
+    // round trip lands. An empty list until the first load returns is exactly what
+    // today's screen shows — machines.js renders nothing before load() resolves.
+    publish();
     var first = load(false);
     // The poll never forces a collect: the deck's own TTL decides when the ssh fan-out reruns.
     ensureData().then(function (data) {
@@ -318,16 +367,22 @@
     });
   }
 
-  function copyOnClick(el, text) {
-    el.title = 'click to copy';
-    if (el.__fdCopy === text) return;
-    el.__fdCopy = text;
-    if (el.__fdCopyBound) return;
-    el.__fdCopyBound = true;
-    el.style.cursor = 'pointer';
-    el.addEventListener('click', function () {
-      if (root.navigator && root.navigator.clipboard) root.navigator.clipboard.writeText(el.__fdCopy);
-    });
+  // Nodes are reused by key, so this both sets AND clears: when a no-report machine
+  // finally reports, its status row goes and the runtime hands that same node to the
+  // first real client row. Leaving the tooltip and the listener behind would keep
+  // copying a stale cron command from an unrelated row until a full reload.
+  function syncCopy(el, text) {
+    if (!el) return;
+    if (!el.__fdCopyBound) {
+      if (!text) return;
+      el.__fdCopyBound = true;
+      el.addEventListener('click', function () {
+        if (el.__fdCopy && root.navigator && root.navigator.clipboard) root.navigator.clipboard.writeText(el.__fdCopy);
+      });
+    }
+    el.__fdCopy = text || '';
+    if (text) { el.title = 'click to copy'; el.style.cursor = 'pointer'; }
+    else { el.removeAttribute('title'); el.style.cursor = ''; }
   }
 
   function afterRender() {
@@ -337,8 +392,10 @@
     if (!scope) return;
     var cards = scope.querySelectorAll(':scope > [data-dc-tpl="' + TPL.card + '"]');
     for (var i = 0; i < cards.length; i++) {
-      var model = state.cards[i];
-      if (!model) continue;
+      // sc-for rows are positional (audit F1), so every value below is rewritten from
+      // the model on EVERY render rather than accumulated. A DOM card with no model left
+      // must not keep the mock's literal, so it is cleared rather than skipped.
+      var model = state.cards[i] || { reported: '', kind: '', status: null };
       // I-L9-01: the template hard-codes "reported just now"; live mode writes the real value
       // into that same span. The runtime rewrites the text node on every flush, so this runs
       // after every render, in the same synchronous pass — the mock's string never paints.
@@ -348,11 +405,10 @@
       var chip = cards[i].querySelector('[data-dc-tpl="' + TPL.kindChip + '"]');
       if (chip) chip.style.display = model.kind ? '' : 'none';
       // I-L9-04: the push command is copyable, as it is today (machines.js:165-170).
-      if (model.status && model.status.copy) {
-        var row = cards[i].querySelector('[data-dc-tpl="' + TPL.row + '"]');
-        var note = row && row.querySelector('[data-dc-tpl="' + TPL.note + '"]');
-        if (note) copyOnClick(note, model.status.copy);
-      }
+      // Run unconditionally so a card that stops having a status row is cleaned up.
+      var row = cards[i].querySelector('[data-dc-tpl="' + TPL.row + '"]');
+      var note = row && row.querySelector('[data-dc-tpl="' + TPL.note + '"]');
+      syncCopy(note, model.status && model.status.copy ? model.status.copy : '');
     }
   }
 

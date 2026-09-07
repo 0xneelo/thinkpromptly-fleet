@@ -705,7 +705,12 @@ class AppLogic extends Sub {
     // I-L9-03); the fixture's seed keeps the mock's collapsed cards, so the gate is unmoved.
     const mLive = FD.fixture.machinesLive;
     const mCard = (mach, idx) => {
-      const open = mOpen[idx] === undefined ? !!mLive : !!mOpen[idx];
+      // DESIGN-35 binding instruction 1 (S2 shim audit F1, 2026-09-08): sc-for rows are
+      // positional, so per-card state is keyed by the machine's name, not its index —
+      // a machine dropping out of /api/machines must not hand its open state to its
+      // neighbour. Names are unique per fleet; the index is only the last resort.
+      const mKey = mach.name || String(idx);
+      const open = mOpen[mKey] === undefined ? !!mLive : !!mOpen[mKey];
       const rows = [];
       mach.cols.forEach((c) => c.sections.forEach((s) => {
         if (s.primary === '—') return;
@@ -734,7 +739,7 @@ class AppLogic extends Sub {
         open, closed: !open,
         gridStyle: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(' + (open ? '300px' : '230px') + ',1fr))', borderTop: '1px solid ' + t.lineSoft, margin: '0 -1px -1px 0' },
         rows: rows.map((r) => ({ ...r, rowStyle: { padding: open ? '14px 16px' : '11px 16px', borderRight: '1px solid ' + t.lineSoft, borderBottom: '1px solid ' + t.lineSoft, display: 'flex', flexDirection: 'column', gap: open ? '7px' : '4px', minWidth: 0 } })),
-        toggle: () => { const o = { ...(this.state.mOpen || {}) }; o[idx] = !open; this.setState({ mOpen: o }); },
+        toggle: () => { const o = { ...(this.state.mOpen || {}) }; o[mKey] = !open; this.setState({ mOpen: o }); },
         // L9: hook used — FD.screens.registry.open (L4), guarded; the mock's own screen
         // switch stays the fallback until L4 defines it (improvised.md I-L9-02).
         openRegistry: (e) => {
@@ -778,12 +783,23 @@ class AppLogic extends Sub {
     // S2 could not byte-safely substitute the `machines` literal, so this slice reads its own
     // key (DESIGN-35 broadcast, 2026-09-07). Sections come back as plain layer-1 data and go
     // through the mock's own mSec() here, per improvised.md I-L1-01.
-    const mList = mLive ? mLive.map((m) => Object.assign({}, m, {
-      cols: (m.cols || []).map((c) => ({
-        client: c.client,
-        sections: (c.sections || []).map((sc) => mSec(sc.env, sc.name, sc.email, sc.chips, sc.bars, sc.note)),
-      })),
-    })) : mSeed;
+    // DESIGN-35 binding instruction 2 (S2 shim audit F2): a throw anywhere in renderVals
+    // renders every screen from host.props alone — one malformed machine row would blank
+    // all nine. This block keeps its last good cards instead of propagating.
+    let mCards;
+    try {
+      const mList = mLive ? mLive.map((m) => Object.assign({}, m, {
+        cols: (m && m.cols ? m.cols : []).map((c) => ({
+          client: c && c.client,
+          sections: (c && c.sections ? c.sections : []).map((sc) => mSec(sc && sc.env, sc && sc.name, sc && sc.email, sc && sc.chips, sc && sc.bars, sc && sc.note)),
+        })),
+      })) : mSeed;
+      mCards = mList.map(mCard);
+      this._mLastCards = mCards;
+    } catch (e) {
+      console.error(e);
+      mCards = this._mLastCards || [];
+    }
     return {
       dark, notDark: !dark, ...t, four: 4,
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
@@ -988,7 +1004,7 @@ class AppLogic extends Sub {
         };
       }),
       // machines
-      machines: mList.map(mCard),
+      machines: mCards,
     };
   }
 }
