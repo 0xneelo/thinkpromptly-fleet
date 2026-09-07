@@ -1,0 +1,273 @@
+{
+  "schemaVersion": 1,
+  "mode": "live",
+  "slice": "l4",
+  "status": "complete",
+  "capturedAt": "2026-09-07T01:30:47.166Z",
+  "source": "http://127.0.0.1:3247/v2/index.html",
+  "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api",
+  "environment": {
+    "platform": "linux",
+    "arch": "x64",
+    "node": "v24.14.1",
+    "playwright": "1.63.0",
+    "chromium": "153.0.8010.12"
+  },
+  "results": [
+    {
+      "id": "rows-render",
+      "section": "§1",
+      "name": "one row element per API session",
+      "pass": true,
+      "detail": "114 rows"
+    },
+    {
+      "id": "col-session",
+      "section": "§1",
+      "name": "Session cell is the API row's name",
+      "pass": true,
+      "detail": "ops"
+    },
+    {
+      "id": "col-group",
+      "section": "§1",
+      "name": "an empty API group renders —",
+      "pass": true,
+      "detail": "row 0"
+    },
+    {
+      "id": "col-task",
+      "section": "§1",
+      "name": "a set API task renders its text",
+      "pass": true,
+      "detail": "XYZ-1890"
+    },
+    {
+      "id": "col-status",
+      "section": "§1",
+      "name": "the status pill text is the API status",
+      "pass": true,
+      "detail": "all 114 pills match"
+    },
+    {
+      "id": "col-seen-gone",
+      "section": "§1",
+      "name": "a gone row prefixes \"gone · last seen \"",
+      "pass": true,
+      "detail": "gone · last seen 2d ago"
+    },
+    {
+      "id": "edit-open",
+      "section": "§1",
+      "name": "clicking a Group cell opens an input with the current value",
+      "pass": true,
+      "detail": "input carries \"xyz-1890\" over its cell"
+    },
+    {
+      "id": "edit-save",
+      "section": "§1",
+      "name": "Enter POSTs /api/registry with {host,name,group} only",
+      "pass": true,
+      "detail": "{\"host\":\"german-box\",\"name\":\"FD-gb-home\",\"group\":\"l4-check\"}"
+    },
+    {
+      "id": "edit-toast-ok",
+      "section": "§1",
+      "name": "the save toasts \"Saved group\"",
+      "pass": true,
+      "detail": "Saved group"
+    },
+    {
+      "id": "edit-escape",
+      "section": "§1",
+      "name": "Escape discards the edit and sends no POST",
+      "pass": true,
+      "detail": "no POST"
+    },
+    {
+      "id": "filter-search",
+      "section": "§2",
+      "name": "the search is a lowercase substring over all eight fields",
+      "pass": true,
+      "detail": "1 of 114 on a host-only needle"
+    },
+    {
+      "id": "filter-live",
+      "section": "§2",
+      "name": "live leaves 85 rows and gone leaves 29",
+      "pass": true,
+      "detail": "live 85, gone 29"
+    },
+    {
+      "id": "filter-status",
+      "section": "§2",
+      "name": "the status select offers the five states plus any",
+      "pass": true,
+      "detail": "|active|done|kill-requested|killed|hidden"
+    },
+    {
+      "id": "filter-msg-ages",
+      "section": "§2",
+      "name": "the last-msg select offers the six ages",
+      "pass": true,
+      "detail": "|1h|6h|1d|3d|7d"
+    },
+    {
+      "id": "filter-active-select",
+      "section": "§2",
+      "name": "a fourth select carries the same six ages",
+      "pass": true,
+      "detail": "4 selects, active-age at +10px: |1h|6h|1d|3d|7d"
+    },
+    {
+      "id": "count-filtered",
+      "section": "§2",
+      "name": "the count reads \"<k> of <n>\" filtered and \"<n>\" clean",
+      "pass": true,
+      "detail": "85 of 114 rows"
+    },
+    {
+      "id": "filter-reset",
+      "section": "§2",
+      "name": "Reset restores the defaults and drops fleetFilter",
+      "pass": true,
+      "detail": "all 4 selects and the search cleared, fleetFilter removed"
+    },
+    {
+      "id": "filter-persist",
+      "section": "§2",
+      "name": "typing persists fleetFilter.q",
+      "pass": true,
+      "detail": "{\"q\":\"gb-home\",\"live\":\"\",\"status\":\"\",\"msg\":\"\",\"active\":\"\"}"
+    },
+    {
+      "id": "sort-asc",
+      "section": "§3",
+      "name": "the Session header sorts ascending and shows ▲",
+      "pass": true,
+      "detail": "114 names asc, \"Session ▲\""
+    },
+    {
+      "id": "sort-desc",
+      "section": "§3",
+      "name": "a second click sorts descending and shows ▼",
+      "pass": true,
+      "detail": "114 names desc, \"Session ▼\""
+    },
+    {
+      "id": "sort-unset-last",
+      "section": "§3",
+      "name": "sorting by Group sinks — to the bottom both ways",
+      "pass": true,
+      "detail": "asc: 94 unset rows last; desc: 94 unset rows last"
+    },
+    {
+      "id": "sort-persist",
+      "section": "§3",
+      "name": "fleetSort holds {overview:{key,dir}}",
+      "pass": true,
+      "detail": "{\"overview\":{\"key\":\"group\",\"dir\":\"desc\"}}"
+    },
+    {
+      "id": "select-row",
+      "section": "§4",
+      "name": "ticking a row shows the bulk bar reading \"<n> selected\"",
+      "pass": true,
+      "detail": "1 selected"
+    },
+    {
+      "id": "bulk-kill-label",
+      "section": "§4",
+      "name": "Kill counts the live rows and is disabled at zero",
+      "pass": true,
+      "detail": "Kill 1 live enabled; Kill 0 live disabled + data-l4-off"
+    },
+    {
+      "id": "bulk-forget-label",
+      "section": "§4",
+      "name": "Forget appears only for gone rows",
+      "pass": true,
+      "detail": "Forget 1 gone shown for gone, absent for live"
+    },
+    {
+      "id": "select-all",
+      "section": "§4",
+      "name": "the header checkbox ticks every filtered row",
+      "pass": true,
+      "detail": "114 rows ticked"
+    },
+    {
+      "id": "bulk-clear",
+      "section": "§4",
+      "name": "Clear empties the selection and hides the bar",
+      "pass": true,
+      "detail": "bar hidden, no row ticked"
+    },
+    {
+      "id": "bulk-kill-confirm",
+      "section": "§4",
+      "name": "bulk Kill confirms verbatim then POSTs one kill per row",
+      "pass": true,
+      "detail": "2 kills, confirm verbatim"
+    },
+    {
+      "id": "menu-items",
+      "section": "§5",
+      "name": "the ⋯ menu lists Details, the edits and the actions; Forget only when gone",
+      "pass": true,
+      "detail": "8 items live, 9 gone"
+    },
+    {
+      "id": "act-tag",
+      "section": "§5",
+      "name": "Tag kill POSTs status kill-requested and toasts",
+      "pass": true,
+      "detail": "Tagged ops for kill"
+    },
+    {
+      "id": "act-hide",
+      "section": "§5",
+      "name": "Hide POSTs status hidden and toasts",
+      "pass": true,
+      "detail": "Hidden FD-deck11-boardroot"
+    },
+    {
+      "id": "act-forget",
+      "section": "§5",
+      "name": "Forget POSTs /api/registry/delete and toasts",
+      "pass": true,
+      "detail": "Forgot LC-ignaz-xyz-2029"
+    },
+    {
+      "id": "act-kill-confirm",
+      "section": "§5",
+      "name": "the row Kill confirms verbatim then POSTs /api/kill",
+      "pass": true,
+      "detail": "confirm verbatim, one kill"
+    },
+    {
+      "id": "act-show-hook",
+      "section": "§5",
+      "name": "Show calls FD.screens.windows.openMax(host, name) and sends no POST",
+      "pass": true,
+      "detail": "openMax(onboarding-box, ops)"
+    },
+    {
+      "id": "act-message-hook",
+      "section": "§5",
+      "name": "Message calls FD.screens.bus.open({type,host,session})",
+      "pass": true,
+      "detail": "{\"type\":\"tmux\",\"host\":\"onboarding-box\",\"session\":\"ops\"}"
+    },
+    {
+      "id": "details-row",
+      "section": "§6-§7",
+      "name": "Details opens a panel under the row with Host, Label, Role/Worker and Note",
+      "pass": true,
+      "detail": "Host · Label · Role/Worker · Note"
+    }
+  ],
+  "allPass": true,
+  "passed": 36,
+  "total": 36
+}
