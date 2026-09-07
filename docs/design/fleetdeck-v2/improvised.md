@@ -2069,6 +2069,21 @@ was injecting it for the same reason.
 Back and forward are handled by subscribing to `FD.router.onChange` on mount and releasing
 it on unmount, under the same rule: a history entry that names nothing changes nothing.
 
+### I-L6-13 — an `id:<cliSessionId>` thread is labelled with the session's title
+
+**Serves:** L6.2, ledger D13 / D17. Screenshot: `improvised/l6-desktop-id-thread.png`.
+
+`/api/desktop-sessions` hands the Desktop screen a `messageTarget` of
+`{type:'claude-desktop', session:'id:<cliSessionId>'}` — the form the server resolves at
+delivery. Used as a rail label that reads `Claude Desktop · id:b5aafd43-265f-49e3-bcf0-…`,
+which names nothing a human recognises.
+
+**Decision:** on first sight of an `id:` target the bus fetches `/api/desktop-sessions` once,
+maps `cliSessionId` and `id` to `title`, and relabels the row to
+`Claude Desktop · 🎛 ORCHESTRATOR 28 = O45`. The raw id stays as the fallback when the fetch
+fails or the session is not listed, so the thread is never unlabelled. The **target** is never
+rewritten — the POST body carries the `id:` form verbatim, because that is what the server
+resolves.
 ---
 
 ## L12 — message-bus rail filters (`claude/session-filters-grouping`, 2026-09-07)

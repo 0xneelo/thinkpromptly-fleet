@@ -36,6 +36,7 @@
 
   var DESKTOP = 'claude-desktop';
   var TMUX = 'tmux';
+  var ID_PREFIX = 'id:';
 
   // ---------------------------------------------------------------------------
   // State. `host` is the AppLogic instance logic.js hands us on mount.
@@ -56,6 +57,9 @@
   var pinned = {};         // fd-bus-pinned, as a set
   var booted = false;      // has one poll ever landed
   var provisional = {};    // targets opened by hook before the server knows them
+  var desktopTitles = null;// cliSessionId / session id -> human title
+  var desktopLive = null;  // cliSessionId / session id -> live
+  var titlesPromise = null;
   var errs = {};           // message key -> receipt error string we own
   var sentIds = {};        // client send key -> [server message id], for pruning
 
@@ -133,7 +137,59 @@
   // so the tmux label is just the session name and `host` fills the meta slot
   // (I-L6-02).
   function labelFor(id, kind) {
-    return kind === DESKTOP ? 'Claude Desktop · ' + (id === 'current' ? 'current chat' : id) : id;
+    if (kind !== DESKTOP) return id;
+    if (id === 'current') return 'Claude Desktop · current chat';
+    // 'id:<cliSessionId>' is the API's messageTarget form, resolved at delivery
+    // (server.js). It is a uuid, so show the session's own title when we know
+    // it and fall back to the raw form when we do not (I-L6-13).
+    if (id.indexOf(ID_PREFIX) === 0) {
+      var title = desktopTitles && desktopTitles[id.slice(ID_PREFIX.length)];
+      return 'Claude Desktop · ' + (title || id);
+    }
+    return 'Claude Desktop · ' + id;
+  }
+
+  // Fetched once, on first sight of an 'id:<uuid>' target. /api/desktop-sessions
+  // is the only place the title lives; a failure just leaves the raw id showing.
+  function ensureDesktopTitles() {
+    if (titlesPromise) return titlesPromise;
+    if (!bus.live || !FD.data || typeof FD.data.desktopSessions !== 'function') return null;
+    titlesPromise = FD.data.desktopSessions().then(function (res) {
+      var map = {};
+      var alive = {};
+      ((res && res.groups) || []).forEach(function (g) {
+        ((g && g.sessions) || []).forEach(function (x) {
+          if (!x) return;
+          if (x.cliSessionId) { if (x.title) map[x.cliSessionId] = x.title; if (x.live) alive[x.cliSessionId] = true; }
+          if (x.id) { if (x.title) map[x.id] = x.title; if (x.live) alive[x.id] = true; }
+        });
+      });
+      desktopTitles = map;
+      desktopLive = alive;
+      restampRows();
+    }).catch(function () { desktopTitles = desktopTitles || {}; desktopLive = desktopLive || {}; });
+    return titlesPromise;
+  }
+
+  function desktopIsLive(id) {
+    if (!desktopLive || id.indexOf(ID_PREFIX) !== 0) return false;
+    return !!desktopLive[id.slice(ID_PREFIX.length)];
+  }
+
+  function restampRows() {
+    if (!rows.length) return;
+    var changed = false;
+    var next = rows.map(function (r) {
+      var kind = r.kind || TMUX;
+      var name = labelFor(r.id, kind);
+      var live = kind === DESKTOP && desktopIsLive(r.id) ? true : r.live;
+      if (name === r.name && live === r.live) return r;
+      changed = true;
+      return Object.assign({}, r, { name: name, live: live });
+    });
+    if (!changed) return;
+    rows = next;
+    FD.setData('busSessions', validRows(rows));
   }
 
   // ---------------------------------------------------------------------------
@@ -221,7 +277,10 @@
         id: id,
         name: labelFor(id, kind),
         host: hostName,
-        live: kind === DESKTOP ? !!offered[id] : !!liveSet[hostName + ' ' + id],
+        // targets[] is the liveness signal for a named desktop session; the
+        // id:<uuid> form never appears there, so /api/desktop-sessions answers
+        // for it (I-L6-13).
+        live: kind === DESKTOP ? (!!offered[id] || desktopIsLive(id)) : !!liveSet[hostName + ' ' + id],
       };
       // The mock's rows carry `pinned` and isPinned() falls back to it, so the
       // stored pin set needs no logic.js branch at all.
@@ -573,13 +632,24 @@
   // so an empty API is not indistinguishable from a poll that never returned.
   bus.polls = 0;
 
+  // Idempotent: logic.js calls this from componentDidMount AND every
+  // componentDidUpdate, and bus.js calls it itself on load if the app mounted
+  // first. Whoever gets there first wins; the rest are no-ops.
   bus.attach = function (h) {
+    if (!h || host === h) { if (host && bus.live) start(); return; }
     host = h;
     if (!bus.live) return;
-    if (pendingOpen) { var p = pendingOpen; pendingOpen = null; bus.open(p); }
+    drainPendingOpen();
     start();
     startFilterUi();
   };
+
+  function drainPendingOpen() {
+    if (!pendingOpen) return;
+    var p = pendingOpen;
+    pendingOpen = null;
+    bus.open(p);
+  }
 
   bus.detach = function (h) {
     // A stale instance's unmount must not kill the live host's poll timer and
@@ -698,13 +768,15 @@
     if (!bus.live) return bus.filters();
     filters = sanitiseFilters(Object.assign({}, filters, patch || {}));
     writeStore(FILTERS_KEY, JSON.stringify(filters));
+    // L6.2 publishes the host on FD.screens.busHost, so a menu drawn before the
+    // attach landed can still adopt it.
+    if (!host && FD.screens && FD.screens.busHost) bus.attach(FD.screens.busHost);
     if (host) {
       if (typeof host.forceUpdate === 'function') host.forceUpdate();
       else host.setState({});
-    } else if (bus.live) {
-      // The shell mounts before this file loads (index.html script order), so
-      // attach() may never have run. Re-pushing the rows is then the only
-      // re-render we can ask for -- and it is the data the rail shapes.
+    } else {
+      // No host at all: re-pushing the rows is the only re-render we can ask
+      // for, and it is the data the rail shapes.
       FD.setData('busSessions', validRows(rows));
     }
     applyFilterUi();
@@ -767,24 +839,52 @@
   // setBusTarget() becomes a deep link that selects (or creates) the thread for
   // {type, host?, session} and navigates to the bus screen.
   // ---------------------------------------------------------------------------
-  bus.open = function (target) {
-    var id = target && (typeof target === 'string' ? target : target.session);
-    if (!id) return false;
-    if (!host) { pendingOpen = target; return false; }
+  // Accepts every target the server accepts: a tmux host+session, a
+  // claude-desktop session by name, the 'id:<cliSessionId>' form the API hands
+  // back as messageTarget, and 'current'. A bare string is taken as a thread id.
+  // Returns false ONLY for a malformed target.
+  function normalizeTarget(target) {
+    if (typeof target === 'string') {
+      if (!target) return null;
+      // No type given: 'current' and 'id:<uuid>' can only be desktop; anything
+      // else is a tmux session name, whose host the rail supplies if it knows it.
+      var known = targets[target];
+      if (known) return known;
+      var guess = (target === 'current' || target.indexOf(ID_PREFIX) === 0) ? DESKTOP : TMUX;
+      return guess === DESKTOP ? { type: DESKTOP, session: target } : { type: TMUX, session: target };
+    }
+    if (!target || typeof target !== 'object') return null;
+    if (typeof target.session !== 'string' || !target.session) return null;
+    var type = target.type === DESKTOP ? DESKTOP : target.type === TMUX ? TMUX
+      : (target.host ? TMUX : DESKTOP);
+    var out = { type: type, session: target.session };
+    if (type === TMUX && target.host) out.host = target.host;
+    return out;
+  }
 
-    if (bus.live && typeof target === 'object' && !targets[id]) {
+  bus.open = function (target) {
+    var t = normalizeTarget(target);
+    if (!t) return false;
+    var id = t.session;
+
+    // The app may not have mounted yet, or this file may have loaded before the
+    // shell published its host. Hold the request rather than dropping it; both
+    // attach() and start2() drain it. The caller is told the link was accepted.
+    if (!host) { pendingOpen = t; return true; }
+
+    if (bus.live && !targets[id]) {
       // Today's setBusTarget stores the value and selects it on the next
       // loadBus() when the option does not exist yet; the v2 equivalent is a
       // provisional row that the next poll confirms or replaces (I-L6-08).
-      var kind = target.type || TMUX;
-      targets[id] = target;
+      var kind = t.type;
+      targets[id] = t;
       kinds[id] = kind;
-      provisional[id] = target;
+      provisional[id] = t;
       rows = rows.concat([{
         id: id,
         name: labelFor(id, kind),
-        host: kind === DESKTOP ? '' : (target.host || ''),
-        live: false,
+        host: kind === DESKTOP ? '' : (t.host || ''),
+        live: kind === DESKTOP && desktopIsLive(id),
         kind: kind,
       }]);
       FD.setData('busSessions', validRows(rows));
@@ -794,6 +894,7 @@
         FD.setData('seedThreads', validThreads(threads));
       }
     }
+    if (t.type === DESKTOP && id.indexOf(ID_PREFIX) === 0) ensureDesktopTitles();
 
     var root = host.host;
     if (root && root.setState && root.state && root.state.view !== 'app') root.setState({ view: 'app' });
@@ -1126,6 +1227,9 @@
   }
 
   function boot() {
+    // Whether or not we go live, pick up an app that mounted before this file
+    // loaded — the shell mounts inside app.js, ahead of every screen file.
+    if (!host && FD.screens && FD.screens.busHost) bus.attach(FD.screens.busHost);
     if (fixtureMode()) return;
     withDataLayer(start2);
   }
@@ -1143,13 +1247,14 @@
     refresh();
     // attach() also starts the timer, but it runs before the data layer has
     // loaded, so whichever of the two happens second does the work.
+    if (!host && FD.screens && FD.screens.busHost) bus.attach(FD.screens.busHost);
     if (host) {
-      if (pendingOpen) { var p = pendingOpen; pendingOpen = null; bus.open(p); }
+      drainPendingOpen();
       start();
     }
-    // Not inside the host branch: the shell mounts before this file loads, so
-    // attach() may never run, and the menu still has to appear. The observer
-    // picks the rail up whenever the runtime draws it.
+    // Outside the host branch on purpose: the menu must appear even if the
+    // attach has not landed yet. The observer picks the rail up whenever the
+    // runtime draws it.
     startFilterUi();
   }
 

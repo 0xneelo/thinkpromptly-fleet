@@ -262,10 +262,37 @@ class AppLogic extends Sub {
     try { const s = localStorage.getItem('fd-landing-dark'); if (s != null) return s === '1'; } catch (e) {}
     return true;
   }
+  // L6.2. The shell mounts inside app.js, BEFORE public/v2/screens/*.js load, so
+  // a componentDidMount-only attach always missed and `host` stayed null — every
+  // deep link (Desktop "Message session", Registry "Message", Org "Send a
+  // message", Windows full-screen Message) was dead while threads still painted.
+  // Two belts: publish ourselves on FD.screens.busHost so a screen file loading
+  // later can pick us up, and retry the attach on every render. Both idempotent;
+  // in fixture mode attach() returns without doing anything.
+  _busAttach() {
+    if (!window.FD) return;
+    FD.screens = FD.screens || {};
+    FD.screens.busHost = this;
+    const bus = FD.screens.bus;
+    if (bus && typeof bus.attach === 'function') bus.attach(this);
+  }
   componentDidUpdate() {
+    this._busAttach();
     if (this._video) this._video.playbackRate = this.props.videoSpeed ?? 1;
     if (this._thread && this._threadKey !== this._nextThreadKey) { this._threadKey = this._nextThreadKey; this._thread.scrollTop = this._thread.scrollHeight; }
     this._fdAfterRender();
+    this._fdWriteUrl(false);
+  }
+  // Every way of changing screen -- a nav click, FD.router.navigate, bus.open,
+  // registry.open, the Machines card's "Open in Registry" -- ends as setState on this
+  // component, so this one place catches all of them and no screen file has to know
+  // about the URL. The comparison is against the URL itself rather than a remembered
+  // value, which is what stops Back from looping: a popstate sets the screen the URL
+  // already names, so there is nothing left to write.
+  _fdWriteUrl(replace) {
+    const screen = this.state.screen ?? fdAsked('screen') ?? this.props.screen ?? 'bus';
+    if (fdAsked('screen') === screen) return;
+    fdWriteScreen(screen, replace);
   }
   // L9: the compiled template hard-codes the machine card's "reported just now" and leaves the
   // header Refresh button unbound, so the Machines slice finishes its own render here. No-op in
@@ -281,11 +308,9 @@ class AppLogic extends Sub {
   }
   componentDidMount() {
     this._fdAfterRender();
+    this._fdWriteUrl(true);
     if (this._thread) this._thread.scrollTop = this._thread.scrollHeight;
-    // L6 seam: hand the bus screen its host so public/v2/screens/bus.js can
-    // drive live threads. In fixture mode attach() returns without doing
-    // anything, so the compiled fixture render is untouched.
-    if (window.FD && FD.screens && FD.screens.bus && FD.screens.bus.attach) FD.screens.bus.attach(this);
+    this._busAttach();
     this._esc = (e) => {
       if (e.key !== 'Escape') return;
       if (this.state.termMenu) this.setState({ termMenu: false });
@@ -1496,6 +1521,49 @@ function fdAsked(what) {
   } catch (e) { return null; }
 }
 
+// The other direction: a screen the user switched to has to reach the URL, or reload,
+// Back and a copied link all land somewhere else. Writing goes through
+// FD.router.navigate, which uses history.pushState -- pushState fires neither
+// hashchange nor popstate, so a write can never arrive back as a route change and
+// there is no loop to break. Back and forward still come in as popstate and drive the
+// view through the subscription in componentDidMount below.
+//
+// pushState is the choice for every screen change, so each one is its own history
+// entry and Back returns to the screen before it. `replace` is used once, at mount,
+// for a different job: naming the screen already on display when the URL does not, so
+// that a bare /app leaves a first Back with something to restore rather than an entry
+// that names no screen at all.
+// The view has to travel too. Clicking "App" used to change the view and leave the URL
+// saying view=land, which was harmless only while nothing read the URL back. The moment
+// a screen change goes through the router, that stale value is read and yanks the view
+// back to the landing page -- so the URL has to tell the truth about both halves.
+function fdWriteView(view, replace) {
+  try {
+    const router = (typeof FD === 'object' && FD && FD.router) || null;
+    const here = typeof location === 'object' ? location : null;
+    const past = typeof history === 'object' ? history : null;
+    if (!router || router.VIEWS.indexOf(view) < 0 || !here || !past) return;
+    const how = replace ? past.replaceState : past.pushState;
+    if (typeof how !== 'function') return;
+    // Every other parameter survives, so ?fixture=1 stays fixture mode.
+    const query = new URLSearchParams(here.search || '');
+    query.set('view', view);
+    how.call(past, null, '', here.pathname + '?' + query.toString() + (here.hash || ''));
+  } catch (e) {}
+}
+
+function fdWriteScreen(screen, replace) {
+  try {
+    const router = (typeof FD === 'object' && FD && FD.router) || null;
+    if (!router || router.SCREENS.indexOf(screen) < 0) return;
+    if (!replace) { router.navigate(screen); return; }
+    const here = typeof location === 'object' ? location : null;
+    const past = typeof history === 'object' ? history : null;
+    if (!here || !past || typeof past.replaceState !== 'function') return;
+    past.replaceState(null, '', here.pathname + here.search + '#' + screen);
+  } catch (e) {}
+}
+
 class Component extends DCLogic {
   state = { view: fdAsked('view') || (this.props.startView === 'app' ? 'app' : this.props.startView === 'deck' ? 'deck' : 'land') };
   _sub(k) {
@@ -1535,6 +1603,7 @@ class Component extends DCLogic {
   componentDidMount() {
     this._last = this.state.view;
     this.applyView();
+    this._fdWriteUrl(true);
     this._mount(this.state.view);
     // Back and forward have to move the deck, not just the address bar. Only a URL
     // that names a view or a screen changes anything, so a hash-less history entry
@@ -1570,11 +1639,18 @@ class Component extends DCLogic {
       if (v === 'land') window.scrollTo(0, window.scrollY);
     }
     this._mount(v);
+    this._fdWriteUrl(false);
     Object.keys(this._m || {}).forEach((k) => {
       if (!this._m[k]) return;
       const s = this._sub(k);
       if (s.componentDidUpdate) s.componentDidUpdate(...a);
     });
+  }
+  // Same rule as the screen: compare against the URL itself, never a remembered value,
+  // so a view arriving FROM the URL has nothing left to write and cannot loop.
+  _fdWriteUrl(replace) {
+    if (fdAsked('view') === this.state.view) return;
+    fdWriteView(this.state.view, replace);
   }
   componentWillUnmount() {
     Object.keys(this._m || {}).forEach((k) => {

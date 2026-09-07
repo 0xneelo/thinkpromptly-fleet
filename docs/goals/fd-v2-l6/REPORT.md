@@ -328,4 +328,102 @@ Neither is a product change; both were the gate mis-reading a tree that now has 
 - **`/vendor/*` is served.** `server.js:2366-2371` maps the xterm bundle out of `node_modules`,
   not `public/`; the scratch server now answers the same four routes.
 
+---
+
+# L6.2 — every deep link into the bus was dead (2026-09-07)
+
+Merged `origin/weave/fd-v2 @ 79cd53a` first — clean, no `logic.js` conflict.
+
+| Gate | Result |
+|---|---|
+| Pixel, fixture mode | **36/36 allPass**, max 0.0329 %; message-bus and desktop-sessions 0.000000 % both themes |
+| Live, API stubbed | **53/53 allPass**, 0 console errors |
+| `npm test` | **560/560, 0 fail** |
+
+## The defect, and why my first repro missed it
+
+DESIGN-35 reported `FD.screens.bus.open()` returning `false` and doing nothing from Desktop
+sessions → **Message session**. My first attempt to reproduce it **passed** — `open()` returned
+`true` and the bus opened. That was a false negative in the reproduction, not a disagreement:
+
+`AppLogic.componentDidMount` is what called `bus.attach(this)`, and the mock's `Component._mount`
+runs a sub's `componentDidMount` the first time **that view** is shown. Reproducing by clicking
+the App link mounts `AppLogic` long after `screens/bus.js` has loaded, so the attach lands. The
+deployed deck lands straight in the app view (`?view=app` → `fdAsked('view')`, logic.js:1491), so
+`AppLogic` mounts inside `app.js`'s `D.mount()` — **before any of the nine screen files exist**.
+The guarded call `FD.screens.bus && FD.screens.bus.attach` simply found nothing, `host` stayed
+`null` forever, and every deep link (Desktop **Message session**, Registry **Message**, Org **Send
+a message**, Windows full-screen **Message**) was dead while threads still painted, because
+`bus.live` comes up through the file's own `start2()`.
+
+Reproduced deterministically once loaded the deployed way; the fix is verified against exactly
+that entry point.
+
+## The fix — it can no longer depend on load order
+
+Three independent belts, any one of which is sufficient:
+
+1. **`logic.js` — `_busAttach()`**, called from `componentDidMount` **and every
+   `componentDidUpdate`**. Idempotent. This alone self-heals, because `bus.js`'s own boot calls
+   `FD.setData`, which schedules the render whose `componentDidUpdate` performs the attach.
+2. **`logic.js` publishes `FD.screens.busHost = this`.** `runtime.js` creates `FD.screens` before
+   any logic runs, so the shell can leave itself there even when no screen file has loaded yet.
+3. **`bus.js` attaches on load** if `FD.screens.busHost` is already there — the case where the app
+   mounted first.
+
+DESIGN-35 authorised a one-line `FD.host = logic` in `runtime.js` if the instance was not
+otherwise reachable. **It was not needed and `runtime.js` is untouched**: belt 2 exposes the
+`AppLogic` instance from within this slice's own methods, which is both narrower (the sub, not the
+root) and avoids an edit to a file L6 does not own.
+
+`pendingOpen` is kept and drained from `attach()` and `start2()`, so an `open()` that arrives
+before the shell is honoured rather than dropped.
+
+## `open()` now accepts every target the server accepts
+
+`normalizeTarget()` handles the tmux `host`+`session` form, a claude-desktop session by name,
+`current`, and the `id:<cliSessionId>` form `/api/desktop-sessions` returns as `messageTarget`
+(resolved at delivery, server-side). A bare string is taken as a thread id, with `current` and
+`id:` recognised as desktop.
+
+**Contract change:** `open()` returns `false` **only for a malformed target**. A well-formed
+target that has to wait for the host returns `true` — the deep link was accepted and will land.
+The old test asserting `false` on a deferred open was updated to this contract.
+
+## Two things the screenshot caught
+
+- **The label.** `Claude Desktop · id:b5aafd43-265f-49e3-…` names nothing a human recognises. The
+  bus now fetches `/api/desktop-sessions` once on first sight of an `id:` target and relabels to
+  `Claude Desktop · 🎛 ORCHESTRATOR 28 = O45`, falling back to the raw id if the fetch fails. The
+  **target is never rewritten** — the POST body carries the `id:` form verbatim. (I-L6-13)
+- **The liveness.** The row read `OFFLINE` with a `Queue` button for a session the Desktop screen
+  had just shown as live, because the server's `targets[]` lists desktop sessions by name and
+  never carries the `id:` form. The same fetch now answers liveness for that one case.
+
+## Coverage
+
+Unit (`test/v2-bus.test.js`, 44 tests): the `id:<uuid>` messageTarget; the title resolving and its
+raw-id fallback; every accepted target form; malformed targets rejected; `open()` before attach
+honoured; attach idempotent across repeated and replaced hosts; a send carrying the `id:` target
+verbatim; a live desktop `id:` thread not shown as offline.
+
+Live gate: **L6-51** loads `?view=app` (the deployed entry, shell before screen files) and asserts
+the *effect* — the bus actually shows the thread, since a queued open legitimately returns `true`
+and a return-value check alone would not have caught this. **L6-52** clicks **Message session** on
+a live Desktop row and asserts the bus opens on the `id:<uuid>` thread, labelled with the session
+title, hash `#bus`. **L6-53** sends and asserts the POST body is the `messageTarget` verbatim.
+
+Both belts were removed and the reproduction re-run to confirm L6-52 fails without the fix
+(`bus visible: false`, empty hash) and passes with it (`#bus`).
+
+## Note
+
+`npm test` failed once on `test/v2-data.test.js` "a directory URL serves its index.html" with
+`EADDRINUSE 127.0.0.1:33366` — a sibling session on the box, not this change: the same file passes
+alone and the pristine `79cd53a` shows the same test green. The clean full run is 560/560.
+
+DECK-103 is fixed on the weave — `index.html` now loads `data.js` and `router.js`. The injection
+in `bus.js` (I-L6-09) is left in place as a dormant fallback; it is a no-op whenever `FD.data`
+already exists.
+
 **Signed: Gerhild** · frontend-developer · `agent-gerhild` · 2026-09-07
