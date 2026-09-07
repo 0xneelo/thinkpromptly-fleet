@@ -164,15 +164,16 @@ All three gates green on base `a6542ba` (S2.2 + L1.1), commit `186edf7`.
 | Gate | Result |
 |---|---|
 | **Pixel, fixture mode** — `npm run design:diff -- --app <static>/v2/index.html?fixture=1 --slice l10` | **allPass true, 36/36**, maxMismatchPct **0.0329 %** (S2's own figure — the delta is pre-existing registry-dark noise). **`desktop-sessions` 0.000000 % dark and light.** → `verify/l10/report.json` + 36 PNGs |
-| **Live mode, API stubbed** — `node verify/l10-harness/live.mjs` | **33/33, allPass true, zero console errors.** → `verify/l10/live.json`, `live-dark.png`, `live-light.png` |
+| **Live mode, API stubbed** — `node verify/l10-harness/live.mjs` | **35/35, allPass true, zero console errors.** → `verify/l10/live.json`, `live-dark.png`, `live-light.png` |
 | **Unit** — `node --test test/v2-desktop.test.js` | **9/9** |
 | **Suite** — `npm test` | **312/312, zero failures**, with the machine quiet. |
 
-The 33 live checks cover every automatable `BEHAVIOUR.md` item: rows and their fallbacks, the six age
+The 35 live checks cover every automatable `BEHAVIOUR.md` item: rows and their fallbacks, the six age
 strings, all three status chips plus Archived and Cached, the details panel, Show / Message / Copy
 context / Copy conversation, transcript 404 and 502, all five filters, Reset, the vanished-selection
 guard, the count and last-collection line, every per-machine note, all three empty/error states,
-`refresh=1`, the query-less plain load, the theme re-sync regression guard, and zero console errors.
+`refresh=1`, the query-less plain load, the theme re-sync regression guard, the two verbatim disabled
+action texts, the keyed-reorder guard, and zero console errors.
 
 
 ### On `npm test` and machine load
@@ -214,6 +215,83 @@ editing it, so this is S2's or L2's to land.
 **DECK-68 — `test/v2-data.test.js` failed on `origin/agent-v2-base` itself.** L1's test required the
 browser-only `fixture.js` (`window.FD = …`, no `module.exports`) after the base merge resolved that file
 to S2's compiled version. Filed; L1's `3e1c06a` fixture-extract split then fixed it, verified here.
+
+## L10.1 — DESIGN-35 follow-up after the independent review
+
+Four items, all closed. L10 was accepted and is in `weave/fd-v2`; this is a follow-up on that branch.
+
+### 1 · The disabled action texts now branch on `liveState`, verbatim
+
+`logic.js` branched `showTitle` / `msgTitle` / `liveBtnStyle` on `r.live`, a boolean — so the two
+distinct disabled states collapsed into one and neither carried BEHAVIOUR §3's text. Ground truth is
+`sessions.js:246`:
+
+```js
+session.liveState === 'unknown' ? 'Live check unavailable' : 'Not running'
+```
+
+Now, in live mode: `unknown` → `Live check unavailable`, `offline` → `Not running`, both exact, on
+**both** buttons; a live row keeps `Show session` / `Message this session`. The mock replaced today's
+action-cell text with two icon buttons whose `aria-label` is a static literal in the template, so
+`title` is the only slot left that can carry the string, and it carries it unmodified.
+
+**Applied in live mode only** (gated on `dsAct`, the flag that is registered only when the slice is
+live). Fixture mode keeps the mock's own copy, which keeps the compiled DOM byte-identical — and that
+matters, because S2's parity gate compares attributes. Proved rather than assumed:
+
+| Gate | Result |
+|---|---|
+| `node tools/v2-parity.mjs` | **36/36 identical**, mask entries 0 |
+| `node tools/v2-interactions.mjs` | **36/36 steps identical**, `allIdentical=true` |
+| pixel gate | **36/36 allPass**, `desktop-sessions` 0.000000 % both themes |
+
+Asserted in the live proof as `action-disabled-text`, on all three liveness cases, comparing the exact
+strings.
+
+### 2 · The three L1 files are byte-identical to base
+
+Requested proof — `git diff origin/agent-v2-base -- <file>` is **empty** for all three:
+
+```
+$ git diff origin/agent-v2-base -- public/v2/data.js test/v2-data.test.js docs/goals/fd-v2-l1/REPORT.md
+$ echo $?
+0
+```
+
+Measured individually: `public/v2/data.js` 0 diff lines, `test/v2-data.test.js` 0, `docs/goals/fd-v2-l1/REPORT.md` 0.
+Commit `224f019` ("take L1.2") did do it; nothing of L1's was carried or shadowed.
+
+### 3 · The five L1 regression tests are present, not dropped
+
+They follow from item 2 — a 0-diff file cannot be missing them — but named explicitly, all present in
+`test/v2-data.test.js` (74 tests, all passing under this branch's merge):
+
+- `toDesktop uses the current app's null fallbacks` — the null-fallback trio
+- `toDesktop still counts a real zero as zero`
+- `no desktop row on the real capture carries a null branch, model or turn count`
+- `toAccounts trendPts is a number[] of seven-day percents in time order`
+- `trendPts takes history[].sd and sorts by time`
+
+Nothing needed restoring.
+
+### 4 · The keyed-reorder case is now in the live proof
+
+DECK-78 stands as disclosed: the status chips and copy label are foreign DOM inside a **positional**
+`sc-for`, and the defence is that everything is re-derived from data on every `apply()`. That defence
+is now tested rather than argued: `reorder-keeps-chips-with-rows` records which extra chips each
+session shows, serves a second payload that genuinely reorders the chip-bearing rows past each other
+(the way a real poll does, by moving `lastActivityAt`), refreshes, and asserts the same chips are on
+the same **session ids**.
+
+Two things make it a real test rather than a green tick. It asserts the new order explicitly, so it
+cannot pass vacuously if the reorder failed to take. And it asserts the two chip-bearing rows genuinely
+**swapped DOM nodes** — without that, a runtime which happened to key rows by identity would let the
+check pass while testing nothing. It also covers the **copy label**: a Copy is started on the stale row
+and the assertion lands ~390-420 ms into the 1500 ms revert window across six runs (3.5x margin, and the
+elapsed figure is recorded in the check's `detail` so drift stays visible).
+
+No bug was found — `chips()` and `copyLabel()` both re-derive from data keyed by session id, and they
+hold under a real node-reusing reorder. DECK-78's disclosed mitigation is now evidence, not argument.
 
 ## Registry row — could not be written (401)
 
