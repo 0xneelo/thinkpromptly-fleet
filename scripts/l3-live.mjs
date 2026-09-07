@@ -413,10 +413,22 @@ async function main() {
     const apiCalls = [];
     page.on('request', (r) => { if (r.url().includes('/api/')) apiCalls.push(r.method() + ' ' + new URL(r.url()).pathname); });
     const openBefore = await tileCount(page);
-    await closeTile(page, a.host, a.name);
+    const namesBefore = await page.evaluate(() => window.FD.screens.windows._model().map((r) => r.name));
+    // A real click on the real ✕, on the SECOND tile: this is what exercises the
+    // delegated index matcher in windows.js. A matcher that always closed the
+    // first tile would pass a one-tile check and fail this one.
+    await page.locator('[data-screen-label="Windows"] > div > div').nth(1)
+      .locator('button[title="Close tile (session keeps running)"]').click();
     await settle(page);
-    record('L3-24', 'close a tile', 'the tile goes and no API call is made — the remote session survives',
-      (await tileCount(page)) === openBefore - 1 && apiCalls.length === 0, apiCalls.join(', ') || 'no calls');
+    const namesAfter = await page.evaluate(() => window.FD.screens.windows._model().map((r) => r.name));
+    record('L3-24', 'click the ✕ on the second tile',
+      'that tile closes, the first stays open, and no API call is made — the remote session survives',
+      (await tileCount(page)) === openBefore - 1 &&
+      namesAfter.length === namesBefore.length - 1 &&
+      namesAfter[0] === namesBefore[0] &&
+      namesAfter.indexOf(namesBefore[1]) < 0 &&
+      apiCalls.length === 0,
+      `[${namesBefore.join(', ')}] → [${namesAfter.join(', ')}]; api: ${apiCalls.join(', ') || 'none'}`);
 
     // connect all
     await page.evaluate(() => window.FD.screens.windows._model().slice().forEach((r) =>
@@ -432,6 +444,21 @@ async function main() {
       'every live non-hidden session opens, 500 ms apart, hidden and dead rows skipped',
       (await page.evaluate(() => window.FD.screens.windows._model().length)) === expectLive &&
       elapsed >= (expectLive - 1) * 500, `${expectLive} tiles in ${elapsed} ms`);
+
+    // One click, one call: the shell (L2) binds this button by template id, and
+    // this slice must not add a second binding of its own (L3.1 item 4).
+    await page.evaluate(() => {
+      window.__ca = 0;
+      window.__caOrig = window.FD.screens.windows.connectAll;
+      window.FD.screens.windows.connectAll = function () { window.__ca++; return Promise.resolve(); };
+    });
+    await page.locator('aside button', { hasText: 'Connect all' }).first().click();
+    await settle(page);
+    const caCount = await page.evaluate(() => window.__ca);
+    await page.evaluate(() => { window.FD.screens.windows.connectAll = window.__caOrig; });
+    record('L3-38', 'click the sidebar Connect all once',
+      'exactly one connectAll call — the shell owns the binding, this slice adds none',
+      caCount === 1, caCount + ' call(s)');
 
     const skipped = await page.evaluate(() => window.FD.screens.windows._model().map((r) => r.name));
     const hidden = rows.filter((s) => s.status === 'hidden' || !s.live).map((s) => s.name);
@@ -534,7 +561,7 @@ async function main() {
     capturedAt: new Date().toISOString(),
     source: APP + '/v2/index.html',
     apiFixtures: 'docs/design/fleetdeck-v2/fixtures/api/ (+ a hand-written empty /api/sessions variant)',
-    websocket: 'scriptable double (no ssh pty); server half covered by test/v2-windows.test.js',
+    websocket: 'client half driven here through a scriptable double (no ssh pty); server half covered for real by test/v2-term-ws.test.js, which boots server.js on a scratch port with a fake ssh first on PATH and asserts the pty stream, the input and resize frames, the single exit control frame and the 4400 closes',
     viewport: VIEWPORT,
     results,
     passed: results.filter((r) => r.pass).length,

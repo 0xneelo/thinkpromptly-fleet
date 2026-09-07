@@ -17,6 +17,7 @@ behaviour intact, inside the mock's markup, with fixture mode untouched.
 | `public/v2/logic.js` | this screen's methods only | `tiles`, `termLines`, `termFoot`, `termRef`, `termMessage`, `termSessions`, plus the L3 token/handle publication and its throw-proofing |
 | `scripts/l3-live.mjs` | new | the live-mode gate |
 | `test/v2-windows.test.js` | new | unit cover for the pure logic |
+| `test/v2-term-ws.test.js` | new (L3.1) | the server half of `/term`, against a real `server.js` |
 | `docs/design/fleetdeck-v2/improvised.md` | appended | ten entries, `I-L3-01`..`I-L3-10` |
 
 Nothing else was touched. The shell, `runtime.js`, `app.js`, `template.dc.html`, `data.js`,
@@ -27,9 +28,10 @@ Nothing else was touched. The shell, `runtime.js`, `app.js`, `template.dc.html`,
 | Gate | Result | Evidence |
 |---|---|---|
 | Pixel gate, fixture mode | **36/36 allPass**, max mismatch 0.033 %, Windows and Session full screen **0.000000 %** | `docs/design/fleetdeck-v2/verify/l3/report.json` |
-| Live gate, API stubbed | **37/37 allPass** | `docs/design/fleetdeck-v2/verify/l3/live.json`, `live-dark.png`, `live-light.png` |
-| Unit tests | 7 pass, 0 fail | `test/v2-windows.test.js` |
-| `npm test` | **310 tests, 309 pass, 1 fail** — the failure is a rotating flake unrelated to this slice, see below | — |
+| Live gate, API stubbed | **38/38 allPass** | `docs/design/fleetdeck-v2/verify/l3/live.json`, `live-dark.png`, `live-light.png` |
+| Unit tests, client logic | 7 pass, 0 fail | `test/v2-windows.test.js` |
+| Integration, `/term` server half | 7 pass, 0 fail | `test/v2-term-ws.test.js` |
+| `npm test` | **467 tests, 467 pass, 0 fail** | on `weave/fd-v2`, run with nothing else going |
 
 Commands, verbatim:
 
@@ -43,9 +45,10 @@ npm test
 Run the pixel gate **before** the live gate: `design-diff.mjs` publishes `verify/<slice>/` by
 replacing the directory, so it deletes `live.json` if run second (`I-L3-09`).
 
-### The one failing test
+### The suite is green — but it was not, and the reason matters
 
-The suite ends `fail 1` on every full run, but **never on the same test twice**. Across this slice:
+On the woven branch, run with nothing else going, `npm test` is **467/467**. Earlier in this slice it
+ended `fail 1` on every full run, and **never on the same test twice**:
 
 | Run | The one that failed | On its own |
 |---|---|---|
@@ -54,10 +57,10 @@ The suite ends `fail 1` on every full run, but **never on the same test twice**.
 | L1.2 base | `notify.test.js` — "a seat alias is refused without openChat and creates no notify" | `fail 0`, `fail 0` |
 
 All three are HTTP tests that bind scratch ports and spawn servers; none touches anything in this
-slice, and each passes when run alone. The trigger looks like contention: a run started while the
-Playwright gate still held its own server collapsed much harder — 88 of 310 tests reached, six files
-reported failing — and the same suite run with nothing else going was 309/310. Not fixed, not
-tracked; reported as the number it is rather than rounded up to green.
+slice, and each passes when run alone. The trigger is contention: a run started while the Playwright
+gate still held its own server collapsed much harder — 88 of 310 tests reached, six files reported
+failing. With nothing else running the same suite is clean. Nothing was fixed to make it green; the
+runs were simply isolated.
 
 `test/v2-data.test.js` was red when this slice started (DECK-77, `fixture.js` assigning `window` at
 require time). L1.1 fixed it upstream; the issue is closed.
@@ -107,7 +110,7 @@ a way that looks like a code failure and is not.
 | `onclose` → dead overlay, `Disconnected`, 1Password note, `Reconnect` | **done** | `L3-22`, texts verbatim |
 | 15 s stall text, cleared on any message and on each connect | **done** | `L3-28`, `L3-29`; a parity bug here was found and fixed (below) |
 | No auto-reconnect, manual only | **done** | `L3-23` |
-| Server side (upgrade gate, `SAFE_NAME`, `reap()`) | **n.a.** | unchanged — this slice made no server edits |
+| Server side (upgrade gate, `SAFE_NAME`, `reap()`) | **covered** | unchanged by this slice, but no longer unverified: `test/v2-term-ws.test.js` boots a real `server.js` and asserts it (L3.1) |
 
 ### §4 Connect all
 
@@ -249,6 +252,50 @@ mid-slice and its two binding items were applied in full (`I-L3-04`, and the `l3
 - **The registry row could not be written.** `POST http://100.125.231.25:3131/api/registry` answers
   `401 unauthorized` from this box, for the opening row and the closing one alike. Known precedent
   XYZ-2137; per that precedent no gate was filed. Recorded on DECK-42 instead.
+
+## L3.1 — follow-up after acceptance (DESIGN-35)
+
+L3 was accepted and woven; this round closes four findings against the *evidence*, not the behaviour.
+Branch merged with `origin/weave/fd-v2` first.
+
+1. **`L3-24` proved nothing about the close button.** It called `FD.screens.windows.closeTile()`
+   directly, so the delegated matcher in `windows.js` — the thing that actually runs when a user
+   clicks ✕ — was never exercised. It now performs a real click on the ✕ of the **second** tile and
+   asserts the second closed and the first stayed. Closing the second matters: a matcher that always
+   closed index 0 would have passed a one-tile check.
+2. **`live.json` claimed WebSocket server coverage it did not have.** The metadata said the server half
+   was covered by `test/v2-windows.test.js`, which only covers pure client logic. Rather than delete
+   the claim, `test/v2-term-ws.test.js` makes it true: it boots a real `server.js` on a scratch port
+   with a fake `ssh` first on `PATH` — `server.js:2903` hands the literal string `'ssh'` to
+   `pty.spawn`, so `FLEET_SSH_BIN` is not the seam — and asserts the pty byte stream, that an
+   `{"type":"input"}` frame reaches the pty, that `{"type":"resize"}` is applied (the fake reports its
+   own `COLUMNS`x`LINES` on SIGWINCH) and that an out-of-range one is dropped without killing the
+   socket, that pty exit produces **exactly one** `{"type":"exit","code":n}` frame as the **last**
+   frame, and that a bad `SAFE_NAME`, a host outside `HOSTS()` and a non-`/term` path are all refused
+   with no pty bytes delivered. 7 checks, 7 pass. The fake puts its stdin in raw mode, which turns the
+   pty's own line-discipline echo off — without that, the echo assertion would pass on tty echo alone
+   and prove nothing. The `live.json` metadata now names this file and says what it covers.
+3. **`I-L3-06` described an attribute that does not exist.** It said the close handler walks up to a
+   `data-l3-key` element; that attribute was removed in the layer rework and the shipped matcher is
+   index-based. The entry now describes what ships. `data-l3-key` no longer appears anywhere in
+   `docs/` or `public/` — the one remaining mention, in `scripts/l3-live.mjs`, is `L3-34` asserting
+   that **zero** such attributes exist.
+4. **Connect all was bound twice.** This slice bound the sidebar button by label match while L2 was
+   still landing. L2's shell binds it properly by template id (`screens/shell.js:648`,
+   `data-dc-tpl="217"`) and calls `FD.screens.windows.connectAll()`. Left alone, one click at the
+   weave would have run the 500 ms staggered sweep over every live session twice. This slice's binding
+   is removed; the hook stays. New check `L3-38` asserts one click produces exactly one `connectAll`
+   call, and `L3-25` — which clicks the real button — now proves the L2 → L3 seam end to end.
+
+One spec drift found while writing that test and **not** corrected: `BEHAVIOUR.md` §3 cites
+`server.js:2878-2947` and the line refs inside it (`2891`, `2896-2903`, `2919-2923`, `2930-2939`,
+`2941`) are all off by +6 against the current file — the handler is at `2884-2950`. The behaviour
+matches §3 exactly; only the line numbers moved. `BEHAVIOUR.md` is the design seat's spec of record,
+so it is flagged here rather than edited.
+
+The weave merge also dropped a dead duplicate `tiles:` key that an earlier merge had inserted above
+this slice's. Later duplicate keys win in an object literal, so the shipped behaviour was never
+affected; the dead one is simply gone.
 
 ---
 
