@@ -13,3 +13,10 @@ newest at the bottom. Workers append their own entries below the line.
 | P5 | 2026-09-07T01:40Z | `operator:gate — ./up.sh on the deck` | operator:gate project:remote-system | G1 machines page + G2 sessions page are on main but not running; GK-D's refusal will need it too. |
 
 ---
+
+## Giselher · GK-M (lane entries, newest at the bottom)
+
+| # | when (UTC) | title | labels | body |
+|---|---|---|---|---|
+| G-1 | 2026-09-07T04:35Z | `[Giselher · tooling-engineer] Re-snapshot mac/claude-home from live ~/.claude` | agent:giselher project:remote-system subproject:goalkeeper session:cli-worker | Milestone 1 of lane GK-M. Cherry-picked 976f821's `mac/claude-home/**`, overwrote `session-kind/{mark.sh,guard.js,census.py,number.py,title.js,README.md,statusline.sh}` and `skills/adhd-goals/*` from the live `~/.claude`. No `marks/`, `numbers.db` or `*.bak*` copied. |
+| G-2 | 2026-09-07T04:35Z | `operator:decision — PLAN.md v2 §3.1 contradicts lane-giselher-mac.md on mac/claude-home vendoring` | operator:decision project:remote-system subproject:goalkeeper | PLAN §3.1 says "`mac/claude-home/` vendoring and `install-claude-home.sh` are **out of v1** (stale snapshot, box workers cannot read the Mac)". lane-giselher-mac.md §"Where the code lives" and the GK-M launch hard-rules mandate exactly that vendoring plus `mac/install-claude-home.sh` (milestones 1 and 5). Options: (a) lane file wins — vendor + installer, live `~/.claude` touched only through the installer with `.bak-2026-09-07` copies; (b) PLAN §3.1 wins — edit live `~/.claude` in place with `.bak`, no vendoring, no installer. **Recommendation: (a)**, taken by Giselher — the lane file and the launch prompt are the newer and more specific instruction, and vendoring is what makes every change a reviewable pushed diff. If the operator prefers (b), PLAN §3.1 should be amended and the installer dropped. |
