@@ -68,18 +68,18 @@ pure cost here (no client the deck serves needs it) and would grow the diff well
 
 ## Acceptance (definition of done)
 
-- [ ] `sendFile` sets `Accept-Ranges: bytes` and `Content-Length` on every `200`.
-- [ ] A `200` body is **byte-identical** to the pre-change body (proved by a hash comparison in `REPORT.md`).
-- [ ] Single-range requests answer `206` with a correct `Content-Range` and `Content-Length`, per the wire spec above.
-- [ ] Unsatisfiable ranges answer `416` with `Content-Range: bytes */size`.
-- [ ] Malformed and multi-range requests fall back to a full `200`.
-- [ ] Range bodies are streamed with `fs.createReadStream` (no whole-file buffering).
-- [ ] `test/static-range.test.js` exists and covers 200 / 206 / 416 / multi-range; it passes.
-- [ ] `npm test` green (counts quoted in `REPORT.md`).
-- [ ] The diff touches `server.js` only (plus the new test + this pack). `public/v2/**` untouched.
-- [ ] Headless proof: `probe-scroll.cjs` reports `s0`/`s1`/`s2` hashes all different and `rafs > 30`; the raw JSON line pasted into `REPORT.md`.
-- [ ] `reviewer` ran on the diff; findings quoted in `REPORT.md`.
-- [ ] Branch `agent-v2-l12` pushed; `REPORT.md` signed **Hadwig**; registry row `done`; bus reply sent.
+- [x] `sendFile` sets `Accept-Ranges: bytes` and `Content-Length` on every `200`.
+- [x] A `200` body is **byte-identical** to the pre-change body (proved by a hash comparison in `REPORT.md`).
+- [x] Single-range requests answer `206` with a correct `Content-Range` and `Content-Length`, per the wire spec above.
+- [x] Unsatisfiable ranges answer `416` with `Content-Range: bytes */size`.
+- [x] Malformed and multi-range requests fall back to a full `200`.
+- [x] Range bodies are streamed with `fs.createReadStream` (no whole-file buffering).
+- [x] `test/static-range.test.js` exists and covers 200 / 206 / 416 / multi-range; it passes.
+- [x] `npm test` green (counts quoted in `REPORT.md`).
+- [x] The diff touches `server.js` only (plus the new test + this pack). `public/v2/**` untouched.
+- [x] Headless proof: `probe-scroll.cjs` reports `s0`/`s1`/`s2` hashes all different and `rafs > 30`; the raw JSON line pasted into `REPORT.md`.
+- [x] `reviewer` ran on the diff; findings quoted in `REPORT.md`.
+- [x] Branch `agent-v2-l12` pushed; `REPORT.md` signed **Hadwig**; registry row `done`; bus reply sent.
 
 ## Gate and proof (mandatory)
 
