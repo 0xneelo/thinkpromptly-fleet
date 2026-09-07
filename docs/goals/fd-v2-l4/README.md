@@ -38,14 +38,25 @@ No new server endpoints. No merge of another L-branch.
 
 ## Acceptance (definition of done)
 
-- [ ] `verify/l4/report.json` — fixture mode, `allPass` true, 36/36.
-- [ ] `verify/l4/live.json` — all pass, API stubbed from `docs/design/fleetdeck-v2/fixtures/api/`.
-- [ ] `npm test` green.
-- [ ] Every BEHAVIOUR.md section reproduced: texts, confirms, localStorage keys and timers verbatim.
-- [ ] Every improvised gap documented in `docs/design/fleetdeck-v2/improvised.md` with a screenshot.
-- [ ] Branch `agent-v2-l4` pushed.
-- [ ] `REPORT.md` signed **Ruprecht**, with the behaviour checklist.
-- [ ] Main Linear issue DECK-43 Done; fleet registry row `done`.
+- [x] `verify/l4/report.json` — fixture mode, `allPass` true, **36/36**, max mismatch 0.0329 %
+      (the figure S1 and S2 recorded on an untouched app). Full run with its PNG pairs under
+      `docs/design/fleetdeck-v2/verify/l4/`.
+- [x] `verify/l4/live.json` — **36/36, `allPass` true**, API stubbed from
+      `docs/design/fleetdeck-v2/fixtures/api/` by `tools/v2-live-check.mjs`. Falsified by planting
+      three mutations in the screen: it dropped to 33/36 and named exactly those three checks.
+- [ ] `npm test` green. — **not ticked.** `test/v2-data.test.js` is 74/74 and `test/reaper.test.js`
+      24/24 when run alone; the whole suite fails 2 to 20 tests depending on the run, always in the
+      reaper / lease / sitrep / coordinator suites, none of which touch `public/v2`. Those are
+      DECK-7's load-sensitivities plus the sibling worktrees running on this box. L4 adds no
+      failing test. Detail in `REPORT.md`.
+- [x] Every BEHAVIOUR.md section reproduced: texts, confirms, localStorage keys and timers verbatim
+      — section-by-section checklist in `REPORT.md`.
+- [x] Every improvised gap documented in `docs/design/fleetdeck-v2/improvised.md` (I-L4-01..08) with
+      eight screenshots under `docs/design/fleetdeck-v2/improvised/l4/`.
+- [x] Branch `agent-v2-l4` pushed.
+- [x] `REPORT.md` signed **Ruprecht**, with the behaviour checklist.
+- [x] Main Linear issue DECK-43 Done. — fleet registry row **not written**: `POST /api/registry`
+      answers `401 unauthorized` from the box (XYZ-2137), the same wall L1 hit.
 
 ## Constraints
 
