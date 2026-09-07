@@ -90,23 +90,92 @@ function stripHeredocs(cmd) {
 
 // A shell command whose write DESTINATION is the goalkeeper's repo — the other
 // way a seat could put bytes in there without using a write tool.
-function commandWritesGoalkeeper(cmd, cfg, cwd) {
-  const targets = [];
-  const redirect = /(?:>>?|\btee\b(?:\s+-a)?)\s+(['"]?)([^\s'"|;&<>]+)\1/g;
-  let m = redirect.exec(cmd);
-  while (m) { targets.push(m[2]); m = redirect.exec(cmd); }
-  const mutate = /\b(?:cp|mv|rm|mkdir|touch|ln|dd|truncate|install)\b([^;&|\n]*)/g;
-  m = mutate.exec(cmd);
-  while (m) {
-    const args = m[1].split(/\s+/);
-    for (let i = 0; i < args.length; i += 1) {
-      const tok = args[i].replace(/^['"]|['"]$/g, '');
-      if (tok && tok.charAt(0) !== '-') targets.push(tok);
-    }
-    m = mutate.exec(cmd);
+// Split on the operators that sequence commands. This is a conservative
+// scanner, not a shell parser: quoting is not honoured, which can only ever
+// over-segment and so cannot hide a target.
+function segments(cmd) {
+  return cmd.split(/\s*(?:&&|\|\||[;|\n])\s*/);
+}
+
+function argTokens(s) {
+  const out = [];
+  const parts = s.split(/\s+/);
+  for (let i = 0; i < parts.length; i += 1) {
+    const t = parts[i].replace(/^['"]|['"]$/g, '');
+    if (t) out.push(t);
   }
-  for (let i = 0; i < targets.length; i += 1) {
-    if (underGoalkeeper(targets[i], cfg, cwd)) return true;
+  return out;
+}
+
+// Every path a segment WRITES to.
+function writeTargets(seg) {
+  const targets = [];
+  const redirect = /(?:>>?)\s*(['"]?)([^\s'"|;&<>]+)\1/g;
+  let m = redirect.exec(seg);
+  while (m) { targets.push(m[2]); m = redirect.exec(seg); }
+  const mutate = /\b(?:cp|mv|rm|mkdir|touch|ln|dd|truncate|install|tee)\b([^;&|\n]*)/g;
+  m = mutate.exec(seg);
+  while (m) {
+    const toks = argTokens(m[1]);
+    for (let i = 0; i < toks.length; i += 1) {
+      if (toks[i].charAt(0) !== '-') targets.push(toks[i]);
+    }
+    m = mutate.exec(seg);
+  }
+  return targets;
+}
+
+// A path is anchored when it names its own root; anything else is relative to
+// wherever the shell happens to be standing.
+function isAnchored(t) {
+  return t.charAt(0) === '/' || t.charAt(0) === '~' || t.charAt(0) === '$';
+}
+
+// Does any anchored token in the command point inside the jail? Only consulted
+// when a `cd "$var"` has made the working directory unknowable, so that such a
+// command is refused when it names the jail and allowed when it does not.
+function namesGoalkeeper(cmd, cfg, cwd) {
+  const toks = cmd.split(/[\s'"=]+/);
+  for (let i = 0; i < toks.length; i += 1) {
+    if (toks[i] && isAnchored(toks[i]) && underGoalkeeper(toks[i], cfg, cwd)) return true;
+  }
+  return false;
+}
+
+// A shell command whose write DESTINATION is the goalkeeper's repo.
+//
+// Targets are resolved against the directory the shell is standing in at that
+// point, not against the session cwd: `cd ~/.claude/goalkeeper && echo x > e.md`
+// writes into the jail with a target that is just `e.md`. So `cd`/`pushd` are
+// tracked across the sequencing operators. A `cd "$var"` cannot be resolved
+// statically; from there relative targets are unknowable, and the command is
+// refused only if it names the jail somewhere anchored — an ordinary relative
+// write in some other repo must never be denied on a guess.
+function commandWritesGoalkeeper(cmd, cfg, cwd) {
+  let here = cwd;                       // null once the cwd stops being knowable
+  const segs = segments(cmd);
+  for (let i = 0; i < segs.length; i += 1) {
+    const seg = segs[i].trim();
+    if (!seg) continue;
+    const cd = /^(?:cd|pushd)(?:\s+(['"]?)(.*?)\1)?\s*$/.exec(seg);
+    if (cd) {
+      const dir = (cd[2] || '').trim();
+      if (!dir) here = os.homedir();                    // bare `cd` goes home
+      else if (/[$`*?]/.test(dir)) here = null;         // not statically knowable
+      else here = norm(dir, here === null ? cwd : here) || null;
+      continue;
+    }
+    const targets = writeTargets(seg);
+    for (let j = 0; j < targets.length; j += 1) {
+      const t = targets[j];
+      if (isAnchored(t)) {
+        if (underGoalkeeper(t, cfg, cwd)) return true;
+      } else if (here !== null) {
+        if (underGoalkeeper(t, cfg, here)) return true;
+      } else if (namesGoalkeeper(cmd, cfg, cwd)) {
+        return true;
+      }
+    }
   }
   return false;
 }
