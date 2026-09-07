@@ -65,19 +65,22 @@ export async function install(page, options = {}) {
     return sessions; // an explicit object
   };
 
+  // Playwright matches routes newest-first, so the broad sessions glob MUST be
+  // registered BEFORE the transcript one — otherwise it swallows
+  // /api/desktop-sessions/transcript and answers it with the sessions JSON.
+  await page.route('**/api/desktop-sessions**', async (route) => {
+    if (typeof sessions === 'number') {
+      return route.fulfill({ status: sessions, contentType: 'text/plain', body: 'boom' });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(await bodyFor()) });
+  });
+
   await page.route('**/api/desktop-sessions/transcript**', async (route) => {
     if (transcript === 200) {
       return route.fulfill({ status: 200, contentType: 'text/plain; charset=utf-8', body: await transcriptText() });
     }
     if (transcript === 404) return route.fulfill({ status: 404, contentType: 'text/plain', body: 'no transcript' });
     return route.fulfill({ status: 502, contentType: 'text/plain', body: 'transcript unavailable' });
-  });
-
-  await page.route('**/api/desktop-sessions**', async (route) => {
-    if (typeof sessions === 'number') {
-      return route.fulfill({ status: sessions, contentType: 'text/plain', body: 'boom' });
-    }
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(await bodyFor()) });
   });
 
   await page.route('**/api/messages**', (route) =>

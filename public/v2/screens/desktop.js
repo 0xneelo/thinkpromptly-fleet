@@ -18,6 +18,20 @@
 // status chip, a machine-notes panel or a copy-progress label, and the template is
 // not ours to edit — so every one of those is a find-or-create DOM patch guarded by
 // a data-fd-l10 attribute. Improvisations I-L10-02..07; see the report in the goal.
+//
+// S2 runtime shim oracle audit — docs/design/fleetdeck-v2/audits/s2-shim-oracle-2026-09-08.md
+// (F1 positional row identity, F2 a throw in renderVals blanks every screen, F4 a select
+// shows a value the page is not rendering, F5 no update-depth guard). This file honours
+// all three of the audit's binding instructions but one, and that one it breaks openly:
+// it DOES mount foreign DOM inside compiled nodes — the Refresh button and the count line
+// in the filter row, the notes panel under it, the status chips and the copy label inside
+// each row. Those sit inline in the mock's own layout, and an overlay outside #dc-root
+// cannot express a chip that wraps inside a table cell or a button in a flex bar.
+// The mitigation is that no state is kept in those nodes: every injected node is
+// re-derived from data on each apply(), and the copy label lives in module state keyed by
+// session id. So an F3 sweep that deletes an injection, or an F1 positional reuse that
+// hands one session's row element to another session, self-heals on the next render
+// instead of persisting.
 (function (root) {
   'use strict';
 
@@ -41,11 +55,6 @@
     }
   }
 
-  // ---- hooks we PROVIDE ------------------------------------------------------
-  FD.screens.desktop = FD.screens.desktop || {};
-  FD.screens.desktop.slice = 'l10';
-  FD.screens.desktop.openBus = openBus; // internal; not a cross-slice promise
-
   // ---- fixture guard: FIRST and ABSOLUTE -------------------------------------
   // In ?fixture=1 the compiled logic renders FD.fixture as seeded and a pixel gate
   // screenshots it. One setData, one injected node or one registered rowAction here
@@ -54,6 +63,13 @@
   // handlers. A missing FD.data means the data layer is not on the page yet, which
   // is the same "nothing live to do" case, so it takes the same exit.
   if (!FD.data || (typeof FD.data.isFixture === 'function' && FD.data.isFixture())) return;
+
+  // ---- hooks we PROVIDE ------------------------------------------------------
+  // Below the guard on purpose: in ?fixture=1 FD.screens.desktop stays undefined, so a
+  // later slice can read it as "L10 is live" and the claim above stays literally true.
+  FD.screens.desktop = FD.screens.desktop || {};
+  FD.screens.desktop.slice = 'l10';
+  FD.screens.desktop.openBus = openBus; // internal; not a cross-slice promise
 
   const NOOP_MACHINE_NOTE = 'Cached metadata. Refresh to collect the latest sessions.';
   const MACHINE_NOTES = {
@@ -239,8 +255,45 @@
     return out;
   }
 
+  // Audit F2 / binding instruction 2. A throw inside renderVals makes the runtime render
+  // with vals = host.props: every sc-if false, every list empty, all nine screens blank
+  // until the next poll. logic.js guards its own field access now; this is the other half
+  // of the contract — this slice never hands it a shape that can throw. Malformed groups
+  // and rows are dropped, never thrown on.
+  function stringish(v) {
+    if (typeof v === 'string') return v;
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number') return Number.isFinite(v) ? String(v) : null;
+    if (typeof v === 'boolean') return String(v);
+    return null; // an object, array or function is not a label: drop the group
+  }
+
+  // `quiet` is for the recount in visibleRows(), which must see exactly the groups and
+  // rows the runtime draws but must not re-log what push() already reported.
+  function wellFormed(list, quiet) {
+    let dropped = 0;
+    const out = [];
+    (Array.isArray(list) ? list : []).forEach((g) => {
+      const name = g && typeof g === 'object' && !Array.isArray(g) ? stringish(g.name) : null;
+      if (name === null || !Array.isArray(g.rows)) {
+        dropped++;
+        return;
+      }
+      const rows = g.rows.filter((r) => {
+        const ok = !!r && typeof r === 'object' && !Array.isArray(r);
+        if (!ok) dropped++;
+        return ok;
+      });
+      out.push(Object.assign({}, g, { name, rows }));
+    });
+    if (dropped && !quiet && root.console) {
+      root.console.error('[fd-v2 l10] dropped ' + dropped + ' malformed group(s)/row(s) before setData');
+    }
+    return out;
+  }
+
   function push() {
-    FD.setData('dsData', filtered());
+    FD.setData('dsData', wellFormed(filtered()));
     scheduleApply();
   }
 
@@ -253,8 +306,8 @@
     try {
       if (kind === 'show') actShow(el);
       else if (kind === 'message') actMessage(r);
-      else if (kind === 'copy') actCopy(r, el);
-      else if (kind === 'copyConv') actCopyConv(r, el);
+      else if (kind === 'copy') actCopy(r);
+      else if (kind === 'copyConv') actCopyConv(r);
     } catch (err) {
       // Never throw into the runtime's event dispatch.
       if (root.console) root.console.error('[fd-v2 l10] rowAction ' + kind + ' failed', err);
@@ -298,24 +351,24 @@
     }
   }
 
-  function actCopy(r, el) {
+  function actCopy(r) {
     if (!r) return;
-    labelPill(el, 'Copying…');
+    setCopyLabel(r, 'copy', 'Copying…', false);
     clipboard(sessionContext(r)).then((done) => {
-      labelPill(el, done ? 'Copied' : 'Copy failed', true);
+      setCopyLabel(r, 'copy', done ? 'Copied' : 'Copy failed', true);
     });
   }
 
-  function actCopyConv(r, el) {
+  function actCopyConv(r) {
     if (!r) return;
-    labelPill(el, 'Copying…');
+    setCopyLabel(r, 'copyConv', 'Copying…', false);
     FD.data
       .transcript({ machine: r.machine, account: r.accountUuid, org: r.orgUuid, id: r.id })
       .then(
         (text) => clipboard(sessionContext(r) + '\n' + text).then((done) => (done ? 'Copied' : 'Copy failed')),
         (err) => (err && err.status === 404 ? 'No transcript' : 'Copy failed')
       )
-      .then((text) => labelPill(el, text, true));
+      .then((text) => setCopyLabel(r, 'copyConv', text, true));
   }
 
   // Today's sessionContext(): 'Label: value' lines, empties skipped, trailing \n.
@@ -357,11 +410,29 @@
   // ---------------------------------------------------------------------------
 
   const kids = (el) => (el ? Array.prototype.slice.call(el.children) : []);
+  const styleOf = (el) => (el && el.style ? el.style.cssText : null);
+
+  // Theme tokens live in the template's inline styles, and a light/dark toggle rewrites
+  // every one of them. An injected node that copied its source's style once at creation
+  // would stay on the old theme and go near-invisible, so the source style is re-read on
+  // EVERY apply() and re-applied when it changed — the same re-derive rule the chips and
+  // the copy label follow. The two markers are a dirty check only, never the value: one
+  // holds the source css last seen, the other what this node ended up with, so both a
+  // theme flip and an outside write to our node are corrected on the next render.
+  function restyle(node, css, extra) {
+    if (css === null || css === undefined) return;
+    if (node.__fdL10Src === css && node.style.cssText === node.__fdL10Out) return;
+    node.style.cssText = css;
+    if (extra) extra(node);
+    node.__fdL10Src = css;
+    node.__fdL10Out = node.style.cssText;
+  }
   const screenRoot = () => document.querySelector('[data-screen-label="Desktop sessions"]');
   // Template-rendered children only: our own injections carry no data-dc-tpl.
   const rendered = (el) => kids(el).filter((n) => n.hasAttribute('data-dc-tpl'));
 
   function apply() {
+    expireCopyLabels(); // a lost timer must never leave a label on screen for good
     const el = screenRoot();
     polling(!!el); // the screen root exists only while this screen is the active one
     if (!el) return;
@@ -384,9 +455,10 @@
     const bar = screenRoot() && rendered(screenRoot())[0];
     const input = bar && bar.querySelector('input');
     // The same predicate logic.js applies (title/path/worktree/branch/model,
-    // toLocaleLowerCase on both sides), so the counts and the injected chips line
-    // up with the rows the runtime actually drew.
-    const dq = ((input && input.value) || '').toLocaleLowerCase();
+    // trimmed and toLocaleLowerCase on both sides), so the counts and the injected
+    // chips line up with the rows the runtime actually drew. Keep this in step with
+    // logic.js's dsGroups filter — a drift here misaligns the chips by one row.
+    const dq = ((input && input.value) || '').trim().toLocaleLowerCase();
     const hit = (r) =>
       [r.title, r.path, r.worktree, r.branch, r.model]
         .filter((v) => typeof v === 'string')
@@ -400,7 +472,7 @@
     groups.forEach((g) => {
       total += g.rows.length;
     });
-    filtered().forEach((g) => {
+    wellFormed(filtered(), true).forEach((g) => {
       const kept = g.rows.filter((r) => !dq || hit(r));
       kept.forEach((r) => {
         count++;
@@ -462,11 +534,22 @@
   // a fixed child list, so the runtime's syncChildren sees no change and never puts
   // them back. A selection that vanished from the data keeps a synthetic option, or
   // the user would see the filter silently reset to "All".
+  //
+  // Audit F4: the shim writes a <select>'s value only when the bound prop changed, so a
+  // select fed from live data can display a value the page is not rendering. This slice
+  // owns these four selects' options outright, so it keeps DOM and state in step itself.
+  // Every write is compare-then-set, and the option comparison reads the live options
+  // rather than a stamp written earlier — a stamp cannot notice the runtime putting the
+  // template's own options back.
   function setOptions(sel, opts, value) {
     let list = opts;
     if (value && !list.some((o) => o[0] === value)) list = list.concat([[value, UNAVAILABLE_OPTION]]);
-    const stamp = list.map((o) => o[0] + ' ' + o[1]).join('\n');
-    if (sel.getAttribute('data-fd-l10-opts') !== stamp) {
+    const cur = kids(sel).filter((n) => n.tagName === 'OPTION');
+    let same = cur.length === list.length;
+    for (let i = 0; same && i < list.length; i++) {
+      same = cur[i].value === list[i][0] && cur[i].textContent === list[i][1];
+    }
+    if (!same) {
       sel.textContent = '';
       list.forEach((o) => {
         const option = document.createElement('option');
@@ -474,8 +557,8 @@
         option.textContent = o[1];
         sel.appendChild(option);
       });
-      sel.setAttribute('data-fd-l10-opts', stamp);
     }
+    // After the options are settled, never before: rebuilding them resets the selection.
     if (sel.value !== value) sel.value = value;
   }
 
@@ -486,9 +569,19 @@
     if (reset && !reset.hasAttribute('data-fd-l10-reset')) {
       reset.setAttribute('data-fd-l10-reset', '');
       // logic.js clears dq and dsExp; our own filter state is ours to clear.
+      //
+      // The push() is deferred by a macrotask ON PURPOSE, and Reset is the one
+      // button where it matters. This listener shares the node with the runtime's
+      // own onClick. Pushing here would queue a render, the HTML spec runs a
+      // microtask checkpoint after *each* listener callback, that render re-binds
+      // the button's onClick (removeEventListener + addEventListener on every
+      // pass), and the DOM spec skips a listener removed mid-dispatch — so
+      // logic.js's resetDs never runs and the search box never clears. Verified:
+      // a trusted click reproduced it every time, a synthetic el.click() (no
+      // checkpoint, the stack is not empty) hid it.
       reset.addEventListener('click', () => {
         SELECTS.forEach((k) => { filters[k] = ''; });
-        push();
+        setTimeout(push, 0);
       });
     }
     let btn = bar.querySelector('[data-fd-l10="refresh"]');
@@ -497,10 +590,10 @@
       btn = document.createElement('button');
       btn.type = 'button';
       btn.setAttribute('data-fd-l10', 'refresh');
-      btn.style.cssText = reset.style.cssText; // visually identical to Reset
       btn.addEventListener('click', () => load(true));
       reset.parentNode.insertBefore(btn, reset);
     }
+    restyle(btn, styleOf(reset)); // visually identical to Reset, in the theme on now
     const text = collecting ? 'Collecting…' : 'Refresh';
     if (btn.textContent !== text) btn.textContent = text;
     if (btn.disabled !== collecting) btn.disabled = collecting;
@@ -519,10 +612,15 @@
     if (!when) {
       when = document.createElement('span');
       when.setAttribute('data-fd-l10', 'collected');
-      when.style.cssText = span.style.cssText; // the same muted token as the count
       span.parentNode.insertBefore(when, span.nextSibling);
     }
-    const collected = response && response.collected_at;
+    restyle(when, styleOf(span)); // the same muted token as the count
+    // Ground truth sessions.js:292: the newest per-machine collected_at, NOT the
+    // response's own collected_at — that one is stamped when the sweep STARTS, so it
+    // would claim 'Last collection: Just now' while a sweep is still out, or when every
+    // machine failed. A machine that never reported carries null, hence the || 0.
+    const collected = ((response && response.machines) || [])
+      .reduce((max, m) => Math.max(max, (m && m.collected_at) || 0), 0);
     const label = collected ? 'Last collection: ' + age(collected) : 'No completed collection';
     if (when.textContent !== label) when.textContent = label;
   }
@@ -559,50 +657,63 @@
     if (!panel) {
       panel = document.createElement('div');
       panel.setAttribute('data-fd-l10', 'notes');
-      // Panel tokens are read off a live group card so light and dark both follow the
-      // theme. With no card on screen (the empty states) fall back to the Reset
-      // button's border, which is the same A_line token.
-      const card = cards[0];
-      const reset = bar.querySelector('[data-fd-l10-reset]');
-      panel.style.cssText = card
-        ? card.style.cssText
-        : 'border-radius:12px;border:1px solid ' + ((reset && reset.style.borderColor) || 'currentColor') + ';';
-      panel.style.padding = '12px 16px';
-      panel.style.display = 'flex';
-      panel.style.flexDirection = 'column';
-      panel.style.gap = '6px';
-      panel.style.overflow = 'visible';
     }
+    // Panel tokens are read off a live group card on every apply, so a theme toggle
+    // carries the panel with it. With no card on screen (the empty states) fall back to
+    // the Reset button's border, which is the same A_line token.
+    const card = cards[0];
+    const resetBtn = bar.querySelector('[data-fd-l10-reset]');
+    const panelCss = card
+      ? styleOf(card)
+      : 'border-radius:12px;border:1px solid ' + ((resetBtn && resetBtn.style.borderColor) || 'currentColor') + ';';
+    restyle(panel, panelCss, notesLayout);
     // The card list is an sc-for, so a group count change makes the runtime sweep
     // this foreign node away; re-inserting it here is the re-apply doing its job.
     if (panel.parentNode !== el || panel.previousElementSibling !== bar) {
       el.insertBefore(panel, bar.nextSibling);
     }
     const muted = (bar.querySelector('span:not([data-fd-l10])') || {}).style;
+    const lineCss = 'margin:0;font-size:12px;line-height:1.55;' +
+      (muted && muted.color ? 'color:' + muted.color + ';' : '');
     while (panel.children.length > lines.length) panel.removeChild(panel.lastChild);
     lines.forEach((line, i) => {
       let p = panel.children[i];
       if (!p) {
         p = document.createElement('p');
-        p.style.margin = '0';
-        p.style.fontSize = '12px';
-        p.style.lineHeight = '1.55';
-        if (muted && muted.color) p.style.color = muted.color;
         panel.appendChild(p);
       }
+      restyle(p, lineCss); // the muted token again, re-read on every apply
       if (p.textContent !== line) p.textContent = line;
     });
   }
 
+  // The panel's own layout, re-applied whenever its themed tokens are rewritten.
+  function notesLayout(panel) {
+    panel.style.padding = '12px 16px';
+    panel.style.display = 'flex';
+    panel.style.flexDirection = 'column';
+    panel.style.gap = '6px';
+    panel.style.overflow = 'visible';
+  }
+
   // -- 5.5 status chips (I-L10-02) + row tagging ---------------------------------
+
+  const rowId = (r) => (r && r.id !== null && r.id !== undefined ? String(r.id) : '');
 
   function syncRows(cards, shape) {
     cards.forEach((card, gi) => {
       const rows = rowEls(card);
       const data = shape[gi] || [];
       rows.forEach((el, ri) => {
-        el.setAttribute('data-fd-l10-row', '');
-        chips(el, data[ri]);
+        const r = data[ri];
+        // Audit F1: sc-for rows are positional, so this element can be showing a
+        // different session than it did a render ago. Re-stamp it with the id it
+        // carries NOW, then re-derive every injection from that row's own data.
+        if (!el.hasAttribute('data-fd-l10-row')) el.setAttribute('data-fd-l10-row', '');
+        const id = rowId(r);
+        if (el.getAttribute('data-fd-l10-id') !== id) el.setAttribute('data-fd-l10-id', id);
+        chips(el, r);
+        copyLabel(el, id);
       });
     });
   }
@@ -614,76 +725,149 @@
     return kids(table).slice(1);
   }
 
+  const CHIP_KEYS = ['archived', 'cached'];
+
+  // Re-derived, never accumulated. The desired chip set is computed from this row's
+  // data on every apply(), and the injected chips are reconciled to it: an injected
+  // chip that is not wanted is removed, a missing one is added, a correct one is left
+  // alone. So a positionally reused row (audit F1) cannot keep another session's
+  // 'Archived' or 'Cached'. The template's own live/offline pill carries no
+  // data-fd-l10 and is never read, moved or removed.
   function chips(el, r) {
     const cells = kids(el).filter((n) => n.tagName === 'SPAN');
     const status = cells[0];
     if (!status) return;
-    // The mock's status cell holds one pill. Extra pills are cloned from the row's
-    // model chip, which is the mock's own neutral chip token — no colour guessing.
+    const want = {
+      archived: r && r.isArchived ? 'Archived' : '',
+      cached: r && r.stale ? 'Cached' : '',
+    };
+    if (status.style.gap !== '5px') status.style.gap = '5px';
+    if (status.style.flexWrap !== 'wrap') status.style.flexWrap = 'wrap';
+    const found = {};
+    kids(status).forEach((n) => {
+      const key = n.getAttribute ? n.getAttribute('data-fd-l10') : null;
+      if (!key || CHIP_KEYS.indexOf(key) < 0) return; // not ours: leave it alone
+      if (want[key] && !found[key]) found[key] = n;
+      else status.removeChild(n); // stale for this session, or a duplicate
+    });
+    // Extra pills are cloned from the row's model chip, which is the mock's own
+    // neutral chip token — no colour guessing.
     const conv = kids(el).filter((n) => n.tagName === 'DIV')[0];
     const meta = kids(conv)[1];
     const model = kids(meta)[1];
-    status.style.gap = '5px';
-    status.style.flexWrap = 'wrap';
-    chip(status, 'archived', r && r.isArchived ? 'Archived' : '', model);
-    chip(status, 'cached', r && r.stale ? 'Cached' : '', model);
-  }
-
-  function chip(cell, key, text, styleSrc) {
-    let pill = cell.querySelector('[data-fd-l10="' + key + '"]');
-    if (!text) {
-      if (pill) cell.removeChild(pill);
-      return;
-    }
-    if (!pill) {
-      pill = document.createElement('span');
-      pill.setAttribute('data-fd-l10', key);
-      if (styleSrc) pill.style.cssText = styleSrc.style.cssText;
-      cell.appendChild(pill);
-    }
-    if (pill.textContent !== text) pill.textContent = text;
+    let prev = null;
+    CHIP_KEYS.forEach((key) => {
+      const text = want[key];
+      if (!text) return;
+      let pill = found[key];
+      if (!pill) {
+        pill = document.createElement('span');
+        pill.setAttribute('data-fd-l10', key);
+        status.appendChild(pill);
+      } else if (prev && pill.previousSibling !== prev) {
+        status.appendChild(pill); // keep CHIP_KEYS order after a reconcile
+      }
+      restyle(pill, styleOf(model)); // the mock's neutral chip token, in today's theme
+      if (pill.textContent !== text) pill.textContent = text;
+      prev = pill;
+    });
   }
 
   // -- 5.4 copy label feedback (I-L10-04) ----------------------------------------
 
+  // Audit F1 / binding instruction 1: per-row state must never live in the DOM. The
+  // transient label is held here, keyed by the session id, and apply() paints it onto
+  // whichever row element currently carries that id. A poll landing inside the 1500 ms
+  // window can hand this row's node to another session; the label follows the session,
+  // not the node. The timer only ever mutates this map and asks for a re-apply — it
+  // never touches a DOM node captured when the click happened.
+  const copyLabels = new Map(); // sessionId -> { kind, text, until, timer }
+
+  function setCopyLabel(r, kind, text, revert) {
+    const id = rowId(r);
+    if (!id) return; // no stable identity: no label at all beats a label on a guess
+    const prev = copyLabels.get(id);
+    if (prev && prev.timer) clearTimeout(prev.timer);
+    const entry = { kind, text, until: revert ? Date.now() + COPY_REVERT_MS : 0, timer: null };
+    copyLabels.set(id, entry);
+    if (revert) {
+      entry.timer = setTimeout(() => {
+        if (copyLabels.get(id) === entry) copyLabels.delete(id); // never clear a newer label
+        scheduleApply();
+      }, COPY_REVERT_MS);
+    }
+    scheduleApply();
+  }
+
+  function labelLayout(pill) {
+    pill.style.whiteSpace = 'nowrap';
+    pill.style.flexShrink = '0';
+  }
+
+  function expireCopyLabels() {
+    const now = Date.now();
+    copyLabels.forEach((entry, id) => {
+      if (!entry.until || entry.until > now) return;
+      if (entry.timer) clearTimeout(entry.timer);
+      copyLabels.delete(id);
+    });
+  }
+
   // The mock's copy buttons are icon-only, so the label cycle lives in a chip beside
   // the button and is mirrored into the title for anyone reading the tooltip.
-  function labelPill(btn, text, revert) {
-    if (!btn || !btn.parentNode) return;
-    const cell = btn.parentNode;
-    if (btn.__fdL10Timer) {
-      clearTimeout(btn.__fdL10Timer);
-      btn.__fdL10Timer = null;
-    }
-    if (btn.__fdL10Title === undefined) btn.__fdL10Title = btn.getAttribute('title') || '';
-    let pill = cell.querySelector('[data-fd-l10="copylabel"]');
-    if (!text) {
+  // Rendered from copyLabels on every apply(), so an absent entry actively clears the
+  // pill and restores the title — a reused row heals itself on the next render.
+  function copyLabel(rowEl, id) {
+    const cell = kids(rowEl).filter((n) => n.tagName === 'SPAN')[1];
+    if (!cell) return;
+    // Action cell buttons in template order: Show, Message, Copy context, Copy
+    // conversation. Only the last two ever carry a label.
+    const buttons = kids(cell).filter((n) => n.tagName === 'BUTTON');
+    const copyBtns = [buttons[2], buttons[3]];
+    // Their titles are template constants, not per-row state, so the first sighting of
+    // a button is always its real title — captured here, before any write below.
+    copyBtns.forEach((b) => {
+      if (b && b.__fdL10Title === undefined) b.__fdL10Title = b.getAttribute('title') || '';
+    });
+    const entry = id ? copyLabels.get(id) : null;
+    const btn = entry ? copyBtns[entry.kind === 'copyConv' ? 1 : 0] : null;
+    copyBtns.forEach((b) => {
+      if (!b) return;
+      const title = b === btn ? entry.text : b.__fdL10Title;
+      if (b.getAttribute('title') !== title) b.setAttribute('title', title);
+    });
+    let pill = kids(cell).filter((n) => n.getAttribute && n.getAttribute('data-fd-l10') === 'copylabel')[0];
+    if (!btn) {
       if (pill) cell.removeChild(pill);
-      btn.setAttribute('title', btn.__fdL10Title);
       return;
     }
     if (!pill) {
-      const row = btn.closest ? btn.closest('[data-fd-l10-row]') : null;
-      const conv = row ? kids(row).filter((n) => n.tagName === 'DIV')[0] : null;
-      const model = conv ? kids(kids(conv)[1])[1] : null;
       pill = document.createElement('span');
       pill.setAttribute('data-fd-l10', 'copylabel');
-      if (model) pill.style.cssText = model.style.cssText;
-      pill.style.whiteSpace = 'nowrap';
-      pill.style.flexShrink = '0';
-      cell.insertBefore(pill, btn.nextSibling);
     }
-    if (pill.textContent !== text) pill.textContent = text;
-    btn.setAttribute('title', text);
-    if (revert) btn.__fdL10Timer = setTimeout(() => labelPill(btn, ''), COPY_REVERT_MS);
+    const conv = kids(rowEl).filter((n) => n.tagName === 'DIV')[0];
+    const model = kids(kids(conv)[1])[1];
+    restyle(pill, styleOf(model) || '', labelLayout); // no model chip: layout still applies
+    if (pill.previousSibling !== btn) cell.insertBefore(pill, btn.nextSibling);
+    if (pill.textContent !== entry.text) pill.textContent = entry.text;
   }
 
   // ---------------------------------------------------------------------------
   // Scheduling: re-apply after every render, poll while the screen is on screen.
   // ---------------------------------------------------------------------------
 
+  // Audit F5's remedy, applied to this file's own loop: apply() writes DOM and the
+  // observer schedules apply() on DOM writes. Idempotence alone is not a guard, so the
+  // observer is disconnected around our mutations AND honours an explicit flag, and
+  // applies are counted per macrotask. Above the ceiling this file stops scheduling
+  // until the next task, so it cannot spin the tab.
+  const MAX_APPLIES_PER_TASK = 50;
+  let applying = false;
+  let applyCount = 0;
+  let applyHalted = false;
+
   function scheduleApply() {
-    if (applyQueued) return;
+    if (applying || applyHalted || applyQueued) return;
     applyQueued = true;
     // A microtask, so it lands after the runtime's own flush (queued first by setData).
     Promise.resolve().then(() => {
@@ -693,12 +877,31 @@
   }
 
   function safeApply() {
+    if (applying || applyHalted) return;
+    if (applyCount === 0) {
+      // The budget refills on the next macrotask; 50 applies inside one task is a loop,
+      // not a busy screen.
+      setTimeout(() => {
+        applyCount = 0;
+        applyHalted = false;
+      }, 0);
+    }
+    if (++applyCount > MAX_APPLIES_PER_TASK) {
+      applyHalted = true;
+      if (root.console) {
+        root.console.error('[fd-v2 l10] apply() ran ' + MAX_APPLIES_PER_TASK +
+          ' times in one task; stopping until the next task (audit F5)');
+      }
+      return;
+    }
+    applying = true;
     if (observer) observer.disconnect(); // our own writes must not re-trigger us
     try {
       apply();
     } catch (err) {
       if (root.console) root.console.error('[fd-v2 l10] DOM enhancement failed', err);
     }
+    applying = false;
     if (observer) observe();
   }
 
@@ -720,7 +923,11 @@
   }
 
   if (typeof MutationObserver === 'function' && typeof document !== 'undefined') {
-    observer = new MutationObserver(scheduleApply);
+    // The callback ignores records raised by our own writes; disconnect() already
+    // empties the queue, this is the belt to that pair of braces.
+    observer = new MutationObserver(() => {
+      if (!applying) scheduleApply();
+    });
     observe();
   }
   scheduleApply();
