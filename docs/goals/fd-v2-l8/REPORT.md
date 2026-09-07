@@ -2,18 +2,18 @@
 
 **Worker:** Kunhild · `frontend-developer` · tag `agent-kunhild` · session `cli-worker`
 **Project / sub-project:** `remote-system` / `fleetdeck-v2`
-**Branch:** `agent-v2-l8` off `origin/agent-v2-base` (re-merged three times: the S2 runtime fix, S2.2 + L1.1, then L1.2)
+**Branch:** `agent-v2-l8` off `origin/agent-v2-base`, re-merged as the base moved (S2 runtime fix, S2.2 + L1.1, L1.2) and finally merged with `origin/weave/fd-v2` for L8.1
 **Main issue:** DECK-55 · **Ledger row:** D15
-**Date:** 2026-09-07
+**Date:** 2026-09-07 · L8.1 follow-up same day
 
 ## Result
 
 | Gate | Required | Measured |
 |---|---|---|
 | Pixel gate, fixture mode | `verify/l8/report.json` allPass 36/36 | **36/36, allPass true**, max mismatch 0.0329 %; the `accounts` screen itself **0.000000 %** in both themes |
-| Live-mode proof, API stubbed | `verify/l8/live.json` all pass | **60/60, allPass true**, zero console errors, zero page errors |
+| Live-mode proof, API stubbed | `verify/l8/live.json` all pass | **66/66, allPass true**, zero console errors, zero page errors |
 | Unit tests | pure logic covered | `test/v2-accounts.test.js` — **15/15** |
-| Full suite | `npm test` green | **318/318, exit 0** — green on `agent-v2-base` @ L1.2 + S2.2 |
+| Full suite | `npm test` green | **489/489, exit 0** on `origin/weave/fd-v2` |
 
 Artefacts: `docs/design/fleetdeck-v2/verify/l8/` (36 PNG pairs + `report.json`, `live.json`,
 `live-dark.png`, `live-light.png`), harness in `verify/l8-live/`, five screenshots in
@@ -21,7 +21,8 @@ Artefacts: `docs/design/fleetdeck-v2/verify/l8/` (36 PNG pairs + `report.json`, 
 
 ### `npm test` — green, after two inherited problems cleared
 
-The suite is **318 tests, 318 pass, exit 0** on the final base.
+The suite is **489 tests, 489 pass, exit 0** on `origin/weave/fd-v2` (the weave brings the other
+slices' tests with it).
 
 It was not green earlier, for two reasons, neither of them L8's:
 
@@ -61,7 +62,7 @@ were taken from that path with `git checkout <ref> -- docs/goals/fd-v2-l8/`. No 
   it finds an object rather than `undefined`.
 - **Used:** none. No call into another slice exists, guarded or otherwise.
 - **Dependencies on other slices:** none at runtime. One shell gap had to be worked around — see
-  DECK-87 below.
+  DECK-84 below.
 
 ## The data seam
 
@@ -165,6 +166,32 @@ Eight, all recorded in `docs/design/fleetdeck-v2/improvised.md` with screenshots
 - **I-L8-07** one plan pill where today can show two
 - **I-L8-08** the screen loads `data.js` itself (DECK-87)
 
+### L8.1 — the DESIGN-35 ruling of 2026-09-08, applied
+
+The seat ruled that style writes onto compiled nodes are allowed when they are re-applied idempotently
+on every render and each is listed in `improvised.md`, and that a `data-*` hook plus a stylesheet rule
+is preferred to a per-node inline write. Three things changed:
+
+1. **No compiled template id is a hook any more.** The note-line recolour was keyed on
+   `data-dc-tpl="573"`, which changes on any template regeneration and would then have matched nothing,
+   silently. The cards are now found **structurally** — the screen's element children after the summary
+   row — and marked with this slice's own `data-fd-l8-card`.
+2. **The live proof fails loudly on a zero match.** `B7a` asserts five hooked cards, `B7b` cross-checks
+   that against the screen's own child count minus the summary row, and `B7c` reads back what the last
+   paint reported (`FD.screens.accounts.painted`). `B32d`/`B32e` assert the note hook is present and
+   that the stylesheet rule beats the template's own inline colour.
+3. **No inline style writes remain on compiled nodes.** All three writes are now attributes read by one
+   `<style id="fd-l8-style">`, with the values as custom properties on `document.documentElement`
+   (outside `#dc-root`). Every write goes through one guarded `attr()` helper, and the observer also
+   watches the three hooks, so a reconciler pass that reset one is corrected on the next frame. All
+   three are tabulated in `improvised.md` **I-L8-09**.
+
+Two harness corrections came out of the weave merge: `screens/shell.js` (L2) also fetches
+`/api/credits` for the sidebar's accounts mini, so the call *count* attributes nothing — the checks now
+assert what is actually L8's (the load carries no refresh param, nothing polls, and Refresh adds
+exactly one refreshing call). And only `/api/credits` is stubbed now, so the sibling screens' own
+fetches no longer surface as this screen's console errors.
+
 ### On the DESIGN-35 binding of 2026-09-08
 
 "Never mount foreign DOM inside a compiled node" arrived mid-slice and the screen was re-architected to
@@ -179,13 +206,41 @@ spans, `minHeight` on the summary row (the real privacy note is four lines where
 and `color` on each card's note line. None of these properties appears in the styles the template binds
 on those nodes, so `setProp` never undoes them. A style write is not a mounted child; if the design
 seat reads the binding as covering restyling too, the summary counts cannot be made live at all
-without a template change and this slice needs a ruling.
+without a template change. **Ruled on 2026-09-08: allowed**, given idempotent re-application and the
+`improvised.md` entry — both now in place (I-L8-09).
 
 Point (2) of the binding — validate before `setData`, keep the `renderVals` block throw-proof — is
 met: every field is read defensively (`(r.seen || [])`, `typeof w.pct === 'number'`, and so on), the
 paint pass is wrapped in try/catch, and the L8 block in `renderVals` is fenced so a row the API shapes
 unexpectedly costs the Accounts screen its last update rather than blanking every screen. Point (3)
 does not apply — this screen has no input and no `<select>`.
+
+## Adapter deltas — accepted improvisations (DECK-88)
+
+`FD.data.toAccounts()` is a good identity adapter, but six of its derived fields do not read the way
+today's page reads. `data.js` is L1's file, so `screens/accounts.js` takes `toAccounts()` as the base
+and overlays each of these, computed from the raw `/api/credits` rows. **All six are accepted here as
+L8 improvisations**, not defects to be fixed before the weave: none of them changes the *data* the
+adapter carries, only the derived text the screen prints, and `BEHAVIOUR.md` — not the adapter — is
+the authority for that text.
+
+| Field | `toAccounts()` | today's page, which L8 renders | Kind |
+|---|---|---|---|
+| `staleNote` | `sampled X — window has reset since` | the two sentences of `accounts.js:171-177`, verbatim | text only |
+| `banner` | one sentence for every non-ok state | three distinct sentences, one per state (`:154-166`) | **loses a distinction** |
+| `live` | `state === 'ok' ? 'live' : ''` | `SOURCE[source]` plus ` · usage from <windows_from>` (`:135-137`) | **loses a distinction** |
+| `right` | always `<ago> · <host>` | `<ago> · push` when `source === 'push'` (`:141`) | text only |
+| window order | `Object.keys(windows)` order | `five_hour`, `seven_day`, the model weeklies, `extra` last (`:5-6`, `:180`) | ordering only |
+| window labels | no `extra`/`secondary`; `7 day fable` | `extra usage`, `session`, `7 day Fable` (`:3`, `:8-10`) | text only |
+
+Two of them — `banner` and `live` — collapse states the API distinguishes, so they would change what a
+reader concludes if any slice took the adapter's value at face value. Those are why **DECK-88 stays
+open** for L1 rather than being closed as documentation. The other four are presentation and need no
+adapter change unless L1 wants the convergence.
+
+Also absent from the adapter and derived by L8: the pill colour, `unconfirmed`, the no-source case, the
+credits line, and `resets now` / `resets in Nm` (`resetsIn()` only ever emits `resets in Nh Nm`, and
+`null` where today emits `''`).
 
 ## Review
 
@@ -206,8 +261,10 @@ claimed.
 
 ## Open follow-ups
 
-- **DECK-87** (`operator:decision`) — the shell never loads `data.js`; `screens/accounts.js` loads it
-  itself as a workaround. When `index.html` is fixed, delete `withData()` here.
+- **DECK-84** (owned by **L11**; I raised the same finding as DECK-87, which is a duplicate of it) —
+  the shell never loads `data.js`, so `FD.data` is undefined for every screen slice.
+  `screens/accounts.js` keeps its own guarded loader until L11 lands, at which point `withData()`
+  finds `FD.data` already present and becomes a no-op; it should then be deleted.
 - **DECK-88** (`needs:general`) — `toAccounts()` diverges from today's Accounts texts in six places.
 - **DECK-94** (`needs:general`) — **resolved upstream by L1.1** and closed; kept here for the record.
 - If the design seat wants the sparkline's area fill and tooltip back, or the summary counts bound
