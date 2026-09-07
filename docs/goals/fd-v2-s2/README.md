@@ -76,13 +76,13 @@ Fallback (only via `operator:decision`): the precedent's DOM-dump method.
 
 ## Acceptance (definition of done)
 
-- [ ] `template.dc.html` byte-identical to S1's `index.html`; `logic.js` body byte-identical to the mock's script (round-trip diff committed).
-- [ ] `parity.json`: 36/36 identical. `interactions.json`: every step identical on both sides.
-- [ ] `verify/S2/report.json`: `allPass: true` on 36 screens.
-- [ ] `network.json`: no React/ReactDOM/Babel/dc-runtime loads; `index.html` shell has no `<x-dc>` and no `data-dc-script`.
-- [ ] `npm run v2:check` green; `npm run v2:compile` reproduces `app.js` byte-identical twice.
-- [ ] `reviewer` pass clean; `hunter` (adversarial) pass on `tools/dc-compile.mjs` + `runtime.js` with findings fixed or ruled.
-- [ ] Branch pushed; `REPORT.md` signed; registry `done`.
+- [x] `template.dc.html` byte-identical to S1's `index.html` (sha256 `96be98b6…`); `logic.js` body byte-identical to the mock's script, sha256 `d0db2453…`, round-trip proof in `verify/S2/logic-roundtrip.txt`. **Amended by the T3 ruling**: byte-identical except the 7 fixture substitutions, whose moved literals are byte-identical in `fixture.js` and quoted OUT->IN in `verify/S2/t3-substitutions.txt`.
+- [x] `parity.json`: **36/36 identical**, volatile mask empty. `interactions.json`: **34/34 steps identical**, mask empty, `failedSteps: []`.
+- [x] `verify/S2/report.json`: **`allPass: true`** on 36 screens, max mismatch **0.032948 %**.
+- [x] `network.json`: **0** React/ReactDOM/Babel/dc-runtime loads; shell has no `<x-dc>` and no `data-dc-script`; also 0 console errors, 0 page errors, 0 failed requests, 36/36 screens reached.
+- [x] `npm run v2:check` green; `npm run v2:compile` reproduces all four outputs byte-identical twice.
+- [x] `reviewer` pass clean (8 findings: 2 already fixed, 4 fixed, 2 ruled). Adversarial pass on `tools/dc-compile.mjs` + `runtime.js`: 5 findings, **2 fixed and 3 ruled**. **Caveat, declared:** the mandated GPT `hunter` could not run (usage limit until Sep 12) and a Fable audit returned HTTP 429, so the identical brief ran on a Sonnet `reviewer` — a weaker substitute. See REPORT.md.
+- [x] Branch pushed; `REPORT.md` signed **Julius**; registry `done`.
 
 ## Pitfalls to carry (from the precedent report)
 
