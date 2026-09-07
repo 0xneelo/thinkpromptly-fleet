@@ -7,14 +7,14 @@
 | Branch | `agent-v2-l4` off `origin/agent-v2-base` (S2 + S2.2 + L1 + L1.1 + L1.2 merged in as they landed) |
 | Ledger row | **D12** (Registry), rulings O3 and O8 |
 | Linear | **DECK-43** (main) · DECK-45 §1 · DECK-46 §2 · DECK-47 §3 · DECK-48 §4 · DECK-50 §5 · DECK-51 §6-7 · DECK-52 gates · **DECK-69** filed (dc-compile hazard) |
-| Files owned and changed | `public/v2/screens/registry.js` (new, 1313 lines), the registry block in `public/v2/logic.js`, `tools/v2-live-check.mjs` (new), `docs/design/fleetdeck-v2/improvised.md`, `docs/goals/fd-v2-l4/**`, `verify/l4/**` |
+| Files owned and changed | `public/v2/screens/registry.js` (new, 1313 lines), the registry block in `public/v2/logic.js`, `docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs` (new), `docs/design/fleetdeck-v2/improvised.md`, `docs/goals/fd-v2-l4/**`, `verify/l4/**` |
 
 ## Result
 
 | Gate | Number | Where |
 |---|---|---|
 | Fixture-mode pixel gate | **36/36, `allPass: true`**, max mismatch **0.0329 %** | `verify/l4/report.json`, full run under `docs/design/fleetdeck-v2/verify/l4/` |
-| Live gate, API stubbed from `fixtures/api/` | **36/36, `allPass: true`** | `verify/l4/live.json`, tool `tools/v2-live-check.mjs` |
+| Live gate, API stubbed from `fixtures/api/` | **37/37, `allPass: true`** | `verify/l4/live.json`, tool `docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs` |
 | S2's standing seam check | **PASS** — `FD.setData('regData', …)` reaches the table | `node tools/v2-setdata-check.mjs --app <url>` |
 | S2's network / console gate | **`allPass: true`** — 36/36 screens reached, 0 console errors, 0 page errors, 0 failed requests, 0 engine loads | `verify/l4/network.json` |
 | `test/v2-data.test.js` | **74 pass, 0 fail** | run alone |
@@ -189,7 +189,7 @@ and running their own Playwright gates on this box.
 They also could not have been this slice's, by construction. The whole diff against the base is:
 
 ```
-public/v2/logic.js  public/v2/screens/registry.js  tools/v2-live-check.mjs
+public/v2/logic.js  public/v2/screens/registry.js  docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs
 docs/**  verify/l4/**
 ```
 
@@ -203,7 +203,7 @@ flickered. The green runs are the acceptance; this table is here so the next per
 ```bash
 PORT=3247 node server.js &                                   # never 3131 (the operator's deck)
 npm run design:diff -- --app "http://127.0.0.1:3247/v2/index.html?fixture=1" --slice l4
-node tools/v2-live-check.mjs                                 # writes verify/l4/live.json
+node docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs                                 # writes verify/l4/live.json
 node --test --test-concurrency=1 test/v2-data.test.js
 ```
 
@@ -240,12 +240,70 @@ confirmation. **XYZ-2137 should be re-checked against this:** L1 recorded the sa
 the same conclusion, so its "registry write is fenced for box workers" premise may simply be a
 missing header.
 
+## L4.1 — DESIGN-35 follow-up (2026-09-07, after L4 was accepted into weave/fd-v2)
+
+Four items, on top of `origin/weave/fd-v2`.
+
+**1. The per-row guard was too wide.** `run()` gated every row action on the global
+`state.bulkBusy`, so while a bulk kill was running an *unrelated* row's `⋯` action silently did
+nothing — the click landed, the menu closed, no POST left. Today's app disables only the bulk
+bar's own buttons (`public/app.js:787`); the rest of the table stays live. The guard is now
+`state.busy[row.id]` alone, which is still correct for the batch's own rows because `bulk()`
+marks each of them busy for the batch's life.
+
+The live gate gained a check for it — **`bulk-row-independent`**, §4, taking the gate to **37**.
+It arms a 900 ms delay on `/api/kill` so the batch is genuinely mid-flight, then clicks a third
+row's Hide and asserts the `POST /api/registry {status:'hidden'}` for that row. Falsified: with
+the old `|| state.bulkBusy` restored it fails with `no hide POST for FD-deck25-gate`, and the
+only POST recorded is the batch's own kill.
+
+**2. `test/v2-registry.test.js` — the unit tests the pack's gate item 3 asks for, and this slice
+silently dropped.** L1's pack lists tests as scope item 3; the L4 README I had to author from the
+launch prompt carried no such item, and no unit test was written — the whole slice rested on two
+browser gates. **23 tests** now cover the rules that can be stated without a DOM: `filterSessions`
+(the eight searched fields, trimming and case, null-safety, the live/gone boolean equality, all
+five statuses, status as an equality rather than a prefix, both age columns, an unknown age key,
+and the filters composing), `sortSessions` (case-insensitive strings, both directions, unset
+sinking to the bottom in *both*, `Date.parse` on the time columns, no mutation of the input,
+role+worker together, and every header column having an accessor), `olderThan` and `ageTone`.
+
+`filterSessions` and `sortSessions` now take their filter and order explicitly (defaulting to the
+module's state, so every caller is unchanged) and the screen publishes `FD.screens.registry.__pure`
+— the same seam L2 uses (`FD.shell.__pure`). Loading the screen under a stub window in fixture
+mode starts nothing, which the first test asserts.
+
+Not vacuous: four planted mutations — the amber threshold moved, the unset-sinks comparator
+flipped, the role accessor, and status matched by prefix — each fail the tests that name them.
+
+**3. The gate script left `tools/`.** It is now
+`docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs`.
+
+*Deviation, stated plainly:* the instruction named `docs/design/fleetdeck-v2/verify/l4/`. That
+exact directory is the design gate's own output, and `scripts/design-diff.mjs:244-251` publishes a
+run by renaming a staging directory **over** it and deleting what was there — so a script parked
+in `verify/l4/` disappears on the next `npm run design:diff -- --slice l4`. The five slices that
+already ship a live harness all use a sibling directory for exactly this reason (`l2-live/`,
+`l5-live/`, `l7-harness/`, `l8-live/`, `l10-harness/`), so `l4-live/` follows them: same parent,
+same naming family, one directory off the literal instruction, and it survives. Confirmed by
+running the pixel gate after the move — the script is still there.
+
+**`verify/l9/live.mjs` is sitting in that trap** and will be deleted by L9's next gate run; worth
+telling that lane.
+
+**4. `wireEditor` now stops Enter as well as Escape.** The keydown handler returned on Enter
+before reaching `e.stopPropagation()`, so an Enter inside a cell editor reached the screen's own
+delegated `keydown` listener. Nothing acts on Enter there today, which is why nothing broke — it
+was a latent leak, and the editor should own every key it handles.
+
+Gates after all four: fixture pixel **36/36 `allPass`** (max 0.0329 %), live **37/37 `allPass`**,
+setData seam check **PASS**, `npm test` **483 pass, 0 fail**.
+
 ## Not done
 
 - **The pack.** `docs/goals/fd-v2-l4/` shipped with only `BEHAVIOUR.md`. `PROTOCOL.md` is copied
   verbatim from `fd-v2-l1` and `README.md` is authored from the launch prompt's stop condition —
   L2 and L3 have the same gap and should be corrected at the source.
 - **Fable post-audit.** Not run: `hard-crux` was not exercised for this slice. The diff was
-  checked by the live gate's 36 assertions, its mutation run, and the fixture gate.
+  checked by the live gate's 37 assertions, its mutation runs, and the fixture gate.
 
 — **Ruprecht**, frontend-developer, `agent-ruprecht`, 2026-09-07

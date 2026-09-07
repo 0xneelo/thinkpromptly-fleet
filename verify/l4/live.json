@@ -3,7 +3,7 @@
   "mode": "live",
   "slice": "l4",
   "status": "complete",
-  "capturedAt": "2026-09-07T01:30:47.166Z",
+  "capturedAt": "2026-09-07T02:01:01.356Z",
   "source": "http://127.0.0.1:3247/v2/index.html",
   "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api",
   "environment": {
@@ -211,6 +211,13 @@
       "detail": "2 kills, confirm verbatim"
     },
     {
+      "id": "bulk-row-independent",
+      "section": "§4",
+      "name": "a row outside the batch still acts while a bulk kill runs",
+      "pass": true,
+      "detail": "hide POSTed for FD-deck25-gate while 2 kills were in flight"
+    },
+    {
       "id": "menu-items",
       "section": "§5",
       "name": "the ⋯ menu lists Details, the edits and the actions; Forget only when gone",
@@ -268,6 +275,6 @@
     }
   ],
   "allPass": true,
-  "passed": 36,
-  "total": 36
+  "passed": 37,
+  "total": 37
 }

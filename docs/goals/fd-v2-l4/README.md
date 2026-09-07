@@ -41,8 +41,9 @@ No new server endpoints. No merge of another L-branch.
 - [x] `verify/l4/report.json` — fixture mode, `allPass` true, **36/36**, max mismatch 0.0329 %
       (the figure S1 and S2 recorded on an untouched app). Full run with its PNG pairs under
       `docs/design/fleetdeck-v2/verify/l4/`.
-- [x] `verify/l4/live.json` — **36/36, `allPass` true**, API stubbed from
-      `docs/design/fleetdeck-v2/fixtures/api/` by `tools/v2-live-check.mjs`. Falsified by planting
+- [x] `verify/l4/live.json` — **37/37, `allPass` true** (36 at L4, plus `bulk-row-independent`
+      from L4.1), API stubbed from
+      `docs/design/fleetdeck-v2/fixtures/api/` by `docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs`. Falsified by planting
       three mutations in the screen: it dropped to 33/36 and named exactly those three checks.
 - [x] `npm test` green — **303 tests, 303 pass, 0 fail**, twice in a row. The suite is
       load-sensitive on this box (earlier runs, with ten sibling worker sessions building at once,
