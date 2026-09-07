@@ -281,6 +281,40 @@ screen writes DOM in its after-render pass and never calls `setState` there — 
 instruction 3 tells every slice not to `setState` in `componentDidUpdate` *because the guard would
 catch it*, and today nothing does.
 
+## The one thing I could not do — DECK-102 (operator:gate)
+
+The pack's closing step is a registry write, and it cannot be done from this box. This is
+diagnosed rather than skipped.
+
+`server.js:2988-2990` gates the tailnet listener:
+
+```js
+if (req.method === 'POST' && !BUS_ROUTES.has(p) && !notifyPath(p) && !tailnetAuthed(req))
+  return send(res, 401, 'text/plain', 'unauthorized');
+```
+
+and `tailnetAuthed` (`server.js:497-501`) wants `Authorization: Bearer $FLEET_TAILNET_KEY`, from
+`process.env.FLEET_TAILNET_KEY` (`server.js:491`). `/api/registry` is **not** in the exemption —
+the XYZ-1888 carve-out covers `BUS_ROUTES` only.
+
+Measured from `german-box`:
+
+| Request | Result |
+|---|---|
+| `GET /api/ghtoken` | **200** — the deck is reachable, reads are open |
+| `POST /api/registry`, no auth header | **401** |
+| `POST /api/registry`, `Authorization: Bearer not-the-key` | **401** |
+| `FLEET_TAILNET_KEY` in this box's environment | **unset** |
+
+The only credential here is `~/.fleetdeck-bus-token`, which the code above shows authorises the
+bus routes and nothing else. So no credential on this box can write that row, and retrying cannot
+change it. The operator either provisions `FLEET_TAILNET_KEY` on the box — which fixes it for
+every slice, since every pack ends with this same POST — or marks the row on the deck.
+
+XYZ-2137 already records the symptom, and previous sessions read it as licence to skip the step
+quietly. That is precisely why this is a filed gate: the packs make the registry row an acceptance
+condition, so skipping it silently leaves the operator unable to confirm a slice finished.
+
 ---
 
 Signed **Eckbert** · `frontend-developer` · `agent-eckbert` · 2026-09-07
