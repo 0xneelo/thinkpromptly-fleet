@@ -1,0 +1,246 @@
+{
+  "rows": [
+    {
+      "kind": "claude",
+      "id": "v-expired",
+      "host": "german-box",
+      "updated_at": 1788726047,
+      "source": "oauth",
+      "org": "11111111-aaaa-bbbb-cccc-dddddddddddd",
+      "email": "expired@example.com",
+      "label": "Expired Token",
+      "confirmed": true,
+      "tier": "default_claude_max_20x",
+      "type": "claude_max",
+      "state": "token_expired",
+      "windows": {
+        "five_hour": {
+          "pct": 96,
+          "resets_at": null
+        },
+        "seven_day": {
+          "pct": 12,
+          "resets_at": null
+        }
+      },
+      "credit": {
+        "used": null,
+        "limit": null,
+        "decimals": 0,
+        "currency": null,
+        "enabled": false,
+        "capped": false
+      },
+      "seen": [
+        {
+          "host": "rfc1918-internal",
+          "source": "oauth"
+        },
+        {
+          "host": "rfc1918-internal",
+          "source": "desktop"
+        },
+        {
+          "host": "DESKTOP-LJMEJQN",
+          "source": "oauth"
+        }
+      ],
+      "history": []
+    },
+    {
+      "kind": "claude",
+      "id": "v-rate",
+      "host": "ivy-box",
+      "updated_at": 1788726047,
+      "source": "desktop",
+      "org": "22222222-aaaa-bbbb-cccc-dddddddddddd",
+      "email": "rate@example.com",
+      "label": "Rate Limited",
+      "confirmed": true,
+      "tier": "default_claude_max_20x",
+      "type": "claude_max",
+      "state": "rate_limited",
+      "windows": {
+        "five_hour": {
+          "pct": 70,
+          "resets_at": null
+        }
+      },
+      "credit": {
+        "used": null,
+        "limit": null,
+        "decimals": 0,
+        "currency": null,
+        "enabled": false,
+        "capped": false
+      },
+      "seen": [
+        {
+          "host": "rfc1918-internal",
+          "source": "oauth"
+        },
+        {
+          "host": "rfc1918-internal",
+          "source": "desktop"
+        },
+        {
+          "host": "DESKTOP-LJMEJQN",
+          "source": "oauth"
+        }
+      ],
+      "history": [],
+      "windows_from": "desktop",
+      "sample_ts": 1787428144,
+      "stale_windows": false
+    },
+    {
+      "kind": "claude",
+      "id": "v-credit",
+      "host": "rfc1918-internal",
+      "updated_at": 1788726047,
+      "source": "push",
+      "org": "33333333-aaaa-bbbb-cccc-dddddddddddd",
+      "email": "capped@example.com",
+      "label": "Capped Credit",
+      "confirmed": false,
+      "tier": "default_claude_max_20x",
+      "type": "claude_max",
+      "state": "ok",
+      "windows": {
+        "five_hour": {
+          "pct": 5,
+          "resets_at": null
+        },
+        "extra": {
+          "pct": 3,
+          "resets_at": null
+        }
+      },
+      "credit": {
+        "used": 10.0,
+        "limit": 10.0,
+        "decimals": 2,
+        "currency": "USD",
+        "enabled": false,
+        "capped": true
+      },
+      "seen": [
+        {
+          "host": "rfc1918-internal",
+          "source": "oauth"
+        },
+        {
+          "host": "rfc1918-internal",
+          "source": "desktop"
+        },
+        {
+          "host": "DESKTOP-LJMEJQN",
+          "source": "oauth"
+        }
+      ],
+      "history": []
+    },
+    {
+      "kind": "claude",
+      "id": "v-nowin",
+      "host": "onboarding-box",
+      "updated_at": 1788726047,
+      "source": "oauth",
+      "org": "44444444-aaaa-bbbb-cccc-dddddddddddd",
+      "email": "nowin@example.com",
+      "label": "No Windows",
+      "confirmed": true,
+      "tier": "default_claude_max_20x",
+      "type": "claude_max",
+      "state": "ok",
+      "windows": {},
+      "credit": null,
+      "seen": [
+        {
+          "host": "rfc1918-internal",
+          "source": "oauth"
+        },
+        {
+          "host": "rfc1918-internal",
+          "source": "desktop"
+        },
+        {
+          "host": "DESKTOP-LJMEJQN",
+          "source": "oauth"
+        }
+      ],
+      "history": []
+    },
+    {
+      "kind": "claude",
+      "id": "v-nodata",
+      "host": "ubuntu-8gb-nbg1-1",
+      "updated_at": null,
+      "source": null,
+      "org": "55555555-aaaa-bbbb-cccc-dddddddddddd",
+      "email": "none@example.com",
+      "label": "Never Reported",
+      "confirmed": true,
+      "tier": "default_claude_max_20x",
+      "type": "claude_max",
+      "state": "absent",
+      "windows": {},
+      "credit": null,
+      "seen": [],
+      "history": []
+    },
+    {
+      "kind": "codex",
+      "id": "v-codex",
+      "host": "DESKTOP-LJMEJQN",
+      "updated_at": 1788737197,
+      "source": "codex",
+      "org": null,
+      "email": "admin@deus.finance",
+      "label": "Unlimited Codex",
+      "confirmed": true,
+      "tier": null,
+      "type": null,
+      "state": "ok",
+      "weekly": {
+        "pct": 96,
+        "resets_at": 1789174550
+      },
+      "credits": {
+        "balance": "0",
+        "unlimited": true,
+        "has_credits": true
+      },
+      "plan": "pro",
+      "snapshot_ts": 1788737195,
+      "seen": [
+        {
+          "host": "rfc1918-internal",
+          "source": "codex"
+        },
+        {
+          "host": "DESKTOP-LJMEJQN",
+          "source": "codex"
+        },
+        {
+          "host": "ubuntu-8gb-nbg1-1",
+          "source": "codex"
+        }
+      ],
+      "secondary": {
+        "pct": 4,
+        "resets_at": null
+      }
+    }
+  ],
+  "errors": [
+    {
+      "host": "ivy-box",
+      "message": "ssh: connect to host ivy-box port 22: Connection timed out"
+    },
+    {
+      "host": "onboarding-box",
+      "message": "credits collector exited 1"
+    }
+  ]
+}

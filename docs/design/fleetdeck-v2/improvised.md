@@ -253,3 +253,137 @@ and legacy redirects in **L11**. L1 implements the pack: the two are not in conf
 different phases — `?view=` is how the shell selects a view while v2 lives beside the old UI at
 `/v2/`, and L11 maps the final `/` and `/app` routes onto it. Recorded so L11 does not read the query
 scheme as a contradiction of the ruling.
+
+## L8 — Accounts (credits) cards (Kunhild, `agent-v2-l8`, 2026-09-07)
+
+Ledger row D15. The mock is the look, `docs/goals/fd-v2-l8/BEHAVIOUR.md` is the behaviour. Every entry
+below is a place where today's Accounts page says something the mock's markup has no slot for. Fixture
+mode (`?fixture=1`) is untouched by all of it — `screens/accounts.js` returns before doing anything
+when `FD.data.isFixture()`, and the pixel gate reads `accounts` at **0.000000 %**.
+
+### I-L8-01 — The summary bar is static text in the mock, so the live one is a block the screen owns
+
+**Serves:** `BEHAVIOUR.md` §2, `README.md` §Scope 1. **Screenshot:** `improvised/l8-summary-bar.png`.
+
+The mock's summary row is four literal spans — `5` `accounts`, `0` `at or over a limit`,
+`no credits spent`, and a shortened privacy note (template L569-574, compiled to `app.js` text nodes
+`k|1293`, `k|1298`, `k|1302`, `k|1305`). They are text, not bindings, and the runtime rewrites a text
+node whenever its string differs, so the counts **cannot** be driven from `renderVals` — only a
+template change could bind them, and the template is not this slice's file.
+
+L8 therefore hides the four static spans and paints live ones. Two constraints shaped how:
+
+- No foreign DOM inside a compiled node (DESIGN-35 binding, 2026-09-08). So the block is a single
+  container this file owns, `#fd-l8-chrome`, appended to `document.body` **outside `#dc-root`**, and
+  positioned on the mock's own summary row via its bounding rect (re-placed on scroll, resize and any
+  mutation, coalesced to one animation frame).
+- The row must keep its box, or the overlay has nothing to land on. The static spans are hidden with
+  `visibility`, not `display`.
+
+Two style properties are written onto compiled nodes — `visibility` on the four spans, and `minHeight`
+on the row, because the real privacy note is four lines where the mock's shortened one is one, and the
+cards have to start below it. Neither property appears in the styles the template binds on those
+nodes, and `setProp` only writes the properties present in the new style object, so neither write is
+undone by a re-render or by a theme change. **A style write is not a mounted child**: nothing of L8's
+is ever a descendant of a compiled node, which `verify/l8/live.json` B32b asserts.
+
+The privacy note is the full sidebar text from `accounts.html:13-18`, verbatim, including the
+`credits-accounts.json` sentence the mock's shortened version drops.
+
+### I-L8-02 — Rows that have something wrong with them open by themselves
+
+**Serves:** `README.md` §5 ("default expanded state … pick one"). **Screenshot:**
+`improvised/l8-default-expanded.png`.
+
+Today's page has no collapse: every card is always open. The mock's cards are collapsible and start
+closed, showing one bar. Closed is the mock's look and the pixel gate depends on it, so fixture mode
+keeps it exactly.
+
+On live data a row opens by itself when it is **at or over a limit**, or carries a **banner**, or has
+**no data**, or reported **no usage windows** — the four cases where a collapsed card would hide the
+only thing worth reading. Everything else starts collapsed, as the mock has it. A click still toggles
+any row, and an explicit toggle always wins over the default.
+
+### I-L8-03 — Five note lines become one, with the mock's separator
+
+**Serves:** `BEHAVIOUR.md` §3. **Screenshot:** `improvised/l8-note-line.png`.
+
+Today's card can show five separate lines the mock's card has no slot for: the sampled note, the
+credits line, `no data yet — run push from their machine`, `no usage windows reported`,
+`no history yet`, plus the header's `unconfirmed mapping`. The mock's card has exactly **one** free
+text line (the stale note, template L590-592).
+
+L8 joins them into that one line with the mock's own `·` separator, each sentence verbatim, in the
+order today's page prints them. The line's colour is the strongest tone present — red past three days
+stale, amber for a one-to-three-day sample, an unconfirmed mapping or a capped credit pool, muted
+otherwise — restored by a `color` write on that `<p>` for the same reason as I-L8-01.
+
+The alternative, one appended node per line, is exactly what the DESIGN-35 binding forbids: a card is
+an `sc-for` row with a positional identity, and the runtime deletes foreign children whenever it
+reconciles one, so those lines would be deleted and re-inserted on every open and close.
+
+### I-L8-04 — Collector errors and Refresh, in the same owned block
+
+**Serves:** `BEHAVIOUR.md` §4. **Screenshot:** `improvised/l8-errors-refresh.png`.
+
+The mock's Accounts screen has neither an errors panel nor a Refresh control (its one Refresh button
+belongs to the shell header, which is L2's file, and is unbound). Both are improvised into the block
+from I-L8-01, in the mock's panel and pill-button tokens: `Collector errors` over one
+`<host>: <message>` line per error, then Refresh. `cannot reach fleetdeck` appears beside the button
+when the fetch fails.
+
+Not pinned to the bottom-right of the window: the mock keeps its own `← fleetdeck` button fixed there
+at `z-index: 9999`.
+
+### I-L8-05 — The trend keeps the mock's box: a stroke, no area, no tooltip
+
+**Serves:** `BEHAVIOUR.md` §3 (Trend), ledger O6. **Screenshot:** `improvised/l8-trend.png`.
+
+Today's sparkline is a `0 0 100 28` svg with a filled polygon under a polyline and a `<title>` reading
+`N days, M samples`. The mock's is a `0 0 100 24` svg with **one** polyline and no title, and the
+template is not this slice's file. So the points are scaled into the mock's 24-high box, the area fill
+is dropped, and the tooltip is dropped with it — a `<title>` would be a foreign child of a compiled
+node (I-L8-01).
+
+What is preserved: the x axis is time-scaled from `history[].t` so gaps in sampling read as gaps (with
+the same divide-by-zero fallback as `accounts.js:100-104`), `sd` is clamped to 0-100, fewer than two
+numeric samples means no line at all (and a `no history yet` note instead, I-L8-03), the right-hand
+label is the last sample's `sd`, and the stroke colour is that sample's level. Codex rows have no
+history and get no trend block at all.
+
+O6 ("trend history does not exist server-side") is superseded, as L1 found: `/api/credits` returns
+`history[]` on four of the five captured rows and L8 plots it. L8 reads `history[]` from the response
+directly rather than `toAccounts().trendPts`, because the x axis needs each sample's timestamp.
+
+### I-L8-06 — The bars gain the red step the mock's helper does not have
+
+**Serves:** `BEHAVIOUR.md` §3 (Bars). **Screenshot:** `improvised/l8-default-expanded.png` (the
+`7 day Fable` bar at 100 % against `5 hour` at 29 %).
+
+Today's page tints a bar red over 90 % and amber from 70 % (`accounts.js:57`). The mock's shared
+`bar()` helper stops at amber. `bar()` is also the Machines screen's helper, so L8 does not change it:
+it builds its own bar objects in its own `logic.js` block, with the mock's shape and the extra step.
+Only the fill carries the level colour — the percentage text stays the mock's neutral ink, as today's
+`.pct` rule does.
+
+### I-L8-07 — One plan pill where today's page can show two
+
+**Serves:** `BEHAVIOUR.md` §3 (Header). Not separately screenshotted; visible in every card.
+
+Today's header appends a tier pill *and*, for a codex row, a plan pill. The mock's header has one plan
+slot. When a row carries both (no captured row does — the codex row has no tier), L8 renders them as
+one pill, `<tier> <plan>`. A second pill would be a foreign child of a compiled node.
+
+### I-L8-08 — The screen loads `data.js` itself, because the shell does not
+
+**Serves:** `README.md` §Cross-slice contract. Not a visual improvisation; recorded because it affects
+every L-slice.
+
+`public/v2/index.html` loads `runtime.js`, `fixture.js`, `logic.js`, `app.js` and the nine screen
+files — but **not** `public/v2/data.js` or `router.js`. So `FD.data` is undefined on a plain page
+load, and a screen that calls `FD.data.credits()` silently does nothing. `index.html` is S2's file and
+no slice may edit it, so `screens/accounts.js` appends its own `<script id="fd-data-js" src="/v2/data.js">`
+when `FD.data` is missing. The id is shared, so nine slices asking for it still load the file once.
+
+This is a shell gap, not an L8 decision, and it is filed for the design seat as DECK-87 — the fix
+belongs in `index.html`, and once it lands the loader here becomes dead code and should be removed.

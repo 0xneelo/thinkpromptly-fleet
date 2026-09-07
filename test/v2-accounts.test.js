@@ -233,7 +233,6 @@ test('toRows: the captured credits response, most constrained first', () => {
   // The trend is the desktop app's own samples, not the window: the last sample is 59.
   assert.equal(fable.trendPct, '59%');
   assert.equal(fable.trendLevel, '');
-  assert.equal(fable.trendTitle, '37 days, 120 samples');
   assert.equal(rows[4].trendPct, '88%');
   assert.equal(rows[4].trendLevel, 'amber');
   assert.equal(fable.creditsText, '', 'the captured rows report no used/limit pair');

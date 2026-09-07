@@ -1,0 +1,378 @@
+{
+  "schemaVersion": 1,
+  "slice": "l8",
+  "mode": "live",
+  "capturedAt": "2026-09-07T01:04:42.436Z",
+  "source": "docs/design/fleetdeck-v2/fixtures/api/credits.json + verify/l8/fixtures/*.json",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "total": 60,
+  "passed": 60,
+  "failed": 0,
+  "allPass": true,
+  "consoleProblems": [],
+  "results": [
+    {
+      "id": "B1",
+      "action": "load the Accounts screen",
+      "expectation": "GET /api/credits is called exactly once, with no refresh param",
+      "pass": true
+    },
+    {
+      "id": "B2",
+      "action": "read the summary bar",
+      "expectation": "\"5 accounts\"",
+      "pass": true
+    },
+    {
+      "id": "B3",
+      "action": "read the summary bar",
+      "expectation": "\"1 at or over a limit\"",
+      "pass": true
+    },
+    {
+      "id": "B4",
+      "action": "read the summary bar",
+      "expectation": "\"no credits spent\"",
+      "pass": true
+    },
+    {
+      "id": "B5",
+      "action": "read the privacy note",
+      "expectation": "the sidebar note, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B6",
+      "action": "read the privacy note",
+      "expectation": "it names credits-accounts.json",
+      "pass": true
+    },
+    {
+      "id": "B7",
+      "action": "read the card order",
+      "expectation": "most constrained first, unreported last",
+      "pass": true
+    },
+    {
+      "id": "B8",
+      "action": "read the leading card header",
+      "expectation": "the provider pill reads \"claude\"",
+      "pass": true
+    },
+    {
+      "id": "B9",
+      "action": "read the leading card header",
+      "expectation": "the account email",
+      "pass": true
+    },
+    {
+      "id": "B10",
+      "action": "read the leading card header",
+      "expectation": "the plan label \"Max 20×\"",
+      "pass": true
+    },
+    {
+      "id": "B11",
+      "action": "read the leading card header",
+      "expectation": "the source reads \"live\"",
+      "pass": true
+    },
+    {
+      "id": "B12",
+      "action": "read the leading card header",
+      "expectation": "the right side is \"<ago> · <host>\"",
+      "pass": true
+    },
+    {
+      "id": "B13",
+      "action": "read the leading card, opened by default",
+      "expectation": "every window bar, in order",
+      "pass": true
+    },
+    {
+      "id": "B14",
+      "action": "read the leading card",
+      "expectation": "the 7 day window",
+      "pass": true
+    },
+    {
+      "id": "B15",
+      "action": "read the leading card",
+      "expectation": "the model weekly reads \"7 day Fable\"",
+      "pass": true
+    },
+    {
+      "id": "B16",
+      "action": "read the leading card",
+      "expectation": "the window at 100 % shows its percentage",
+      "pass": true
+    },
+    {
+      "id": "B17",
+      "action": "read the leading card",
+      "expectation": "a reset time reads \"resets in Nh Nm\"",
+      "pass": true
+    },
+    {
+      "id": "B18",
+      "action": "read the leading card",
+      "expectation": "\"seen on <host> · <source>\"",
+      "pass": true
+    },
+    {
+      "id": "B19",
+      "action": "read the leading card",
+      "expectation": "the 7 day trend row",
+      "pass": true
+    },
+    {
+      "id": "B20",
+      "action": "compare a bar over 90 % with one under 70 %",
+      "expectation": "the bar over 90 % is a different (red) colour",
+      "pass": true
+    },
+    {
+      "id": "B21",
+      "action": "inspect the sparkline",
+      "expectation": "no foreign node is mounted inside the compiled svg",
+      "pass": true
+    },
+    {
+      "id": "B22",
+      "action": "inspect the sparkline",
+      "expectation": "a time-scaled polyline is plotted from history[].sd",
+      "pass": true
+    },
+    {
+      "id": "B23",
+      "action": "read the Codex card",
+      "expectation": "it is a codex row",
+      "pass": true
+    },
+    {
+      "id": "B24",
+      "action": "read the Codex card",
+      "expectation": "no sparkline block",
+      "pass": true
+    },
+    {
+      "id": "B24b",
+      "action": "read the Codex card",
+      "expectation": "it has no trend svg at all",
+      "pass": true
+    },
+    {
+      "id": "B25",
+      "action": "read the Codex card",
+      "expectation": "its weekly bar",
+      "pass": true
+    },
+    {
+      "id": "B26",
+      "action": "read the stale card",
+      "expectation": "the sampled sentence, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B27",
+      "action": "read the stale card",
+      "expectation": "the collector banner, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B28",
+      "action": "read the stale card",
+      "expectation": "a window with no percentage still gets a row",
+      "pass": true
+    },
+    {
+      "id": "B29",
+      "action": "read a card that is under every limit",
+      "expectation": "it is collapsed: no \"seen on\" line",
+      "pass": true
+    },
+    {
+      "id": "B30",
+      "action": "click that card header",
+      "expectation": "it opens and shows \"seen on\"",
+      "pass": true
+    },
+    {
+      "id": "B31",
+      "action": "wait three seconds",
+      "expectation": "no further /api/credits call is made",
+      "pass": true
+    },
+    {
+      "id": "B32",
+      "action": "click Refresh",
+      "expectation": "GET /api/credits?refresh=1",
+      "pass": true
+    },
+    {
+      "id": "B32b",
+      "action": "inspect the compiled tree",
+      "expectation": "the screen mounts no foreign node inside it",
+      "pass": true
+    },
+    {
+      "id": "B32c",
+      "action": "inspect the improvised chrome",
+      "expectation": "it is a single container outside #dc-root",
+      "pass": true
+    },
+    {
+      "id": "B33",
+      "action": "stub a token_expired row",
+      "expectation": "the banner, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B34",
+      "action": "stub a rate_limited row",
+      "expectation": "the banner, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B35",
+      "action": "stub a row with no source",
+      "expectation": "the no-data line, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B36",
+      "action": "stub a source that reported no windows",
+      "expectation": "the empty-windows line, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B37",
+      "action": "stub a capped credit pool",
+      "expectation": "the credits line with both suffixes",
+      "pass": true
+    },
+    {
+      "id": "B38",
+      "action": "stub an unconfirmed mapping",
+      "expectation": "the amber \"unconfirmed mapping\" note",
+      "pass": true
+    },
+    {
+      "id": "B39",
+      "action": "stub a push row",
+      "expectation": "the right side names the push, not a host",
+      "pass": true
+    },
+    {
+      "id": "B40",
+      "action": "open the codex card",
+      "expectation": "its credits line reads \"credits: unlimited\"",
+      "pass": true
+    },
+    {
+      "id": "B41",
+      "action": "open the codex card",
+      "expectation": "its second window is labelled \"session\"",
+      "pass": true
+    },
+    {
+      "id": "B42",
+      "action": "stub a claude row with no history",
+      "expectation": "the no-history line, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B43",
+      "action": "stub two collector errors",
+      "expectation": "the panel heading",
+      "pass": true
+    },
+    {
+      "id": "B44",
+      "action": "stub two collector errors",
+      "expectation": "\"<host>: <message>\" per error",
+      "pass": true
+    },
+    {
+      "id": "B45",
+      "action": "stub two collector errors",
+      "expectation": "the second error line",
+      "pass": true
+    },
+    {
+      "id": "B46",
+      "action": "stub a row sampled 15 days ago",
+      "expectation": "the \"no reset times\" sentence when the windows are not stale",
+      "pass": true
+    },
+    {
+      "id": "B47",
+      "action": "stub two rows with money spent",
+      "expectation": "the summary totals them per currency",
+      "pass": true
+    },
+    {
+      "id": "B48",
+      "action": "stub an empty response",
+      "expectation": "\"0 accounts\"",
+      "pass": true
+    },
+    {
+      "id": "B49",
+      "action": "stub an empty response",
+      "expectation": "\"no credits spent\"",
+      "pass": true
+    },
+    {
+      "id": "B50",
+      "action": "stub an empty response",
+      "expectation": "no cards are rendered",
+      "pass": true
+    },
+    {
+      "id": "B51",
+      "action": "stub a single account",
+      "expectation": "\"1 account\", singular",
+      "pass": true
+    },
+    {
+      "id": "B52",
+      "action": "open a card whose history has one sample",
+      "expectation": "the no-history line, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B53",
+      "action": "make /api/credits fail",
+      "expectation": "the failure text, verbatim",
+      "pass": true
+    },
+    {
+      "id": "B54",
+      "action": "make /api/credits fail",
+      "expectation": "no cards are rendered",
+      "pass": true
+    },
+    {
+      "id": "B55",
+      "action": "switch to the light theme",
+      "expectation": "the screen renders the same summary",
+      "pass": true
+    },
+    {
+      "id": "B56",
+      "action": "watch the console across every scenario",
+      "expectation": "zero console errors and zero page errors",
+      "pass": true
+    },
+    {
+      "id": "B57",
+      "action": "write the screenshots",
+      "expectation": "live-dark.png and live-light.png exist",
+      "pass": true
+    }
+  ]
+}

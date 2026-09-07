@@ -265,16 +265,39 @@
       noWindows: !!r.source && r.kind === 'claude' && rowBars.length === 0,
       creditsText: credits ? credits.text : '',
       creditsNotice: !!(credits && credits.notice),
+      note: '', noteTone: '',
       trendPts: t ? t.points : '',
       trendPct: t ? t.pct : '',
       trendLevel: t ? t.level : '',
-      trendTitle: t ? t.title : '',
       // A claude row with nothing to plot still says so, as the old page did.
       noHistory: r.kind === 'claude' && !!r.source && !t,
       seen: (r.seen || []).map((x) => x.host + ' · ' + (SOURCE[x.source] || x.source)).join(', '),
       // Rows at or over a limit open by default in live mode — improvised.md I-L8-02.
       atLimit: atLimit(r),
     });
+  }
+
+  // The mock's card carries exactly ONE free text line (the sampled note). Today's page
+  // has up to five, so L8 joins them into that one line with the mock's own separator,
+  // each sentence verbatim, and colours the line by the strongest tone present.
+  // improvised.md I-L8-03. Foreign DOM inside a compiled card is not an option
+  // (DESIGN-35 binding, 2026-09-08): a card is an sc-for row with a positional
+  // identity, and the runtime deletes foreign children whenever it reconciles one.
+  function note(a) {
+    const parts = [];
+    if (a.noData) parts.push('no data yet — run push from their machine');
+    else {
+      if (a.staleNote) parts.push(a.staleNote);
+      if (a.noWindows) parts.push('no usage windows reported');
+      if (a.creditsText) parts.push(a.creditsText);
+      if (a.noHistory) parts.push('no history yet');
+    }
+    if (a.unconfirmed) parts.push('unconfirmed mapping');
+    a.note = parts.join(' · ');
+    a.noteTone = a.staleCls === 'age-red' ? 'bad'
+      : (a.staleCls === 'age-amber' || a.unconfirmed || a.creditsNotice) ? 'warn'
+      : 'muted';
+    return a;
   }
 
   // credits payload -> the rows logic.js renders, most constrained first.
@@ -284,7 +307,7 @@
     const pairs = raw.map((r, i) => ({ raw: r, base: base[i] || {} }));
     // The raw row travels with its view row: the summary bar counts limits and money
     // from the API's own numbers, never from rendered text.
-    return order(pairs).map((p) => Object.assign(enrich(p.base, p.raw, now), { __raw: p.raw }));
+    return order(pairs).map((p) => Object.assign(note(enrich(p.base, p.raw, now)), { __raw: p.raw }));
   }
 
   // accounts.js:219 — '<host>: <message>' per collector error.
@@ -292,7 +315,7 @@
 
   const pure = {
     ago, until, level, worst, atLimit, order, summary, creditsLine, trend,
-    sourceText, banner, staleNote, bars, barOf, enrich, toRows, toErrors, label,
+    sourceText, banner, staleNote, bars, barOf, enrich, note, toRows, toErrors, label,
     WIN_LABEL, SOURCE, TIER,
   };
 
@@ -304,12 +327,13 @@
   // ---------------------------------------------------------------------------
 
   const SCREEN = '[data-screen-label="Accounts"]';
+  const CHROME = 'fd-l8-chrome';
   const data = () => (root.FD && root.FD.data) || null;
 
   const state = { rows: [], errors: [], error: '', loading: false, loaded: false };
 
   // The tokens the mock's own theme built this render, published by the L8 method in
-  // logic.js. Improvised chrome is painted in these and follows the theme toggle.
+  // logic.js. The improvised chrome paints in these and follows the theme toggle.
   const tok = () => (root.FD.screens.accounts.tokens || {});
 
   function el(tag, style, text) {
@@ -319,160 +343,127 @@
     return n;
   }
 
-  // Every improvised node carries data-fd-l8 so a repaint can find and replace its own
-  // work and never touch the mock's markup. Hooks are data-* only, never classes.
-  const mark = (n, kind) => { n.setAttribute('data-fd-l8', kind); return n; };
-  const mine = (host, kind) => host.querySelector(':scope > [data-fd-l8="' + kind + '"]');
-
-  function drop(host, kind) {
-    const old = mine(host, kind);
-    if (old) old.remove();
-  }
-
-  // ---- summary bar ----------------------------------------------------------
-  // The mock's summary bar is static text ('5 accounts', '0 at or over a limit',
-  // 'no credits spent') compiled into app.js, and the runtime rewrites a text node on
-  // every flush — so the counts cannot be bound. L8 hides the three static spans and
-  // the short privacy note and appends live ones built in the mock's own tokens.
-  // improvised.md I-L8-01.
+  // ---------------------------------------------------------------------------
+  // Improvised chrome.
+  //
+  // The mock's Accounts screen has no counterpart for the summary counts, the full
+  // privacy note, the collector-errors panel or Refresh; its summary bar is static
+  // text compiled into app.js, and the runtime rewrites a text node on every flush,
+  // so those counts cannot be bound. None of it may be mounted inside a compiled
+  // node (DESIGN-35 binding, 2026-09-08), so all of it lives in one container this
+  // file owns, appended to document.body OUTSIDE #dc-root, and tracks the mock's own
+  // summary row. improvised.md I-L8-01 and I-L8-04.
+  //
+  // The compiled nodes themselves are only ever RESTYLED, never given children: the
+  // four static summary spans are hidden with visibility (which keeps the row's box,
+  // so the overlay lands on it), and the note line is recoloured. Neither property
+  // appears in the styles the template binds, and setProp only writes the properties
+  // present in the new style object, so neither write is undone by a re-render.
+  // ---------------------------------------------------------------------------
   const PRIVACY = "Usage per AI account, most constrained first. Every machine reads its own token locally and reports only percentages — no access token ever leaves the machine that owns it. The trend line is the Claude desktop app's own samples, merged across machines. Names and org mapping live in credits-accounts.json.";
 
-  function paintSummary(screen) {
-    const barEl = screen.children[0];
-    if (!barEl) return;
-    const t = tok();
-    const statics = Array.from(barEl.children).filter((c) => !c.hasAttribute('data-fd-l8'));
-    // The last static child is the privacy note; the first three are the counts.
-    statics.forEach((c) => { c.style.display = 'none'; });
-    drop(barEl, 'summary');
-    drop(barEl, 'privacy');
+  function chrome() {
+    let box = document.getElementById(CHROME);
+    if (!box) {
+      box = el('div');
+      box.id = CHROME;
+      box.append(el('div'));                  // the one improvised block
+      box.children[0].id = 'fd-l8-summary';
+      document.body.appendChild(box);
+    }
+    return box;
+  }
 
-    const wrap = mark(el('span', 'display:contents;'), 'summary');
-    summary(state.rows.map((r) => r.__raw)).forEach((text, i) => {
+  const show = (n, on) => { n.style.display = on ? '' : 'none'; };
+
+  // Everything improvised sits in ONE block anchored to the mock's summary row: the
+  // counts, the full privacy note, the collector errors and Refresh. The mock's row is
+  // one line high and the real privacy note is four, so the compiled row's minHeight is
+  // set to the block's height and the cards sit below it — a style write on a compiled
+  // node, never a child. minHeight is not among the properties the template binds on
+  // that row, and setProp only writes the properties present in the new style object,
+  // so a re-render never undoes it.
+  function paintChrome(over, bar, screen) {
+    const t = tok();
+    const r = bar.getBoundingClientRect();
+    over.setAttribute('style', 'position:fixed;z-index:5;pointer-events:none;display:flex;' +
+      'flex-direction:column;gap:10px;left:' + r.left + 'px;top:' + r.top + 'px;width:' + r.width + 'px;');
+    over.replaceChildren();
+
+    const counts = el('div', 'display:flex;gap:24px;align-items:baseline;font-size:12.5px;color:' + t.ink60 + ';');
+    summary(state.rows.map((x) => x.__raw)).forEach((text, i) => {
       const span = el('span');
       if (i < 2) {
         // '<N> accounts' — the count in ink, the word muted, as the mock has it.
         const cut = text.indexOf(' ');
         span.append(el('span', 'color:' + t.ink + ';font-weight:500;', text.slice(0, cut)));
         span.append(document.createTextNode(text.slice(cut)));
-      } else {
-        span.textContent = text;
-      }
-      wrap.append(span);
+      } else span.textContent = text;
+      counts.append(span);
     });
-    barEl.append(wrap);
-
-    const note = mark(el('span', 'margin-left:auto;font-size:11.5px;color:' + t.ink35 + ';max-width:420px;text-align:right;', PRIVACY), 'privacy');
-    barEl.append(note);
-  }
-
-  // ---- per-card lines -------------------------------------------------------
-  // The mock's card has no slot for the credits line, the 'no data yet' row, the
-  // 'no usage windows reported' row or 'no history yet'. Each is appended next to the
-  // bars in the mock's muted type. improvised.md I-L8-03.
-  const barsBox = (card) => Array.from(card.children).find(
-    (c) => c.style.display === 'flex' && c.style.flexDirection === 'column' && c.style.gap === '8px');
-
-  // The mock's chevron is the card's open state — read it rather than duplicating it.
-  const isOpen = (card) => {
-    const chev = card.querySelector('svg[width="12"]');
-    return !!chev && /rotate\(90deg\)/.test(chev.style.transform || '');
-  };
-
-  function paintCard(card, row) {
-    const t = tok();
-    const box = barsBox(card);
-    if (!box) return;
-    card.setAttribute('data-fd-acct', row.id || row.name || '');
-    ['nodata', 'nowindows', 'credits', 'nohistory'].forEach((k) => drop(card, k));
-
-    const muted = 'font-size:12px;color:' + t.ink60 + ';';
-    const after = [];
-    if (row.noData) after.push(['nodata', el('p', 'margin:0;' + muted, 'no data yet — run push from their machine')]);
-    if (row.noWindows) after.push(['nowindows', el('p', 'margin:0;' + muted, 'no usage windows reported')]);
-    if (row.creditsText) {
-      after.push(['credits', el('p', 'margin:0;font-size:12px;color:' + (row.creditsNotice ? t.warn : t.ink60) + ';', row.creditsText)]);
-    }
-    // 'no history yet' only once the card is open, where the trend row would have been.
-    if (row.noHistory && isOpen(card)) after.push(['nohistory', el('p', 'margin:0;' + muted, 'no history yet')]);
-
-    let anchor = box;
-    after.forEach(([kind, node]) => {
-      mark(node, kind);
-      anchor.after(node);
-      anchor = node;
-    });
-
-    // Past three days the sampled line goes red (accounts.js:171). The template
-    // re-applies an equal style object each flush, so this override survives.
-    const stale = card.querySelector('p:not([data-fd-l8])');
-    if (stale) stale.style.color = row.staleCls === 'age-red' ? t.bad : t.warn;
-
-    // 'unconfirmed mapping' — the operator has not verified which account this org
-    // belongs to. The mock's header row has no slot for it. improvised.md I-L8-03.
-    const head = card.children[0];
-    if (head) {
-      drop(head, 'unconfirmed');
-      if (row.unconfirmed) {
-        head.append(mark(el('span', 'font-size:12px;color:' + t.warn + ';', 'unconfirmed mapping'), 'unconfirmed'));
-      }
-    }
-
-    // The tooltip the old page carried on the sparkline. The trend svg's child list
-    // never changes, so an appended <title> survives every re-render.
-    const svg = card.querySelector('svg[viewBox="0 0 100 24"]');
-    if (svg && row.trendTitle) {
-      let title = svg.querySelector('title');
-      if (!title) {
-        title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
-        svg.append(title);
-      }
-      if (title.textContent !== row.trendTitle) title.textContent = row.trendTitle;
-    }
-  }
-
-  // ---- errors panel + refresh ----------------------------------------------
-  // '#errors-panel' and the sidebar Refresh button have no counterpart in the mock's
-  // Accounts screen, so both are improvised at the foot of the screen in the mock's
-  // panel and button tokens. improvised.md I-L8-04.
-  function paintFoot(screen) {
-    const t = tok();
-    drop(screen, 'errors');
-    drop(screen, 'foot');
+    counts.append(el('span', 'margin-left:auto;font-size:11.5px;color:' + t.ink35 +
+      ';max-width:420px;text-align:right;', PRIVACY));
+    over.append(counts);
 
     if (state.errors.length) {
-      const panel = mark(el('div', 'border-radius:12px;border:1px solid ' + t.line + ';background:' + t.panel +
-        ';box-shadow:' + t.panelShadow + ';backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);padding:' +
-        (t.cardPad || '18px 20px') + ';display:flex;flex-direction:column;gap:8px;'), 'errors');
+      const panel = el('div', 'pointer-events:auto;border-radius:12px;border:1px solid ' + t.line +
+        ';background:' + t.panel + ';box-shadow:' + t.panelShadow +
+        ';backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);padding:' +
+        (t.cardPad || '18px 20px') + ';display:flex;flex-direction:column;gap:8px;');
       panel.append(el('span', 'font-size:12.5px;font-weight:500;color:' + t.ink + ';', 'Collector errors'));
       state.errors.forEach((e) => panel.append(el('p', 'margin:0;font-size:12px;color:' + t.bad + ';', e)));
-      screen.append(panel);
+      over.append(panel);
     }
 
-    const foot = mark(el('div', 'display:flex;align-items:center;gap:12px;'), 'foot');
-    const btn = el('button', 'border-radius:9999px;border:1px solid ' + t.line + ';background:transparent;color:' + t.ink75 +
-      ';padding:6px 16px;font-size:12.5px;cursor:pointer;transition:background .2s;', 'Refresh');
+    const row = el('div', 'display:flex;align-items:center;gap:12px;');
+    const btn = el('button', 'pointer-events:auto;border-radius:9999px;border:1px solid ' + t.line +
+      ';background:transparent;color:' + t.ink75 + ';padding:6px 16px;font-size:12.5px;cursor:pointer;' +
+      'transition:background .2s;', 'Refresh');
     btn.id = 'accounts-refresh';
     btn.disabled = state.loading;
     btn.onclick = () => load(true);
-    foot.append(btn);
-    if (state.error) foot.append(el('span', 'font-size:12px;color:' + t.bad + ';', state.error));
-    screen.append(foot);
+    row.append(btn);
+    if (state.error) row.append(el('span', 'font-size:12px;color:' + t.bad + ';', state.error));
+    over.append(row);
+
+    // Reserve the room the block needs. Writing it back settles in one more frame:
+    // the style mutation wakes the observer, the next pass measures the same height
+    // and writes nothing.
+    const need = Math.ceil(over.getBoundingClientRect().height) + 'px';
+    if (bar.style.minHeight !== need) bar.style.minHeight = need;
   }
 
-  // One idempotent paint. Runs after every data change and after any re-render that
-  // removed the improvised nodes.
+  // One idempotent pass. Cheap enough to run on scroll: it reads one rect and writes
+  // text it has already computed.
   let painting = false;
   function paint() {
     if (painting) return;
-    const screen = document.querySelector(SCREEN);
-    if (!screen) return;
     painting = true;
     try {
-      paintSummary(screen);
-      const cards = Array.from(screen.children).filter((c) => c.hasAttribute('data-dc-tpl') && c !== screen.children[0]);
-      cards.forEach((card, i) => { if (state.rows[i]) paintCard(card, state.rows[i]); });
-      paintFoot(screen);
+      const screen = document.querySelector(SCREEN);
+      const box = chrome();
+      // offsetParent is null while the screen is display:none behind another tab. A
+      // failed load has no rows but still has something to say, so it shows too.
+      const live = !!(screen && screen.offsetParent && (state.loaded || state.error));
+      show(box, live);
+      if (!live) return;
+      const bar = screen.children[0];
+      if (bar) {
+        // visibility, not display: the row keeps its box, so the overlay lands on it.
+        for (const c of bar.children) c.style.visibility = 'hidden';
+        paintChrome(box.children[0], bar, screen);
+      }
+      // The note line's tone: muted until the sample is old, amber past a day, red
+      // past three (accounts.js:44-46, 171). The template paints every one of them
+      // warn, so the tone is restored here.
+      const t = tok();
+      const cards = document.querySelectorAll(SCREEN + ' div[data-dc-tpl="573"]');
+      cards.forEach((card, i) => {
+        const row = state.rows[i];
+        const p = card.querySelector('p');
+        if (!row || !p) return;
+        p.style.color = row.noteTone === 'bad' ? t.bad : row.noteTone === 'warn' ? t.warn : t.ink60;
+      });
     } catch (e) {
       console.error(e);
     } finally {
@@ -480,21 +471,25 @@
     }
   }
 
-  // The runtime removes foreign children whenever a parent's child list changes (a card
-  // opening adds blocks), so the improvised nodes are re-asserted on mutation rather
-  // than on a timer. The observer is disconnected while painting so it never re-enters.
+  // The chrome tracks the mock's own layout, so it is re-placed whenever the page
+  // moves under it. The root is watched, not the screen: the app opens on the landing
+  // view, so the Accounts screen does not exist yet when the first response lands.
+  let queued = false;
+  function sync() {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; paint(); });
+  }
+
   let observer = null;
   function watch() {
-    if (observer || typeof MutationObserver !== 'function') return;
-    observer = new MutationObserver(() => {
-      if (painting) return;
-      observer.disconnect();
-      paint();
-      const screen = document.querySelector(SCREEN);
-      if (screen) observer.observe(screen, { childList: true, subtree: true });
-    });
-    const screen = document.querySelector(SCREEN);
-    if (screen) observer.observe(screen, { childList: true, subtree: true });
+    if (observer) return;
+    addEventListener('scroll', sync, true);
+    addEventListener('resize', sync);
+    if (typeof MutationObserver !== 'function') return;
+    observer = new MutationObserver(sync);
+    observer.observe(document.getElementById('dc-root') || document.body,
+      { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
   }
 
   // ---------------------------------------------------------------------------
@@ -527,16 +522,35 @@
   // The ONLY data entry point.
   function push() {
     root.FD.setData('accountsLive', state.rows);
-    // setData re-renders on a microtask; the improvised chrome follows it.
-    Promise.resolve().then(paint);
+    // setData re-renders on a microtask; the chrome follows on the next frame.
+    sync();
+  }
+
+  // The shell's index.html loads runtime, fixture, logic, app and the screen files —
+  // not public/v2/data.js, so FD.data is absent on a plain page load. index.html is
+  // S2's file and no slice may edit it, so the screen fetches its own data layer. The
+  // id is shared, so nine slices asking for it still load it exactly once.
+  function withData(cb) {
+    if (data()) return cb();
+    let tag = document.getElementById('fd-data-js');
+    if (!tag) {
+      tag = document.createElement('script');
+      tag.id = 'fd-data-js';
+      tag.src = '/v2/data.js';
+      document.head.appendChild(tag);
+    }
+    tag.addEventListener('load', cb, { once: true });
+    tag.addEventListener('error', cb, { once: true });
   }
 
   function start() {
-    const api = data();
-    // Fixture mode renders FD.fixture as-is: never call setData there.
-    if (!api || api.isFixture()) return;
-    watch();
-    load(false);
+    withData(() => {
+      const api = data();
+      // Fixture mode renders FD.fixture as-is: never call setData there.
+      if (!api || api.isFixture()) return;
+      watch();
+      load(false);
+    });
   }
 
   const screen = Object.assign({ slice: 'l8', start, load, paint, state }, pure);
