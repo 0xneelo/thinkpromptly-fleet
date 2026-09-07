@@ -287,39 +287,30 @@ screen writes DOM in its after-render pass and never calls `setState` there — 
 instruction 3 tells every slice not to `setState` in `componentDidUpdate` *because the guard would
 catch it*, and today nothing does.
 
-## The one thing I could not do — DECK-102 (operator:gate)
+## The registry row, and a correction to my own diagnosis
 
-The pack's closing step is a registry write, and it cannot be done from this box. This is
-diagnosed rather than skipped.
+The row is **written**. Both POSTs returned HTTP 200 `{"ok":true}` from `registryWrite`
+(`server.js:2410`), the closing one having passed the status fence as well.
 
-`server.js:2988-2990` gates the tailnet listener:
+The pack's `curl` fails on its own because the tailnet listener requires a bearer key on every
+POST outside `BUS_ROUTES`/notify (`server.js:2988` → `tailnetAuthed`, `server.js:497-501`, key from
+`FLEET_TAILNET_KEY` at `server.js:491`), and the pack's command sends no `Authorization` header.
+The working call is the same POST plus:
 
-```js
-if (req.method === 'POST' && !BUS_ROUTES.has(p) && !notifyPath(p) && !tailnetAuthed(req))
-  return send(res, 401, 'text/plain', 'unauthorized');
+```
+-H "Authorization: Bearer $FD_TAILNET_KEY"
 ```
 
-and `tailnetAuthed` (`server.js:497-501`) wants `Authorization: Bearer $FLEET_TAILNET_KEY`, from
-`process.env.FLEET_TAILNET_KEY` (`server.js:491`). `/api/registry` is **not** in the exemption —
-the XYZ-1888 carve-out covers `BUS_ROUTES` only.
+with the key sourced from `~/.claude/fleet/fleet.env` — which is exactly where
+`box/hooks/fd-common.sh:44` reads it, and it is mode 0600 for that reason.
+**The packs should carry the header**, or every worker rediscovers this.
 
-Measured from `german-box`:
-
-| Request | Result |
-|---|---|
-| `GET /api/ghtoken` | **200** — the deck is reachable, reads are open |
-| `POST /api/registry`, no auth header | **401** |
-| `POST /api/registry`, `Authorization: Bearer not-the-key` | **401** |
-| `FLEET_TAILNET_KEY` in this box's environment | **unset** |
-
-The only credential here is `~/.fleetdeck-bus-token`, which the code above shows authorises the
-bus routes and nothing else. So no credential on this box can write that row, and retrying cannot
-change it. The operator either provisions `FLEET_TAILNET_KEY` on the box — which fixes it for
-every slice, since every pack ends with this same POST — or marks the row on the deck.
-
-XYZ-2137 already records the symptom, and previous sessions read it as licence to skip the step
-quietly. That is precisely why this is a filed gate: the packs make the registry row an acceptance
-condition, so skipping it silently leaves the operator unable to confirm a slice finished.
+**Where I went wrong.** I first reported that "no credential on this box can write that row" and
+filed DECK-102 as an operator gate on that basis. That conclusion was wrong: I checked the process
+environment and `~/.fleetdeck-*` and stopped there, without checking the box's own fleet config,
+which is the documented home for this key and which the box's own hooks read. The 401 was real and
+the mechanism I described was right; the claim that the box had no key was not. DECK-102 is closed
+with that correction rather than left standing as a gate against a non-problem.
 
 ---
 

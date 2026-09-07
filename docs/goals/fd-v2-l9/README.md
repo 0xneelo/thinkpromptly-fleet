@@ -51,13 +51,13 @@ Make the **Machines cards** screen work on live data exactly like today's app (`
       `test/v2-machines.test.js` (55) and `test/v2-data.test.js` (74).
       (The `fixture.js` `window` break filed as DECK-80 is fixed by L1.1's `fixture-extract.js`.)
 - [x] Branch `agent-v2-l9` pushed; `REPORT.md` signed **Eckbert**.
-- [~] Registry row — **blocked on the operator, filed as DECK-102 (`operator:gate`).**
-      `POST /api/registry` answers 401 from this box on every call, including the opening one.
-      Diagnosed, not skipped: `server.js:2988` requires `Authorization: Bearer $FLEET_TAILNET_KEY`
-      on every tailnet POST that is not a bus or notify route, `/api/registry` is not in that
-      exemption, and `FLEET_TAILNET_KEY` is unset on `german-box`. Measured: no header → 401,
-      wrong bearer → 401, `GET /api/ghtoken` → 200. The box holds only `~/.fleetdeck-bus-token`,
-      which authorises the bus routes only. No credential on this box can write that row.
+- [x] Registry row **done**. Both the opening registration and the closing
+      `{"status":"done"}` returned HTTP 200 `{"ok":true}` from `registryWrite` (`server.js:2410`),
+      including the status fence. The tailnet listener requires
+      `Authorization: Bearer $FD_TAILNET_KEY` on these POSTs (`server.js:2988`, `497-501`); the box
+      carries that key at `~/.claude/fleet/fleet.env` (mode 0600), which is where
+      `box/hooks/fd-common.sh:44` sources it from. The pack's bare `curl` omits the header, which
+      is why it answers 401 on its own.
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 
