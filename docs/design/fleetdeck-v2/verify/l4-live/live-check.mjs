@@ -29,7 +29,7 @@
 // The stubs never let an /api/** request reach the network.
 //
 // Usage:
-//   node tools/v2-live-check.mjs [--app http://127.0.0.1:3247/v2/index.html]
+//   node docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs [--app http://127.0.0.1:3247/v2/index.html]
 //                                [--out verify/l4/live.json]
 // Exit 0 when all 36 pass, 1 otherwise, 2 on a bad flag. Run from the worktree
 // root so the `playwright` import resolves.
@@ -40,7 +40,8 @@ import { dirname, resolve, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+// This file lives at docs/design/fleetdeck-v2/verify/l4-live/, four levels down.
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..', '..');
 const API_FIXTURES = join(ROOT, 'docs/design/fleetdeck-v2/fixtures/api');
 const DEFAULT_APP = 'http://127.0.0.1:3247/v2/index.html';
 const DEFAULT_OUT = 'verify/l4/live.json';
@@ -73,7 +74,7 @@ const ORDER = [
   ['filter-active-select', '§2'], ['count-filtered', '§2'], ['filter-reset', '§2'], ['filter-persist', '§2'],
   ['sort-asc', '§3'], ['sort-desc', '§3'], ['sort-unset-last', '§3'], ['sort-persist', '§3'],
   ['select-row', '§4'], ['bulk-kill-label', '§4'], ['bulk-forget-label', '§4'], ['select-all', '§4'],
-  ['bulk-clear', '§4'], ['bulk-kill-confirm', '§4'],
+  ['bulk-clear', '§4'], ['bulk-kill-confirm', '§4'], ['bulk-row-independent', '§4'],
   ['menu-items', '§5'], ['act-tag', '§5'], ['act-hide', '§5'], ['act-forget', '§5'],
   ['act-kill-confirm', '§5'], ['act-show-hook', '§5'], ['act-message-hook', '§5'],
   ['details-row', '§6-§7'],
@@ -209,8 +210,12 @@ async function run({ app, out }) {
         posts.push({ method, pathname, body });
       }
       if (pathname === '/api/sessions') return route.fulfill({ json: SESSIONS });
+      if (pathname === '/api/kill' && killDelayMs) await new Promise((done) => setTimeout(done, killDelayMs));
       return route.fulfill({ json: EMPTY_OK });
     });
+    // A bulk batch is only observable mid-flight if its writes are slow, and only
+    // this check wants that, so the delay is armed for the length of one check.
+    let killDelayMs = 0;
     const page = await context.newPage();
 
     // One check: failures are recorded, never thrown, so nothing cascades.
@@ -575,6 +580,46 @@ async function run({ app, out }) {
       });
     });
 
+    // L4.1: a bulk run owns the rows it is working through, and nothing else. The
+    // old guard tested the global bulkBusy flag, so an unrelated row's action
+    // silently no-opped for the length of the batch — today's app disables only
+    // the bulk bar's own buttons (public/app.js:787).
+    await group(['bulk-row-independent'], async (c) => {
+      await c('bulk-row-independent', 'a row outside the batch still acts while a bulk kill runs', async () => {
+        const batch = LIVE_ROWS.filter((s) => s.status === 'active').slice(0, 2);
+        const other = LIVE_ROWS.filter((s) => s.status === 'active' && !batch.includes(s))[0];
+        ok(other, 'a third active live row to act on');
+        for (const s of batch) await tick(`${s.host}/${s.name}`);
+        await until(async () => {
+          const bar = await readBulk(page);
+          return bar && bar.killCount === `${batch.length} live`;
+        }, `data-l4-count="${batch.length} live"`);
+
+        killDelayMs = 900;               // hold each kill open so the batch is still running
+        try {
+          const mark = posts.length;
+          await page.locator('[data-l4-bulk="kill"]').click();
+          await postsSince(mark, 1, 'the first kill of the batch');
+
+          // Mid-batch: the untouched row must not be disabled, and its Hide must POST.
+          const id = `${other.host}/${other.name}`;
+          const menuBtn = page.locator(`${rowSel(id)} [data-l4-act="menu"]`);
+          ok(!(await menuBtn.isDisabled()), 'the unrelated row\'s ⋯ is enabled during the batch');
+          const before = posts.length;
+          await menuBtn.click();
+          await page.locator(`${LAYER} [data-l4-extra="menu"]`).waitFor({ state: 'visible' });
+          await page.locator(`${LAYER} [data-l4-menu="hide"]`).click();   // clickMenu is declared with §5
+          const sent = await postsSince(before, 1, 'the unrelated row\'s hide POST');
+          const hide = sent.find((p) => p.pathname === '/api/registry'
+            && p.body && p.body.name === other.name && p.body.status === 'hidden');
+          ok(hide, `no hide POST for ${other.name}; saw ${JSON.stringify(sent)}`);
+          return `hide POSTed for ${other.name} while ${batch.length} kills were in flight`;
+        } finally {
+          killDelayMs = 0;
+        }
+      });
+    });
+
     // -------------------------------------------------------- §5 row actions
     // One row per action: the screen disables a row's buttons until its
     // re-fetch lands, so reusing a row would race its own busy flag.
@@ -735,7 +780,7 @@ async function run({ app, out }) {
         chromium: browser.version(),
       },
       results: ordered,
-      allPass: ordered.length === 36 && ordered.every((result) => result.pass),
+      allPass: ordered.length === 37 && ordered.every((result) => result.pass),
       passed: ordered.filter((result) => result.pass).length,
       total: ordered.length,
     };
@@ -767,7 +812,7 @@ function parseArgs(argv) {
 let options;
 try { options = parseArgs(process.argv.slice(2)); }
 catch (error) {
-  console.error(`${error.message}\nUsage: node tools/v2-live-check.mjs [--app <url>] [--out <path>]`);
+  console.error(`${error.message}\nUsage: node docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs [--app <url>] [--out <path>]`);
   process.exit(2);
 }
 const report = await run(options);

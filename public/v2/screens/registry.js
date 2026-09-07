@@ -148,9 +148,9 @@
   // ------------------------------------------------------------ filter + sort
   var olderThan = function (iso, age) { return !age || !iso || Date.now() - Date.parse(iso) > age; };
 
-  function filterSessions(list) {
-    var f = state.filter;
-    var q = f.q.trim().toLowerCase();
+  function filterSessions(list, filter) {
+    var f = filter || state.filter;
+    var q = String(f.q || '').trim().toLowerCase();
     return list.filter(function (s) {
       var text = [s.name, s.host, s.label, s.group, s.task, s.note, s.role, s.worker];
       return (!q || text.some(function (v) { return v && String(v).toLowerCase().indexOf(q) !== -1; })) &&
@@ -161,8 +161,8 @@
     });
   }
 
-  function sortSessions(list) {
-    var sort = state.sort;
+  function sortSessions(list, order) {
+    var sort = order === undefined ? state.sort : order;
     var col = sort && SORTS[sort.key];
     if (!col) return list;
     var sign = sort.dir === 'desc' ? -1 : 1;
@@ -337,7 +337,10 @@
   // Every action is an ssh round trip of seconds. The row's buttons stay disabled
   // until the re-fetch lands, so a second click cannot fire a duplicate kill.
   function run(row, pending, ok, fail, req) {
-    if (state.busy[row.id] || state.bulkBusy) return Promise.resolve();
+    // Only this row's own flight blocks it. A bulk run marks the rows IT owns busy
+    // (see bulk()), so an unrelated row stays live — today's app disables the bulk
+    // bar's buttons, never the rest of the table (public/app.js:787).
+    if (state.busy[row.id]) return Promise.resolve();
     closeEditor();
     var done = toast(pending, 'pending');
     state.busy[row.id] = true;
@@ -673,7 +676,7 @@
       commit(value);
     });
     input.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') { input.blur(); return; }
+      if (e.key === 'Enter') { input.blur(); e.stopPropagation(); return; }
       if (e.key === 'Escape') {
         done = true;
         closeEditor();
@@ -1311,6 +1314,19 @@
     return false;
   };
 
-  // Exposed for the live gate (tools/v2-live-check.mjs).
+  // Exposed for the live gate (docs/design/fleetdeck-v2/verify/l4-live/live-check.mjs).
   registry._state = state;
+
+  // The rules that can be stated without a DOM, for test/v2-registry.test.js.
+  // filterSessions and sortSessions take their filter and order explicitly here;
+  // olderThan and ageTone were already pure.
+  registry.__pure = {
+    filterSessions: filterSessions,
+    sortSessions: sortSessions,
+    olderThan: olderThan,
+    ageTone: ageTone,
+    AGE: AGE,
+    FILTER0: FILTER0,
+    SORTS: SORTS
+  };
 })(window);
