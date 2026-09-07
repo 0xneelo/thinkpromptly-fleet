@@ -283,3 +283,11 @@ the cell editor.
 clean, I-L6-01..12 with screenshots, threads/receipts/poll/toast per BEHAVIOUR. Ledger D13, D08 P2 ✅ — every ledger
 row is now ✅ for P1 and P2 except the cut-over rows D18–D20 (L11). Weave updated with L6 + riders (L10.1 `de8c3e4`,
 L4 `0ce3a52`, L7 `e3edadc`), box gate re-launched, phase 2 GO sent to Alrun. Gerhild's name released.
+
+## 2026-09-08 · L8 review: accept + ruling on style writes
+
+Verbatim port confirmed line by line; gate 36/36 (accounts 0 %), live 60/60, 15/15 unit tests; improvised chrome
+mounted outside `#dc-root`; render section throw-proof. **Ruling:** inline style writes onto compiled nodes are
+allowed when re-applied idempotently on every render and listed in `improvised.md`; data-* hook + stylesheet rule
+preferred. L8.1 to Kunhild: stop keying on the compiled `data-dc-tpl="573"` id (silent zero-match on template regen).
+DECK-87 = DECK-84 (L11).
