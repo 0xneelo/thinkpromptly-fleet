@@ -147,6 +147,25 @@ test('a missing window prints an em dash, a present one prints the percentage', 
   assert.strictEqual(pure.accountBar({ kind: 'claude', id: 'x', windows: { five_hour: { pct: 95 } } }).txt, '95%');
 });
 
+test('a spent credit pool marks the value itself — the mock has no fourth cell', () => {
+  const capped = { kind: 'claude', id: 'x', windows: { five_hour: { pct: 71 } }, credit: { capped: true } };
+  assert.strictEqual(pure.accountBar(capped).txt, '€71%');
+  capped.windows = {};
+  assert.strictEqual(pure.accountBar(capped).txt, '€—');
+  assert.strictEqual(pure.accountBar({ kind: 'claude', id: 'x', windows: {}, credit: { capped: false } }).txt, '—');
+});
+
+test('a row the API cannot key is dropped before it reaches FD.setData (audit ruling 2)', () => {
+  const out = pure.groupSessions([
+    { host: 'german-box', name: 'ok', live: true, status: 'active' },
+    { host: 'german-box', live: true, status: 'active' },
+    { name: 'no-host', live: true, status: 'active' },
+    null,
+  ].filter(Boolean).filter((s) => s && typeof s.host === 'string' && s.host && typeof s.name === 'string' && s.name), false, {});
+  assert.deepStrictEqual(plain(out.groups).map((g) => g.box), ['german-box']);
+  assert.deepStrictEqual(plain(out.groups[0].items).map((i) => i.n), ['ok']);
+});
+
 test('the provider decides the logo, not the label', () => {
   assert.strictEqual(pure.accountBar({ kind: 'codex', id: 'x', windows: {} }).prov, 'gpt');
   assert.strictEqual(pure.accountBar({ kind: 'claude', id: 'x', windows: {} }).prov, 'claude');

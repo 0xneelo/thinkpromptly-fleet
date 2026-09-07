@@ -5,12 +5,13 @@
  * fixtures in docs/design/fleetdeck-v2/fixtures/api/ (plus the hand-written
  * variants in ./stubs/ for the error, empty, hidden and offline states the
  * capture does not contain), drives every automatable BEHAVIOUR.md item and
- * writes live.json + live-<theme>.png next to this file.
+ * writes live.json + live-<theme>.png into ../l2/, beside the pixel gate's own
+ * report. Run the pixel gate FIRST — it republishes that directory wholesale.
  *
- * Run: node docs/design/fleetdeck-v2/verify/l2/live.mjs
+ * Run: node docs/design/fleetdeck-v2/verify/l2-live/live.mjs
  */
 import { createServer } from 'node:http';
-import { readFile, writeFile, stat, realpath } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, stat, realpath } from 'node:fs/promises';
 import { dirname, extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
@@ -20,6 +21,10 @@ const REPO = resolve(HERE, '../../../../..');
 const PUBLIC = join(REPO, 'public');
 const API = join(REPO, 'docs/design/fleetdeck-v2/fixtures/api');
 const STUBS = join(HERE, 'stubs');
+/* The pixel gate republishes verify/l2/ wholesale (design-diff.mjs publish()),
+ * so the harness and its stubs live next door and only the *results* land in
+ * verify/l2/. Run the gate first, then this. */
+const OUT = resolve(HERE, '..', 'l2');
 
 const VIEWPORT = { width: 1440, height: 900 };
 const HOLDER_TIP =
@@ -198,11 +203,22 @@ async function main() {
         return bg === T.ink35 || { detail: bg };
       });
 
-      await check('A07-rowmax-exists', 'inspect a row', 'each row carries the ⤢ fullscreen button', async () => {
-        const n = await page.locator('[data-fd-rowmax]').count();
-        const r = await rows(page).count();
-        return n === r || { detail: `${n} buttons for ${r} rows` };
-      });
+      await check('A07-rowmax-follows-hover',
+        'hover a session row',
+        'the one ⤢ button the slice owns moves over that row, outside #dc-root',
+        async () => {
+          const btn = page.locator('#fd-l2-rowmax');
+          const hiddenFirst = await btn.isVisible();
+          await rows(page).nth(3).hover();
+          await page.waitForTimeout(80);
+          const box = await btn.boundingBox();
+          const row = await rows(page).nth(3).boundingBox();
+          const inside = box && row && box.y >= row.y - 2 && box.y + box.height <= row.y + row.height + 2;
+          const owned = await btn.evaluate((el) => el.closest('#dc-root') === null && el.parentElement.id === 'fd-l2-layer');
+          const perRow = await page.locator('[data-fd-rowmax]').count();
+          return (!hiddenFirst && inside && owned && perRow === 0)
+            || { detail: `hiddenFirst=${hiddenFirst} inside=${inside} owned=${owned} perRow=${perRow}` };
+        });
 
       await check('A08-row-click-opentile', 'click a session row', 'FD.screens.windows.openTile(host, name)', async () => {
         await page.evaluate(() => { window.__l2.calls.length = 0; });
@@ -222,11 +238,13 @@ async function main() {
         return JSON.stringify(got) === JSON.stringify([['openMax', host, name]]) || { detail: JSON.stringify(got) };
       });
 
-      await check('A10-rowmax-click', 'click ⤢ on a row', 'openMax only — the row click is swallowed', async () => {
-        await page.evaluate(() => { window.__l2.calls.length = 0; });
+      await check('A10-rowmax-click', 'hover a row and click ⤢', 'openMax only — the row itself is not opened as a tile', async () => {
         const r = rows(page).nth(2);
         const [host, name] = [await r.getAttribute('data-fd-host'), await r.getAttribute('data-fd-name')];
-        await r.locator('[data-fd-rowmax]').click({ force: true });
+        await r.hover();
+        await page.waitForTimeout(80);
+        await page.evaluate(() => { window.__l2.calls.length = 0; });
+        await page.locator('#fd-l2-rowmax').click();
         const got = await page.evaluate(() => window.__l2.calls);
         return JSON.stringify(got) === JSON.stringify([['openMax', host, name]]) || { detail: JSON.stringify(got) };
       });
@@ -418,14 +436,14 @@ async function main() {
       });
       await settled(page);
       await check('C01-error-rows', 'answer /api/sessions with two host errors', 'one row per error, "<host>: <message>"', async () => {
-        const txt = await page.locator('[data-fd-extra] div').allTextContents();
+        const txt = await page.locator('#fd-l2-listfoot div').allTextContents();
         return JSON.stringify(txt) === JSON.stringify([
           'german-box: ssh: connect to host german-box port 22: Connection refused',
           'onboarding-box: tmux not running',
         ]) || { detail: JSON.stringify(txt) };
       });
       await check('C02-no-no-sessions', 'with errors present', '"no sessions" is not added on top', async () => {
-        const txt = await page.locator('[data-fd-extra] div').allTextContents();
+        const txt = await page.locator('#fd-l2-listfoot div').allTextContents();
         return !txt.includes('no sessions') || { detail: JSON.stringify(txt) };
       });
       await context.close();
@@ -436,7 +454,7 @@ async function main() {
       });
       await settled(page);
       await check('C03-no-sessions', 'answer /api/sessions with nothing at all', 'the list reads "no sessions"', async () => {
-        const txt = await page.locator('[data-fd-extra] div').allTextContents();
+        const txt = await page.locator('#fd-l2-listfoot div').allTextContents();
         return JSON.stringify(txt) === JSON.stringify(['no sessions']) || { detail: JSON.stringify(txt) };
       });
       await check('C04-empty-state',
@@ -445,14 +463,14 @@ async function main() {
         async () => {
           await page.locator('aside button[title="Windows"]').click();
           await page.locator('[data-screen-label="Windows"]').waitFor({ state: 'visible' });
-          const before = await page.locator('[data-fd-empty]').count();
+          const before = await page.locator('#fd-l2-empty').isVisible();
           await page.evaluate(() => {
             document.querySelectorAll('[data-dc-tpl="250"]').forEach((el) => el.remove());
             window.FD.shell.setLiveApi(null);   // repaint without a re-render
           });
           await page.waitForTimeout(80);
-          const txt = await page.locator('[data-fd-empty]').textContent();
-          return (before === 0 && txt === 'There are no sessions yet, open a new session via an orchestrator first.')
+          const txt = await page.locator('#fd-l2-empty').textContent();
+          return (before === false && txt === 'There are no sessions yet, open a new session via an orchestrator first.')
             || { detail: `before=${before} txt=${txt}` };
         });
       await context.close();
@@ -507,7 +525,7 @@ async function main() {
       await settled(page);
       await check('E01-pct-rule', 'answer /api/credits with mixed windows', 'the highest window wins; codex reads its own fields', async () => {
         const got = await page.locator('[data-dc-tpl="756"]').allTextContents();
-        return JSON.stringify(got) === JSON.stringify(['95%', '71%', '—', '80%']) || { detail: JSON.stringify(got) };
+        return JSON.stringify(got) === JSON.stringify(['95%', '€71%', '—', '80%']) || { detail: JSON.stringify(got) };
       });
       await check('E02-red-over-90', 'a window past 90 %', `the bar turns ${T.bad}`, async () => {
         const bg = await page.locator('[data-dc-tpl="758"]').first().evaluate((el) => el.style.background);
@@ -521,11 +539,12 @@ async function main() {
         const w = await page.locator('[data-dc-tpl="758"]').nth(2).evaluate((el) => el.style.width);
         return w === '0%' || { detail: w };
       });
-      await check('E05-capped-flag', 'an account whose credit pool is spent', 'the € flag appears on that row only', async () => {
-        const n = await page.locator('[data-fd-capped]').count();
-        const on = await acctRows(page).nth(1).locator('[data-fd-capped]').count();
-        return (n === 1 && on === 1) || { detail: `${n} flags, ${on} on the capped row` };
-      });
+      await check('E05-capped-flag', 'an account whose credit pool is spent',
+        'the € marks that value and no other — no node is added to the compiled row', async () => {
+          const got = await page.locator('[data-dc-tpl="756"]').allTextContents();
+          return (got.filter((v) => v.includes('€')).length === 1 && got[1].startsWith('€'))
+            || { detail: JSON.stringify(got) };
+        });
       await check('E06-codex-suffix', 'the codex account', 'its label carries the " ·gpt" suffix', async () => {
         const txt = await page.locator('[data-dc-tpl="755"]').nth(3).textContent();
         return txt === 'Daniel ·gpt' || { detail: txt };
@@ -579,14 +598,16 @@ async function main() {
     await server.close();
   }
 
-  if (shots.dark) await writeFile(join(HERE, 'live-dark.png'), shots.dark);
-  if (shots.light) await writeFile(join(HERE, 'live-light.png'), shots.light);
+  await mkdir(OUT, { recursive: true });
+  if (shots.dark) await writeFile(join(OUT, 'live-dark.png'), shots.dark);
+  if (shots.light) await writeFile(join(OUT, 'live-light.png'), shots.light);
 
   const allPass = results.every((r) => r.pass);
-  await writeFile(join(HERE, 'live.json'), JSON.stringify({
+  await writeFile(join(OUT, 'live.json'), JSON.stringify({
     schemaVersion: 1, slice: 'l2', mode: 'live',
     capturedAt: new Date().toISOString(),
-    apiFixtures: 'docs/design/fleetdeck-v2/fixtures/api + docs/design/fleetdeck-v2/verify/l2/stubs',
+    harness: 'docs/design/fleetdeck-v2/verify/l2-live/live.mjs',
+    apiFixtures: 'docs/design/fleetdeck-v2/fixtures/api + docs/design/fleetdeck-v2/verify/l2-live/stubs',
     total: results.length, passed: results.filter((r) => r.pass).length, allPass, results,
   }, null, 2) + '\n');
 
