@@ -336,6 +336,38 @@
   // logic.js. The improvised chrome paints in these and follows the theme toggle.
   const tok = () => (root.FD.screens.accounts.tokens || {});
 
+  // The ruling of 2026-09-08: style writes onto compiled nodes are allowed when they are
+  // re-applied idempotently on every render and listed in improvised.md, but a data-*
+  // hook driven by a stylesheet rule is preferred to a per-node inline write. So this
+  // file writes exactly three ATTRIBUTES onto compiled nodes and nothing else; the
+  // colours and the reserved height arrive as custom properties on <html>, which the
+  // runtime does not manage.
+  const STYLE_ID = 'fd-l8-style';
+  const RULES = [
+    '[data-fd-l8-hidden="1"]{visibility:hidden!important}',
+    '[data-fd-l8-bar="1"]{min-height:var(--fd-l8-bar-h,0px)!important}',
+    '[data-fd-l8-note="bad"]{color:var(--fd-l8-bad)!important}',
+    '[data-fd-l8-note="warn"]{color:var(--fd-l8-warn)!important}',
+    '[data-fd-l8-note="muted"]{color:var(--fd-l8-muted)!important}',
+  ].join('\n');
+
+  function rules() {
+    let tag = document.getElementById(STYLE_ID);
+    if (!tag) {
+      tag = document.createElement('style');
+      tag.id = STYLE_ID;
+      tag.textContent = RULES;
+      document.head.appendChild(tag);
+    }
+    return tag;
+  }
+
+  // Setting an attribute that already holds the value still queues a mutation record in
+  // some engines, and every record wakes the observer, so each write is guarded.
+  function attr(node, name, value) {
+    if (node.getAttribute(name) !== value) node.setAttribute(name, value);
+  }
+
   function el(tag, style, text) {
     const n = document.createElement(tag);
     if (style) n.setAttribute('style', style);
@@ -375,6 +407,10 @@
   }
 
   const show = (n, on) => { n.style.display = on ? '' : 'none'; };
+
+  // The screen's children are the summary row followed by one node per account. Taken
+  // structurally so no compiled template id is baked into this file.
+  const cardEls = (screen) => Array.prototype.slice.call(screen.children, 1);
 
   // Everything improvised sits in ONE block anchored to the mock's summary row: the
   // counts, the full privacy note, the collector errors and Refresh. The mock's row is
@@ -426,11 +462,14 @@
     if (state.error) row.append(el('span', 'font-size:12px;color:' + t.bad + ';', state.error));
     over.append(row);
 
-    // Reserve the room the block needs. Writing it back settles in one more frame:
-    // the style mutation wakes the observer, the next pass measures the same height
-    // and writes nothing.
+    // Reserve the room the block needs, as a custom property on <html> that the
+    // stylesheet rule reads — the compiled row itself only carries the hook. Settles in
+    // one more frame: the change wakes the observer, the next pass measures the same
+    // height and writes nothing.
     const need = Math.ceil(over.getBoundingClientRect().height) + 'px';
-    if (bar.style.minHeight !== need) bar.style.minHeight = need;
+    if (document.documentElement.style.getPropertyValue('--fd-l8-bar-h') !== need) {
+      document.documentElement.style.setProperty('--fd-l8-bar-h', need);
+    }
   }
 
   // One idempotent pass. Cheap enough to run on scroll: it reads one rect and writes
@@ -447,23 +486,41 @@
       const live = !!(screen && screen.offsetParent && (state.loaded || state.error));
       show(box, live);
       if (!live) return;
+      rules();
+      const t = tok();
+      const html = document.documentElement.style;
+      html.setProperty('--fd-l8-bad', t.bad || '');
+      html.setProperty('--fd-l8-warn', t.warn || '');
+      html.setProperty('--fd-l8-muted', t.ink60 || '');
+
       const bar = screen.children[0];
       if (bar) {
         // visibility, not display: the row keeps its box, so the overlay lands on it.
-        for (const c of bar.children) c.style.visibility = 'hidden';
+        attr(bar, 'data-fd-l8-bar', '1');
+        for (const c of bar.children) attr(c, 'data-fd-l8-hidden', '1');
         paintChrome(box.children[0], bar, screen);
       }
-      // The note line's tone: muted until the sample is old, amber past a day, red
-      // past three (accounts.js:44-46, 171). The template paints every one of them
-      // warn, so the tone is restored here.
-      const t = tok();
-      const cards = document.querySelectorAll(SCREEN + ' div[data-dc-tpl="573"]');
+
+      // The cards are found by STRUCTURE — the screen's element children after the
+      // summary row — never by a compiled data-dc-tpl id, which changes on any template
+      // regeneration and would fail silently. Each card is then marked with this slice's
+      // own hook, which is what the live proof asserts against.
+      const cards = cardEls(screen);
+      let notes = 0;
       cards.forEach((card, i) => {
         const row = state.rows[i];
+        if (!row) return;
+        attr(card, 'data-fd-l8-card', String(i));
+        // The note line's tone: muted until the sample is old, amber past a day, red
+        // past three (accounts.js:44-46, 171). The template paints every one of them
+        // warn, so the tone is restored by the hook, not by an inline colour.
         const p = card.querySelector('p');
-        if (!row || !p) return;
-        p.style.color = row.noteTone === 'bad' ? t.bad : row.noteTone === 'warn' ? t.warn : t.ink60;
+        if (!p) return;
+        attr(p, 'data-fd-l8-note', row.noteTone || 'muted');
+        notes++;
       });
+      // Published so the live proof can fail loudly if a paint ever matches nothing.
+      root.FD.screens.accounts.painted = { cards: cards.length, notes: notes, rows: state.rows.length };
     } catch (e) {
       console.error(e);
     } finally {
@@ -488,8 +545,12 @@
     addEventListener('resize', sync);
     if (typeof MutationObserver !== 'function') return;
     observer = new MutationObserver(sync);
-    observer.observe(document.getElementById('dc-root') || document.body,
-      { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
+    observer.observe(document.getElementById('dc-root') || document.body, {
+      childList: true, subtree: true, attributes: true,
+      // 'style' catches the theme swap rewriting a bound colour; the three hooks catch a
+      // reconciler pass resetting one of them, so every render re-applies idempotently.
+      attributeFilter: ['style', 'data-fd-l8-note', 'data-fd-l8-hidden', 'data-fd-l8-bar'],
+    });
   }
 
   // ---------------------------------------------------------------------------

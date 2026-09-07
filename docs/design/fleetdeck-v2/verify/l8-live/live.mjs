@@ -82,7 +82,12 @@ const hasi = (id, action, expectation, actual, want) =>
 // Page harness
 // ---------------------------------------------------------------------------
 const SCREEN = '[data-screen-label="Accounts"]';
-const CARD = `${SCREEN} div[data-dc-tpl="573"]`;
+// The cards are addressed by the hook the screen sets on them, never by a compiled
+// data-dc-tpl id — that id changes on any template regeneration and would make every
+// card assertion below pass vacuously. CARD_ANY is the structural cross-check: the
+// screen's own children after the summary row.
+const CARD = `${SCREEN} > div[data-fd-l8-card]`;
+const CARD_ANY = `${SCREEN} > div`;
 // The trend svg, not the chevron: both are svg children of a card.
 const TREND = 'svg[viewBox="0 0 100 24"]';
 
@@ -96,7 +101,14 @@ async function open(browser, url, { credits, theme = 'dark', fail = false } = {}
   // The media is served from the same static server rather than aborted: an aborted
   // request logs a console error of its own, and this run asserts a clean console.
   await context.route('**/api/**', async (route) => {
-    calls.push(route.request().url());
+    const url = route.request().url();
+    // Only the credits endpoint is this slice's. Every other endpoint answers an empty
+    // 200 so the sibling screens the weave brought in stay quiet and their fetches never
+    // show up as this screen's console errors.
+    if (!url.includes('/api/credits')) {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    }
+    calls.push(url);
     if (fail) return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' });
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(credits) });
   });
@@ -139,8 +151,13 @@ async function main() {
     {
       const { context, page, problems, calls } = await open(browser, app, { credits: captured });
 
-      eq('B1', 'load the Accounts screen', 'GET /api/credits is called exactly once, with no refresh param',
-        calls.filter((u) => u.includes('/api/credits')).join(','), `${base}/api/credits`);
+      // public/v2/screens/shell.js (L2) fetches credits for the sidebar's accounts mini,
+      // so the page makes more than one call and the count alone attributes nothing. What
+      // is L8's to prove: the load carries no refresh param, nothing polls, and Refresh
+      // adds exactly one refreshing call.
+      const credited = () => calls.filter((u) => u.includes('/api/credits'));
+      check('B1', 'load the Accounts screen', 'GET /api/credits is called, and never with a refresh param',
+        credited().length >= 1 && credited().every((u) => !u.includes('refresh')), credited().join(','));
 
       const sum = await summaryText(page);
       has('B2', 'read the summary bar', '"5 accounts"', sum, '5 accounts');
@@ -149,6 +166,20 @@ async function main() {
       has('B5', 'read the privacy note', 'the sidebar note, verbatim', sum,
         'Every machine reads its own token locally and reports only percentages — no access token ever leaves the machine that owns it.');
       has('B6', 'read the privacy note', 'it names credits-accounts.json', sum, 'Names and org mapping live in credits-accounts.json.');
+
+      // Fail loudly if the hooks matched nothing: every card assertion below is keyed on
+      // them, so a silent zero would turn this whole file green against an empty page.
+      const marked = await page.locator(CARD).count();
+      const structural = await page.locator(CARD_ANY).count();
+      check('B7a', 'count the cards the screen marked', 'one hooked card per account, and more than zero',
+        marked === 5, marked);
+      eq('B7b', 'cross-check against the screen\'s own structure',
+        'the hooked cards are exactly the screen children after the summary row', marked, structural - 1);
+      const painted = await page.evaluate(() => (FD.screens.accounts || {}).painted || null);
+      // A note line exists only on an open card that has something to say, so the count
+      // is not one per row — but a zero here would mean the hook matched nothing at all.
+      check('B7c', 'read what the last paint reported', 'it hooked every card and at least one note line',
+        !!painted && painted.rows === 5 && painted.cards === 5 && painted.notes >= 1, JSON.stringify(painted));
 
       const names = await page.locator(`${CARD} span[style*="font-weight:600"], ${CARD} span[style*="font-weight: 600"]`).allInnerTexts();
       eq('B7', 'read the card order', 'most constrained first, unreported last',
@@ -219,15 +250,36 @@ async function main() {
       check('B30', 'click that card header', 'it opens and shows "seen on"', opened.includes('seen on'), opened);
 
       // No polling: the collect fans out over ssh, so nothing asks again on its own.
+      const settled = credited().length;
       await page.waitForTimeout(3000);
-      eq('B31', 'wait three seconds', 'no further /api/credits call is made',
-        calls.filter((u) => u.includes('/api/credits')).length, 1);
+      eq('B31', 'wait three seconds', 'no further /api/credits call is made', credited().length, settled);
 
-      // Refresh forces a collect.
+      // Refresh forces a collect, and adds exactly one call.
       await page.locator('#accounts-refresh').click();
-      await page.waitForTimeout(400);
-      check('B32', 'click Refresh', 'GET /api/credits?refresh=1',
-        calls.some((u) => u.endsWith('/api/credits?refresh=1')), calls.join(','));
+      await page.waitForTimeout(600);
+      eq('B32', 'click Refresh', 'exactly one more call, carrying ?refresh=1',
+        credited().length - settled, 1);
+      check('B32a', 'click Refresh', 'that call is GET /api/credits?refresh=1',
+        credited().some((u) => u.endsWith('/api/credits?refresh=1')), credited().join(','));
+
+      // The stale row is more than three days old, so its note line must be red — the
+      // template paints every note line warn, so this proves the hook took effect.
+      const tone = await page.locator(CARD).nth(4).evaluate((card) => {
+        const p = card.querySelector('p');
+        if (!p) return { err: 'no note line' };
+        const css = getComputedStyle(document.documentElement);
+        return {
+          hook: p.getAttribute('data-fd-l8-note'),
+          inline: p.style.color,
+          colour: getComputedStyle(p).color,
+          bad: css.getPropertyValue('--fd-l8-bad').trim(),
+        };
+      });
+      eq('B32d', 'read the stale row\'s note line', 'it carries the red tone hook', tone.hook, 'bad');
+      check('B32e', 'read the stale row\'s note line',
+        'the stylesheet rule beats the template\'s own inline colour',
+        !!tone.bad && tone.colour === tone.bad && tone.inline !== '' && tone.inline !== tone.bad,
+        JSON.stringify(tone));
 
       eq('B32b', 'inspect the compiled tree', 'the screen mounts no foreign node inside it',
         await page.locator('#dc-root [data-fd-l8], #dc-root #fd-l8-chrome').count(), 0);

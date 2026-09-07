@@ -1574,12 +1574,10 @@ L8 therefore hides the four static spans and paints live ones. Two constraints s
 - The row must keep its box, or the overlay has nothing to land on. The static spans are hidden with
   `visibility`, not `display`.
 
-Two style properties are written onto compiled nodes — `visibility` on the four spans, and `minHeight`
-on the row, because the real privacy note is four lines where the mock's shortened one is one, and the
-cards have to start below it. Neither property appears in the styles the template binds on those
-nodes, and `setProp` only writes the properties present in the new style object, so neither write is
-undone by a re-render or by a theme change. **A style write is not a mounted child**: nothing of L8's
-is ever a descendant of a compiled node, which `verify/l8/live.json` B32b asserts.
+Two of the three compiled-node writes live here — the four static spans are hidden and the row's
+height is reserved. Both are `data-*` hooks driven by a stylesheet rule, not inline writes; see
+**I-L8-09**. **A style write is not a mounted child**: nothing of L8's is ever a descendant of a
+compiled node, which `verify/l8/live.json` B32b asserts.
 
 The privacy note is the full sidebar text from `accounts.html:13-18`, verbatim, including the
 `credits-accounts.json` sentence the mock's shortened version drops.
@@ -1610,7 +1608,8 @@ text line (the stale note, template L590-592).
 L8 joins them into that one line with the mock's own `·` separator, each sentence verbatim, in the
 order today's page prints them. The line's colour is the strongest tone present — red past three days
 stale, amber for a one-to-three-day sample, an unconfirmed mapping or a capped credit pool, muted
-otherwise — restored by a `color` write on that `<p>` for the same reason as I-L8-01.
+otherwise. The template paints every note line warn, so the tone is restored by a `data-fd-l8-note`
+hook the stylesheet rule reads — the third of the three compiled-node writes, **I-L8-09**.
 
 The alternative, one appended node per line, is exactly what the DESIGN-35 binding forbids: a card is
 an `sc-for` row with a positional identity, and the runtime deletes foreign children whenever it
@@ -1846,3 +1845,37 @@ offline. The message queues and delivers when it returns."* Disabling send would
 markup we are not allowed to change. The message posts, the server tries and fails, the receipt
 reads `failed` with the server's reason, and **Retry** is there when the session comes back —
 which is what the banner promises.
+
+### I-L8-09 — The three writes L8 makes onto compiled nodes, and how they hold
+
+**Serves:** the DESIGN-35 ruling of 2026-09-08 — style writes onto compiled nodes are allowed when
+they are re-applied idempotently on every render and each is listed here, with a `data-*` hook plus a
+stylesheet rule preferred over a per-node inline write. **Screenshot:**
+`improvised/l8-summary-bar.png` (the hidden static row behind the live one) and
+`improvised/l8-note-line.png` (the recoloured note).
+
+L8 mounts **no** foreign DOM inside a compiled node. It writes exactly three attributes, and no inline
+styles at all:
+
+| Hook | Written on | Effect | Why the mock leaves no alternative |
+|---|---|---|---|
+| `data-fd-l8-hidden="1"` | the four static children of the summary row | `visibility:hidden` | their text is compiled literals the runtime rewrites every flush, so the counts cannot be bound (I-L8-01). `visibility`, not `display`, so the row keeps its box for the live one to land on |
+| `data-fd-l8-bar="1"` | the summary row itself | `min-height:var(--fd-l8-bar-h)` | the real privacy note is four lines where the mock's shortened one is one; the cards have to start below it |
+| `data-fd-l8-note="bad\|warn\|muted"` | each card's note `<p>` | `color:var(--fd-l8-…)` | the template paints every note line warn; today's page tiers it muted / amber / red by the sample's age (I-L8-03) |
+
+The rules live in one `<style id="fd-l8-style">`, and the values they read are custom properties set on
+`document.documentElement` — which is outside `#dc-root` and not a node the runtime manages. Each rule
+carries `!important` because the template's own inline `style` would otherwise win.
+
+**Idempotence.** Every write goes through one `attr()` helper that compares before setting, so a write
+that changes nothing queues no mutation record. The whole paint runs again on any childList change, on
+a `style` change (the theme swap rewrites the bound colours), and on a change to any of the three hooks
+themselves — so a reconciler pass that reset one would immediately be corrected. Paint runs with the
+observer disconnected, so it never re-enters.
+
+**No compiled template id is used as a hook anywhere.** The cards are found structurally — the screen's
+element children after the summary row — and then marked with `data-fd-l8-card`. The earlier version
+keyed the note recolour on `data-dc-tpl="573"`, which would have started matching nothing, silently, the
+first time the template was regenerated. `live.json` B7a/B7b/B7c now fail loudly on a zero match: they
+assert the hooked card count is five, that it equals the screen's own child count minus the summary
+row, and that the last paint reported the cards and note lines it hooked.
