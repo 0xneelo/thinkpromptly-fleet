@@ -119,3 +119,10 @@ Gerhild, Tankred, Kunhild, Eckbert, Clodwig), all Claude high, `/goal active`, b
 Prompts staged on the box (`~/launch/launch-<name>.txt`), launcher `~/fd-launch-claude.sh`. Monitor polls their
 branches every 20 min for `verify/L<N>/report.json` + `live.json` and their panes for limit/stall/done. L11 (Alrun)
 launches from `origin/weave/fd-v2` once the last of them is green.
+
+## 2026-09-08 (early) · operator: "launch all now" → L11 started in two phases
+
+`FD-v2-l11` (Alrun, Claude high) launched off `origin/agent-v2-base`: phase 1 = routes, deletions, README,
+launch.json, gate hardening S0.1, tests, green on `/app` in fixture mode; phase 2 = merge `origin/weave/fd-v2`
+when the design seat announces it, final full gate + live smoke. Preview worktree moved to `agent-v2-base`
+(http://localhost:4174/v2/index.html); it follows `weave/fd-v2` from the first accepted slice on.
