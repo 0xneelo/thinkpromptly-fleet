@@ -11,6 +11,7 @@ const assert = require('node:assert');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
+const SCREEN = path.join(ROOT, 'public/v2/screens/keys.js');
 
 const keys = require(path.join(ROOT, 'public/v2/screens/keys.js'));
 
@@ -153,13 +154,126 @@ test('the timers are the current app\'s 30 s poll, 1 s tick and 1.5 s copy rever
 // Requiring the module in Node must stay inert.
 // ---------------------------------------------------------------------------
 
-test('requiring the screen in Node registers nothing and starts no timer', () => {
-  // The DOM half returns at the document guard, so the test process exits on its
-  // own: a live setInterval here would hang the run.
+test('requiring the screen in Node exports the pure half and starts no timer', () => {
+  // L7.1 changed this contract deliberately. The module used to return at a
+  // `typeof document === 'undefined'` guard, which also made its lifecycle
+  // untestable. It now loads under Node the way org.js does — so the require
+  // below DOES register FD.screens.keys — but it must still start nothing: a
+  // live setInterval here would hang the run, and a fetch would mean the app
+  // polls before any screen is entered.
   assert.strictEqual(typeof document, 'undefined');
-  assert.strictEqual(globalThis.FD && globalThis.FD.screens && globalThis.FD.screens.keys, undefined);
   assert.deepStrictEqual(Object.keys(keys).sort(), [
     'COPIED_MS', 'KILL_CONFIRM', 'PRINCIPALS', 'PRINCIPAL_TITLE', 'POLL_MS', 'TICK_MS', 'TTLS',
     'httpBody', 'left', 'pad', 'sshOpts', 'unwrapError',
   ].sort());
+  // The registered surface is inert until a screen is entered. (The L7.1 test
+  // below installs its own FD; here the module was required with none, so the
+  // registration is whatever that produced — the timers are the claim.)
+  const live = globalThis.FD && globalThis.FD.screens && globalThis.FD.screens.keys;
+  if (live && live._debug) {
+    assert.deepStrictEqual(live._debug.timers, { tick: false, poll: false, onScreen: false });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// L7.1 — the poll and the tick belong to the screen, not to the app.
+//
+// Today's keys.js is a page that only exists while you are on it. In the SPA
+// that means the 30 s /api/sshkeys poll and the 1 s countdown tick must start
+// when the screen is entered and stop when it is left; before this fix they
+// began at module load and ran from every other screen for the whole session.
+//
+// keys.js is a browser IIFE, so it is loaded the way test/v2-org.test.js loads
+// org.js: window aliased to the global, FD stubbed, then required. With no
+// document its DOM half is inert, which is exactly what makes the lifecycle
+// observable on its own.
+test('L7.1 the sshkeys poll and the countdown tick follow the screen', async (t) => {
+  const realWindow = global.window;
+  const realFD = global.FD;
+  global.window = global;
+
+  const fetched = [];
+  let pollFn = null;
+  let pollStopped = 0;
+
+  global.FD = {
+    fixture: {},
+    screens: {},
+    shell: {},
+    setData(name, value) { this.fixture[name] = value; },
+    data: {
+      isFixture: () => false,
+      sshkeys: () => { fetched.push('/api/sshkeys'); return Promise.resolve({ certs: [], keys: [] }); },
+      ghtrain: () => { fetched.push('/api/ghtrain'); return Promise.resolve({ active: false, expiresAt: null }); },
+      toKeys: () => ({ keyRows: [], certs: [], train: null }),
+      // Mirrors data.js:595-601 — a real interval behind a stop handle, so the
+      // mocked clock below drives it exactly as the browser would.
+      poll(fn, ms) {
+        pollFn = fn;
+        const id = setInterval(fn, ms);
+        return { stop() { clearInterval(id); pollStopped += 1; pollFn = null; } };
+      },
+    },
+  };
+
+  delete require.cache[require.resolve(SCREEN)];
+  require(SCREEN);
+  const keys = global.FD.screens.keys;
+
+  t.after(() => {
+    keys.stop();
+    delete require.cache[require.resolve(SCREEN)];
+    global.window = realWindow;
+    global.FD = realFD;
+  });
+
+  const sync = (isKeys) => keys.sync({ t: {}, dark: true, isKeys, pills: {}, chipBtn: {}, chipBtnSel: {} });
+  const settle = () => new Promise((r) => setImmediate(r));
+  // Real intervals, mocked clock: ticking advances the module's own timers.
+  t.mock.timers.enable({ apis: ['setInterval'] });
+
+  // Loading the module must not start anything: no screen has been entered.
+  assert.deepEqual(keys._debug.timers, { tick: false, poll: false, onScreen: false });
+  assert.deepEqual(fetched, [], 'module load must not fetch');
+
+  // Entering the screen starts both timers and does the first load.
+  sync(true);
+  assert.equal(keys._debug.timers.tick, true, 'the 1 s tick runs on the keys screen');
+  assert.equal(keys._debug.timers.poll, true, 'the 30 s poll runs on the keys screen');
+  await settle();
+  assert.deepEqual(fetched.slice().sort(), ['/api/ghtrain', '/api/sshkeys'], 'entering loads once');
+
+  // Advancing past the 30 s poll while the screen is up DOES fetch — otherwise
+  // the negative assertion below would pass for the wrong reason.
+  fetched.length = 0;
+  t.mock.timers.tick(30_000);
+  await settle();
+  assert.equal(fetched.length, 2, 'the poll fetches while the screen is up');
+
+  // Leaving stops both timers and releases the poll handle.
+  sync(false);
+  assert.deepEqual(keys._debug.timers, { tick: false, poll: false, onScreen: false }, 'both timers stop on leave');
+  assert.equal(pollStopped, 1, 'the poll handle is released, not just dropped');
+  assert.equal(pollFn, null);
+
+  // The core claim: advance well past several poll and tick periods after
+  // leaving, and nothing is fetched.
+  fetched.length = 0;
+  t.mock.timers.tick(5 * 60_000);
+  await settle();
+  assert.deepEqual(fetched, [], 'no fetch after leaving the screen');
+
+  // Re-entering starts a fresh pair rather than leaking a second set.
+  sync(true);
+  assert.equal(keys._debug.timers.tick, true, 're-entering restarts the tick');
+  assert.equal(keys._debug.timers.poll, true, 're-entering restarts the poll');
+  const before = keys._debug.timers;
+  sync(true);                                    // a second render on the same screen
+  assert.deepEqual(keys._debug.timers, before, 'a repeat render does not stack timers');
+
+  // And a repeat render really did not stack a second poll: one tick, one pair.
+  fetched.length = 0;
+  t.mock.timers.tick(30_000);
+  await settle();
+  assert.equal(fetched.length, 2, 'exactly one poll is running after a repeat render');
 });

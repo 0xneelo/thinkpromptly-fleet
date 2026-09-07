@@ -89,13 +89,16 @@
 
   // Fixture mode renders the mock verbatim. Register nothing, start no timers,
   // load no script, touch no DOM — this is what keeps the pixel gate at 36/36.
-  // No document means Node, where only the exports above are wanted.
   //
   // The fixture test is inlined rather than delegated to FD.data.isFixture()
   // because it has to answer BEFORE data.js is fetched below; it mirrors
   // data.js:563-567 exactly. Getting this wrong would put a network request on
   // the pixel-gate page, so it is deliberately the first thing decided.
-  if (typeof document === 'undefined') return;
+  //
+  // Node is NOT excluded here. Everything below touches the DOM only from a
+  // function, and the bootstrap guards on `document`, so requiring this file
+  // under Node registers FD.screens.keys and starts nothing — which is what
+  // lets test/v2-keys.test.js drive start()/stop() the way v2-org.test.js does.
   if (isFixtureMode()) return;
 
   function isFixtureMode() {
@@ -132,6 +135,10 @@
   var repaintQueued = false;
   var proto = null;      // deep clones of the mock's own nodes, used as row prototypes
   var seeded = false;    // live mode has restored today's principal default
+  var tickTimer = null;  // the 1 s countdown ticker, only while the screen is up
+  var pollHandle = null; // the 30 s sshkeys/ghtrain poll, same
+  var onScreen = false;  // the keys screen is the one currently rendered
+  var booted = false;    // FD.data is present, so the timers may run
 
   // ---- the seam with logic.js --------------------------------------------
   // logic.js calls this from its keys section on every render, before the
@@ -159,8 +166,19 @@
         }
       }
       if (next.prin) principals = next.prin;
-      queueRepaint();
+      // BEHAVIOUR §3/§6: the 30 s poll and the 1 s tick belong to this screen,
+      // not to the app. Today's keys.js is a page that only exists while you
+      // are on it; in a SPA that means starting on enter and stopping on leave,
+      // or the deck polls /api/sshkeys forever from whatever screen you are on.
+      var was = onScreen;
+      onScreen = !!next.isKeys;
+      if (onScreen && !was) start();
+      else if (!onScreen && was) stop();
+      if (onScreen) queueRepaint();
     },
+    // Exposed for verify/l7 and test/v2-keys.test.js, as org.js does.
+    start: start,
+    stop: stop,
     // Exposed for verify/l7 and test/v2-keys.test.js.
     _debug: {
       left: left,
@@ -172,6 +190,7 @@
       // it to flip the theme mid-session — the app has no theme toggle in its
       // markup, so there is no other way to drive that path from a test.
       get ctx() { return ctx; },
+      get timers() { return { tick: !!tickTimer, poll: !!pollHandle, onScreen: onScreen }; },
     },
   };
 
@@ -184,7 +203,11 @@
   // ---- DOM helpers --------------------------------------------------------
   function css(node, style) { if (node && style) Object.assign(node.style, style); }
   function kids(node) { return node ? Array.prototype.slice.call(node.children) : []; }
-  function screenEl() { return document.querySelector('[data-screen-label="SSH keys"]'); }
+  // No document means Node, where this module is required for its pure half
+  // and its lifecycle; every painter then no-ops instead of throwing.
+  function screenEl() {
+    return typeof document === 'undefined' ? null : document.querySelector('[data-screen-label="SSH keys"]');
+  }
 
   // The pill is <span style=pill><span style=dot></span>TEXT</span>: set the
   // wrapper style, the dot style, and the trailing text node.
@@ -213,9 +236,18 @@
   // them as prototypes for every painted row. This is why no markup is typed by
   // hand anywhere in this slice.
   function capture(root) {
-    if (proto) return true;
     var cards = kids(root);
     if (cards.length < 4) return false;
+    // Re-applied on EVERY capture. The sc-if wrapping this screen tears the
+    // whole subtree down when you navigate away, so a later visit gets fresh
+    // nodes carrying none of our attributes — setting it once on first capture
+    // left every visit after the first with no guard at all. Only ever set on
+    // a card the reconciler has already populated, so an empty card is never
+    // frozen empty.
+    if (kids(cards[2]).length && !cards[2].hasAttribute('data-dc-raw')) {
+      cards[2].setAttribute('data-dc-raw', '');
+    }
+    if (proto) return true;
     var mintRow = kids(cards[0])[1];
     var certRows = kids(cards[2]);
     if (!mintRow || certRows.length < 4) return false;
@@ -225,13 +257,6 @@
       certCopy: certRows[2].cloneNode(true),          // copy line + Copy button
       certDead: certRows[3].cloneNode(true),          // expired cert row
     };
-    // S2.2 F3: this card's children are ours from here on, so the reconciler
-    // must neither insert nor remove inside it. It already no-ops while the
-    // child set is unchanged; saying so explicitly means a future change to
-    // that set cannot start deleting painted rows. Set from JS because the
-    // template is out of scope — runtime.js:292 reads the live attribute.
-    // Never reached in fixture mode, where this module does not register.
-    cards[2].setAttribute('data-dc-raw', '');
     return true;
   }
 
@@ -529,10 +554,12 @@
 
   FD.screens.keys.load = load;
 
-  function boot() {
+  // ---- lifecycle ----------------------------------------------------------
+  function start() {
+    if (!booted || !FD.data || tickTimer) return;
     // Countdowns tick locally between the 30 s polls; a cert crossing zero
     // repaints so the badge flips and the Delete button appears (keys.js:158-166).
-    setInterval(function () {
+    tickTimer = setInterval(function () {
       var expired = false;
       for (var i = 0; i < ticks.length; i++) {
         var s = left(ticks[i].epoch);
@@ -541,13 +568,28 @@
       }
       if (expired) paint();
     }, TICK_MS);
-    FD.data.poll(load, POLL_MS);
+    pollHandle = FD.data.poll(load, POLL_MS);
     load();
+  }
+
+  function stop() {
+    if (tickTimer) clearInterval(tickTimer);
+    if (pollHandle && pollHandle.stop) pollHandle.stop();
+    tickTimer = pollHandle = null;
+    // The nodes these point at are about to be torn down by the sc-if.
+    ticks = [];
+  }
+
+  function boot() {
+    booted = true;
+    // sync() may already have told us the keys screen is up — data.js can land
+    // after the first render.
+    if (onScreen) start();
   }
 
   // Last statement in the file, so every declaration above has already run.
   if (FD.data) boot();
-  else {
+  else if (typeof document !== 'undefined') {
     var tag = document.createElement('script');
     tag.src = '/v2/data.js';
     tag.onload = function () { if (FD.data && !FD.data.isFixture()) boot(); };

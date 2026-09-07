@@ -524,6 +524,52 @@ async function main() {
         flipped && before.principals !== after.principals, `${before.principals} -> ${after.principals}`);
     }));
 
+    // -- S25 leave the screen and come back ---------------------------------
+    // The sc-if tears this subtree down on navigation, so a revisit gets fresh
+    // nodes carrying none of our attributes. capture() used to set data-dc-raw
+    // once, which left every visit after the first unguarded. Also checks the
+    // poll follows the screen rather than running from wherever you navigate to.
+    let listSwapped = false;
+    const extraCert = { ...baseKeys.certs[0], dir: '/Users/misterislez/.ssh/deploy-certs/20260907-111111', keyId: 'deployer-20260907-111111' };
+    allNoise.push(...await scenario(browser, server.port, {
+      get sshkeys() { return listSwapped ? { certs: [extraCert, ...baseKeys.certs], keys: baseKeys.keys } : baseKeys; },
+      ghtrain: baseTrain,
+    }, async ({ page, keys, gets }) => {
+      const certsCard = card(keys, CERTS);
+      eq('L7-67', 'load the keys screen', 'the Certificates card is marked as owning its children',
+        await certsCard.getAttribute('data-dc-raw'), '');
+
+      // Leave for another screen.
+      await page.locator('aside button[title="Machines"]').click();
+      await page.locator('[data-screen-label="SSH keys"]').waitFor({ state: 'detached' });
+      const awayFrom = gets.filter((p) => p === '/api/sshkeys').length;
+      await page.clock.fastForward(90_000);       // three poll periods away
+      await page.waitForTimeout(300);
+      check('L7-68', 'navigate away and let three poll periods pass', 'the sshkeys poll stops with the screen',
+        gets.filter((p) => p === '/api/sshkeys').length === awayFrom,
+        `polled ${gets.filter((p) => p === '/api/sshkeys').length - awayFrom} more times while away`);
+
+      // Come back, with a different cert list behind it.
+      listSwapped = true;
+      await page.locator('aside button[title="SSH keys"]').click();
+      await keys.waitFor({ state: 'visible' });
+      await page.waitForTimeout(500);
+      const back = card(keys, CERTS);
+      eq('L7-69', 'return to the keys screen', 'the guard is re-applied on the fresh subtree',
+        await back.getAttribute('data-dc-raw'), '');
+      eq('L7-70', 'return to the keys screen', 'the poll restarts and the new cert list is painted',
+        await text(back.locator('> div').nth(0).locator('span').nth(2)), 'deployer-20260907-111111');
+
+      // Force further renders; the painted rows must survive them.
+      await page.evaluate(() => {
+        const c = window.FD && FD.screens && FD.screens.keys && FD.screens.keys._debug && FD.screens.keys._debug.ctx;
+        if (c && c.logic) { c.logic.setState({ ttl: '4h' }); c.logic.setState({ ttl: '8h' }); }
+      });
+      await page.waitForTimeout(300);
+      eq('L7-71', 'render repeatedly after returning', 'the painted rows survive later renders',
+        await text(card(keys, CERTS).locator('> div').nth(0).locator('span').nth(2)), 'deployer-20260907-111111');
+    }));
+
     // -- silence -----------------------------------------------------------
     const noise = [...new Set(allNoise)];
     check('L7-60', 'watch the console across every scenario', 'the screen logs no errors of its own', noise.length === 0, noise.join(' | '));
