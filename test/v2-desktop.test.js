@@ -338,7 +338,9 @@ test('a null completedTurns reads "Turns unknown", not "0 turns"', async () => {
     session({ id: 'local_null', completedTurns: null }),
     session({ id: 'local_zero', completedTurns: 0 }),
   ] })]);
-  assert.equal(data.toDesktop(body)[1].rows[0].turns, '0 turns', 'toDesktop still renders a null as 0 turns');
+  // L1.2 fixed this at the source, so the adapter now agrees with the screen. Kept as a
+  // canary: if it ever regresses, the screen's own fallback is the only thing left.
+  assert.equal(data.toDesktop(body)[1].rows[0].turns, 'Turns unknown', 'toDesktop renders a null as Turns unknown (L1.2)');
   const { groups } = await loaded(body);
   assert.equal(byId(groups, 'local_null').turns, 'Turns unknown');
   assert.equal(byId(groups, 'local_zero').turns, '0 turns');

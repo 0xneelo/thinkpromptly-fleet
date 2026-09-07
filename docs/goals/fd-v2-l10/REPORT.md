@@ -166,13 +166,26 @@ All three gates green on base `a6542ba` (S2.2 + L1.1), commit `186edf7`.
 | **Pixel, fixture mode** — `npm run design:diff -- --app <static>/v2/index.html?fixture=1 --slice l10` | **allPass true, 36/36**, maxMismatchPct **0.0329 %** (S2's own figure — the delta is pre-existing registry-dark noise). **`desktop-sessions` 0.000000 % dark and light.** → `verify/l10/report.json` + 36 PNGs |
 | **Live mode, API stubbed** — `node verify/l10-harness/live.mjs` | **33/33, allPass true, zero console errors.** → `verify/l10/live.json`, `live-dark.png`, `live-light.png` |
 | **Unit** — `node --test test/v2-desktop.test.js` | **9/9** |
-| **Suite** — `npm test` | **296/298.** `test/v2-data.test.js` failed on base itself (DECK-68, since fixed by L1). The two remaining are `test/notify.test.js`, which passes **19/19 run alone** — load flakiness in the concurrent run, in code this slice does not touch. |
+| **Suite** — `npm test` | **312/312, zero failures**, with the machine quiet. |
 
 The 33 live checks cover every automatable `BEHAVIOUR.md` item: rows and their fallbacks, the six age
 strings, all three status chips plus Archived and Cached, the details panel, Show / Message / Copy
 context / Copy conversation, transcript 404 and 502, all five filters, Reset, the vanished-selection
 guard, the count and last-collection line, every per-machine note, all three empty/error states,
 `refresh=1`, the query-less plain load, the theme re-sync regression guard, and zero console errors.
+
+
+### On `npm test` and machine load
+
+Worth writing down, because the intermediate numbers were alarming and wrong. Run while a chromium
+pixel gate was also running, this suite reported **15 failures** across `reaper.test.js`, `lease.test.js`
+and `notify.test.js` — and the failing set changed between runs. Those tests make **real ssh calls**
+(`ssh: connect to host german-box port 22: connection timed out`) and assert on lease/TTL timing, so
+they lose races when the box is loaded — nine sibling worker sessions plus a headless browser.
+
+Run alone: `reaper.test.js` 24/24, `lease.test.js` 15/15, `notify.test.js` 19/19, and the whole suite
+**312/312**. `reaper.test.js` also passes 24/24 on a clean `origin/agent-v2-base` worktree. None of it is
+code this slice touches. The lesson for anyone reading a red suite here: check the load before the diff.
 
 ### How to re-run
 
@@ -201,6 +214,22 @@ editing it, so this is S2's or L2's to land.
 **DECK-68 — `test/v2-data.test.js` failed on `origin/agent-v2-base` itself.** L1's test required the
 browser-only `fixture.js` (`window.FD = …`, no `module.exports`) after the base merge resolved that file
 to S2's compiled version. Filed; L1's `3e1c06a` fixture-extract split then fixed it, verified here.
+
+## Registry row — could not be written (401)
+
+Both the opening and the closing `POST http://100.125.231.25:3131/api/registry` answered
+`401 unauthorized` from this box, with a well-formed body and the exact payload the pack specifies.
+`GET` on the same path answers `405 method not allowed`, so the endpoint is reachable and it is
+specifically the write that is refused — the box has no credential the deck accepts.
+
+This is a known box-side condition (XYZ-2137) and the pack does not make it a gate, so it is reported
+here rather than blocking the slice. The row therefore reads whatever it read before; **an operator
+with deck access needs to set `FD-v2-l10` to `done` by hand.** Everything the row would have carried:
+
+```json
+{"host":"german-box","name":"FD-v2-l10","group":"fd-v2","task":"DECK-53",
+ "label":"fd-v2 L10 desktop","role":"frontend-developer","worker":"Clodwig","status":"done"}
+```
 
 ## Open follow-ups
 
