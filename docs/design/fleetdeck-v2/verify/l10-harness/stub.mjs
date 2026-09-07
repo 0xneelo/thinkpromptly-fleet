@@ -13,10 +13,15 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// This harness deliberately lives OUTSIDE verify/l10/: scripts/design-diff.mjs
+// builds that directory in a staging dir and renames it into place, which wipes
+// anything else kept there. Only the gate's own output belongs in verify/l10/;
+// live.mjs writes its live.json and PNGs there after the gate has run.
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '../../../../..');
 const API = join(ROOT, 'docs/design/fleetdeck-v2/fixtures/api');
 const VARIANTS = join(HERE, 'fixtures');
+export const OUT = join(ROOT, 'docs/design/fleetdeck-v2/verify/l10');
 
 const readJson = async (path) => JSON.parse(await readFile(path, 'utf8'));
 
