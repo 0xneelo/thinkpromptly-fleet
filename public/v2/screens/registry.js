@@ -280,48 +280,11 @@
       loading: state.loading
     });
     FD.setData('regData', state.view);
-  }
-
-  // ------------------------------------------------------------------- toasts
-  // BEHAVIOUR §7: pending never auto-dismisses, ok goes at 3 s, err at 6 s, a
-  // click dismisses. Styled from the mock's own reply toast (template.dc.html:769).
-  var toastHost = null;
-
-  function toastLayer() {
-    if (toastHost && toastHost.isConnected) return toastHost;
-    toastHost = doc.createElement('div');
-    toastHost.id = 'fd-l4-toasts';
-    toastHost.style.cssText = 'position:fixed;right:24px;bottom:24px;z-index:60;width:340px;' +
-      'display:flex;flex-direction:column-reverse;gap:8px;pointer-events:none;';
-    doc.body.appendChild(toastHost);
-    return toastHost;
-  }
-
-  function toast(msg, kind) {
-    var t = state.t || {};
-    var el = doc.createElement('div');
-    var dot = doc.createElement('span');
-    var text = doc.createElement('span');
-    var timer;
-    el.appendChild(dot);
-    el.appendChild(text);
-    el.style.cssText = 'border-radius:12px;border:1px solid ' + (t.line || 'rgba(255,255,255,0.13)') + ';' +
-      'background:' + (t.panel || 'rgba(20,20,20,0.92)') + ';backdrop-filter:blur(28px) saturate(150%);' +
-      '-webkit-backdrop-filter:blur(28px) saturate(150%);box-shadow:0 12px 40px rgba(0,0,0,0.3);' +
-      'padding:12px 14px;display:flex;align-items:center;gap:8px;cursor:pointer;pointer-events:auto;';
-    dot.style.cssText = 'width:6px;height:6px;border-radius:50%;flex-shrink:0;';
-    text.style.cssText = 'font-size:12.5px;line-height:1.5;color:' + (t.ink || '#fff') + ';' +
-      'overflow-wrap:anywhere;';
-    el.onclick = function () { el.remove(); };  // an error toast can be cleared before its 6 s are up
-    toastLayer().appendChild(el);
-    var set = function (message, k) {
-      text.textContent = message;
-      dot.style.background = k === 'err' ? (t.bad || '#e5484d') : k === 'ok' ? (t.good || '#30a46c') : (t.warn || '#f5a623');
-      clearTimeout(timer);
-      if (k !== 'pending') timer = setTimeout(function () { el.remove(); }, k === 'err' ? 6000 : 3000);
-    };
-    set(msg, kind);
-    return set;
+    // Decoration is normally driven by the render's DOM mutations, but a publish
+    // that changes only what WE paint — a busy flag, a bulk count, the sort
+    // marker — leaves the compiled tree byte-identical, so the observer never
+    // fires and those attributes would never reach the DOM.
+    scheduleDecorate();
   }
 
   // ------------------------------------------------------------------ loading
@@ -374,7 +337,8 @@
   // Every action is an ssh round trip of seconds. The row's buttons stay disabled
   // until the re-fetch lands, so a second click cannot fire a duplicate kill.
   function run(row, pending, ok, fail, req) {
-    if (state.busy[row.id]) return Promise.resolve();
+    if (state.busy[row.id] || state.bulkBusy) return Promise.resolve();
+    closeEditor();
     var done = toast(pending, 'pending');
     state.busy[row.id] = true;
     publish();
@@ -433,7 +397,12 @@
   // parallel fan-out over thirty rows would open thirty connections at once.
   function bulk(verb, ing, ed, list, req) {
     if (state.bulkBusy) return Promise.resolve();
+    closeEditor();
     state.bulkBusy = true;
+    // Every row in the batch is busy for the whole batch: without this its own ⋯
+    // menu stays live and a click there fires a second, concurrent POST for the
+    // same session while the sequence is still working through it.
+    list.forEach(function (r) { state.busy[r.id] = true; });
     publish();
     var done = toast(ing + ' 0/' + list.length + '…', 'pending');
     var failed = [];
@@ -453,6 +422,7 @@
       return loadSessions();
     }).then(function () {
       state.bulkBusy = false;
+      list.forEach(function (r) { delete state.busy[r.id]; });
       publish();
     });
   }
@@ -542,8 +512,8 @@
     if (styleEl.textContent !== css) styleEl.textContent = css;
   }
 
-  function anchor(el, get, place) {
-    anchored.push({ el: el, get: get, place: place });
+  function anchor(el, get, place, drop) {
+    anchored.push({ el: el, get: get, place: place, drop: drop || null });
     position();
   }
 
@@ -553,7 +523,15 @@
     anchored = anchored.filter(function (a) {
       if (!a.el.isConnected) return false;
       var target = a.get();
-      if (!target) { a.el.remove(); return false; }
+      if (!target) {
+        // Whatever this pointed at has left the table. The owner tidies first:
+        // an editor MUST disarm before its node leaves the DOM, because removing
+        // a focused input fires blur, and an armed blur handler would save — on a
+        // row that was just forgotten, that re-upserts the row it deleted.
+        if (a.drop) a.drop();
+        if (a.el.isConnected) a.el.remove();
+        return false;
+      }
       a.place(a.el, target.getBoundingClientRect());
       return true;
     });
@@ -685,7 +663,10 @@
   function wireEditor(input, commit, discard) {
     var done = false;   // Enter blurs, so without this the save would fire twice
     input.addEventListener('blur', function () {
-      if (done) return;
+      // No state.editing means this editor was already taken down — by an action,
+      // a reload, or its row leaving the table — and this blur is the teardown's
+      // own echo, not the user leaving the field.
+      if (done || !state.editing) return;
       done = true;
       var value = input.value;
       closeEditor();
@@ -722,7 +703,7 @@
       el.style.left = box.left + 'px';
       el.style.top = (box.top - 2) + 'px';
       el.style.width = box.width + 'px';
-    });
+    }, closeEditor);
     input.focus();
     input.select();
     wireEditor(input, function (value) { saveEdit(row, field, value); }, function () { loadSessions(); });
@@ -804,7 +785,10 @@
     anchor(menu, function () { return cellEl(row.id, 8); }, function (el, box) {
       var height = el.offsetHeight;
       var top = box.bottom + 6;
-      if (top + height > global.innerHeight - 8) top = Math.max(8, box.top - height - 6);
+      if (top + height > global.innerHeight - 8) top = box.top - height - 6;
+      // Clamp into the viewport as well as flip: a row can sit below the fold,
+      // and a menu drawn at its rectangle would open off screen entirely.
+      top = Math.max(8, Math.min(top, global.innerHeight - height - 8));
       el.style.top = top + 'px';
       el.style.left = Math.max(8, Math.min(box.right - el.offsetWidth, global.innerWidth - el.offsetWidth - 8)) + 'px';
     });
@@ -870,6 +854,12 @@
       el.style.left = box.left + 'px';
       el.style.top = box.bottom + 'px';
       el.style.width = box.width + 'px';
+    }, function () {
+      // Drop the bookkeeping with the node, or the row keeps an "expanded" flag
+      // pointing at a detached panel and its ⋯ menu offers "Hide details" for a
+      // panel that is not there.
+      delete detailEls[row.id];
+      delete state.expanded[row.id];
     });
   }
 
@@ -877,12 +867,12 @@
   function editDetail(row, field) {
     if (!detailEls[row.id]) { state.expanded[row.id] = true; drawDetails(row); }
     var cell = detailEls[row.id] && detailEls[row.id].querySelector('[data-l4-field="' + field + '"]');
-    if (!cell) return;
+    if (!cell || cell.querySelector('input')) return;   // already editing this field
     closeEditor();
     var input = editorInput(row[field] || '');
     input.style.position = 'static';
     input.style.width = '100%';
-    var previous = cell.textContent;
+    var previous = row[field] || '—';   // not cell.textContent: a second call would read the open input
     cell.replaceChildren(input);
     state.editing = { id: row.id, field: field };
     input.focus();

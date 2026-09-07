@@ -126,6 +126,27 @@ Three rules from the oracle audit of the shim (DESIGN-35, 2026-09-08) shaped the
 - [x] Writes go through `FD.data.registryUpsert` / `registryDelete` / `kill` — same URLs, methods and
       bodies as today, only the present field sent. No new endpoint.
 
+## Reviewer pass
+
+A `reviewer` subagent read the whole diff against BEHAVIOUR.md and the audit rules. It cleared
+fixture-mode isolation, the throw-proof block, `filterSessions`/`sortSessions` against
+`public/app.js:656-716`, every confirm and toast string, and positional row resolution. It raised
+six findings; one was already fixed before it reported, five are fixed here, each with a browser
+check that fails without the fix.
+
+| # | Finding | Fix |
+|---|---|---|
+| 1 | A bulk run set only the global busy flag, so a row the batch was already killing still accepted its own ⋯ Kill — a genuine duplicate `POST /api/kill` for one session. | `bulk()` owns every row in its batch (`state.busy[id]`) for the batch's whole life. Measured: mid-batch all three rows carry `data-l4-off="1"` and `disabled`, the ⋯ opens nothing, and exactly 3 kills are sent. |
+| 1b | **The cause underneath it:** `publish()` never scheduled a decoration pass, so a publish that changes only what *we* paint — a busy flag, the bulk count, the sort marker — left the compiled tree byte-identical, the MutationObserver never fired, and those attributes never reached the DOM. | `publish()` now schedules the pass itself. |
+| 2 | An open cell editor whose row left the table was removed by `position()`; removing a focused input fires `blur`, and the armed handler saved — after a Forget, that re-upserted the row `/api/registry/delete` had just deleted. | An anchored overlay now gets a `drop` callback that runs *before* its node leaves the DOM; the editor's disarms it, and the blur handler additionally refuses to save when `state.editing` is already null. Measured: forgetting a row with its editor open sends `POST /api/registry` (the ordinary blur-save, as today's app does) and then `/api/registry/delete` — never the other way round — and leaves no stranded `data-l4-editing`. |
+| 3 | Leaving the screen left overlays floating over the next one. | Already fixed before the review landed: `decorate()` prunes on the unmount path. Measured: four layer children with the Registry open, zero after navigating to Machines. |
+| 4 | `state.expanded` / `detailEls` were never cleaned when `position()` auto-removed a details panel, so that row's ⋯ then offered "Hide details" for a panel that was gone. | The details panel's `drop` callback clears both. |
+| 5 | Re-opening the label/note editor while it was already open read `previous` from a cell holding the input, so Escape blanked the field. | `previous` comes from the row, and a second call on an open field is refused. |
+| 6 | Two `toast` / `toastLayer` definitions survived the overlay rewrite; the dead first copy appended to `document.body` outside the layer. | The dead copy is gone. |
+
+A seventh, found while writing the regression test: the ⋯ menu flipped above a row but never clamped
+to the viewport, so a row below the fold opened its menu off screen. It now clamps.
+
 ## Things found while building
 
 1. **`viewRows` never merged the raw `group` and `task`** (found by the live gate, fixed): the
