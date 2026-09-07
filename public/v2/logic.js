@@ -1179,9 +1179,6 @@ class AppLogic extends Sub {
         { name: 'german-box', st: 'holder OK', tone: 'good' },
         { name: 'onboarding-box', st: 'reachable', tone: 'good' },
       ]).map((b0) => (b0 || {})).map((b) => ({ name: b.name, st: b.st, dotStyle: dot(b.tone === 'good' ? t.good : b.tone === 'bad' ? t.bad : t.warn), stStyle: { fontSize: '11px', color: t.ink45, whiteSpace: 'nowrap' } })),
-      // windows
-      tiles: [
-      ].map((b) => ({ name: b.name, st: b.st, dotStyle: dot(b.tone === 'good' ? t.good : t.warn), stStyle: { fontSize: '11px', color: t.ink45, whiteSpace: 'nowrap' } })),
       // windows — live tiles come from the screen file via FD.setData('l3Tiles')
       tiles: l3Try('tiles', () => (l3Live ? (FD.fixture.l3Tiles || []) : [
         { name: 'LC-cdx-readpath', box: 'german-box', foot1: 'gpt-5.6-sol xhigh · ~/projects/lowcap-connecto…', foot2: 'Pursuing goal (11m)', lines: [
