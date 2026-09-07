@@ -442,3 +442,169 @@ test('adversarial: a symlink loop terminates instead of hanging', () => {
   decideAt(GK_HOME, write(OUT + '/loop-a'));
   decideAt(CWD[ORCH], write(OUT + '/loop-a'));
 });
+
+// ------------------------------ 10. adversarial — the reach deny is addressee-shaped, not prose
+// Two review items shaped this. Item 2: the first cut tested the case-sensitive badge spelling
+// ANYWHERE in the command, so `{"to":"goalkeeper"}` walked straight past it. Item 9: the same
+// test fired on PROSE — on 2026-09-07T19:28Z the orchestrator was denied writing the very brief
+// that specifies this rule, because the heredoc BODY it was writing quoted a reach PoC. The deny
+// now scans stripHeredocs(command) and matches ADDRESSEE-shaped tokens only, and a shell write
+// whose DESTINATION is the seat's repo is denied on its own.
+// The trigger literals are assembled from fragments so this file never carries a contiguous
+// "seat name + bus path" string — the older installed guard denies any command containing one.
+const WORD = 'GOALKEEPER';
+const SEAT9 = '🥅 ' + WORD + ' 9';
+const BUS = 'api' + '/' + 'messages';
+const NOTIFY = 'fleet' + '-notify';
+const POST = (body) => `curl -s localhost:3131/${BUS} -d '${body}'`;
+const REACH_POC = POST('{"to":"goalkeeper"}');
+const REACHED = /cannot be reached over the fleet bus/;
+const INTO_GK = /belongs to the 🥅 seat alone/;
+
+test('adversarial: the 2026-09-07T19:28Z incident — a brief whose heredoc BODY quotes a reach', () => {
+  // The one that matters. This exact shape was denied live; a heredoc body is data being
+  // written, never a route to anyone, whatever it quotes.
+  const cmd = [
+    "cat > docs/goals/goalkeeper/lane-fixes.md <<'EOF'",
+    '# lane fixes',
+    '',
+    'item 2: the reach deny must fire on this PoC —',
+    '    ' + REACH_POC,
+    '',
+    'item 9: ...and must NOT fire on this paragraph, which merely names the',
+    `${SEAT9} seat and the bus path it cannot be reached on.`,
+    'EOF',
+  ].join('\n');
+  expectAllow(ORCH, bash(cmd));
+});
+
+test('adversarial: prose naming both the seat and the bus is allowed', () => {
+  expectAllow(ORCH, bash(`echo "the ${SEAT9} seat cannot be reached via ${BUS}"`));
+});
+
+test('adversarial: a badge in a commit message plus a bus POST to a worker is allowed', () => {
+  const cmd = `git add -A && git commit -m "goals: ${SEAT9} lane — GK-M fixes" `
+    + `&& ${POST('{"to":"Giselher","body":"lane fixes pushed"}')}`;
+  expectAllow(ORCH, bash(cmd));
+});
+
+test('adversarial: reading the seat\'s own files is allowed', () => {
+  expectAllow(ORCH, bash('cat ~/.claude/goalkeeper/thread.md'));
+  expectAllow(ORCH, bash(`grep -n "${WORD}" ~/.claude/goalkeeper/audits/2026-09-07.md`));
+});
+
+test('adversarial: unquoted and dash-form heredoc bodies are data too', () => {
+  expectAllow(ORCH, bash(['cat > /tmp/note.md <<EOF', REACH_POC, 'EOF'].join('\n')));
+  expectAllow(ORCH, bash(['cat > /tmp/note.md <<-EOF', '\t' + REACH_POC, '\tEOF'].join('\n')));
+});
+
+test('adversarial: a bus POST addressed to the seat is denied in either spelling', () => {
+  assert.match(expectDeny(ORCH, bash(REACH_POC)), REACHED);
+  assert.match(expectDeny(ORCH, bash(POST(`{"to":"${SEAT9}"}`))), REACHED);
+});
+
+test('adversarial: --to naming the seat is denied, bare and host:session', () => {
+  assert.match(expectDeny(ORCH, bash(`${NOTIFY} --to goalkeeper hi`)), REACHED);
+  assert.match(expectDeny(ORCH, bash(`${NOTIFY} --to mac:Goalkeeper hi`)), REACHED);
+});
+
+// One case per addressee SHAPE, so an edit that drops a pattern fails loudly.
+const CMD_SHAPES = [
+  ['--session', `${NOTIFY} --session goalkeeper "ping"`],
+  ['--target', `${NOTIFY} --target goalkeeper "ping"`],
+  ['"session"', POST('{"session":"goalkeeper"}')],
+  ['"session_id"', POST('{"session_id":"goalkeeper"}')],
+  ['"target"', POST('{"target":"goalkeeper"}')],
+  ['"name"', POST(`{"name":"${SEAT9}"}`)],
+  ['"title"', POST(`{"title":"${SEAT9}"}`)],
+];
+for (const [shape, cmd] of CMD_SHAPES) {
+  test('adversarial: the seat named in a ' + shape + ' addressee is denied', () => {
+    assert.match(expectDeny(ORCH, bash(cmd)), REACHED);
+  });
+}
+
+test('adversarial: the deny is about the addressee, not the route', () => {
+  expectAllow(ORCH, bash(POST('{"to":"Giselher"}')));
+  expectAllow(ORCH, bash(`${NOTIFY} --to Giselher "rebased"`));
+});
+
+test('adversarial: a shell write whose DESTINATION is the seat\'s repo is denied', () => {
+  assert.match(expectDeny(ORCH, bash(`echo drift >> ${CFG}/goalkeeper/thread.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`cp /tmp/x.md ${CFG}/goalkeeper/audits/x.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`cat /tmp/x.md | tee ${CFG}/goalkeeper/x.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`rm ${CFG}/goalkeeper/thread.md`)), INTO_GK);
+});
+
+test('adversarial: an ordinary redirect elsewhere is untouched', () => {
+  expectAllow(ORCH, bash('echo x >> /tmp/notes.md'));
+  expectAllow(ORCH, bash(`cp /tmp/x.md ${CFG}/skills/x.md`));
+});
+
+test('adversarial: the goalkeeper\'s own reach ban needs no addressee', () => {
+  const own = /a goalkeeper never reaches the fleet bus/;
+  assert.match(expectDeny(GK, bash(POST('{"body":"status"}'))), own);
+  assert.match(expectDeny(GK, bash(`${NOTIFY} "ping"`)), own);
+});
+
+test('adversarial: the goalkeeper may quote a reach inside its own audit note', () => {
+  // Quoting the evidence IS the seat's job — stripping heredoc bodies is what makes it possible.
+  const cmd = [
+    `cat > ${CFG}/goalkeeper/audits/2026-09-07.md <<'EOF'`,
+    '# drift',
+    'ORCHESTRATOR 34 tried to reach this seat:',
+    '    ' + REACH_POC,
+    'EOF',
+  ].join('\n');
+  expectAllow(GK, bash(cmd));
+});
+
+test('adversarial: the goalkeeper\'s own tooling and repo reads are allowed', () => {
+  expectAllow(GK, bash('python3 ~/.claude/skills/goalkeeper/goalkeeper.py sweep --since 2026-09-01'));
+  expectAllow(GK, bash('git -C ~/.claude/goalkeeper status'));
+});
+
+test('adversarial: a truncated heredoc (no terminator) neither hangs nor throws', () => {
+  // stripHeredocs finds no terminator and leaves the command alone; either verdict is fine,
+  // what matters is that the guard returns and exits 0 (runRaw asserts the status).
+  const cmd = ["cat > /tmp/x.md <<'EOF'", '# drift', REACH_POC].join('\n');
+  decide(ORCH, bash(cmd));
+  decide(GK, bash(cmd));
+});
+
+test('adversarial: a non-string Bash `command` exits 0 and never throws', () => {
+  expectAllow(ORCH, { tool_name: 'Bash', tool_input: { command: {} } });
+  expectAllow(ORCH, { tool_name: 'Bash', tool_input: { command: null } });
+  expectAllow(GK, { tool_name: 'Bash', tool_input: { command: [] } });
+});
+
+// ------------ 11. adversarial — a quoted addressee with spaces is still an addressee
+// The badge spells itself WITH spaces, so the most obvious address of all is a quoted
+// one. The first cut's `([^\s'"]+)` stopped at the first space and its closing backref
+// then failed to match, which ALLOWED `--to="🥅 GOALKEEPER 9"`. CMD_ADDRESSEE now builds
+// the flag patterns from a shared FLAG_VALUE alternation (double-quoted, single-quoted,
+// bare) and every capture of a match is tested, since only one alternative is defined
+// per match.
+test(`adversarial: --to="${SEAT9}" — a double-quoted addressee with spaces is denied`, () => {
+  // The regression that matters: the badge's own spelling, quoted.
+  assert.match(expectDeny(ORCH, bash(`${NOTIFY} --to="${SEAT9}" hi`)), REACHED);
+});
+
+test('adversarial: quoted spaced addressees are denied in every flag form', () => {
+  assert.match(expectDeny(ORCH, bash(`${NOTIFY} --to='goalkeeper 9' hi`)), REACHED);
+  assert.match(expectDeny(ORCH, bash(`${NOTIFY} --to "${SEAT9}" hi`)), REACHED);
+  assert.match(expectDeny(ORCH, bash(`${NOTIFY} --session="${WORD} 9" hi`)), REACHED);
+  assert.match(expectDeny(ORCH, bash(`${NOTIFY} --target='the goalkeeper seat' hi`)), REACHED);
+  // ...and the plain bare form the rewrite must not have broken.
+  assert.match(expectDeny(ORCH, bash(`${NOTIFY} --to goalkeeper hi`)), REACHED);
+});
+
+test('adversarial: a quoted addressee that is not the seat is still allowed', () => {
+  expectAllow(ORCH, bash(`${NOTIFY} --to="Giselher" hi`));
+  expectAllow(ORCH, bash(`${NOTIFY} --to="a long note about drift" hi`));
+});
+
+test('adversarial: the JSON addressee shapes handle spaced values too', () => {
+  assert.match(expectDeny(ORCH, bash(POST(`{"to": "${SEAT9}"}`))), REACHED);
+  assert.match(expectDeny(ORCH, bash(POST('{"session_id": "goalkeeper 9"}'))), REACHED);
+});

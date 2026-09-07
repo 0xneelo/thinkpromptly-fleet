@@ -62,10 +62,14 @@ const GK_NAME_I = /goalkeeper|🥅/i;
 // first cut tested the badge spelling anywhere in the command, which both missed
 // a lowercase `to` value and fired on any command that merely mentioned the
 // seat. Each pattern's LAST capture is the addressee's value.
+// A flag's value may be bare, or quoted AND CONTAIN SPACES — `--to="🥅
+// GOALKEEPER 9"` is the badge's own spelling, so a pattern that stops at the
+// first space would miss the most obvious address of all.
+const FLAG_VALUE = '(?:"([^"]*)"|\'([^\']*)\'|([^\\s\'"]+))';
 const CMD_ADDRESSEE = [
-  /--to[=\s]+(['"]?)([^\s'"]+)\1/gi,          // --to <x>, --to host:session
-  /--session[=\s]+(['"]?)([^\s'"]+)\1/gi,
-  /--target[=\s]+(['"]?)([^\s'"]+)\1/gi,
+  new RegExp('--to[=\\s]+' + FLAG_VALUE, 'gi'),       // --to <x>, --to host:session
+  new RegExp('--session[=\\s]+' + FLAG_VALUE, 'gi'),
+  new RegExp('--target[=\\s]+' + FLAG_VALUE, 'gi'),
   /["']to["']\s*:\s*["']([^"']*)["']/gi,      // {"to": "<x>"}
   /["']session(?:_id)?["']\s*:\s*["']([^"']*)["']/gi,
   /["']target["']\s*:\s*["']([^"']*)["']/gi,
@@ -73,13 +77,50 @@ const CMD_ADDRESSEE = [
   /["']title["']\s*:\s*["']([^"']*)["']/gi,
 ];
 
+// A heredoc body is DATA, not a command. `cat > brief.md <<'EOF' … EOF` never
+// reaches anyone, whatever it quotes — and on 2026-09-07T19:28Z the orchestrator
+// was denied writing the very brief that specifies this rule, because the file
+// it was writing quoted a reach PoC. Strip bodies before scanning.
+function stripHeredocs(cmd) {
+  return cmd.replace(
+    /<<-?\s*(['"]?)([A-Za-z_][A-Za-z0-9_]*)\1[\s\S]*?^[ \t]*\2[ \t]*$/gm,
+    '<<HEREDOC',
+  );
+}
+
+// A shell command whose write DESTINATION is the goalkeeper's repo — the other
+// way a seat could put bytes in there without using a write tool.
+function commandWritesGoalkeeper(cmd, cfg, cwd) {
+  const targets = [];
+  const redirect = /(?:>>?|\btee\b(?:\s+-a)?)\s+(['"]?)([^\s'"|;&<>]+)\1/g;
+  let m = redirect.exec(cmd);
+  while (m) { targets.push(m[2]); m = redirect.exec(cmd); }
+  const mutate = /\b(?:cp|mv|rm|mkdir|touch|ln|dd|truncate|install)\b([^;&|\n]*)/g;
+  m = mutate.exec(cmd);
+  while (m) {
+    const args = m[1].split(/\s+/);
+    for (let i = 0; i < args.length; i += 1) {
+      const tok = args[i].replace(/^['"]|['"]$/g, '');
+      if (tok && tok.charAt(0) !== '-') targets.push(tok);
+    }
+    m = mutate.exec(cmd);
+  }
+  for (let i = 0; i < targets.length; i += 1) {
+    if (underGoalkeeper(targets[i], cfg, cwd)) return true;
+  }
+  return false;
+}
+
 function commandAddressesGoalkeeper(cmd) {
   for (const re of CMD_ADDRESSEE) {
     re.lastIndex = 0;
     let m = re.exec(cmd);
     while (m) {
-      const value = m[m.length - 1];
-      if (typeof value === 'string' && GK_NAME_I.test(value)) return true;
+      // Test every capture: the quoted and bare alternatives above mean only
+      // one of them is defined per match.
+      for (let i = 1; i < m.length; i += 1) {
+        if (typeof m[i] === 'string' && m[i] && GK_NAME_I.test(m[i])) return true;
+      }
       m = re.exec(cmd);
     }
   }
@@ -237,6 +278,9 @@ try {
   // tool_name === 'Bash' would let any MCP shell wrapper walk straight past it,
   // so the check is on the payload: anything carrying a `command` string.
   const command = typeof input.command === 'string' ? input.command : '';
+  // Scan the command with heredoc BODIES removed: they are data being written,
+  // not a route to anyone (item 9).
+  const scan = stripHeredocs(command);
   const writePath = input.file_path || input.notebook_path;
   const isWrite = tool === 'Edit' || tool === 'Write' || tool === 'NotebookEdit';
 
@@ -244,7 +288,7 @@ try {
     // The 🥅 seat reaches nobody.
     if (MSG_TOOLS.includes(tool)) {
       deny(NO_MESSAGE_GK);
-    } else if (REACH.test(command)) {
+    } else if (REACH.test(scan)) {
       deny(NO_REACH_GK);
     } else if ((tool === 'Agent' || tool === 'Task') && BUILDERS.includes(input.subagent_type)) {
       deny(NO_BUILD[kind]);
@@ -257,9 +301,11 @@ try {
     // Every other stamped seat reaches everyone except the 🥅 seat.
     if (MSG_TOOLS.includes(tool) && addressesGoalkeeper(input)) {
       deny(NO_MSG_TO_GK);
-    } else if (REACH.test(command) && commandAddressesGoalkeeper(command)) {
+    } else if (REACH.test(scan) && commandAddressesGoalkeeper(scan)) {
       deny(NO_REACH_TO_GK);
     } else if (isWrite && writePath && underGoalkeeper(writePath, cfg, cwd)) {
+      deny(NO_WRITE_TO_GK);
+    } else if (command && commandWritesGoalkeeper(scan, cfg, cwd)) {
       deny(NO_WRITE_TO_GK);
     } else if (!kind) {
       // A worker (or any other badge): the goalkeeper rules above are the only

@@ -35,3 +35,20 @@ another directory, idempotent in its own), the liveness probe failing OPEN when 
 Each case builds a throwaway `CLAUDE_CONFIG_DIR` under `/private/tmp` holding a COPY of the real `mark.sh`
 plus **stub** `number.py` and `census.py` — so no real session number is ever claimed and no real process
 list is scanned. `census.py --live-badge-prefix` is the only real thing the suite runs, and it is read-only.
+
+## Known limits, accepted for v1 (reviewed 2026-09-07, no fix)
+
+Three things this suite cannot prove on this Mac. They are recorded so nobody reads a green run as
+proving more than it does.
+
+- **Cases 8–9 skip here.** They cover a *hung* `census.py`, and the 10s bound needs `timeout(1)` or
+  `gtimeout(1)`. macOS ships neither, so on this box a hung census **blocks the stamp** rather than
+  failing open. The fail-open paths that *are* exercised — census exiting non-zero, and census missing
+  — pass. Install coreutils and the two cases run.
+- **The one-🥅 rule is check-then-act.** `mark.sh` asks census, then claims a number. Two
+  `--goalkeeper` stamps in the same second can both pass the check. Accepted: the seat is opened by
+  hand, once.
+- **`census.py` does not see CLI worker sessions as live** — it observes processes with `ps`/`lsof` and
+  classifies a CLI worker as `GHOST`. So the refusal keys on *desktop* liveness, which is the specified
+  use (the 🥅 seat is a desktop session). A `0 goalkeeper` line in a census summary is therefore not
+  proof that no seat is running.
