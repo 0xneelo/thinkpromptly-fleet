@@ -237,3 +237,10 @@ Ruling: L11 (Alrun) adds the two tags to the shell, removes the stopgaps, and ma
 (+ hash screens on load and hashchange) and `/deck`. DECK-86 (principal chips from `hosts.json`, ruling O9): no
 user field exists → keep `root`/`vibe` constants as an accepted improvisation. DECK-85 ("npm test red at base"):
 Mac weave run is 460/460; L11 confirms on the box. Alrun is already merging `origin/weave/fd-v2` on his own.
+
+## 2026-09-08 · DECK-79 (shell ignores `?view=`) → L11, authorized to touch the root-view seed
+
+L11's phase-1 report: routes correct on the wire (14/14) but `logic.js` ~L1053 seeds the root view from
+`props.startView`, ignoring the URL (live smoke 20/22). Ruling: Alrun changes that seed (and the screen seed from the
+hash) to read `FD.router` with the prop as fallback, quoted OUT→IN; fixture-mode default unchanged. Closes DECK-79
+with DECK-84. Names released: Julius (S2 complete after S2.2), Tankred (L7 accepted).
