@@ -170,6 +170,65 @@ try {
       why || complaints.join('; '));
   }
   await page.close();
+
+  // --- the URL follows the screen, and Back walks it back -------------------
+  // The other direction from R1-R14: those prove a URL reaches a screen. These prove
+  // a screen reaches the URL, which is what makes reload, Back and a copied link land
+  // where the operator is actually looking.
+  const NAV = [
+    ['Windows', 'windows'], ['Org chart', 'org'], ['Registry', 'registry'],
+    ['Message bus', 'bus'], ['SSH keys', 'keys'], ['Accounts', 'accounts'],
+    ['Machines', 'machines'], ['Desktop sessions', 'desktop'],
+  ];
+  const nav = await context.newPage({ colorScheme: 'dark' });
+  await nav.goto(`${server.url}/app`, { waitUntil: 'domcontentloaded' });
+  await nav.locator('[data-fd-view="app"]').waitFor({ state: 'visible', timeout: 30000 });
+  const hash = () => nav.evaluate(() => location.hash);
+  // The rendered screen, read the way the design gate reads it. The nav buttons carry
+  // no aria-current and no active data attribute -- asserting on those would have made
+  // the Back check assert nothing at all -- so this reads which screen panel is
+  // actually on screen. "Fleetdeck app" is the app frame itself, always visible.
+  // The rendered screen, read from the DOM. The nav buttons carry no aria-current and
+  // no active data attribute, so asserting on those would have made this check assert
+  // nothing at all. Width, not height: only the active app screen is laid out, and the
+  // Windows screen is legitimately zero-HEIGHT on an empty fleet -- it has no tiles to
+  // draw -- while still being the screen on display. "Fleetdeck app" is the frame.
+  const shown = () => nav.evaluate(() => {
+    const on = [...document.querySelectorAll('[data-screen-label]')]
+      .filter(e => e.getBoundingClientRect().width > 0)
+      .map(e => e.getAttribute('data-screen-label'))
+      .filter(label => label !== 'Fleetdeck app');
+    return on.length === 1 ? on[0] : on.join('+') || null;
+  });
+
+  const visited = [];
+  for (const [title, screen] of NAV) {
+    await nav.locator(`aside button[title="${title}"]`).click();
+    await nav.waitForTimeout(150);
+    const got = await hash();
+    const active = await shown();
+    record(`U-${screen}`, `click the ${title} nav button`,
+      `the URL becomes #${screen} and ${title} is on screen`,
+      got === '#' + screen && active === title,
+      `hash ${got || '(empty)'}, rendered ${active === null ? '(none)' : active}`);
+    visited.push(screen);
+  }
+
+  // Back must undo the last click, not merely change the address bar: assert the URL
+  // and the rendered screen together, all the way down the trail.
+  for (let i = visited.length - 1; i > 0; i--) {
+    await nav.goBack();
+    await nav.waitForTimeout(200);
+    const want = visited[i - 1];
+    const got = await hash();
+    const label = NAV.find(([, id]) => id === want)[0];
+    const active = await shown();
+    record(`B-${want}`, `press Back from #${visited[i]}`,
+      `the URL and the screen both return to ${want}`,
+      got === '#' + want && active === label,
+      `hash ${got || '(empty)'}, rendered ${active === null ? '(none)' : active}, wanted ${label}`);
+  }
+  await nav.close();
 } finally {
   await browser.close();
   server.stop();
