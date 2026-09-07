@@ -32,7 +32,8 @@ for workers (PLAN §9 G-5); group 16 asserts that carve-out explicitly.
 GK-M.5 widened NAMES from three spellings to **five rules**, because after a `cd "$HOME/.claude"` a
 relative `goalkeeper/thread.md` named the jail and was invisible. NAMES now holds when: (1) the
 absolute jail path appears, realpath or lexical; (2) the `.claude/goalkeeper` literal appears; (3) the
-config dir is mentioned anywhere **and** a `goalkeeper` path segment appears anywhere; (4) a
+config dir — named absolutely or via `~`/`$HOME`/`$CLAUDE_CONFIG_DIR`, never a repo's own
+`.claude/worktrees/...` — is mentioned anywhere **and** a `goalkeeper` path segment appears anywhere; (4) a
 `cd`/`pushd` target starts with `goalkeeper`; or (5) the session's own cwd is inside the config dir and
 any `goalkeeper` segment appears. `goalkeeper-mac` is not a segment, so the lane branch still merges.
 Item 6 blanks quoted string literals before that scan, but only for non-executing text emitters
@@ -80,8 +81,12 @@ than it does.
   accepted limit of the conservative rule: the guard prevents *accidents*, and detection in
   `goalkeeper.py sweep` — uncommitted changes, foreign-author commits, mtimes newer than the last
   commit — is the guarantee. Neither stops a process that bypasses Claude Code tooling.
-- **Rule 3 has one accepted false positive.** A single command that mentions both `.claude/...` and
-  `docs/goals/goalkeeper/...` is denied, because rule 3 asks only that both appear somewhere in the
+- **Rule 3 fires only on the REAL config dir.** It needs the command to name the config dir —
+  absolutely, or through `~`, `$HOME`, `${HOME}` or `$CLAUDE_CONFIG_DIR`, which are expanded first —
+  **and** a `goalkeeper` path segment. A repo's own `.claude/worktrees/...` is not the config dir, so
+  every worktree in this fleet (`<repo>/.claude/worktrees/<name>`) keeps its `docs/goals/goalkeeper/`
+  work allowed. The accepted limit: a single command that genuinely names both the config dir and this
+  repo's goalkeeper docs is still denied, because rule 3 asks only that both appear somewhere in the
   line. Split it into two commands.
 - **`census.py` does not see CLI worker sessions as live** — it observes processes with `ps`/`lsof` and
   classifies a CLI worker as `GHOST`. So the refusal keys on *desktop* liveness, which is the specified

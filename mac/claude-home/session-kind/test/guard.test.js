@@ -974,3 +974,54 @@ for (const [label, cmd] of GKM5_ROBUST) {
     assert.ok(r === null || typeof r === 'string');
   });
 }
+
+// ------------ 19. GK-M.5 rule 3 — a repo's own .claude/ is not the config dir
+// Rule 3 once accepted a bare `.claude` PATH SEGMENT as one way of saying "the config dir".
+// Every worktree in this fleet lives at `<repo>/.claude/worktrees/<name>`, so that segment is
+// in the cwd of every worker and in half the commands they run — and combined with any
+// `docs/goals/goalkeeper/` path it denied `cd <worktree> && git add
+// docs/goals/goalkeeper/LINEAR-PENDING.md`, the exact class §9 G-5 keeps allowed. The segment
+// test is gone: the config dir is an absolute path, and `~`, `$HOME`, `${HOME}` and
+// `$CLAUDE_CONFIG_DIR` are expanded to it before rule 3 runs.
+//
+// So this group's seat stands in a WORKTREE-SHAPED cwd — it contains a `.claude/worktrees/`
+// segment yet lives outside the config dir. That shape is the whole point of the group.
+const HOME_WT = path.join(HOME_REPO, '.claude', 'worktrees', 'goalkeeper-mac');
+fs.mkdirSync(HOME_WT, { recursive: true });
+fs.writeFileSync(path.join(MARKS, key(HOME_WT)), ORCH + '\n');
+
+test('GK-M.5 rule 3: the regression — `cd <worktree> && git add docs/goals/goalkeeper/LINEAR-PENDING.md`', () => {
+  allowHome(bash(`cd ${HOME_WT} && git add docs/goals/goalkeeper/LINEAR-PENDING.md`), ORCH, HOME_WT);
+});
+
+const GKM5_WT_ALLOW = [
+  ['a redirect into the pack from the worktree', `cd ${HOME_WT} && echo x > docs/goals/goalkeeper/y.md`],
+  ['listing the repo\'s own worktrees, then staging the pack',
+    `ls ${HOME_REPO}/.claude/worktrees && git add docs/goals/goalkeeper/x`],
+  // No `cd` at all: the worktree shape is the session's cwd, which is how a worker really runs.
+  ['a lane report written from the worktree cwd', 'echo x > docs/goals/goalkeeper/reports/x.md'],
+  ['`git -C <worktree>` — `goalkeeper-mac` is not a segment',
+    `git -C ${HOME_WT} status && git add docs/goals/goalkeeper/x`],
+  // The heredoc body is stripped before the NAMES scan, so quoting the jail in a report is prose.
+  ['appending a report whose body names the jail',
+    [`cat >> docs/goals/goalkeeper/LINEAR-PENDING.md <<'EOF'`,
+      '- audit the ~/.claude/goalkeeper thread', 'EOF'].join('\n')],
+];
+for (const [label, cmd] of GKM5_WT_ALLOW) {
+  test(`GK-M.5 rule 3 ALLOW: ${label}`, () => allowHome(bash(cmd), ORCH, HOME_WT));
+}
+
+// The real config dir, named from the same worktree cwd: rule 3 is not weakened.
+const GKM5_WT_DENY = [
+  ['`cd "$HOME/.claude" && rm goalkeeper/thread.md`', 'cd "$HOME/.claude" && rm goalkeeper/thread.md'],
+  ['`cd "$HOME/.claude"` then a redirect', 'cd "$HOME/.claude" && echo pwn > goalkeeper/evil.md'],
+  ['`cd "$CLAUDE_CONFIG_DIR"` then a tee', 'cd "$CLAUDE_CONFIG_DIR" && tee goalkeeper/thread.md'],
+  ['an unquoted cd, `;` sequenced, then rm -rf', 'cd $HOME/.claude; rm -rf goalkeeper'],
+  ['the absolute config dir named literally, plus a relative goalkeeper/ write',
+    `ls ${HOME_CFG} && echo pwn > goalkeeper/x.md`],
+];
+for (const [label, cmd] of GKM5_WT_DENY) {
+  test(`GK-M.5 rule 3 DENY: ${label}`, () => {
+    assert.match(denyHome(bash(cmd), ORCH, HOME_WT), TOUCH_GK);
+  });
+}
