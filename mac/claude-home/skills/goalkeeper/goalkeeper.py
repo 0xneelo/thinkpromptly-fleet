@@ -16,8 +16,12 @@ import json
 import os
 import re
 import shlex
+import shutil
+import signal
 import subprocess
 import sys
+import tempfile
+import time
 
 MINT = "/Users/misterislez/remote-system/deploy-keys/mint-github-token.sh"
 US = "\x1f"  # git --format field separator; survives subjects containing | or tabs
@@ -125,6 +129,55 @@ def commit_file(home, relpath, message):
     return True
 
 
+def sweep_stale_askpass_dirs(tmpdir=None, max_age_seconds=3600):
+    """Delete leftover `tmp.gh*` askpass helper dirs older than max_age_seconds.
+
+    Every one of them may hold a live broker token in plaintext, left behind by a
+    process that died before its own cleanup (the lane report found one from
+    2026-09-05). Never raises: a failed sweep must not stop the fetch.
+    """
+    root = tmpdir or tempfile.gettempdir()
+    cutoff = time.time() - max_age_seconds
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith("tmp.gh"):
+            continue
+        path = os.path.join(root, name)
+        try:
+            if not os.path.isdir(path) or os.path.getmtime(path) > cutoff:
+                continue
+        except OSError:
+            continue
+        shutil.rmtree(path, ignore_errors=True)
+
+
+def kill_process_group(proc, grace=3):
+    """SIGTERM the child's whole process group, SIGKILL what survives, then reap.
+
+    `start_new_session=True` gave the child its own group, so this also kills the
+    git and mint processes it spawned. Never raises — the child may already be gone.
+    """
+    def signal_group(sig):
+        try:
+            os.killpg(os.getpgid(proc.pid), sig)
+        except OSError:  # ProcessLookupError / PermissionError included
+            pass
+
+    signal_group(signal.SIGTERM)
+    try:
+        proc.communicate(timeout=grace)
+        return
+    except subprocess.TimeoutExpired:
+        signal_group(signal.SIGKILL)
+    try:
+        proc.communicate(timeout=grace)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def fetch(path):
     """git fetch --prune origin with a freshly minted broker token.
 
@@ -132,24 +185,49 @@ def fetch(path):
     file, or our own output — with ONE exception the mint script forces on us:
     `--askpass` writes the live token in plaintext to a `$TMPDIR/tmp.ghXXXX/askpass.sh`
     helper and prints "delete after use". A sweep runs per project, so without the
-    cleanup below every run would leave a readable token on disk. The trap fires on
-    success, failure and timeout alike.
+    cleanup below every run would leave a readable token on disk. Two layers remove it:
+    the in-shell trap deletes it the instant the fetch ends, and the child runs in a
+    private TMPDIR that we rmtree in `finally` — which is the layer that matters on
+    timeout, because a SIGKILLed shell cannot run its own trap.
 
     Any failure (missing script, no network, timeout, non-zero)
     is a STALE sweep, not an error: the caller falls back to local refs.
     """
+    sweep_stale_askpass_dirs()
     quoted = shlex.quote(path)
     cmd = (
         # Delete the askpass helper dir however this shell exits — the file in it
         # holds the live token in plaintext.
         'trap \'[ -n "$GIT_ASKPASS" ] && rm -rf -- "$(dirname "$GIT_ASKPASS")"\' EXIT INT TERM; '
-        'eval "$(%s --broker --askpass)" && '
+        # eval of an empty substitution succeeds, so a missing or broken mint script
+        # would otherwise fall through to an unauthenticated fetch.
+        'eval "$(%s --broker --askpass)" && [ -n "$GIT_ASKPASS" ] && '
         "git -C %s -c credential.helper= "
         "-c credential.helper='!f(){ echo username=x-access-token; echo \"password=$GH_TOKEN\"; }; f' "
         "fetch --prune origin"
     ) % (shlex.quote(MINT), quoted)
-    ok, _ = run(["/bin/sh", "-c", cmd], timeout=FETCH_TIMEOUT)
-    return ok
+
+    # The child mints into a TMPDIR we own, so the helper dir is ours to delete.
+    tmp_home = tempfile.mkdtemp(prefix="gk-fetch-")
+    env = dict(os.environ)
+    env["TMPDIR"] = tmp_home
+    try:
+        try:
+            proc = subprocess.Popen(
+                ["/bin/sh", "-c", cmd], env=env, start_new_session=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
+        except OSError:
+            return False
+        try:
+            proc.communicate(timeout=FETCH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            kill_process_group(proc)
+            return False
+        return proc.returncode == 0
+    finally:
+        shutil.rmtree(tmp_home, ignore_errors=True)
 
 
 # ------------------------------------------------------------------ evidence
@@ -361,12 +439,35 @@ def under(cwd, path):
 
 # ------------------------------------------------------------ operator turns
 
+# Harness text that arrives as a plain string `user` row and therefore passes §3.3's
+# type/content test, but that the operator never typed. The tag pattern matches by
+# family, so a new suffix (-caveat, -stdout, -stderr) is caught without a code change.
+INJECTED_TAG = re.compile(
+    r"^<\s*(?:local-command-|task-notification|system-reminder|command-|cross-session-)")
+# Not tag-shaped, so they need their own prefixes.
+INJECTED_PREFIXES = (
+    "This session is being continued from a previous conversation",
+    "Caveat: The messages below were generated by the user while running local commands",
+)
+
+
+def is_injected(text):
+    """True when a row is harness output rather than operator prose."""
+    if not isinstance(text, str):
+        return False
+    head = text.lstrip()
+    return bool(INJECTED_TAG.match(head)) or head.startswith(INJECTED_PREFIXES)
+
+
 def is_operator_turn(row):
-    """PLAN §3.3: `type == "user"`, `message.content` is a string, contains neither
-    `<cross-session-message` nor `<command-message>`.
+    """PLAN §3.3 as amended by PLAN §9: `type == "user"`, `message.content` is a string,
+    contains neither `<cross-session-message` nor `<command-message>`, and does not open
+    with a harness tag (cross-session, command, local-command, task-notification,
+    system-reminder) or a context-continuation preamble.
 
     Anything else — a tool result (list content), a peer frame, a slash-command
-    expansion, a malformed row — is not the operator speaking.
+    expansion, a malformed row — is not the operator speaking. §9 makes the harness
+    exclusion the default, not an opt-in: measured on real data it takes 127 rows to 51.
     """
     if not isinstance(row, dict) or row.get("type") != "user":
         return False
@@ -376,28 +477,9 @@ def is_operator_turn(row):
     content = message.get("content")
     if not isinstance(content, str):
         return False
-    return "<cross-session-message" not in content and "<command-message>" not in content
-
-
-# Harness text that arrives as a plain string `user` row and therefore passes
-# PLAN §3.3's filter, but that the operator never typed. Measured on this Mac
-# 2026-09-07: 75 of 126 rows passing §3.3 (60%) are one of these shapes.
-INJECTED_PREFIXES = (
-    "<task-notification",
-    "<system-reminder",
-    "This session is being continued from a previous conversation",
-    "Caveat: The messages below were generated by the user while running local commands",
-)
-
-
-def is_injected(text):
-    """True when a §3.3-passing row is harness output rather than operator prose.
-
-    §3.3 is implemented verbatim (goal.md acceptance item 4), so this NEVER runs
-    by default — only under `sweep --strict-turns`. See LINEAR-PENDING G-9: the
-    recommendation is to fold these three shapes into §3.3 for v1.1.
-    """
-    return isinstance(text, str) and text.lstrip().startswith(INJECTED_PREFIXES)
+    if "<cross-session-message" in content or "<command-message>" in content:
+        return False
+    return not is_injected(content)
 
 
 def iter_transcript(path):
@@ -418,12 +500,10 @@ def iter_transcript(path):
         return
 
 
-def collect_operator_turns(session, since, strict=False):
+def collect_operator_turns(session, since):
     rows = []
     for row in iter_transcript(session["transcript"]):
         if not is_operator_turn(row):
-            continue
-        if strict and is_injected(row["message"]["content"]):
             continue
         ts = row.get("timestamp") or ""
         if ts and since:
@@ -555,8 +635,7 @@ def cmd_sweep(args, home):
         mine = [s for s in sessions if under(s["cwd"], path)]
         turns = []
         for session in mine:
-            turns.extend(collect_operator_turns(
-                session, since, strict=getattr(args, "strict_turns", False)))
+            turns.extend(collect_operator_turns(session, since))
         out["projects"].append({
             "alias": project["alias"], "path": path, "fetched_at": fetched_at,
             "commits": collect_commits(path, since),
@@ -775,10 +854,6 @@ def main(argv=None):
 
     sweep = subs.add_parser("sweep", help="gather machine evidence into sweep.json")
     sweep.add_argument("--since", required=True, help="ISO8601 start of the live window")
-    sweep.add_argument("--strict-turns", action="store_true",
-                       help="also drop <task-notification>/<system-reminder>/context-continuation "
-                            "rows from operator_turns. PLAN §3.3 is the default and admits them; "
-                            "measured 60%% of turns on this Mac are that noise (LINEAR-PENDING G-9).")
     sweep.add_argument("--no-fetch", action="store_true",
                        help="skip git fetch; every fetched_at is null (STALE)")
 
