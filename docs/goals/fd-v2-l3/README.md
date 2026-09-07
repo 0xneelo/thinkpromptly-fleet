@@ -39,7 +39,7 @@ Make the **Windows tiles + Session full screen (xterm engine)** screen work on l
 - [x] `verify/l3/report.json` allPass **36/36** (max 0.033 %, Windows and Session full screen 0.000000 %); `verify/l3/live.json` **37/37** allPass; `live-dark.png` and `live-light.png` filed.
 - [x] `improvised.md` entries `I-L3-01`..`I-L3-10`, five with screenshots under `improvised/`.
 - [x] The four provided hooks were defined as no-ops in the first commit (`096270c`) and are fixture-guarded; `FD.screens.bus.open` and `FD.shell.selectSession` are both called through guards.
-- [x] `npm test` **304/305** — the one failure is a `bus-tailnet-auth` flake that passes on re-run, unrelated to this slice (numbers and evidence in `REPORT.md`); branch pushed; `REPORT.md` signed **Gottlieb**; the registry row could not be written — the box's registry POST answers `401 unauthorized` (XYZ-2137), recorded on DECK-42.
+- [x] `npm test` **309/310** — the one failure is a rotating flake among the port-binding HTTP tests, a different one each run, each passing on its own; unrelated to this slice (numbers and evidence in `REPORT.md`); branch pushed; `REPORT.md` signed **Gottlieb**; the registry row could not be written — the box's registry POST answers `401 unauthorized` (XYZ-2137), recorded on DECK-42.
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

@@ -3,7 +3,7 @@
   "mode": "live",
   "slice": "l3",
   "issue": "DECK-42",
-  "capturedAt": "2026-09-07T01:11:37.166Z",
+  "capturedAt": "2026-09-07T01:20:05.212Z",
   "source": "http://127.0.0.1:3221/v2/index.html",
   "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api/ (+ a hand-written empty /api/sessions variant)",
   "websocket": "scriptable double (no ssh pty); server half covered by test/v2-windows.test.js",
@@ -193,7 +193,7 @@
       "action": "connectAll()",
       "expectation": "every live non-hidden session opens, 500 ms apart, hidden and dead rows skipped",
       "pass": true,
-      "note": "85 tiles in 46027 ms"
+      "note": "85 tiles in 45695 ms"
     },
     {
       "id": "L3-26",

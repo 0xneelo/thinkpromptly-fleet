@@ -1,8 +1,8 @@
 # fd-v2-l3 — Windows tiles + Session full screen (xterm engine)
 
 **Worker** Gottlieb · `frontend-developer` · tag `agent-gottlieb` · CLI worker
-**Branch** `agent-v2-l3`, cut from `origin/agent-v2-base`, merged with `origin/agent-v2-base` twice
-(S2 array-reconciliation fix, then S2.2 + L1.1)
+**Branch** `agent-v2-l3`, cut from `origin/agent-v2-base`, merged with `origin/agent-v2-base` three
+times (S2 array-reconciliation fix; S2.2 + L1.1; L1.2)
 **Issue** DECK-42 · sub-issues DECK-67, DECK-77
 **Ledger rows** D09, D10
 
@@ -29,7 +29,7 @@ Nothing else was touched. The shell, `runtime.js`, `app.js`, `template.dc.html`,
 | Pixel gate, fixture mode | **36/36 allPass**, max mismatch 0.033 %, Windows and Session full screen **0.000000 %** | `docs/design/fleetdeck-v2/verify/l3/report.json` |
 | Live gate, API stubbed | **37/37 allPass** | `docs/design/fleetdeck-v2/verify/l3/live.json`, `live-dark.png`, `live-light.png` |
 | Unit tests | 7 pass, 0 fail | `test/v2-windows.test.js` |
-| `npm test` | **305 tests, 304 pass, 1 fail** — the failure is a flake unrelated to this slice, see below | — |
+| `npm test` | **310 tests, 309 pass, 1 fail** — the failure is a rotating flake unrelated to this slice, see below | — |
 
 Commands, verbatim:
 
@@ -45,15 +45,25 @@ replacing the directory, so it deletes `live.json` if run second (`I-L3-09`).
 
 ### The one failing test
 
-`test/bus-tailnet-auth.test.js` → "XYZ-1888 — no other tailnet POST changed: the S3 key still gates
-them, the bus token does not". It fails inside a full-suite run and **passes on its own re-run**
-(verified twice: `fail 1` then `fail 0`). A `train-broker.test.js` case behaved identically earlier in
-this session and also passed on re-run. Both are HTTP tests on scratch ports; neither touches
-anything in this slice. Not fixed, not tracked — reported here as an honest number rather than
-rounded up to green.
+The suite ends `fail 1` on every full run, but **never on the same test twice**. Across this slice:
+
+| Run | The one that failed | On its own |
+|---|---|---|
+| S2 base | `train-broker.test.js` — "POST /api/ghtrain/end closes the window…" | `fail 1`, then `fail 0` |
+| S2.2 + L1.1 base | `bus-tailnet-auth.test.js` — "XYZ-1888 — no other tailnet POST changed…" | `fail 1`, then `fail 0` |
+| L1.2 base | `notify.test.js` — "a seat alias is refused without openChat and creates no notify" | `fail 0`, `fail 0` |
+
+All three are HTTP tests that bind scratch ports and spawn servers; none touches anything in this
+slice, and each passes when run alone. The trigger looks like contention: a run started while the
+Playwright gate still held its own server collapsed much harder — 88 of 310 tests reached, six files
+reported failing — and the same suite run with nothing else going was 309/310. Not fixed, not
+tracked; reported as the number it is rather than rounded up to green.
 
 `test/v2-data.test.js` was red when this slice started (DECK-77, `fixture.js` assigning `window` at
 require time). L1.1 fixed it upstream; the issue is closed.
+
+**Run the suite with nothing else running.** A concurrent server or browser turns a green suite red in
+a way that looks like a code failure and is not.
 
 ## Behaviour checklist (`BEHAVIOUR.md`, item by item)
 
