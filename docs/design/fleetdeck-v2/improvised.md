@@ -400,7 +400,7 @@ message to a session with no history is the normal way a thread starts.
 
 ### I-L6-09 — the bus screen loads `public/v2/data.js` itself
 
-**Serves:** the whole slice. Behaviour-only. **Wants a shell owner** (filed as DECK-71).
+**Serves:** the whole slice. Behaviour-only. **Wants a shell owner** (filed as DECK-103).
 
 S2's `public/v2/index.html` loads `runtime.js`, `fixture.js`, `logic.js`, `app.js` and the nine
 screen files — but not L1's `data.js`, and nothing else in the browser does either
