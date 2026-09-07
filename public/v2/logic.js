@@ -265,8 +265,17 @@ class AppLogic extends Sub {
   componentDidUpdate() {
     if (this._video) this._video.playbackRate = this.props.videoSpeed ?? 1;
     if (this._thread && this._threadKey !== this._nextThreadKey) { this._threadKey = this._nextThreadKey; this._thread.scrollTop = this._thread.scrollHeight; }
+    this._fdAfterRender();
+  }
+  // L9: the compiled template hard-codes the machine card's "reported just now" and leaves the
+  // header Refresh button unbound, so the Machines slice finishes its own render here. No-op in
+  // fixture mode and whenever the slice is absent. See improvised.md I-L9-01 / I-L9-02.
+  _fdAfterRender() {
+    const m = FD.screens && FD.screens.machines;
+    if (m && typeof m.afterRender === 'function') m.afterRender();
   }
   componentDidMount() {
+    this._fdAfterRender();
     if (this._thread) this._thread.scrollTop = this._thread.scrollHeight;
     this._esc = (e) => {
       if (e.key !== 'Escape') return;
@@ -686,14 +695,17 @@ class AppLogic extends Sub {
           : { fontSize: '12.5px', fontWeight: 500, color: name === '—' ? t.ink35 : t.ink },
         fullSecondary: email ? name : '',
         chips: (chips || []).map(([txt, tone]) => ({ t: txt, style: chipTone(tone) })),
-        bars: (bars || []).map((b) => bar(b[0], b[1], '', b[2])),
+        bars: (bars || []).map((b) => bar(b[0], b[1], b[3] || '', b[2])),
         collapsedSummary: stale ? 'stale' : top ? top[0] + ' · ' + top[1] + '%' : '',
         summaryStyle: { fontSize: '11px', color: stale ? t.warn : t.ink45 },
       };
     };
     const mOpen = this.state.mOpen || {};
+    // L9: live cards default to expanded (today's table is always visible, improvised.md
+    // I-L9-03); the fixture's seed keeps the mock's collapsed cards, so the gate is unmoved.
+    const mLive = FD.fixture.machinesLive;
     const mCard = (mach, idx) => {
-      const open = !!mOpen[idx];
+      const open = mOpen[idx] === undefined ? !!mLive : !!mOpen[idx];
       const rows = [];
       mach.cols.forEach((c) => c.sections.forEach((s) => {
         if (s.primary === '—') return;
@@ -707,16 +719,71 @@ class AppLogic extends Sub {
           note: open ? s.note : '',
         });
       }));
+      // L9 improvisation I-L9-04: the mock's card body has no slot for a machine-level error
+      // or the push "no report yet" line, so they lead the grid as one status cell.
+      if (mach.status) rows.unshift({
+        env: mach.status.label, client: '',
+        primary: mach.status.text,
+        primaryStyle: { fontSize: '12.5px', fontWeight: 500, color: mach.status.tone === 'bad' ? t.bad : t.ink },
+        summary: '', summaryStyle: {}, secondary: '',
+        chips: [], hasChips: false, bars: [], hasBars: false,
+        note: mach.status.copy || '',
+      });
       return {
         name: mach.name, kind: mach.kind, sessions: mach.sessions,
         open, closed: !open,
         gridStyle: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(' + (open ? '300px' : '230px') + ',1fr))', borderTop: '1px solid ' + t.lineSoft, margin: '0 -1px -1px 0' },
         rows: rows.map((r) => ({ ...r, rowStyle: { padding: open ? '14px 16px' : '11px 16px', borderRight: '1px solid ' + t.lineSoft, borderBottom: '1px solid ' + t.lineSoft, display: 'flex', flexDirection: 'column', gap: open ? '7px' : '4px', minWidth: 0 } })),
-        toggle: () => { const o = { ...(this.state.mOpen || {}) }; o[idx] = !o[idx]; this.setState({ mOpen: o }); },
-        openRegistry: (e) => { e.stopPropagation(); this.setState({ screen: 'registry' }); },
+        toggle: () => { const o = { ...(this.state.mOpen || {}) }; o[idx] = !open; this.setState({ mOpen: o }); },
+        // L9: hook used — FD.screens.registry.open (L4), guarded; the mock's own screen
+        // switch stays the fallback until L4 defines it (improvised.md I-L9-02).
+        openRegistry: (e) => {
+          e.stopPropagation();
+          const q = mach.host || mach.name;
+          if (FD.screens && FD.screens.registry && typeof FD.screens.registry.open === 'function') { FD.screens.registry.open({ q }); return; }
+          this.setState({ screen: 'registry' });
+        },
         chevStyle: { transition: 'transform .2s', transform: open ? 'rotate(90deg)' : 'none', color: t.ink45, flexShrink: 0 },
       };
     };
+    // L9: the mock's seed, moved out of the returned object unchanged — fixture mode
+    // renders exactly this, so the pixel gate is untouched.
+    const mSeed = [
+        { name: 'MacBook Pro', kind: 'macos · local', sessions: '', cols: [
+          { client: 'Claude CLI', sections: [mSec('', 'Reiner Garrecht', 'neelo@vibe.trading', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', null, true], ['7 day', null, true]], 'token valid in 4 h · sampled 8d ago — window has reset since')] },
+          { client: 'Codex CLI', sections: [mSec('', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 1d ago · resets in 129h 2m · sampled just now')] },
+          { client: 'Claude Desktop', sections: [mSec('', 'Lafayette Tabor', '', [['last active 13m ago', 'neutral']], [['5 hour', null, true], ['7 day', null, true], ['extra usage', null, true]], 'sampled 9d ago — window has reset since')] },
+          { client: 'Codex Desktop', sections: [mSec('', 'signed in, account unknown', '', [], [], 'Codex desktop keeps the account under safeStorage/IndexedDB, which this reader cannot read · no usage data')] },
+        ]},
+        { name: 'german-box', kind: 'windows+wsl · ssh gb-deploy', sessions: '65 sessions', cols: [
+          { client: 'Claude CLI', sections: [
+            mSec('WSL', 'Daniel Tabor', 'admin@deus.finance', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'token valid in 6 h · 65 sessions run as Daniel Tabor'),
+            mSec('Windows', 'Daniel Tabor', 'admin@deus.finance', [['config only', 'warn']], [['5 hour', 12], ['7 day', 71]], ''),
+          ]},
+          { client: 'Codex CLI', sections: [
+            mSec('WSL', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 9d ago · resets in 129h 2m'),
+            mSec('Windows', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['plus', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 101d ago'),
+          ]},
+          { client: 'Claude Desktop', sections: [
+            mSec('WSL', '—', '', [], [], ''),
+            mSec('Windows', 'Daniel Tabor', '', [['last active 1d ago', 'neutral']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'sampled just now'),
+          ]},
+          { client: 'Codex Desktop', sections: [
+            mSec('WSL', '—', '', [], [], ''),
+            mSec('Windows', '—', '', [], [], ''),
+          ]},
+        ]},
+    ];
+    // L9: live data arrives as FD.setData('machinesLive', cards) from screens/machines.js.
+    // S2 could not byte-safely substitute the `machines` literal, so this slice reads its own
+    // key (DESIGN-35 broadcast, 2026-09-07). Sections come back as plain layer-1 data and go
+    // through the mock's own mSec() here, per improvised.md I-L1-01.
+    const mList = mLive ? mLive.map((m) => Object.assign({}, m, {
+      cols: (m.cols || []).map((c) => ({
+        client: c.client,
+        sections: (c.sections || []).map((sc) => mSec(sc.env, sc.name, sc.email, sc.chips, sc.bars, sc.note)),
+      })),
+    })) : mSeed;
     return {
       dark, notDark: !dark, ...t, four: 4,
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
@@ -921,32 +988,7 @@ class AppLogic extends Sub {
         };
       }),
       // machines
-      machines: [
-        { name: 'MacBook Pro', kind: 'macos · local', sessions: '', cols: [
-          { client: 'Claude CLI', sections: [mSec('', 'Reiner Garrecht', 'neelo@vibe.trading', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', null, true], ['7 day', null, true]], 'token valid in 4 h · sampled 8d ago — window has reset since')] },
-          { client: 'Codex CLI', sections: [mSec('', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 1d ago · resets in 129h 2m · sampled just now')] },
-          { client: 'Claude Desktop', sections: [mSec('', 'Lafayette Tabor', '', [['last active 13m ago', 'neutral']], [['5 hour', null, true], ['7 day', null, true], ['extra usage', null, true]], 'sampled 9d ago — window has reset since')] },
-          { client: 'Codex Desktop', sections: [mSec('', 'signed in, account unknown', '', [], [], 'Codex desktop keeps the account under safeStorage/IndexedDB, which this reader cannot read · no usage data')] },
-        ]},
-        { name: 'german-box', kind: 'windows+wsl · ssh gb-deploy', sessions: '65 sessions', cols: [
-          { client: 'Claude CLI', sections: [
-            mSec('WSL', 'Daniel Tabor', 'admin@deus.finance', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'token valid in 6 h · 65 sessions run as Daniel Tabor'),
-            mSec('Windows', 'Daniel Tabor', 'admin@deus.finance', [['config only', 'warn']], [['5 hour', 12], ['7 day', 71]], ''),
-          ]},
-          { client: 'Codex CLI', sections: [
-            mSec('WSL', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 9d ago · resets in 129h 2m'),
-            mSec('Windows', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['plus', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 101d ago'),
-          ]},
-          { client: 'Claude Desktop', sections: [
-            mSec('WSL', '—', '', [], [], ''),
-            mSec('Windows', 'Daniel Tabor', '', [['last active 1d ago', 'neutral']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'sampled just now'),
-          ]},
-          { client: 'Codex Desktop', sections: [
-            mSec('WSL', '—', '', [], [], ''),
-            mSec('Windows', '—', '', [], [], ''),
-          ]},
-        ]},
-      ].map(mCard),
+      machines: mList.map(mCard),
     };
   }
 }
