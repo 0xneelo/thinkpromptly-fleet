@@ -89,3 +89,11 @@ T3 sent to Julius and amended in `docs/goals/fd-v2-s2/README.md`; fixture-naming
 six behaviour inventories (L5–L10) commissioned; ten worker names claimed; packs L2–L11 written; polling of
 S2/L1 every 20 min with launch-on-land of all nine L-slices from `origin/agent-v2-s2`. Reviews run in parallel
 and never gate a launch. Weave into a local `weave/fd-v2` branch by the design seat; operator runs the ff-merge + `./up.sh`.
+
+## 2026-09-07 (night) · Codex lane exhausted → every remaining slice on Claude high
+
+`FD-v2-s0` (Gisbert, GPT Astra) stopped mid-S0.1 with `You've hit your usage limit … try again at Sep 12th`. The
+$0 lane is gone until 2026-09-12, so the breed ruling (Astra for L7, L8, L9, L11) is overridden by the design seat:
+**L2–L11 all run as Claude high** (`fd-launch-claude.sh`). S0.1 (gate hardening) folds into L11's scope; S0 stays
+accepted at `cf88d29`; Gisbert's name released. Risk: eleven Claude sessions on the box account — a `usage_limited`
+report from any worker is escalated to the operator immediately (no Astra fallback exists).
