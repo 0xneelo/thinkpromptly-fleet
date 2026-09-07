@@ -268,3 +268,11 @@ Incident: the reviewer subagent ran `rm -rf <path>/../<same dir>` which resolved
 and deleted it; it recreated the worktree from git at the branch tip. Verified afterwards: worktree at `56f43ef`
 (= origin), all docs present, nothing lost (everything was committed). Memory note written so reviewer prompts forbid
 `..`-relative removals and confine scratch worktrees to `/private/tmp/claude-501/`.
+
+## 2026-09-08 · L4 review: accept + L4.1
+
+Filters/sort/count/persistence byte-for-byte vs `app.js:609-716`, confirm/toast strings verbatim, POST bodies proven
+in `live.json` 36/36, fixture mode inert, hooks guarded, 8 improvisations with screenshots. Follow-up L4.1 to
+Ruprecht: scope the busy guard per row (bulk op must not block unrelated row actions — behaviour deviation), add the
+missing `test/v2-registry.test.js`, move `tools/v2-live-check.mjs` under `verify/l4/`, stop propagation on Enter in
+the cell editor.
