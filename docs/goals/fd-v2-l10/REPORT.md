@@ -215,6 +215,22 @@ editing it, so this is S2's or L2's to land.
 browser-only `fixture.js` (`window.FD = …`, no `module.exports`) after the base merge resolved that file
 to S2's compiled version. Filed; L1's `3e1c06a` fixture-extract split then fixed it, verified here.
 
+## Registry row — could not be written (401)
+
+Both the opening and the closing `POST http://100.125.231.25:3131/api/registry` answered
+`401 unauthorized` from this box, with a well-formed body and the exact payload the pack specifies.
+`GET` on the same path answers `405 method not allowed`, so the endpoint is reachable and it is
+specifically the write that is refused — the box has no credential the deck accepts.
+
+This is a known box-side condition (XYZ-2137) and the pack does not make it a gate, so it is reported
+here rather than blocking the slice. The row therefore reads whatever it read before; **an operator
+with deck access needs to set `FD-v2-l10` to `done` by hand.** Everything the row would have carried:
+
+```json
+{"host":"german-box","name":"FD-v2-l10","group":"fd-v2","task":"DECK-53",
+ "label":"fd-v2 L10 desktop","role":"frontend-developer","worker":"Clodwig","status":"done"}
+```
+
 ## Open follow-ups
 
 | Ref | What | Owner |
