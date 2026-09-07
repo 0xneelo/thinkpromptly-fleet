@@ -77,10 +77,29 @@ const TYPES = {
   '.png': 'image/png', '.woff2': 'font/woff2', '.mp4': 'video/mp4',
 };
 
+// server.js serves the xterm bundle from node_modules under /vendor/*
+// (server.js:2366-2371), not from public/. L3's windows.js injects those tags on
+// demand, and since the weave L6's "Show session" reaches it for real — so the
+// scratch server has to answer them too, or L3 logs a load failure that the
+// zero-console-errors check would (fairly) blame on this page.
+const VENDOR = {
+  '/vendor/xterm.js': '@xterm/xterm/lib/xterm.js',
+  '/vendor/xterm.css': '@xterm/xterm/css/xterm.css',
+  '/vendor/addon-fit.js': '@xterm/addon-fit/lib/addon-fit.js',
+  '/vendor/addon-web-links.js': '@xterm/addon-web-links/lib/addon-web-links.js',
+};
+
 async function serve() {
   const server = createServer(async (req, res) => {
     try {
       const pathname = decodeURIComponent(new URL(req.url, 'http://127.0.0.1').pathname);
+      if (VENDOR[pathname]) {
+        const vendor = join(ROOT, 'node_modules', VENDOR[pathname]);
+        const body = await readFile(vendor);
+        res.writeHead(200, { 'Content-Type': TYPES[extname(vendor)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+        res.end(body);
+        return;
+      }
       const file = resolve(PUBLIC, '.' + pathname);
       if (!file.startsWith(PUBLIC + sep)) { res.writeHead(403).end(); return; }
       const body = await readFile(file);
@@ -136,18 +155,7 @@ async function openBus(browser, plan = {}, opts = {}) {
     localStorage.setItem('fd-landing-dark', seed.theme === 'light' ? '0' : '1');
     localStorage.setItem('fd-app-video', 'false');
     Object.keys(seed.store).forEach((k) => localStorage.setItem(k, seed.store[k]));
-    // Spies for the two hooks this slice USES; both are optional at runtime, so
-    // the page must work whether or not they exist. Here they exist, and the
-    // gate asserts they were called with the right arguments.
-    window.__badge = [];
-    window.__openMax = [];
-    window.FD = window.FD || {};
-    window.FD.shell = window.FD.shell || {};
-    window.FD.shell.setBadge = (n) => window.__badge.push(n);
-    window.FD.screens = window.FD.screens || {};
-    window.FD.screens.windows = window.FD.screens.windows || {};
-    if (seed.withL3) window.FD.screens.windows.openMax = (h, s) => window.__openMax.push([h, s]);
-  }, { theme: opts.theme, store, withL3: opts.withL3 !== false });
+  }, { theme: opts.theme, store });
 
   const stub = apiStub(plan);
   // Only /api/**. A second catch-all route would out-rank this one (Playwright
@@ -175,6 +183,34 @@ async function openBus(browser, plan = {}, opts = {}) {
   await page.locator('[data-screen-label="Message bus"]').waitFor({ state: 'visible' });
   await page.waitForFunction(() => window.FD && FD.screens.bus && FD.screens.bus.live === true);
   await page.waitForFunction(() => FD.screens.bus.polls > 0);
+
+  // Record the two hooks this slice USES. Since the weave, L2's shell.js and
+  // L3's windows.js provide both for real and load after any init script, so the
+  // recorder WRAPS whatever is there rather than replacing it -- the real
+  // implementation still runs and the gate sees the arguments it was handed.
+  // (Absence, and a throwing implementation, are covered in test/v2-bus.test.js.)
+  await page.evaluate(() => {
+    window.__badge = [];
+    window.__openMax = [];
+    const F = window.FD;
+    F.shell = F.shell || {};
+    const realBadge = F.shell.setBadge;
+    F.shell.setBadge = function (n) {
+      window.__badge.push(n);
+      if (typeof realBadge === 'function') return realBadge.apply(this, arguments);
+      return undefined;
+    };
+    // openMax records but deliberately does NOT call through. What L6 owes the
+    // contract is "a tmux thread calls FD.screens.windows.openMax(host, session)
+    // and does not fall back to the mock's terminal". What L3 then does with it
+    // -- a full-screen xterm that takes over the window, with its own close
+    // lifecycle -- is L3's behaviour and L3's gate. Driving it here would make
+    // this gate fail on L3's regressions, and every later check would have to
+    // fight its overlay to get back to the bus.
+    F.screens.windows = F.screens.windows || {};
+    window.__openMaxReal = typeof F.screens.windows.openMax === 'function';
+    F.screens.windows.openMax = function (h, s) { window.__openMax.push([h, s]); };
+  });
 
   return { context, page, stub, errors, netNoise, close: () => context.close() };
 }
@@ -494,6 +530,9 @@ async function main() {
       await check('L6-24', 'boot with no fd-bus-seen',
         'every inbound row counts as unread and the total reaches FD.shell.setBadge',
         async () => {
+          // The recorder is installed after the first poll, so provoke one.
+          await page.evaluate(() => FD.screens.bus.refresh());
+          await page.waitForTimeout(400);
           const got = await page.evaluate(() => ({
             unread: FD.fixture.busUnreadDefault,
             badge: window.__badge[window.__badge.length - 1],
@@ -686,9 +725,14 @@ async function main() {
         async () => {
           await openThread(page, { type: 'tmux', host: HOST, session: THREAD });
           await action(page, 'Show session').click();
-          await page.waitForTimeout(250);
-          const calls = await page.evaluate(() => window.__openMax);
-          return { pass: calls.length === 1 && calls[0][0] === HOST && calls[0][1] === THREAD, detail: JSON.stringify(calls) };
+          await page.waitForTimeout(350);
+          const got = await page.evaluate(() => ({ calls: window.__openMax, real: window.__openMaxReal }));
+          // The hook is really provided by L3 on this tree, and the mock's own
+          // full-screen terminal must NOT have been used as the fallback.
+          const fellBack = await page.locator('[data-screen-label="Session full screen"]').isVisible();
+          const ok = got.real && got.calls.length === 1
+            && got.calls[0][0] === HOST && got.calls[0][1] === THREAD && !fellBack;
+          return { pass: ok, detail: `L3 present=${got.real} calls=${JSON.stringify(got.calls)} mockFallback=${fellBack}` };
         });
 
       await check('L6-37', 'click Show session on a Claude Desktop thread',
@@ -697,10 +741,10 @@ async function main() {
           await openThread(page, { type: 'claude-desktop', session: 'current' });
           const before = (await page.evaluate(() => window.__openMax)).length;
           await action(page, 'Show session').click();
-          await page.waitForTimeout(200);
+          await page.waitForTimeout(300);
           const after = (await page.evaluate(() => window.__openMax)).length;
-          const full = await page.locator('[data-screen-label="Session full screen"]').isVisible();
-          return { pass: before === after && !full, detail: `${before}->${after} fullscreen=${full}` };
+          const stillOnBus = await bus(page).isVisible();
+          return { pass: before === after && stillOnBus, detail: `openMax ${before}->${after} bus=${stillOnBus}` };
         });
 
       await check('L6-38', 'Maximize then Escape',
@@ -740,6 +784,73 @@ async function main() {
           await page.waitForTimeout(250);
           const after = await inbound.evaluate((el) => getComputedStyle(el).fontSize);
           return { pass: before === '13px' && after === '15px', detail: before + ' -> ' + after };
+        });
+
+      s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
+      await s.close();
+    }
+
+    // =====================================================================
+    // L6.1 — the primary D08 case: the reply lands on the thread you selected,
+    // while you are somewhere else in the app. Suppressing on busActive alone
+    // meant this exact toast never fired (independent review, HIGH).
+    // =====================================================================
+    {
+      let payload = MESSAGES;
+      const s = await openBus(browser, { messages: (route) => json(route, payload) }, { url, clock: true });
+      const { page } = s;
+
+      await check('L6-48', 'select a thread, then navigate to Accounts',
+        'the bus screen is no longer showing but the thread stays selected',
+        async () => {
+          await openThread(page, { type: 'tmux', host: HOST, session: THREAD });
+          await page.locator('aside button[title="Accounts"]').click();
+          await page.waitForTimeout(250);
+          const busShown = await bus(page).isVisible();
+          const accounts = await page.locator('[data-screen-label="Accounts"]').isVisible();
+          return { pass: !busShown && accounts, detail: 'bus=' + busShown + ' accounts=' + accounts };
+        });
+
+      await check('L6-49', 'an inbound row arrives on that selected thread',
+        'the reply toast still fires — this is the case D08 exists for',
+        async () => {
+          payload = {
+            targets: MESSAGES.targets,
+            messages: [{
+              id: 'reply-on-selected', source: HOST + ':' + THREAD,
+              target: { type: 'claude-desktop', session: 'current' },
+              text: 'ACK. Picking this up on the next turn.',
+              status: 'delivered', error: null,
+              created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+              delivered_at: new Date().toISOString(),
+            }].concat(MESSAGES.messages),
+          };
+          // Off the bus screen the poll throttles to 60 s, so advance past it.
+          await page.clock.runFor(61_000);
+          await page.waitForTimeout(600);
+          await toast(page).waitFor({ state: 'visible' });
+          const from = (await toast(page).locator('span[data-dc-tpl="770"]').innerText()).trim();
+          const prev = (await toast(page).locator('p[data-dc-tpl="773"]').innerText()).trim();
+          return {
+            pass: from === THREAD && prev === 'ACK. Picking this up on the next turn.',
+            detail: from + ' | ' + prev,
+          };
+        });
+
+      await check('L6-50', 'click Open thread on that toast',
+        'it returns to the bus screen with that thread selected and the reply shown',
+        async () => {
+          await toast(page).locator('button[data-dc-tpl="774"]').click();
+          await page.waitForTimeout(400);
+          const shown = await bus(page).isVisible();
+          const name = (await bus(page).locator('span[data-dc-tpl="429"]').first().innerText()).trim();
+          const last = (await msgRows(page).last().innerText()).replace(/\s+/g, ' ');
+          const gone = await toast(page).count();
+          return {
+            pass: shown && name === THREAD && last.includes('ACK. Picking this up on the next turn.') && gone === 0,
+            detail: `visible=${shown} name=${name} toast=${gone} :: ${last.slice(-70)}`,
+          };
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));

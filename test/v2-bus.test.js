@@ -265,10 +265,12 @@ test('a failure with no error field says unknown error', async () => {
 test('delivering to a target the rail does not know fails instead of throwing', async () => {
   const { bus, calls } = await boot();
   bus.attach(fakeHost());
-  const before = calls.length;
   assert.strictEqual(bus.deliver({ sid: 'nobody-here', key: 'x9', text: 'hi', index: 0, source: 'fleetdeck-ui' }), true);
   assert.strictEqual(bus._state().errs.x9, 'Delivery failed: unknown target');
-  assert.strictEqual(calls.length, before, 'no POST is attempted');
+  await settle();
+  // It still refreshes (the rail may be stale), but it never posts a message to
+  // a target it cannot name.
+  assert.deepStrictEqual(calls.filter((c) => c.method === 'POST'), []);
 });
 
 test('retry POSTs /api/messages/retry {id} and quotes the 409 verbatim', async () => {
@@ -405,4 +407,154 @@ test('setBadge and openMax are safe when L2 and L3 are not loaded yet', async ()
   FD.screens.windows = { openMax: (h, s) => seen.push([h, s]) };
   assert.strictEqual(bus.openMax(HOST, THREAD), true);
   assert.deepStrictEqual(seen, [[HOST, THREAD]]);
+});
+
+// ---------------------------------------------------------------------------
+// L6.1 — the reply toast fires for the SELECTED thread once the bus screen is
+// no longer on-screen. Reading busActive alone suppressed exactly the case D08
+// exists for (independent review, HIGH).
+// ---------------------------------------------------------------------------
+
+// One extra inbound message on `thread`, prepended (the API is created_at DESC).
+function withReply(thread, text, id) {
+  return {
+    targets: MESSAGES.targets,
+    messages: [{
+      id: id || 'new-inbound',
+      source: HOST + ':' + thread,
+      target: { type: 'claude-desktop', session: 'current' },
+      text: text,
+      status: 'delivered', error: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      delivered_at: new Date().toISOString(),
+    }].concat(MESSAGES.messages),
+  };
+}
+
+test('a reply on the selected thread still toasts once the user has left the bus screen', async () => {
+  let payload = MESSAGES;
+  const { bus, FD } = await boot({ messages: payload });
+  const host = fakeHost({ screen: 'bus', busActive: THREAD });
+  bus.attach(host);
+
+  // The user navigates away; the thread stays selected.
+  host.state.screen = 'accounts';
+  FD.data._fetch = async (url) => ({
+    ok: true, status: 200,
+    json: async () => (url.startsWith('/api/sessions') ? SESSIONS : withReply(THREAD, 'ACK, picking this up.')),
+    text: async () => '{}',
+  });
+  await bus.refresh();
+  await settle();
+
+  assert.ok(host.state.toast, 'a toast was raised');
+  assert.strictEqual(host.state.toast.sid, THREAD);
+  assert.strictEqual(host.state.toast.text, 'ACK, picking this up.');
+  // Open thread has something to open.
+  assert.ok(FD.fixture.seedThreads[THREAD].some((m) => m.text === 'ACK, picking this up.'));
+});
+
+test('no toast for the selected thread while the bus screen is on-screen', async () => {
+  const { bus, FD } = await boot();
+  const host = fakeHost({ screen: 'bus', busActive: THREAD });
+  bus.attach(host);
+
+  FD.data._fetch = async (url) => ({
+    ok: true, status: 200,
+    json: async () => (url.startsWith('/api/sessions') ? SESSIONS : withReply(THREAD, 'you can see this one arrive')),
+    text: async () => '{}',
+  });
+  await bus.refresh();
+  await settle();
+
+  assert.strictEqual(host.state.toast, undefined, 'the user is looking straight at it');
+});
+
+test('a reply on another thread toasts whether or not the bus screen is showing', async () => {
+  const other = 'LC-sigibald-dashboard-truth';
+  const { bus, FD } = await boot();
+  const host = fakeHost({ screen: 'bus', busActive: THREAD });
+  bus.attach(host);
+
+  FD.data._fetch = async (url) => ({
+    ok: true, status: 200,
+    json: async () => (url.startsWith('/api/sessions') ? SESSIONS : withReply(other, 'over here')),
+    text: async () => '{}',
+  });
+  await bus.refresh();
+  await settle();
+
+  assert.ok(host.state.toast);
+  assert.strictEqual(host.state.toast.sid, other);
+});
+
+// ---------------------------------------------------------------------------
+// L6.1 — stOv is keyed by the client send key, which never equals a server id,
+// so the override map grew for the life of the session (independent review,
+// MEDIUM).
+// ---------------------------------------------------------------------------
+test('a confirmed send drops its status override instead of leaking it', async () => {
+  const SERVER_ID = 'srv-confirmed-1';
+  const TEXT = 'a message the server will confirm';
+  const { bus, FD } = await boot({ send: () => ({ ok: true, id: SERVER_ID, status: 'delivered' }) });
+  const host = fakeHost();
+  bus.attach(host);
+
+  // The mock's send() puts the optimistic copy in extraMsgs; do the same here.
+  host.setState({ extraMsgs: { [THREAD]: [{ k: 'x1', dir: 'out', from: 'fleetdeck-ui', at: 'just now', m: 0, text: TEXT, status: 'queued' }] } });
+  bus.deliver({ sid: THREAD, key: 'x1', text: TEXT, index: 0, source: 'fleetdeck-ui' });
+  await settle();
+  assert.strictEqual(host.state.stOv.x1, 'delivered', 'the override exists while only we know the message');
+  assert.deepStrictEqual(host.state.extraMsgs[THREAD][0].srvIds, [SERVER_ID], 'the server id is recorded on the entry');
+
+  // Next poll: the server now reports the message under its own id.
+  FD.data._fetch = async (url) => ({
+    ok: true, status: 200,
+    json: async () => (url.startsWith('/api/sessions') ? SESSIONS : {
+      targets: MESSAGES.targets,
+      messages: [{
+        id: SERVER_ID, source: 'fleetdeck-ui',
+        target: { type: 'tmux', host: HOST, session: THREAD },
+        text: TEXT, status: 'delivered', error: null,
+        created_at: new Date().toISOString(), updated_at: new Date().toISOString(), delivered_at: new Date().toISOString(),
+      }].concat(MESSAGES.messages),
+    }),
+    text: async () => '{}',
+  });
+  await bus.refresh();
+  await settle();
+
+  assert.strictEqual(host.state.stOv.x1, undefined, 'the override is pruned once the server confirms');
+  assert.deepStrictEqual(host.state.extraMsgs[THREAD], [], 'and so is the optimistic copy');
+  assert.strictEqual(bus._state().errs.x1, undefined, 'and its receipt error');
+});
+
+test('an unconfirmed send keeps its override and its receipt', async () => {
+  const TEXT = 'a message the server rejects';
+  const { bus } = await boot({ send: () => ({ ok: false, error: 'session is not running' }) });
+  const host = fakeHost();
+  bus.attach(host);
+  host.setState({ extraMsgs: { [THREAD]: [{ k: 'x1', dir: 'out', from: 'fleetdeck-ui', at: 'just now', m: 0, text: TEXT, status: 'queued' }] } });
+  bus.deliver({ sid: THREAD, key: 'x1', text: TEXT, index: 0, source: 'fleetdeck-ui' });
+  await settle();
+  await bus.refresh();
+  await settle();
+  assert.strictEqual(host.state.stOv.x1, 'failed', 'a failed send is still on screen');
+  assert.strictEqual(bus._state().errs.x1, 'Delivery failed: session is not running');
+});
+
+// ---------------------------------------------------------------------------
+// L6.1 — deliver()'s unknown-target path refreshes like every other exit
+// (independent review, LOW).
+// ---------------------------------------------------------------------------
+test('delivering to an unknown target still refreshes, in case the rail is stale', async () => {
+  const { bus, calls } = await boot();
+  bus.attach(fakeHost());
+  const before = calls.filter((c) => c.method === 'GET').length;
+  bus.deliver({ sid: 'nobody-here', key: 'x9', text: 'hi', index: 0, source: 'fleetdeck-ui' });
+  await settle();
+  const after = calls.filter((c) => c.method === 'GET').length;
+  assert.ok(after > before, 'a poll was kicked off: ' + before + ' -> ' + after);
+  assert.strictEqual(bus._state().errs.x9, 'Delivery failed: unknown target');
 });

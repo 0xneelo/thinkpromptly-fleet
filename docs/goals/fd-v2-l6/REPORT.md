@@ -254,4 +254,78 @@ DECK-70 (base `npm test`, now Done) and DECK-103 (the unloaded `data.js`) were a
 
 ---
 
+---
+
+# L6.1 — the independent review's four findings (2026-09-07)
+
+Merged `origin/weave/fd-v2` first (clean, no `logic.js` conflict). All four fixed; gates re-run.
+
+| Gate | Before L6.1 | After |
+|---|---|---|
+| Pixel, fixture mode | 36/36 allPass | **36/36 allPass**, max 0.0329 %, message-bus 0.000000 % both themes |
+| Live, API stubbed | 47/47 | **50/50 allPass**, 0 console errors |
+| `npm test` | 332/332 | **495/495, 0 fail** (the weave brought the other slices' suites) |
+
+## 1 · HIGH — the reply toast never fired for the selected thread (`bus.js`)
+
+`apply()` read `activeId()`, which is `host.state.busActive` — the *selected* thread, whether or
+not the bus screen is on-screen. So `if (id === visible) continue` suppressed the toast for that
+thread even after the user had navigated to Accounts: **the primary D08 case never fired.**
+
+Fixed by adding `visibleThread()`, which returns the active thread **only while `busOpen()`**.
+That is the mock's own rule — `arrive()` computes `viewing = screen is bus AND busActive is this
+session` — so this restores parity rather than inventing one.
+
+Proven both ways: with `visible = activeId()` restored, the new unit test fails; with the fix, it
+passes. Live gate:
+
+- **L6-48** select a thread, navigate to Accounts → the bus is off-screen, Accounts is showing
+- **L6-49** an inbound row lands on that selected thread → the toast fires with the right `from` and preview
+- **L6-50** click **Open thread** → back on the bus, that thread selected, the reply visible, toast gone
+
+Units: "a reply on the selected thread still toasts once the user has left the bus screen",
+"no toast for the selected thread while the bus screen is on-screen", "a reply on another thread
+toasts whether or not the bus screen is showing".
+
+## 2 · MEDIUM — `state.stOv` grew without bound (`bus.js`)
+
+The prune compared `stOv`'s **client** keys (`x<ts>`, or `x<ts>:<target>` for a broadcast leg)
+against **server** ids, so `serverKnows()` never matched and no override was ever dropped.
+
+Now the id `POST /api/messages` returns is recorded by `noteServerId()` — on the optimistic entry
+as `srvIds` (a list, because one optimistic message covers N broadcast POSTs) and in a module map.
+The optimistic copy is confirmed by id first, falling back to source + text only while the POST is
+still in flight; a confirmed send drops its `stOv` entry, its `errs` entry and its `sentIds` record
+together. A key that genuinely *is* a server id — a retry — still matches the response directly.
+
+A send the server never confirms keeps its override, because its `failed` receipt and **Retry**
+button depend on it. Both directions are covered: "a confirmed send drops its status override
+instead of leaking it" and "an unconfirmed send keeps its override and its receipt".
+
+## 3 · LOW — `deliver()`'s unknown-target path skipped the refresh
+
+It now calls `refresh()` like every other exit; a rail that has simply gone stale is what the next
+poll fixes. Unit: "delivering to an unknown target still refreshes, in case the rail is stale" —
+which also asserts it still posts nothing to a target it cannot name.
+
+## 4 · LOW — `pinnedItems` / `recentItems` ran outside the throw guard
+
+Both are now inside `busSafe()`, so a bad row reaching `isPinned`, `match` or `lastOf` falls back
+to the previous render instead of taking every screen down with it.
+
+## Two gate corrections the weave forced
+
+Neither is a product change; both were the gate mis-reading a tree that now has L2 and L3 in it.
+
+- **The hook recorders wrapped, not replaced.** `shell.js` and `windows.js` now provide
+  `setBadge` and `openMax` for real and load after any init script, so the old spies were
+  silently overwritten. The gate now wraps whatever is present after boot. `setBadge` calls
+  through; `openMax` records only — what L6 owes is *"a tmux thread calls
+  `openMax(host, session)` and does not fall back to the mock's terminal"*, and L6-36 asserts
+  exactly that plus `Session full screen` staying hidden. Driving L3's real xterm overlay would
+  make this gate fail on L3's regressions and leave every later check fighting to get back to the
+  bus. Absence and a throwing implementation stay covered in `test/v2-bus.test.js`.
+- **`/vendor/*` is served.** `server.js:2366-2371` maps the xterm bundle out of `node_modules`,
+  not `public/`; the scratch server now answers the same four routes.
+
 **Signed: Gerhild** · frontend-developer · `agent-gerhild` · 2026-09-07
