@@ -385,9 +385,10 @@
         live: r.state === 'ok' ? 'live' : '',
         right: ago(r.updated_at, now) + ' · ' + r.host,
         bars: creditBars(r, now),
-        // The raw history; the polyline string spark() builds is presentation
-        // (I-L1-02). O6 assumed this did not exist server-side — it partly does.
-        trendPts: Array.isArray(r.history) ? r.history : null,
+        // A number[] of seven-day percentages in time order — the series spark()
+        // draws. Design ruling 2026-09-07: history[].sd is the sampled percent, so
+        // the raw {t, fh, sd, xu} objects do not belong in the seed (I-L1-11).
+        trendPts: trendSeries(r.history),
         seen: (r.seen || []).map((s) => s.host + ' · ' + s.source).join(', '),
       };
       if (r.stale_windows) acct.staleNote = 'sampled ' + ago(r.sample_ts, now) + ' — window has reset since';
@@ -403,6 +404,18 @@
     const match = errors.find((e) => e && (e.id === r.id || e.host === r.host));
     if (match && match.message) return match.message;
     return 'could not read usage on ' + r.host;
+  }
+
+  // history[] is {t, fh, sd, xu} samples; the sparkline plots the seven-day percent.
+  // Sorted by t rather than trusting the server's order, and samples with no reading
+  // are dropped so the series is a clean number[] the template can hand to spark().
+  function trendSeries(history) {
+    if (!Array.isArray(history) || !history.length) return null;
+    return history
+      .slice()
+      .sort((a, b) => (a && a.t) - (b && b.t))
+      .map((h) => (h ? h.sd : null))
+      .filter((v) => typeof v === 'number' && !Number.isNaN(v));
   }
 
   // The API reports a machine enum ('claude_max' + tier 'default_claude_max_20x');
@@ -534,14 +547,22 @@
     return [head].concat(people);
   }
 
+  // The three fallbacks below are the current app's, copied verbatim so the wording
+  // does not drift between the old UI and v2 — public/sessions.js:225 and :229.
   function desktopRow(s, now) {
     const row = {
       title: s.title,
       path: s.cwd,
-      branch: s.branch,
-      model: s.model,
+      // 313 of the 923 captured rows have no branch, so this fallback is load-bearing.
+      branch: s.branch || 'No branch',
+      model: s.model || 'Model unknown',
       when: ago(s.lastActivityAt, now),
-      turns: (s.completedTurns === null || s.completedTurns === undefined ? 0 : s.completedTurns) + ' turns',
+      // A missing turn count is unknown, not zero — '0 turns' would be a claim the
+      // API never made. sessions.js:229 tests === null; undefined is folded in
+      // because a missing key can only mean the same thing.
+      turns: s.completedTurns === null || s.completedTurns === undefined
+        ? 'Turns unknown'
+        : s.completedTurns + ' turns',
       // The mock keeps `created` as a raw ISO string (I-L1-04).
       created: s.createdAt,
     };
