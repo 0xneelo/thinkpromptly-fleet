@@ -751,6 +751,15 @@ own tone. Recorded as a real, if small, loss.
 The row tooltip is an attribute, not a node, so it is set as today builds it: identity, highest window,
 credits used / limit, source (`app.js:145-152`).
 
+### I-L2-08 — the Windows empty state, in the operator's new words — **handed to L3 in the weave**
+
+**Update (L2.1, after the weave):** L3 now renders this same sentence from `windows.js`, keyed to the
+tile model it owns rather than to a DOM count, which is the better home for it. Drawn from both files
+the user saw it twice, so **L2 yields**: `paintEmpty()` keeps its element hidden and the empty state
+belongs to whoever owns the tiles. `EMPTY_COPY` stays in `shell.js` only so a unit test can assert the
+two files still quote the operator word for word. The original reasoning is kept below because it is
+what the copy and the placement were decided from.
+
 ### I-L2-08 — the Windows empty state, in the operator's new words
 
 **Serves:** BEHAVIOUR §4, open item O1. **Screenshot:** `l2-windows-empty.png`.
@@ -767,7 +776,9 @@ whatever L3 ends up feeding the grid.
 
 ### I-L2-09 — the "Boxes" rail splits today's pill into the mock's two columns
 
-**Serves:** §Scope 3, BEHAVIOUR §2. **Screenshot:** `l2-right-rail.png`.
+**Serves:** §Scope 3, BEHAVIOUR §2. **Screenshots:** `l2-right-rail.png`, and
+`l2-right-rail-offline.png` for the two whole-list failure states — `health unreachable` and
+`accounts unavailable`, each of which replaces its list rather than joining it.
 
 Today each health pill is one string, `"<host> · <state>"` (`app.js:112-129`). The mock's box row is a
 dot, a monospace name and a right-aligned status. The host becomes the name and the state becomes the

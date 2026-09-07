@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice": "l2",
   "mode": "live",
-  "capturedAt": "2026-09-07T01:18:13.163Z",
+  "capturedAt": "2026-09-07T01:59:35.735Z",
   "harness": "docs/design/fleetdeck-v2/verify/l2-live/live.mjs",
   "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api + docs/design/fleetdeck-v2/verify/l2-live/stubs",
   "total": 59,
@@ -12,7 +12,7 @@
     {
       "id": "A01-boot-loads",
       "action": "load /v2 in live mode",
-      "expectation": "sessions, health and credits are each fetched once",
+      "expectation": "the shell fetches sessions, health and credits at boot; health and credits are its alone",
       "pass": true,
       "detail": null
     },
@@ -96,7 +96,7 @@
     {
       "id": "A13-refresh",
       "action": "click Refresh",
-      "expectation": "sessions + health + credits reload, and nothing else",
+      "expectation": "the shell reloads sessions + health + credits, and asks for nothing else",
       "pass": true,
       "detail": null
     },
@@ -276,9 +276,9 @@
       "detail": null
     },
     {
-      "id": "C04-empty-state",
-      "action": "open the Windows screen and empty the tile grid (L3 still renders the mock's four seed tiles)",
-      "expectation": "the operator's new empty-state copy appears, and goes again as soon as a tile is there",
+      "id": "C04-empty-state-yielded",
+      "action": "open the Windows screen with no sessions, L3 isolated out",
+      "expectation": "L2 draws no empty state of its own — it is L3's in the weave (I-L2-08)",
       "pass": true,
       "detail": null
     },
@@ -404,7 +404,7 @@
     {
       "id": "F02-fixture-inert",
       "action": "load with ?fixture=1",
-      "expectation": "the shell fetches nothing and loads no data layer",
+      "expectation": "the shell fetches nothing and publishes none of its four keys",
       "pass": true,
       "detail": null
     },

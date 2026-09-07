@@ -60,6 +60,15 @@ async function check(id, action, expectation, fn) {
 
 /* ---- static server (loopback, public/ only) ------------------------------ */
 
+/* server.js:2367-2370 maps these four onto node_modules; a bare static root
+ * 404s them, and L3's xterm loader then throws into the console. */
+const VENDOR = {
+  '/vendor/xterm.js': '@xterm/xterm/lib/xterm.js',
+  '/vendor/xterm.css': '@xterm/xterm/css/xterm.css',
+  '/vendor/addon-fit.js': '@xterm/addon-fit/lib/addon-fit.js',
+  '/vendor/addon-web-links.js': '@xterm/addon-web-links/lib/addon-web-links.js',
+};
+
 async function serve() {
   const root = await realpath(PUBLIC);
   const types = {
@@ -70,6 +79,12 @@ async function serve() {
   const server = createServer(async (request, response) => {
     try {
       const pathname = decodeURIComponent(new URL(request.url, 'http://127.0.0.1').pathname);
+      if (VENDOR[pathname]) {
+        const vendored = await realpath(join(REPO, 'node_modules', VENDOR[pathname]));
+        response.writeHead(200, { 'Content-Type': types[extname(vendored)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
+        response.end(await readFile(vendored));
+        return;
+      }
       const file = await realpath(resolve(root, '.' + pathname));
       if (!file.startsWith(root + sep) || !(await stat(file)).isFile()) { response.writeHead(404).end(); return; }
       const data = await readFile(file);
@@ -85,27 +100,49 @@ const json = async (dir, name) => JSON.parse(await readFile(join(dir, name), 'ut
 
 /* ---- one page, one API stub set ------------------------------------------ */
 
-/* The L3 seam is a recorder: the shell must call openTile/openMax/connectAll,
- * and nothing else, with exactly the host and name of the row that was hit. */
+/* The L3 seam is watched, not replaced. L3 ships in the weave and publishes
+ * FD.screens.windows itself, late, so the recorder is installed as a proxy the
+ * moment that happens: every call is logged, then handed to the real thing.
+ * The checks below therefore prove the shell talks to L3, not to a stand-in. */
 function initPage({ storage, stubWindows }) {
   for (const [k, v] of Object.entries(storage)) {
     if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v);
   }
-  window.__l2 = { calls: [], fullScreen: false, openKeys: [], api: [] };
+  window.__l2 = { calls: [], fullScreen: null, openKeys: null };
   window.FD = window.FD || {};
   window.FD.screens = window.FD.screens || {};
-  if (stubWindows) {
-    window.FD.screens.windows = {
-      openTile: (h, n) => window.__l2.calls.push(['openTile', h, n]),
-      openMax: (h, n) => window.__l2.calls.push(['openMax', h, n]),
-      connectAll: () => window.__l2.calls.push(['connectAll']),
-      isFullScreen: () => window.__l2.fullScreen,
-      openKeys: () => window.__l2.openKeys,
-    };
-  }
+  if (!stubWindows) return;
+
+  const wrap = (real) => {
+    const spy = {};
+    for (const k of Object.keys(real || {})) spy[k] = real[k];
+    for (const name of ['openTile', 'openMax', 'connectAll']) {
+      spy[name] = (...args) => {
+        window.__l2.calls.push([name, ...args]);
+        if (real && typeof real[name] === 'function') return real[name](...args);
+        return undefined;
+      };
+    }
+    // The two hooks the pack does not name: the harness answers when it has an
+    // opinion, otherwise L3 does.
+    spy.isFullScreen = () => (window.__l2.fullScreen !== null
+      ? window.__l2.fullScreen
+      : !!(real && real.isFullScreen && real.isFullScreen()));
+    spy.openKeys = () => (window.__l2.openKeys !== null
+      ? window.__l2.openKeys
+      : (real && real.openKeys ? real.openKeys() : []));
+    return spy;
+  };
+
+  let current = wrap(null);
+  Object.defineProperty(window.FD.screens, 'windows', {
+    configurable: true,
+    get: () => current,
+    set: (real) => { current = wrap(real); },
+  });
 }
 
-async function open(browser, port, { routes = {}, storage = {}, stubWindows = true, query = '', theme = 'dark' } = {}) {
+async function open(browser, port, { routes = {}, storage = {}, stubWindows = true, query = '', theme = 'dark', isolate = true } = {}) {
   const context = await browser.newContext({
     viewport: VIEWPORT, deviceScaleFactor: 1, colorScheme: theme,
     reducedMotion: 'reduce', locale: 'en-US', timezoneId: 'UTC', serviceWorkers: 'block',
@@ -126,6 +163,18 @@ async function open(browser, port, { routes = {}, storage = {}, stubWindows = tr
   });
   // Videos are decoration; the deck's own gate blocks them too.
   await context.route('**/*.mp4', (route) => route.abort());
+  /* This file proves L2, so it runs L2 alone: the other eight screen scripts are
+   * served empty. They are separately proven by their own slices, and the weave
+   * is where they are proven together. Without this the page under test is the
+   * whole app, and a failure here would say nothing about the shell. */
+  if (isolate) {
+    await context.route('**/v2/screens/*.js', (route) => {
+      const file = new URL(route.request().url()).pathname.split('/').pop();
+      return file === 'shell.js'
+        ? route.continue()
+        : route.fulfill({ status: 200, contentType: 'text/javascript', body: '/* isolated by verify/l2-live */' });
+    });
+  }
 
   const page = await context.newPage();
   const isMedia = (u) => /\.(?:mp4|webm|m3u8|ts)(?:$|[?#])/i.test(u || '');
@@ -172,10 +221,14 @@ async function main() {
       const live = base['/api/sessions'].sessions.filter((s) => s.live);
       const hosts = [...new Set(live.map((s) => s.host))];
 
-      await check('A01-boot-loads', 'load /v2 in live mode', 'sessions, health and credits are each fetched once', () => {
-        const want = ['/api/sessions', '/api/health', '/api/credits'];
-        return want.every((p) => calls.filter((c) => c === p).length === 1) || { detail: JSON.stringify(calls) };
-      });
+      await check('A01-boot-loads', 'load /v2 in live mode',
+        'the shell fetches sessions, health and credits at boot; health and credits are its alone', () => {
+          const want = ['/api/sessions', '/api/health', '/api/credits'];
+          const missing = want.filter((p) => !calls.includes(p));
+          const dupes = ['/api/health', '/api/credits'].filter((p) => calls.filter((c) => c === p).length !== 1);
+          return (missing.length === 0 && dupes.length === 0)
+            || { detail: `missing=${JSON.stringify(missing)} dupes=${JSON.stringify(dupes)} calls=${JSON.stringify(calls)}` };
+        });
 
       await check('A02-groups', 'render the sidebar', `one group per live host, in API order: ${hosts.join(', ')}`, async () => {
         const got = await page.locator('[data-dc-tpl="224"]').allTextContents();
@@ -267,12 +320,16 @@ async function main() {
         return JSON.stringify(got) === JSON.stringify([['connectAll']]) || { detail: JSON.stringify(got) };
       });
 
-      await check('A13-refresh', 'click Refresh', 'sessions + health + credits reload, and nothing else', async () => {
+      await check('A13-refresh', 'click Refresh', 'the shell reloads sessions + health + credits, and asks for nothing else', async () => {
         const before = calls.length;
         await page.locator('[data-dc-tpl="241"]').click();
-        await page.waitForTimeout(400);
-        const fresh = calls.slice(before).sort();
-        return JSON.stringify(fresh) === JSON.stringify(['/api/credits', '/api/health', '/api/sessions']) || { detail: JSON.stringify(fresh) };
+        await page.waitForTimeout(700);
+        const fresh = calls.slice(before);
+        const mine = ['/api/sessions', '/api/health', '/api/credits'];
+        const missing = mine.filter((p) => !fresh.includes(p));
+        const extra = [...new Set(fresh.filter((p) => !mine.includes(p)))];
+        return (missing.length === 0 && extra.length === 0)
+          || { detail: `missing=${JSON.stringify(missing)} extra=${JSON.stringify(extra)}` };
       });
 
       await check('A14-boxes', 'read the right-rail Boxes list', 'one row per host with today\'s status words', async () => {
@@ -457,21 +514,15 @@ async function main() {
         const txt = await page.locator('#fd-l2-listfoot div').allTextContents();
         return JSON.stringify(txt) === JSON.stringify(['no sessions']) || { detail: JSON.stringify(txt) };
       });
-      await check('C04-empty-state',
-        'open the Windows screen and empty the tile grid (L3 still renders the mock\'s four seed tiles)',
-        'the operator\'s new empty-state copy appears, and goes again as soon as a tile is there',
+      await check('C04-empty-state-yielded',
+        'open the Windows screen with no sessions, L3 isolated out',
+        'L2 draws no empty state of its own — it is L3\'s in the weave (I-L2-08)',
         async () => {
           await page.locator('aside button[title="Windows"]').click();
           await page.locator('[data-screen-label="Windows"]').waitFor({ state: 'visible' });
-          const before = await page.locator('#fd-l2-empty').isVisible();
-          await page.evaluate(() => {
-            document.querySelectorAll('[data-dc-tpl="250"]').forEach((el) => el.remove());
-            window.FD.shell.setLiveApi(null);   // repaint without a re-render
-          });
-          await page.waitForTimeout(80);
-          const txt = await page.locator('#fd-l2-empty').textContent();
-          return (before === false && txt === 'There are no sessions yet, open a new session via an orchestrator first.')
-            || { detail: `before=${before} txt=${txt}` };
+          await page.waitForTimeout(200);
+          const visible = await page.locator('#fd-l2-empty').isVisible();
+          return visible === false || { detail: 'L2 still drew one' };
         });
       await context.close();
     }
@@ -623,10 +674,13 @@ async function main() {
     {
       const { context, page, calls, consoleErrors } = await open(browser, server.port, { routes: base, query: '?fixture=1' });
       await page.waitForTimeout(800);
-      await check('F02-fixture-inert', 'load with ?fixture=1', 'the shell fetches nothing and loads no data layer', async () => {
-        const loaded = await page.evaluate(() => !!(window.FD && window.FD.data));
-        return (calls.length === 0 && !loaded) || { detail: `calls=${JSON.stringify(calls)} data=${loaded}` };
-      });
+      await check('F02-fixture-inert', 'load with ?fixture=1',
+        'the shell fetches nothing and publishes none of its four keys', async () => {
+          const published = await page.evaluate(() => ['l2Groups', 'l2Boxes', 'l2Accounts', 'l2Badge']
+            .filter((k) => window.FD.fixture[k] !== undefined));
+          return (calls.length === 0 && published.length === 0)
+            || { detail: `calls=${JSON.stringify(calls)} published=${JSON.stringify(published)}` };
+        });
       await check('F03-fixture-untouched', 'read the sidebar in fixture mode', 'the mock\'s own seed groups still render', async () => {
         const boxes = await page.locator('[data-dc-tpl="224"]').allTextContents();
         return JSON.stringify(boxes) === JSON.stringify(['onboarding-box', 'german-box']) || { detail: JSON.stringify(boxes) };

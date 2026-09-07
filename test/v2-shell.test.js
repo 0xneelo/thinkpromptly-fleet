@@ -39,6 +39,76 @@ function load({ store = {}, search = '' } = {}) {
   return { shell: sandbox.FD.shell, FD: sandbox.FD, appended };
 }
 
+
+/* A live boot, driven to completion inside the sandbox. The shell appends
+ * <script src="/v2/data.js"> and waits; this stands the data layer up, fires the
+ * script's onload, and lets the boot chain settle — which is the only way to
+ * watch `ready` flip. */
+function bootable({ search = '' } = {}) {
+  const store = { 'fd-landing-dark': '1' };
+  const sandbox = { console, URLSearchParams, Promise };
+  sandbox.window = sandbox;
+  sandbox.localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+  };
+  sandbox.location = { search };
+  sandbox.addEventListener = () => {};
+
+  const node = () => {
+    const n = {
+      style: {}, dataset: {}, children: [],
+      setAttribute() {}, removeAttribute() {},
+      appendChild(c) { this.children.push(c); return c; },
+      append(...c) { this.children.push(...c); },
+      replaceChildren(...c) { this.children = c; },
+      querySelector: () => null,
+      querySelectorAll: () => [],
+      getBoundingClientRect: () => ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }),
+      isConnected: true, offsetHeight: 0, offsetParent: null,
+    };
+    return n;
+  };
+  const appended = [];
+  sandbox.document = {
+    documentElement: node(),
+    body: node(),
+    head: { appendChild: (el) => { appended.push(el); return el; } },
+    createElement: node,
+    querySelector: () => null,
+    querySelectorAll: () => [],
+    addEventListener: () => {},
+  };
+
+  vm.createContext(sandbox);
+  vm.runInContext(SOURCE, sandbox, { filename: 'shell.js' });
+
+  const FD = sandbox.FD;
+  // runtime.js supplies these in the browser.
+  FD.fixture = FD.fixture || {};
+  FD.setData = (k, v) => { FD.fixture[k] = v; };
+
+  return {
+    FD,
+    shell: FD.shell,
+    // Resolve the data layer the way a real /v2/data.js load would.
+    async arrive() {
+      FD.data = {
+        isFixture: () => false,
+        theme: () => true,
+        ago: () => 'just now',
+        sessions: async () => ({ sessions: [], errors: [] }),
+        health: async () => ({ hosts: [] }),
+        credits: async () => ({ rows: [] }),
+      };
+      assert.strictEqual(appended.length, 1, 'the shell asked for the data layer');
+      appended[0].onload();
+      // Let the boot chain and the loads it starts settle.
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+    },
+  };
+}
+
 const { shell } = load({ store: { 'fd-fixture': '1' } });
 const pure = shell.__pure;
 
@@ -75,6 +145,55 @@ test('and the same check lets a live boot through — so it is not simply always
 test('a fixture-shaped query that is not the flag does not count as fixture mode', () => {
   const { FD } = load({ search: '?fixture=0' });
   assert.ok(FD.__dataLoading, '?fixture=0 is a live boot');
+});
+
+test('the empty-state copy still matches L3 word for word', () => {
+  // L3 owns the empty state in the weave; L2 kept the string so a reword on
+  // either side is caught here rather than on screen.
+  const l3 = readFileSync(join(__dirname, '..', 'public', 'v2', 'screens', 'windows.js'), 'utf8');
+  const copy = 'There are no sessions yet, open a new session via an orchestrator first.';
+  assert.ok(SOURCE.includes(copy), 'L2 still quotes the operator\'s copy');
+  assert.ok(l3.includes(copy), 'L3 renders the same sentence');
+});
+
+test('a badge set before the data layer arrives is applied, not dropped', async () => {
+  const boot = bootable();
+  assert.strictEqual(boot.shell.__pure.ready(), false, 'not ready yet');
+
+  // L6 mounts synchronously and reports while data.js is still in flight.
+  boot.shell.setBadge(3);
+  assert.strictEqual(boot.FD.fixture.l2Badge, undefined, 'nothing is published before ready');
+  assert.strictEqual(boot.shell.__pure.badge(), 3, 'but the count is remembered');
+
+  await boot.arrive();
+  assert.strictEqual(boot.shell.__pure.ready(), true, 'ready flipped');
+  assert.strictEqual(boot.FD.fixture.l2Badge, 3, 'the remembered count reached the nav badge');
+});
+
+test('the last count wins, and a later one still goes straight through', async () => {
+  const boot = bootable();
+  boot.shell.setBadge(3);
+  boot.shell.setBadge(7);
+  await boot.arrive();
+  assert.strictEqual(boot.FD.fixture.l2Badge, 7, 'the last pre-ready count is the one applied');
+
+  boot.shell.setBadge(0);
+  assert.strictEqual(boot.FD.fixture.l2Badge, 0, 'and a post-ready call publishes immediately');
+});
+
+test('a badge nobody ever set publishes nothing, so the bus count stays the bus\'s', async () => {
+  const boot = bootable();
+  await boot.arrive();
+  assert.strictEqual(boot.FD.fixture.l2Badge, undefined, 'no l2Badge key, so busVals still wins');
+});
+
+test('a nonsense count becomes 0 rather than reaching the template', async () => {
+  const boot = bootable();
+  boot.shell.setBadge(-4);
+  await boot.arrive();
+  assert.strictEqual(boot.FD.fixture.l2Badge, 0);
+  boot.shell.setBadge('lots');
+  assert.strictEqual(boot.FD.fixture.l2Badge, 0);
 });
 
 test('norm supplies exactly the defaults today\'s app supplies (app.js:182)', () => {
