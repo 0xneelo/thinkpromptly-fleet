@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "startedAt": "2026-09-07T00:43:39.510Z",
-  "finishedAt": "2026-09-07T00:44:27.682Z",
+  "startedAt": "2026-09-07T00:53:34.350Z",
+  "finishedAt": "2026-09-07T00:54:24.954Z",
   "mode": "parity",
   "sources": {
-    "a": "http://127.0.0.1:3222/v2/pass1/index.html",
-    "b": "http://127.0.0.1:3222/v2/index.html"
+    "a": "http://127.0.0.1:3230/v2/pass1/index.html",
+    "b": "http://127.0.0.1:3230/v2/index.html"
   },
   "determinism": {
     "dumpScope": "#dc-root",

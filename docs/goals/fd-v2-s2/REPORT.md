@@ -342,4 +342,81 @@ dump was unchanged**. Agreeing that focus was lost is deliberately not a pass.
 | `npm run v2:check` | **exit 0** |
 | `FD.setData` seam | **pass** |
 
+## S2.2 — the oracle's shim findings
+
+Seven findings from the design seat's oracle audit of `runtime.js` and `dc-compile.mjs` at `3e64200`,
+all reproduced in Chromium. Fixed in one push, ahead of S2.1's remaining items, because F1-F3 block the
+nine logic slices.
+
+**The audit file itself was not reachable.** `docs/design/fleetdeck-v2/audits/s2-shim-oracle-2026-09-08.md`
+does not exist on `origin/claude/fleetdeck-v2-redesign-plan-5a5cd5` after a fresh fetch
+(`0724bdf..32fc491`), nor on any other ref — I scanned every remote branch for `oracle` and `s2-shim`.
+The same thing happened with the T3 README amendment. The instruction text specifies every finding with
+file, line and required fix, so I implemented from it and recorded the gap here rather than blocking.
+
+I also checked before starting that this was not already fixed elsewhere: `origin/agent-v2-base` @
+`42b56bb` is simply my own `8abf779` merged in, and its `runtime.js` is byte-identical to mine with no
+`data-dc-raw` and no `keyGet`. All seven were genuinely live.
+
+| | Finding | Fix |
+|---|---|---|
+| **F1** | CRITICAL — rows keyed by position, so reordering a list left externally mounted subtrees under the wrong row and dropped the last | `<sc-for key="{{ expr }}">` support; the emitted row key becomes `+ (keyGet(sub) ?? i)`, evaluated in the row scope |
+| **F2** | CRITICAL — a throw in `renderVals` fell through to `vals = host.props` and rendered anyway, blanking every screen | On catch, return **without rendering**; the last committed DOM stands and the error is reported |
+| **F3** | HIGH — any child-list change deleted foreign nodes | `syncChildren` skips a parent marked `data-dc-raw` entirely |
+| **F4** | MEDIUM — a `<select>`'s value was skipped when the prop had not changed, so an assignment made before its options existed was never retried | `value` on `SELECT` is always re-applied |
+| **F5** | MEDIUM — no update-depth guard | Chained-flush counter; above 50 it logs and bails |
+| **F6** | LOW — `checked` skipped when unchanged, so DOM drift from a user click was never corrected | `checked` is always re-applied |
+| **F7** | LOW — `?` poisoned `isPureData` | A literal containing `?` is refused, like the `${` case |
+
+**On F5 I deviated deliberately.** The instruction said to count flushes per macrotask. Both parity
+harnesses freeze `setTimeout`, so a timer-based window would never reset and would misfire on a long
+legitimate run. I count **chained** flushes instead — a flush scheduled from inside a flush, which is
+exactly the runaway shape (`setState` from `renderVals` or `componentDidUpdate`) — and the counter resets
+whenever a flush is scheduled from outside one. Same defect caught, no dependence on a timer the gates
+disable.
+
+### Regressions, each proven to fail without its fix
+
+`tools/v2-shim-regress.mjs`. These **cannot** be A/B steps in `v2-interactions.mjs`, which is why they
+are a separate script: side A is pass 1 running the real dc-runtime, which has no `sc-for key=`, no
+`data-dc-raw` and no `FD.setData`. The production template exercises none of them either — zero keyed
+loops, zero raw parents — which is precisely why every gate stayed green while these bugs were live. So
+each finding is driven against a synthetic fixture compiled by the real `tools/dc-compile.mjs` and
+mounted on the real `public/v2/runtime.js`, served from a throwaway loopback server. Nothing is written
+into `public/`.
+
+| Check | With the fix | Fix reverted |
+|---|---|---|
+| F1 — reorder `[a,b,c]` -> `[c,a,b]` with a foreign `<em>` mounted inside row b | PASS: order `c,a,b`, 3 rows, foreign node still inside row **b** | **FAIL** |
+| F2 — `renderVals` throws | PASS: `#list` innerHTML unchanged (303 -> 303 chars), rows still present, error reported | **FAIL** |
+| F2b — recovery once it stops throwing | PASS: renders again | — |
+| F3 — foreign child inside a `data-dc-raw` parent across a child-list change | PASS: survived | **FAIL** |
+
+The F3 check needed a second pass to be worth anything. My first version toggled only the parent's text,
+which hits `syncChildren`'s unchanged-list early return, so the removal path never ran and **the test
+passed with the guard removed**. It now toggles an `sc-if` inside the raw parent so the child list
+genuinely changes. That is what the negative controls are for.
+
+To make F1 testable at all I added `--template <path>` and `--print-app` to `dc-compile.mjs`:
+`--print-app` writes nothing, it prints `app.js` and exits, so a test can assert on generated code
+without touching `public/`. The F1 check asserts the emitted key expression *and* the resulting runtime
+behaviour.
+
+### Gates after F1-F7
+
+F1 and F3 are additive: the production template has zero `sc-for key=` and zero `data-dc-raw`, so neither
+can alter current output — confirmed, all generated files unchanged and T3 still 7 of 13.
+
+| Gate | Result |
+|---|---|
+| F2 DOM parity | **36/36**, mask empty |
+| Interaction parity | **36/36**, mask empty, keystroke probe passing |
+| Pixel | **`allPass: true`**, max **0.032948 %** |
+| No engine | **`allPass: true`** — 0 loads, 0 console errors, 0 failed requests |
+| `v2:compile` / `v2:check` | idempotent / **exit 0** |
+| Shim regressions | **4/4**, each proven to fail without its fix |
+
+`runtime.js` is now **416** lines. The seat has accepted the shim over the 300 guideline; F2, F3 and F5
+add code and the comments that explain why each behaves as it does.
+
 Signed **Julius**.

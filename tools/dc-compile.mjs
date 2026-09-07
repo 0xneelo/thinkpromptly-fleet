@@ -18,11 +18,17 @@ import { chromium } from "playwright";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const R = (...p) => path.join(ROOT, ...p);
 const CHECK = process.argv.includes("--check");
+/* --template/--print-app exist so the compiler's own emission can be regression-tested
+ * against a synthetic fixture. --print-app writes nothing: it prints app.js and exits, so
+ * a test can assert on the generated code without touching public/v2/. */
+const argOf = (flag) => { const i = process.argv.indexOf(flag); return i === -1 ? null : process.argv[i + 1]; };
+const TEMPLATE = argOf("--template") || "public/v2/template.dc.html";
+const PRINT_APP = process.argv.includes("--print-app");
 const fail = (m) => { console.error("dc-compile: " + m); process.exit(1); };
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
 // ---------------------------------------------------------------- extraction
-const SRC = readFileSync(R("public/v2/template.dc.html"), "utf8");
+const SRC = readFileSync(path.isAbsolute(TEMPLATE) ? TEMPLATE : R(TEMPLATE), "utf8");
 
 // <x-dc> body, sliced from the raw text exactly like dc-runtime's parseDcText
 // (L36-53). That is the version the runtime ends up compiling: boot() re-fetches
@@ -102,6 +108,10 @@ function isPureData(lit) {
     if (c === "/" && lit[i + 1] === "*") { i = lit.indexOf("*/", i + 2); if (i === -1) break; i++; continue; }
     bare += c;
   }
+  /* F7 — a ternary defeats the scan below: in `cond ? a : b` the `a :` looks exactly like
+   * a property key, so `a` is skipped and the literal is called pure even though `cond` and
+   * `a` may be logic-locals. Same refusal-to-guess rule as the ${...} case above. */
+  if (bare.indexOf("?") !== -1) return false;
   const re = /([A-Za-z_$][A-Za-z0-9_$]*)(\s*:)?/g;
   let m;
   while ((m = re.exec(bare))) {
@@ -278,8 +288,26 @@ const WALKER = `window.__dcCompile = ${String(function (src, scriptTag) {
       const asName = el.getAttribute("as") || "item";
       const d = s.d + 1, sub = { v: "v" + d, k: "k" + d, d };
       const body = arr(emitChildren(el, sub, ind + "  "), ind + "  ");
+      /* F1 — row identity. The vendor keys rows purely by position, so reordering a list
+       * kept every DOM node where it was and only rewrote its contents. That is invisible
+       * for plain text, but any subtree the reconciler did not create — a node mounted by
+       * a slice, an editor, a chart — stays with the OLD index and ends up under the wrong
+       * row, and a shrunken list drops the last one. `key="{{ expr }}"` on <sc-for> opts a
+       * list into identity keying; without it the behaviour is byte-for-byte as before.
+       * The key is evaluated in the ROW scope, so it can read the item. */
+      const keyRaw = el.getAttribute("key");
+      let keyExpr = null;
+      if (keyRaw) {
+        if (isStatic(keyRaw)) {
+          console.warn("dc-compile: <sc-for key=" + JSON.stringify(keyRaw) + "> is a constant, so every " +
+                       "row would share one key and collapse onto one node. Ignoring it; use key=\"{{ expr }}\".");
+        } else {
+          keyExpr = G(keyRaw) + "(" + sub.v + ")";
+        }
+      }
+      const rowKey = keyExpr ? "(" + keyExpr + " ?? i)" : "i";
       return "A(" + list + ").map(function (it, i) { var " + sub.v + " = O(" + s.v + ", " + J(asName) +
-        ", it, i), " + sub.k + " = " + s.k + "+" + J("/" + el.__nid + ":") + "+i;\n" +
+        ", it, i), " + sub.k + " = " + s.k + "+" + J("/" + el.__nid + ":") + "+" + rowKey + ";\n" +
         ind + "  return " + body + ";\n" + ind + "})";
     }
 
@@ -385,6 +413,8 @@ ${out.top}
   D.mount(main, PROPS);
 })();
 `;
+
+if (PRINT_APP) { process.stdout.write(APP); process.exit(0); }
 
 const SHELL = `<!DOCTYPE html>
 <html>

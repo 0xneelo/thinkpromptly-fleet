@@ -3,8 +3,8 @@
   "mode": "verify",
   "slice": "S2",
   "status": "complete",
-  "capturedAt": "2026-09-07T00:43:09.703Z",
-  "source": "http://127.0.0.1:3222/v2/index.html",
+  "capturedAt": "2026-09-07T00:53:03.014Z",
+  "source": "http://127.0.0.1:3230/v2/index.html",
   "viewport": {
     "width": 1440,
     "height": 900
