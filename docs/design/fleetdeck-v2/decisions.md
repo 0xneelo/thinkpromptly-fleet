@@ -111,3 +111,11 @@ report from any worker is escalated to the operator immediately (no Astra fallba
   design seat → `origin/agent-v2-base` @ `66e81e0` (S2's fixture.js, scripts unioned). The nine L-slices branch
   from `agent-v2-base` (packs updated from `agent-v2-s2`); their first-action merge of L1 is a no-op.
 - Rule for L2–L10: in fixture mode (`?fixture=1`) never call `FD.setData`; only live mode loads data.
+
+## 2026-09-08 (early) · all nine logic slices launched
+
+Base `origin/agent-v2-base` @ `66e81e0`. Sessions `FD-v2-l2` … `FD-v2-l10` (Renate, Gottlieb, Ruprecht, Dietlind,
+Gerhild, Tankred, Kunhild, Eckbert, Clodwig), all Claude high, `/goal active`, bypass on, registered in group `fd-v2`.
+Prompts staged on the box (`~/launch/launch-<name>.txt`), launcher `~/fd-launch-claude.sh`. Monitor polls their
+branches every 20 min for `verify/L<N>/report.json` + `live.json` and their panes for limit/stall/done. L11 (Alrun)
+launches from `origin/weave/fd-v2` once the last of them is green.
