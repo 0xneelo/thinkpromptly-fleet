@@ -522,6 +522,73 @@ test('toDesktop skips archived sessions and keeps created as raw ISO', () => {
   assert.strictEqual(person.acct, 'Account abcdef01');
 });
 
+test('toDesktop uses the current app\'s fallbacks, never a bare null', () => {
+  // Wording copied from public/sessions.js:225,229 so the old UI and v2 agree.
+  const out = data.toDesktop({ groups: [{
+    accountUuid: 'abcdef0123', orgUuid: 'o', machine: 'm', label: 'L', email: 'e',
+    sessions: [{
+      id: 'a', title: 't', cwd: '/c', branch: null, model: null,
+      createdAt: '2026-09-06T13:49:10.097Z', lastActivityAt: '2026-09-06T23:00:00.000Z',
+      completedTurns: null, cliSessionId: 'cli', isArchived: false,
+    }],
+  }] }, NOW);
+  const row = out[1].rows[0];
+  // A missing count is unknown, not zero: '0 turns' asserts something the API never said.
+  assert.strictEqual(row.turns, 'Turns unknown');
+  assert.strictEqual(row.branch, 'No branch');
+  assert.strictEqual(row.model, 'Model unknown');
+});
+
+test('toDesktop still counts a real zero as zero', () => {
+  const out = data.toDesktop({ groups: [{
+    accountUuid: 'a', orgUuid: 'o', machine: 'm', label: 'L', email: 'e',
+    sessions: [{ id: 'a', title: 't', cwd: '/c', branch: 'b', model: 'm',
+      createdAt: 'x', lastActivityAt: '2026-09-06T23:00:00.000Z',
+      completedTurns: 0, isArchived: false }],
+  }] }, NOW);
+  assert.strictEqual(out[1].rows[0].turns, '0 turns', 'a reported zero is not unknown');
+});
+
+test('no desktop row on the real capture carries a null branch, model or turn count', () => {
+  const rows = data.toDesktop(api('desktop-sessions'), NOW).flatMap((g) => g.rows);
+  assert.ok(rows.length > 0);
+  for (const r of rows) {
+    assert.notStrictEqual(r.branch, null);
+    assert.notStrictEqual(r.model, null);
+    assert.notStrictEqual(r.turns, '0 turns');
+    assert.strictEqual(typeof r.turns, 'string');
+  }
+  // The capture really does exercise both fallbacks.
+  assert.ok(rows.some((r) => r.branch === 'No branch'), 'branch fallback is reached');
+  assert.ok(rows.some((r) => r.turns === 'Turns unknown'), 'turns fallback is reached');
+});
+
+test('toAccounts trendPts is a number[] of seven-day percents in time order', () => {
+  const out = data.toAccounts(api('credits'), NOW);
+  const withTrend = out.filter((a) => a.trendPts !== null);
+  assert.ok(withTrend.length > 0, 'the capture has usage history');
+  for (const acct of withTrend) {
+    assert.ok(Array.isArray(acct.trendPts));
+    assert.ok(acct.trendPts.every((v) => typeof v === 'number' && !Number.isNaN(v)),
+      'every point is a number, not a {t,fh,sd,xu} object');
+  }
+  // An account with no history stays null rather than an empty series.
+  assert.ok(out.some((a) => a.trendPts === null));
+});
+
+test('trendPts takes history[].sd and sorts by time', () => {
+  const out = data.toAccounts({ rows: [{
+    kind: 'claude', id: 'x', host: 'h', label: 'L', email: 'e', state: 'ok',
+    history: [
+      { t: 30, fh: 9, sd: 3, xu: null },
+      { t: 10, fh: 7, sd: 1, xu: null },
+      { t: 20, fh: 8, sd: 2, xu: null },
+    ],
+  }] }, NOW);
+  // sd, in t order — not fh, not the raw objects, not the server's order.
+  assert.deepStrictEqual(out[0].trendPts, [1, 2, 3]);
+});
+
 test('adapters are pure — they do not mutate their input', () => {
   const sessions = api('sessions');
   const before = JSON.stringify(sessions);
