@@ -18,9 +18,9 @@
 | `public/v2/fixture.js` | **generated** — the mock's seed arrays on `window.FD.fixture` |
 | `public/v2/orgchart.js` | byte-identical copy of `public/orgchart.js` (asserted by a test) |
 | `tools/extract-fixture.mjs` | the extractor; `npm run v2:fixture` / `v2:fixture -- --check` |
-| `test/v2-data.test.js` | 56 tests |
+| `test/v2-data.test.js` | 65 tests |
 | `server.js` | one ternary arm so a directory URL serves its `index.html` |
-| `docs/design/fleetdeck-v2/improvised.md` | 11 entries (I-L1-01 … I-L1-11) |
+| `docs/design/fleetdeck-v2/improvised.md` | 12 entries (I-L1-01 … I-L1-12) |
 
 Commits: `a918cc5` (server fix) · `ff76a68` (extractor + fixture) · `9e5c0d1` (data layer, router, tests).
 
@@ -90,8 +90,8 @@ I-L1-01/I-L1-02; happy to take the other shape if the design seat rules differen
 
 | Check | Result |
 |---|---|
-| `npm test` | **285 pass, 0 fail** (229 before this slice, 56 new) |
-| `test/v2-data.test.js` alone | 56 pass |
+| `npm test` | **294 pass, 0 fail** (229 before this slice, 65 new) |
+| `test/v2-data.test.js` alone | 65 pass |
 | `npm run v2:fixture` idempotent | yes — second run leaves the file byte-identical |
 | `npm run v2:fixture -- --check` | exits 0; wired into `pretest`, so `npm test` fails on a stale fixture |
 | Adapter shapes vs mock | all 9 match key list **and order**; asserted per adapter |
@@ -109,6 +109,33 @@ I-L1-01/I-L1-02; happy to take the other shape if the design seat rules differen
 - [x] `/v2/` resolves — 200 via `node server.js` on a scratch port; the change is quoted in commit `a918cc5`. The shell itself is S2's `public/v2/index.html`, so the test supplies a stand-in when that file is absent and uses the real one when present.
 - [x] No fetch to any host but the page origin; no call to the operator's deck.
 - [x] `reviewer` pass clean; branch pushed; `REPORT.md` signed; registry — see below.
+
+### Reviewer findings, and what they changed
+
+Two passes. The first cleared the fetchers, the router and the `server.js` hunk and found two holes in
+the error contract (a response with no `.text`, and a 2xx that will not parse, both rejecting with a
+bare `TypeError` / `SyntaxError` instead of `{status, body}`) — fixed before the first commit.
+
+The second pass reviewed the adapters and tests and returned 12 findings. All were real; all are
+fixed. The three that mattered:
+
+1. **Fixture mode was not read-only.** Only the ten reading endpoints were intercepted, so `kill`,
+   `deleteKey`, `registryDelete` and six other writes still reached the network under `?fixture=1`. A
+   Kill clicked on a fixture page would have destroyed a real session. All nine writes are now inert
+   in fixture mode, with a test for both halves of that.
+2. **`toMachines` duplicated columns.** It mapped 1:1 over `clients[]`, so german-box — which reports
+   every client twice, WSL and Windows — produced 8 single-section columns where the mock has 4
+   columns of 2 sections. The Machines screen would have rendered doubled.
+3. **The shape tests could not see either bug.** `assertShape` checked only `Array.isArray` on array
+   fields, so a duplicated column, a dropped chip and a widened tuple all passed. It now walks one
+   level into arrays and compares tuple lengths, and there are explicit tests for the german-box
+   grouping, the chip pair and the bar tuple widths.
+
+The rest: `accounts[].id` was the whole uuid rather than the mock's 8 hex; `plan` was the raw enum
+`claude_max` rather than `Max 20×`; `banner` was the raw `state` rather than a sentence; bar tuples
+were a fixed-width triple; `certs` was returned by reference; the visibility test could leak a fake
+`document`; and the outbound-to-desktop thread path had no coverage. Every one is fixed and tested;
+the label derivations are recorded as `improvised.md` I-L1-12.
 
 ## Deviations and open items, stated plainly
 

@@ -134,12 +134,28 @@
     transcript: null,
   };
 
+  // EVERY writing endpoint is a no-op in fixture mode. Leaving these live would
+  // mean a Kill or a Delete key clicked on a ?fixture=1 page destroys a real
+  // session or a real certificate on whatever backend the page is served from.
+  const FIXTURE_WRITES = [
+    'sendMessage', 'retryMessage', 'registryUpsert', 'registryDelete', 'kill',
+    'mintCert', 'deleteKey', 'startTrain', 'endTrain',
+  ];
+
   Object.keys(FIXTURE_ROUTES).forEach((name) => {
     const live = api[name];
     api[name] = function (...args) {
       if (!isFixture()) return live.apply(null, args);
       const key = FIXTURE_ROUTES[name];
       return Promise.resolve(key === null ? fixtureShim(name) : fixtureFor(key));
+    };
+  });
+
+  FIXTURE_WRITES.forEach((name) => {
+    const live = api[name];
+    api[name] = function (...args) {
+      if (!isFixture()) return live.apply(null, args);
+      return Promise.resolve({ ok: true, fixture: true });
     };
   });
 
@@ -345,20 +361,24 @@
       fp: k.fingerprint,
       comment: k.comment,
     }));
-    return { keyRows, certs: rows(sshkeys, 'certs'), train: ghtrain || null };
+    // Copied, so a caller mutating certs cannot corrupt the response object.
+    return { keyRows, certs: rows(sshkeys, 'certs').slice(), train: ghtrain || null };
   }
 
   const WINDOW_LABELS = { five_hour: '5 hour', seven_day: '7 day', seven_day_fable: '7 day fable' };
 
   function toAccounts(credits, now) {
+    const errors = rows(credits, 'errors');
     return rows(credits, 'rows').map((r) => {
       const acct = {
         prov: r.kind,
         name: r.label,
         email: r.email,
-        id: r.org || '',
-        plan: r.plan || r.type || r.tier || '',
-        live: r.state === 'ok' ? 'live' : r.state,
+        // The mock shows the first 8 hex of the org uuid, as toDesktop does for
+        // the account uuid — not the whole uuid.
+        id: String(r.org || '').slice(0, 8),
+        plan: accountPlan(r),
+        live: r.state === 'ok' ? 'live' : '',
         right: ago(r.updated_at, now) + ' · ' + r.host,
         bars: creditBars(r, now),
         // The raw history; the polyline string spark() builds is presentation
@@ -367,9 +387,28 @@
         seen: (r.seen || []).map((s) => s.host + ' · ' + s.source).join(', '),
       };
       if (r.stale_windows) acct.staleNote = 'sampled ' + ago(r.sample_ts, now) + ' — window has reset since';
-      if (r.state !== 'ok') acct.banner = r.state;
+      if (r.state !== 'ok') acct.banner = accountBanner(r, errors);
       return acct;
     });
+  }
+
+  // The mock's banner is a sentence ('could not read usage on rfc1918-internal'),
+  // not the raw state enum. Prefer the server's own message from errors[] when
+  // one names this row (improvised.md I-L1-12).
+  function accountBanner(r, errors) {
+    const match = errors.find((e) => e && (e.id === r.id || e.host === r.host));
+    if (match && match.message) return match.message;
+    return 'could not read usage on ' + r.host;
+  }
+
+  // The API reports a machine enum ('claude_max' + tier 'default_claude_max_20x');
+  // the mock shows the human label. Codex rows already carry a readable plan.
+  function accountPlan(r) {
+    const tier = tierLabel(r.tier);
+    if (tier) return tier;
+    if (r.plan) return r.plan;
+    if (r.type) return r.type;
+    return r.windows_from ? r.windows_from + ' snapshot' : '';
   }
 
   function creditBars(r, now) {
@@ -396,38 +435,75 @@
     codex_desktop: 'Codex Desktop',
   };
 
+  const ENV_LABELS = { local: 'WSL', windows: 'Windows' };
+  const PROOF_CHIPS = {
+    token: ['token-proved', 'good'],
+    jwt: ['token-proved', 'good'],
+    config: ['config only', 'warn'],
+    profile: ['profile only', 'warn'],
+    history: ['from history', 'neutral'],
+  };
+
   function toMachines(machines, now) {
-    return rows(machines, 'machines').map((m) => ({
-      name: m.label,
-      kind: m.os + ' · ' + m.route,
-      // A string, as the mock has it — '' when there are none.
-      sessions: (m.sessions || []).length ? (m.sessions || []).length + ' sessions' : '',
-      cols: (m.clients || []).map((c) => ({
-        client: CLIENT_LABELS[c.client] || c.client,
-        sections: [machineSection(c, now)],
-      })),
-    }));
+    return rows(machines, 'machines').map((m) => {
+      const clients = m.clients || [];
+      // A machine can report the same client twice — german-box runs a WSL and a
+      // Windows side. The mock groups those into ONE column with two sections
+      // (fixture machines[1]: 4 cols x 2 sections), so grouping by client, not a
+      // 1:1 map, is the shape the Machines screen renders.
+      const envs = new Set(clients.map((c) => c.where));
+      const byClient = new Map();
+      clients.forEach((c) => {
+        const label = CLIENT_LABELS[c.client] || c.client;
+        if (!byClient.has(label)) byClient.set(label, []);
+        byClient.get(label).push(machineSection(c, now, envs.size > 1));
+      });
+      return {
+        name: m.label,
+        kind: m.os + ' · ' + m.route,
+        // A string, as the mock has it — '' when there are none.
+        sessions: (m.sessions || []).length ? (m.sessions || []).length + ' sessions' : '',
+        cols: Array.from(byClient, ([client, sections]) => ({ client, sections })),
+      };
+    });
   }
 
   // chips and bars stay positional tuples — that is what the mock passes to mSec().
-  function machineSection(c, now) {
+  function machineSection(c, now, splitEnv) {
     const usage = c.usage || {};
     const windows = usage.windows || {};
     const chips = [];
-    if (c.type || c.plan || c.tier) chips.push([c.type || c.plan || c.tier, 'neutral']);
-    if (c.proof) chips.push([c.proof === 'token' ? 'token-proved' : c.proof, c.proof === 'token' ? 'good' : 'neutral']);
+    // The mock carries the plan family AND the human tier label as two chips
+    // (fixture machines[1]: ['claude_max','neutral'], ['Max 20x','neutral']).
+    const family = c.plan || c.type;
+    if (family) chips.push([family, 'neutral']);
+    const tier = tierLabel(c.tier);
+    if (tier) chips.push([tier, 'neutral']);
+    if (c.proof) chips.push(PROOF_CHIPS[c.proof] || [c.proof, 'neutral']);
     return {
-      env: c.where === 'local' ? '' : c.where || '',
+      // Only a machine with more than one environment labels them; a
+      // single-environment machine uses '' (fixture machines[0]).
+      env: splitEnv ? ENV_LABELS[c.where] || c.where || '' : '',
       name: c.label || 'signed in, account unknown',
       email: c.email || '',
       chips,
-      bars: Object.keys(windows).map((key) => [
-        WINDOW_LABELS[key] || key,
-        windows[key] && windows[key].pct !== undefined ? windows[key].pct : null,
-        !!(windows[key] && windows[key].stale),
-      ]),
+      // The mock's tuple is [label, pct] and only grows a third element when the
+      // window is stale — it is not a fixed-width triple.
+      bars: Object.keys(windows).map((key) => {
+        const w = windows[key] || {};
+        const pct = w.pct === undefined ? null : w.pct;
+        return w.stale ? [WINDOW_LABELS[key] || key, pct, true] : [WINDOW_LABELS[key] || key, pct];
+      }),
       note: c.note || (usage.sample_ts ? 'sampled ' + ago(usage.sample_ts, now) : ''),
     };
+  }
+
+  // 'default_claude_max_20x' -> 'Max 20x' with a multiplication sign, the label
+  // the mock shows. The API has no human-readable tier name, so this is derived
+  // (improvised.md I-L1-12).
+  function tierLabel(tier) {
+    const m = /max[_-]?(\d+)x$/i.exec(tier || '');
+    return m ? 'Max ' + m[1] + '×' : '';
   }
 
   function toDesktop(desktopSessions, now) {

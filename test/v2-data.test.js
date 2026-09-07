@@ -38,6 +38,9 @@ test.afterEach(() => {
   delete globalThis.localStorage;
   delete globalThis.location;
   delete globalThis.history;
+  // document too: a failed assertion inside a visibility test must not leave a
+  // fake document behind for every later test in this file.
+  delete globalThis.document;
 });
 
 // ---------------------------------------------------------------------------
@@ -186,7 +189,10 @@ test('nothing resolves on a failed request', async () => {
 
 // Compares one adapter row against one mock row: identical key list in identical
 // order, and matching value types (null is allowed anywhere the API cannot supply).
-function assertShape(label, mockRow, gotRow) {
+// Arrays are walked one level into their first element rather than merely
+// type-checked, because a shallow check hides real structural bugs — duplicated
+// columns, a dropped chip, a tuple that grew an element.
+function assertShape(label, mockRow, gotRow, depth = 2) {
   assert.deepStrictEqual(keys(gotRow), keys(mockRow), label + ' key list and order');
   for (const k of keys(mockRow)) {
     const want = mockRow[k];
@@ -194,10 +200,26 @@ function assertShape(label, mockRow, gotRow) {
     if (got === null) continue; // documented gap, improvised.md I-L1-05
     if (Array.isArray(want)) {
       assert.ok(Array.isArray(got), label + '.' + k + ' is an array');
+      if (depth > 0 && want.length && got.length) assertElement(label + '.' + k + '[0]', want[0], got[0], depth - 1);
     } else {
       assert.strictEqual(typeof got, typeof want, label + '.' + k + ' type');
     }
   }
+}
+
+// One array element: a positional tuple is compared by length and element types,
+// an object by assertShape, a scalar by type.
+function assertElement(label, want, got, depth) {
+  if (Array.isArray(want)) {
+    assert.ok(Array.isArray(got), label + ' is a tuple');
+    assert.strictEqual(got.length, want.length, label + ' tuple length');
+    return;
+  }
+  if (want && typeof want === 'object') {
+    assertShape(label, want, got, depth);
+    return;
+  }
+  assert.strictEqual(typeof got, typeof want, label + ' type');
 }
 
 test('toTiles matches the mock tiles shape', () => {
@@ -324,6 +346,27 @@ test('a broadcast carries per instead of status', () => {
   assert.ok(!('status' in msg));
 });
 
+test('an outbound message to a target with no host still threads', () => {
+  // The capture only has outbound-to-tmux and inbound; a claude-desktop target
+  // carries no host, and the mock's busSessions allow that.
+  const out = data.toThreads({ messages: [{
+    id: 'd1', source: 'fleetdeck-ui', target: { type: 'claude-desktop', session: 'ORCHESTRATOR 28' },
+    status: 'delivered', error: null, text: 'hi',
+    created_at: '2026-09-06T23:50:00.000Z',
+  }] }, NOW);
+  assert.deepStrictEqual(out.busSessions[0], {
+    id: 'ORCHESTRATOR 28', name: 'ORCHESTRATOR 28', host: null, live: null,
+  });
+  assert.strictEqual(out.threads['ORCHESTRATOR 28'][0].dir, 'out');
+});
+
+test('toKeys does not hand back the response\'s own certs array', () => {
+  const res = api('sshkeys');
+  const out = data.toKeys(res, api('ghtrain'));
+  assert.notStrictEqual(out.certs, res.certs, 'certs is copied, not aliased');
+  assert.deepStrictEqual(out.certs, res.certs);
+});
+
 test('toKeys matches the mock keyRows shape', () => {
   const out = data.toKeys(api('sshkeys'), api('ghtrain'));
   assert.deepStrictEqual(keys(out), ['keyRows', 'certs', 'train']);
@@ -342,6 +385,32 @@ test('toAccounts matches the mock accounts shape', () => {
   // showTrend test behaves the same either way (I-L1-11).
   assert.ok(out.every((a) => a.trendPts === null || Array.isArray(a.trendPts)));
   assert.ok(out.every((a) => !('trendPct' in a)), 'trendPct is derived, not adapted');
+});
+
+test('toAccounts uses the mock label forms, not the raw API enums', () => {
+  const out = data.toAccounts(api('credits'), NOW);
+  const claude = out.find((a) => a.prov === 'claude');
+  const codex = out.find((a) => a.prov === 'codex');
+  // The API reports tier 'default_claude_max_20x'; the mock shows 'Max 20×'.
+  assert.strictEqual(claude.plan, 'Max 20×', 'tier is humanised (I-L1-12)');
+  assert.strictEqual(codex.plan, 'pro', 'a readable plan passes through');
+  // The mock shows the first 8 hex of the org uuid, not the whole thing.
+  assert.strictEqual(claude.id.length, 8);
+  assert.ok(mock.accounts.some((a) => a.id === claude.id), 'the sliced id is a form the mock uses');
+});
+
+test('toAccounts writes a sentence banner, not the state enum', () => {
+  const out = data.toAccounts(api('credits'), NOW);
+  const failed = out.find((a) => 'banner' in a);
+  assert.ok(failed, 'the capture has a row that could not be read');
+  assert.notStrictEqual(failed.banner, 'error', 'the raw enum must not reach the screen');
+  assert.match(failed.banner, /could not read usage on /);
+  // The server's own message wins when errors[] names the row.
+  const withError = data.toAccounts({
+    rows: [{ kind: 'claude', id: 'x', host: 'h', label: 'L', email: 'e', state: 'error' }],
+    errors: [{ host: 'h', message: 'ssh timed out' }],
+  }, NOW);
+  assert.strictEqual(withError[0].banner, 'ssh timed out');
 });
 
 test('toAccounts key set stays the mock base set for every real row', () => {
@@ -375,6 +444,49 @@ test('toMachines matches the mock machines shape', () => {
   const section = out.flatMap((m) => m.cols).flatMap((c) => c.sections)[0];
   assertShape('machines.section', mock.machines[0].cols[0].sections[0], section);
   assert.strictEqual(typeof out[0].sessions, 'string', 'sessions is a string in the mock');
+});
+
+test('toMachines groups a two-environment machine the way the mock does', () => {
+  // german-box reports every client twice, once per environment. The mock puts
+  // those in ONE column with two sections; a 1:1 map would double the columns.
+  const out = data.toMachines(api('machines'), NOW);
+  const gb = out.find((m) => m.name === 'german-box');
+  const mockGb = mock.machines[1];
+  assert.strictEqual(gb.cols.length, mockGb.cols.length, 'column count matches the mock');
+  assert.deepStrictEqual(
+    gb.cols.map((c) => c.sections.length),
+    mockGb.cols.map((c) => c.sections.length),
+    'sections per column match the mock'
+  );
+  assert.deepStrictEqual(gb.cols.map((c) => c.client), mockGb.cols.map((c) => c.client));
+  // Each column's sections are the distinct environments, labelled as the mock labels them.
+  assert.deepStrictEqual(gb.cols[0].sections.map((s) => s.env), ['WSL', 'Windows']);
+  // A single-environment machine leaves env empty, as the mock does.
+  assert.ok(out.find((m) => m.name === 'MacBook Pro').cols.every((c) => c.sections.every((s) => s.env === '')));
+});
+
+test('toMachines carries the plan family and the tier label as separate chips', () => {
+  const out = data.toMachines(api('machines'), NOW);
+  const gb = out.find((m) => m.name === 'german-box');
+  const chips = gb.cols[0].sections[0].chips;
+  assert.deepStrictEqual(chips[0], ['claude_max', 'neutral'], 'plan family chip');
+  assert.deepStrictEqual(chips[1], ['Max 20×', 'neutral'], 'human tier chip (I-L1-12)');
+  assert.ok(chips.every((c) => c.length === 2), 'chips are [text, tone] tuples');
+});
+
+test('toMachines bar tuples are 2 long unless the window is stale', () => {
+  const out = data.toMachines(api('machines'), NOW);
+  const bars = out.flatMap((m) => m.cols).flatMap((c) => c.sections).flatMap((s) => s.bars);
+  assert.ok(bars.length > 0);
+  for (const bar of bars) {
+    assert.ok(bar.length === 2 || bar.length === 3, 'a bar is [label, pct] or [label, pct, true]');
+    if (bar.length === 3) assert.strictEqual(bar[2], true, 'the third element only marks stale');
+  }
+  // The mock uses both widths, so the adapter must too.
+  assert.deepStrictEqual(
+    [...new Set(bars.map((b) => b.length))].sort(),
+    [...new Set(mock.machines.flatMap((m) => m.cols).flatMap((c) => c.sections).flatMap((s) => s.bars).map((b) => b.length))].sort()
+  );
 });
 
 test('toDesktop matches the mock dsData shape and pins Live now first', () => {
@@ -488,6 +600,35 @@ test('fixtureFor reaches every seed array by name', () => {
   assert.throws(() => data.fixtureFor('nope'), /no fixture named/);
 });
 
+test('fixture mode makes every WRITING endpoint a no-op', async () => {
+  // A Kill or a Delete key clicked on a ?fixture=1 page must not reach a real
+  // backend. Any fetch at all here is the bug.
+  enableFixture();
+  data._fetch = async () => { throw new Error('fixture mode must not fetch'); };
+  const writes = [
+    ['sendMessage', [{ source: 'ui', target: {}, text: 'x' }]],
+    ['retryMessage', ['m1']],
+    ['registryUpsert', [{ host: 'h', name: 'n' }]],
+    ['registryDelete', [{ host: 'h', name: 'n' }]],
+    ['kill', [{ host: 'h', name: 'n' }]],
+    ['mintCert', [{ ttl: '1h', principals: 'root' }]],
+    ['deleteKey', [{ dir: '/tmp/c' }]],
+    ['startTrain', [{ ttl: '1h' }]],
+    ['endTrain', []],
+  ];
+  for (const [fn, args] of writes) {
+    const res = await data[fn](...args);
+    assert.deepStrictEqual(res, { ok: true, fixture: true }, fn + ' is a no-op in fixture mode');
+  }
+});
+
+test('the writing endpoints still reach the network when fixture mode is off', async () => {
+  const calls = stubFetch();
+  await data.kill({ host: 'h', name: 'n' });
+  assert.strictEqual(calls.length, 1, 'fixture wrapping must not disable live writes');
+  assert.strictEqual(calls[0].url, '/api/kill');
+});
+
 test('the endpoints with no seed array still resolve a response-shaped value', async () => {
   enableFixture();
   data._fetch = async () => { throw new Error('fixture mode must not fetch'); };
@@ -533,7 +674,6 @@ test('a visible-only poll skips ticks while the document is hidden', async () =>
   globalThis.document.hidden = false;
   await new Promise((r) => setTimeout(r, 30));
   handle.stop();
-  delete globalThis.document;
   assert.ok(n > 0, 'ticks resume when visible');
 });
 

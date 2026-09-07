@@ -123,6 +123,8 @@ Checked against the live responses captured on 2026-09-07 in `fixtures/api/`.
 |---|---|---|
 | `tiles[].foot1`, `.foot2`, `.lines` | footer copy is a registry-derived string, and `lines` is live xterm output | `null` / `[]`. `README.md` scopes `toTiles()` to name/box only; the footer is decided in **L3** (ledger D09, open item O2). |
 | `busSessions[].pinned` | not in `/api/messages`; the binding map says "pinned/unread = client-side" | omitted by the adapter; a later slice (L6) adds it from local state. |
+| `busSessions[].live` | `/api/messages` carries no liveness at all — only `source`, `target`, `status` and timestamps | `null` on every row. `toThreads()` takes messages alone, per the signature the pack fixes, so it cannot know. **L6 should join on `/api/sessions` by name** to fill it — the data exists there (`live`), just not on this endpoint. |
+| `busSessions[].host` | present for `tmux` targets, absent for `claude-desktop` ones | the target's `host` when there is one, else `null`. |
 | `busGroups[]` | the mock's one group is a hand-made ad-hoc group (`this.state.adhoc`); the API has no group concept | `[]` from live data. L6 owns ad-hoc groups. |
 | `keyRows[].type` | the mock hard-codes ED25519 | **not** improvised — `/api/sshkeys` `.keys[].type` is real and is used. |
 | `accounts[].trendPts` | open item **O6** says history does not exist server-side | it partly does: `credits.json` `.rows[].history` is present on 4 of 5 rows. The adapter passes `history` through as the raw number array when present and `null` otherwise. **Flagged for the design seat: O6 and the plan's new `L8s` server rider may be narrower than assumed.** L1 does not act on this beyond passing the data through. |
@@ -184,6 +186,37 @@ It is smaller than a path-specific branch and matches the surrounding style. It 
 trailing-slash URL under `public/`, but changes behaviour only where an `index.html` actually exists —
 every other directory URL still 404s, just one `readFile` later. The traversal guard below it is
 untouched and still rejects anything escaping `public/`.
+
+### I-L1-12 — human labels the API does not carry, and fixture mode is read-only
+
+**Serves:** ledger D15, D16; found by the reviewer pass on the adapters.
+
+Four label decisions and one safety rule, all from comparing adapter output against the mock
+row by row rather than against its key list.
+
+| Field | API gives | Mock shows | Decision |
+|---|---|---|---|
+| `accounts[].plan`, `machines[]…chips[1]` | `tier: 'default_claude_max_20x'` | `'Max 20×'` | derived: `/max[_-]?(\d+)x$/` → `'Max N×'`. The API has no human tier name, and passing the raw enum puts `claude_max` on screen. |
+| `machines[]…chips[0]` | `plan: 'claude_max'` | the plan family **and** the tier, as two chips | both are emitted; the mock always carries the pair for a tiered account. |
+| `accounts[].id` | the full org uuid | first 8 hex (`'c578669c'`) | sliced, matching what `toDesktop()` already does for the account uuid. |
+| `accounts[].banner` | `state: 'error'` | a sentence, `'could not read usage on rfc1918-internal'` | the server's own `errors[]` message when one names the row, otherwise that sentence. The raw enum must never reach the screen. |
+
+**`machines[].cols` groups by client, it does not map 1:1.** A machine can report the same client
+twice — german-box runs a WSL side and a Windows side, and `/api/machines` returns eight client rows
+for it. The mock puts those in **four** columns of **two** sections (`fixture.machines[1]`), with
+`env` labelling the environment. A 1:1 map produced eight single-section columns: the right key set,
+the wrong structure, and the shape tests did not catch it because they only walked `Array.isArray`.
+`env` is `''` on a single-environment machine and `WSL` / `Windows` where there are two.
+
+**`machines[]…bars` tuples are two elements, not three.** The mock writes `[label, pct]` and only
+grows a third element when the window is stale. The adapter now matches; a fixed-width triple was a
+silent shape mismatch.
+
+**Fixture mode is read-only.** `?fixture=1` originally intercepted only the ten reading endpoints, so
+`kill`, `registryDelete`, `deleteKey`, `mintCert`, `sendMessage`, `retryMessage`, `registryUpsert`,
+`startTrain` and `endTrain` still reached the network. A Kill clicked on a page in fixture mode would
+have destroyed a real session. All nine now resolve `{ok: true, fixture: true}` and touch nothing;
+a test asserts both that they are inert in fixture mode and that they still work outside it.
 
 ### I-L1-11 — `trendPct` is derived, and empty history is `null` rather than `''`
 
