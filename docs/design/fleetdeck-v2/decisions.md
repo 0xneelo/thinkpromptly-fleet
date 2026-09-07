@@ -161,3 +161,12 @@ deletes foreign nodes), two mediums (`<select>` sync, no update-depth guard), tw
 S2.1's remainder; the three binding instructions broadcast to L2–L11 (mount xterm outside `#dc-root`; validate +
 throw-proof render sections; bind raw input state). Nine slices continue on `agent-v2-base` @ `42b56bb`; S2.2 will
 be folded into the base and broadcast when it lands.
+
+## 2026-09-08 · S2.1 + S2.2 landed; base moved again
+
+`agent-v2-s2` @ `30b1e9c`: S2.1 (green `v2:check`, proof labels, composer keystroke parity step) and S2.2 (all seven
+oracle findings: keyed `sc-for`, throw keeps last DOM, `data-dc-raw`, SELECT re-sync, update-depth guard, checked
+assignment, `isPureData` ternary) — parity 36/36, interactions 36/36 (two new regression steps: keyed reorder with a
+foreign node, throwing `renderVals`), pixel 36/36 max 0.033 %, no engine. `agent-v2-l1` @ `3e1c06a` (L1.1 fixture
+split) merged with it into `agent-v2-base`; pushed; ten workers told to merge; preview follows. Still open: L1.2
+(adapter fixes) from Juergen.
