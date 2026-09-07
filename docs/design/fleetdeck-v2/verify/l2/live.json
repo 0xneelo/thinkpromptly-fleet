@@ -1,0 +1,397 @@
+{
+  "schemaVersion": 1,
+  "slice": "l2",
+  "mode": "live",
+  "capturedAt": "2026-09-07T00:44:35.270Z",
+  "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api + docs/design/fleetdeck-v2/verify/l2/stubs",
+  "total": 55,
+  "passed": 55,
+  "allPass": true,
+  "results": [
+    {
+      "id": "A01-boot-loads",
+      "action": "load /v2 in live mode",
+      "expectation": "sessions, health and credits are each fetched once",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A02-groups",
+      "action": "render the sidebar",
+      "expectation": "one group per live host, in API order: onboarding-box, german-box",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A03-counts",
+      "action": "read the count chips",
+      "expectation": "each chip is that box's live row count",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A04-live-only",
+      "action": "count the rows",
+      "expectation": "only live rows are listed",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A05-row-title",
+      "action": "hover a row",
+      "expectation": "\"<name> [· <label>] · active <ago>\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A06-idle-dot",
+      "action": "read the row dot with no tile open",
+      "expectation": "muted rgba(255, 255, 255, 0.35)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A07-rowmax-exists",
+      "action": "inspect a row",
+      "expectation": "each row carries the ⤢ fullscreen button",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A08-row-click-opentile",
+      "action": "click a session row",
+      "expectation": "FD.screens.windows.openTile(host, name)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A09-row-click-openmax",
+      "action": "click a row while a session is full screen",
+      "expectation": "openMax, not openTile",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A10-rowmax-click",
+      "action": "click ⤢ on a row",
+      "expectation": "openMax only — the row click is swallowed",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A11-open-dot-green",
+      "action": "report an open tile through openKeys()",
+      "expectation": "the row dot turns oklch(0.83 0.15 155)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A12-connect-all",
+      "action": "click Connect all",
+      "expectation": "FD.screens.windows.connectAll()",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A13-refresh",
+      "action": "click Refresh",
+      "expectation": "sessions + health + credits reload, and nothing else",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A14-boxes",
+      "action": "read the right-rail Boxes list",
+      "expectation": "one row per host with today's status words",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A15-box-tip",
+      "action": "hover the german-box row",
+      "expectation": "the holder tip, verbatim",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A16-accounts",
+      "action": "read the right-rail Accounts bars",
+      "expectation": "one row per credits row, first-name label",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A17-account-tip",
+      "action": "hover an account row",
+      "expectation": "label · email, then the highest window",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A18-live-api-default",
+      "action": "read the page-header pill",
+      "expectation": "\"Live API\" until L5 says otherwise",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A19-set-live-api",
+      "action": "FD.shell.setLiveApi(\"fixture · org\")",
+      "expectation": "the pill carries the source badge (ruling O4)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A20-set-badge",
+      "action": "FD.shell.setBadge(7)",
+      "expectation": "the sidebar nav badge reads 7",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A21-badge-zero",
+      "action": "FD.shell.setBadge(0)",
+      "expectation": "the badge disappears",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A22-theme-attrs",
+      "action": "read the document element",
+      "expectation": "data-theme and color-scheme follow the stored theme",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A23-theme-toggle-title",
+      "action": "hover the sidebar theme toggle in dark",
+      "expectation": "\"Switch to light theme\", aria-pressed=false",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A24-theme-toggle-flips",
+      "action": "click the theme toggle",
+      "expectation": "fd-landing-dark flips and the attributes follow",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A25-no-poll",
+      "action": "idle for 2.5 s",
+      "expectation": "the shell never polls — no timer for sessions, health or credits",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "A26-console-clean",
+      "action": "watch the console for the whole run",
+      "expectation": "zero console errors and zero page errors",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B01-hidden-excluded",
+      "action": "load with two hidden rows and showHidden off",
+      "expectation": "hidden rows stay out of the list",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B02-dead-excluded",
+      "action": "check a not-live row",
+      "expectation": "a dead row is never listed",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B03-toggle-text",
+      "action": "read the hidden toggle",
+      "expectation": "\"show 2 hidden\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B04-toggle-click",
+      "action": "click the toggle",
+      "expectation": "hidden rows appear, text becomes \"hide hidden\", showHidden = 1",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B05-hidden-dim",
+      "action": "inspect a shown hidden row",
+      "expectation": "it renders dimmed, as .session.inactive does today",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B06-kill-dot",
+      "action": "inspect the kill-requested row",
+      "expectation": "an amber dot oklch(0.83 0.14 80)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B07-label-in-title",
+      "action": "hover the row that carries a registry label",
+      "expectation": "name · label · active <ago>",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B08-console-clean",
+      "action": "watch the console",
+      "expectation": "zero console errors",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "B09-showhidden-persisted",
+      "action": "reload with showHidden = 1",
+      "expectation": "hidden rows are listed from the first paint",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C01-error-rows",
+      "action": "answer /api/sessions with two host errors",
+      "expectation": "one row per error, \"<host>: <message>\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C02-no-no-sessions",
+      "action": "with errors present",
+      "expectation": "\"no sessions\" is not added on top",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C03-no-sessions",
+      "action": "answer /api/sessions with nothing at all",
+      "expectation": "the list reads \"no sessions\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C04-empty-state",
+      "action": "open the Windows screen and empty the tile grid (L3 still renders the mock's four seed tiles)",
+      "expectation": "the operator's new empty-state copy appears, and goes again as soon as a tile is there",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "D01-health-texts",
+      "action": "answer /api/health with every branch",
+      "expectation": "the five status words of app.js:112-129, in order",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "D02-health-tones",
+      "action": "read the dots",
+      "expectation": "warn · bad · good · warn · bad",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "D03-health-tips",
+      "action": "hover each row",
+      "expectation": "the four tips of app.js, verbatim",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "D04-health-unreachable",
+      "action": "answer /api/health with a 500",
+      "expectation": "one red \"health unreachable\" row",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E01-pct-rule",
+      "action": "answer /api/credits with mixed windows",
+      "expectation": "the highest window wins; codex reads its own fields",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E02-red-over-90",
+      "action": "a window past 90 %",
+      "expectation": "the bar turns oklch(0.73 0.17 25)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E03-amber-over-70",
+      "action": "a window at 71 %",
+      "expectation": "the bar is oklch(0.83 0.14 80)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E04-null-pct",
+      "action": "an account with no window at all",
+      "expectation": "the cell reads \"—\" and the bar is empty",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E05-capped-flag",
+      "action": "an account whose credit pool is spent",
+      "expectation": "the € flag appears on that row only",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E06-codex-suffix",
+      "action": "the codex account",
+      "expectation": "its label carries the \" ·gpt\" suffix",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E07-credit-tip",
+      "action": "hover the capped account",
+      "expectation": "the tooltip quotes used / limit and the source",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E08-accounts-unavailable",
+      "action": "answer /api/credits with a 500",
+      "expectation": "the rail reads \"accounts unavailable\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "F01-theme-migration",
+      "action": "boot with only the legacy fleetTheme = light",
+      "expectation": "fd-landing-dark becomes 0 and the page is light (D06)",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "F02-fixture-inert",
+      "action": "load with ?fixture=1",
+      "expectation": "the shell fetches nothing and loads no data layer",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "F03-fixture-untouched",
+      "action": "read the sidebar in fixture mode",
+      "expectation": "the mock's own seed groups still render",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "F04-fixture-console",
+      "action": "watch the console in fixture mode",
+      "expectation": "zero console errors",
+      "pass": true,
+      "detail": null
+    }
+  ]
+}

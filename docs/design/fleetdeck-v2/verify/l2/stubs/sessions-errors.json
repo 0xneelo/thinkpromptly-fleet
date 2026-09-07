@@ -1,0 +1,13 @@
+{
+  "sessions": [],
+  "errors": [
+    {
+      "host": "german-box",
+      "message": "ssh: connect to host german-box port 22: Connection refused"
+    },
+    {
+      "host": "onboarding-box",
+      "message": "tmux not running"
+    }
+  ]
+}
