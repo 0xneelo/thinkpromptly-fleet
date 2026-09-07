@@ -354,6 +354,14 @@ Consequences worth knowing:
 Proven by the live gate: `L3-33` asserts every one of 85 mounts is outside `#dc-root`, and `L3-34`
 asserts zero slice attributes on the compiled rows.
 
+**Addendum, S2.2 (2026-09-07).** The base later gained `key="{{ expr }}"` on `sc-for` and
+`data-dc-raw` for an element that owns its own children, and the design seat left the choice open:
+mount inside a keyed, raw tile body, or keep this layer. **This slice keeps the layer.** Taking the
+in-tree option needs two edits to `template.dc.html` — marking the tile body raw and keying the tiles
+loop — and no L-slice may edit the template; the layer additionally covers the full-screen case with
+the same mechanism, and is already proven by the two checks above. The cost is the z-order juggling
+and `I-L3-10`. If the seat prefers the in-tree mount later, the change is contained to `sync()`.
+
 ### I-L3-05 — the tile footer is the registry `role · label`, then `task`
 
 **Serves:** `diff.md` §"Binding map" row `tiles[]` ("footer = registry `label`/`role`/`task` (decide in L3)").

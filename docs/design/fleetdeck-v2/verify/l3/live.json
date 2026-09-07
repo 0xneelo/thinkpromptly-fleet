@@ -1,0 +1,262 @@
+{
+  "schemaVersion": 1,
+  "mode": "live",
+  "slice": "l3",
+  "issue": "DECK-42",
+  "capturedAt": "2026-09-07T01:11:37.166Z",
+  "source": "http://127.0.0.1:3221/v2/index.html",
+  "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api/ (+ a hand-written empty /api/sessions variant)",
+  "websocket": "scriptable double (no ssh pty); server half covered by test/v2-windows.test.js",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "results": [
+    {
+      "id": "L3-01",
+      "action": "load the Windows screen with no sessions",
+      "expectation": "the improvised empty state carries the ruling copy verbatim",
+      "pass": true,
+      "note": "There are no sessions yet, open a new session via an orchestrator first."
+    },
+    {
+      "id": "L3-35",
+      "action": "render the empty state with the grid collapsed",
+      "expectation": "it is anchored to the nearest sized ancestor, so it is actually on screen",
+      "pass": true
+    },
+    {
+      "id": "L3-02",
+      "action": "inspect FD.fixture in live mode with no sessions",
+      "expectation": "l3Tiles is published and empty; no seed tiles leak into live mode",
+      "pass": true
+    },
+    {
+      "id": "L3-03",
+      "action": "load /api/sessions through FD.data in live mode",
+      "expectation": "the ≡ switcher lists exactly the live, non-hidden sessions",
+      "pass": true,
+      "note": "85 of 85"
+    },
+    {
+      "id": "L3-04",
+      "action": "openTile(host, name)",
+      "expectation": "one tile is rendered",
+      "pass": true
+    },
+    {
+      "id": "L3-05",
+      "action": "read the tile header",
+      "expectation": "the header shows the session name and its box",
+      "pass": true,
+      "note": "ops · · onboarding-box"
+    },
+    {
+      "id": "L3-06",
+      "action": "read the tile footer",
+      "expectation": "foot1 is the registry role · label, foot2 is the registry task",
+      "pass": true,
+      "note": "—"
+    },
+    {
+      "id": "L3-07",
+      "action": "inspect the WebSocket the tile opened",
+      "expectation": "ws://<host>/term?host&session&cols&rows, both values URI-encoded",
+      "pass": true,
+      "note": "ws://127.0.0.1:3221/term?host=onboarding-box&session=ops&cols=55&rows=10"
+    },
+    {
+      "id": "L3-08",
+      "action": "let the socket open",
+      "expectation": "a {type:\"resize\"} frame is replayed on open",
+      "pass": true
+    },
+    {
+      "id": "L3-09",
+      "action": "server sends pty bytes",
+      "expectation": "the bytes are written to the terminal",
+      "pass": true
+    },
+    {
+      "id": "L3-10",
+      "action": "server sends the exit control frame",
+      "expectation": "the control frame is dropped, never written to the terminal",
+      "pass": true
+    },
+    {
+      "id": "L3-11",
+      "action": "openTile the same host+session again",
+      "expectation": "the tile is deduped on host+NUL+session — no second tile, no reconnect",
+      "pass": true,
+      "note": "1 socket(s)"
+    },
+    {
+      "id": "L3-12",
+      "action": "type into the focused terminal",
+      "expectation": "each keystroke is sent as {type:\"input\",data}",
+      "pass": true,
+      "note": "ls"
+    },
+    {
+      "id": "L3-13",
+      "action": "openMax(host, name)",
+      "expectation": "the overlay opens and the live terminal is aligned over its body, above it in z",
+      "pass": true,
+      "note": "[{\"z\":56,\"top\":63,\"bottom\":829,\"w\":1396,\"h\":766}]"
+    },
+    {
+      "id": "L3-14",
+      "action": "read the full-screen header and footer",
+      "expectation": "name, host and the registry role · label · task are shown",
+      "pass": true
+    },
+    {
+      "id": "L3-36",
+      "action": "double-click a tile bar away from its buttons",
+      "expectation": "the tile maximizes",
+      "pass": true
+    },
+    {
+      "id": "L3-37",
+      "action": "double-click the full-screen header away from its buttons",
+      "expectation": "it restores",
+      "pass": true
+    },
+    {
+      "id": "L3-15",
+      "action": "open the ≡ menu",
+      "expectation": "it lists the live sessions with dot, name and host — the old drawer switcher",
+      "pass": true
+    },
+    {
+      "id": "L3-16",
+      "action": "pick another session from the ≡ menu",
+      "expectation": "that session is attached (deduped) and becomes the maximized one",
+      "pass": true,
+      "note": "FD-deck11-boardroot"
+    },
+    {
+      "id": "L3-17",
+      "action": "with two tiles open and one maximized",
+      "expectation": "exactly one terminal is raised over the full screen at a time",
+      "pass": true,
+      "note": "1"
+    },
+    {
+      "id": "L3-18",
+      "action": "press plain Escape with the terminal focused",
+      "expectation": "plain Escape reaches tmux/vim and does not restore",
+      "pass": true
+    },
+    {
+      "id": "L3-19",
+      "action": "press shift+Escape",
+      "expectation": "the maximized tile is restored",
+      "pass": true
+    },
+    {
+      "id": "L3-20",
+      "action": "click Message in the full-screen header",
+      "expectation": "FD.screens.bus.open({type:\"tmux\",host,session}) is called",
+      "pass": true,
+      "note": "[{\"type\":\"tmux\",\"host\":\"german-box\",\"session\":\"FD-deck11-boardroot\"}]"
+    },
+    {
+      "id": "L3-21",
+      "action": "click Close in the full-screen header",
+      "expectation": "the overlay closes and the tiles come back",
+      "pass": true
+    },
+    {
+      "id": "L3-22",
+      "action": "the socket closes after a locked-agent tail",
+      "expectation": "a Disconnected overlay appears with the 1Password note and a Reconnect button",
+      "pass": true,
+      "note": "Disconnected · 1Password locked — unlock it, then Reconnect · Reconnect"
+    },
+    {
+      "id": "L3-23",
+      "action": "click Reconnect",
+      "expectation": "a fresh socket is opened and the overlay clears",
+      "pass": true,
+      "note": "2 → 3"
+    },
+    {
+      "id": "L3-24",
+      "action": "close a tile",
+      "expectation": "the tile goes and no API call is made — the remote session survives",
+      "pass": true,
+      "note": "no calls"
+    },
+    {
+      "id": "L3-25",
+      "action": "connectAll()",
+      "expectation": "every live non-hidden session opens, 500 ms apart, hidden and dead rows skipped",
+      "pass": true,
+      "note": "85 tiles in 46027 ms"
+    },
+    {
+      "id": "L3-26",
+      "action": "inspect what connectAll opened",
+      "expectation": "no hidden and no dead session was attached",
+      "pass": true
+    },
+    {
+      "id": "L3-33",
+      "action": "inspect where every xterm mount lives",
+      "expectation": "no terminal is mounted inside a compiled node — the layer is a sibling of #dc-root",
+      "pass": true,
+      "note": "{\"n\":85,\"inside\":0}"
+    },
+    {
+      "id": "L3-34",
+      "action": "inspect the compiled tiles for slice state",
+      "expectation": "no per-row state is stored on a positional sc-for row",
+      "pass": true,
+      "note": "0"
+    },
+    {
+      "id": "L3-27",
+      "action": "watch the console for the whole run",
+      "expectation": "zero console errors",
+      "pass": true,
+      "note": "clean"
+    },
+    {
+      "id": "L3-28",
+      "action": "open a tile and send nothing for 15 s",
+      "expectation": "the stall line appears with its copy verbatim",
+      "pass": true,
+      "note": "no output — 1Password on this Mac may be locked or waiting for approval"
+    },
+    {
+      "id": "L3-29",
+      "action": "the pty finally sends output",
+      "expectation": "the stall line is cleared on the first message",
+      "pass": true
+    },
+    {
+      "id": "L3-30",
+      "action": "run the whole screen in the light theme",
+      "expectation": "the improvised nodes read the light palette from the mock tokens",
+      "pass": true
+    },
+    {
+      "id": "L3-31",
+      "action": "load the app with ?fixture=1",
+      "expectation": "this slice never calls FD.setData in fixture mode and builds no layer",
+      "pass": true,
+      "note": "{\"rendered\":0,\"seeded\":4}"
+    },
+    {
+      "id": "L3-32",
+      "action": "watch the network with ?fixture=1",
+      "expectation": "no /api/* request is made from the Windows screen",
+      "pass": true,
+      "note": "none"
+    }
+  ],
+  "passed": 37,
+  "total": 37,
+  "allPass": true
+}
