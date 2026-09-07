@@ -108,19 +108,54 @@ function argTokens(s) {
 }
 
 // Every path a segment WRITES to.
+//
+// A copy READS its sources and writes only its destination, so treating every
+// argument as a target refused `cp <jail>/audits/2026-09-07.md /tmp/copy.md` —
+// an orchestrator reading the evidence it is meant to read. The two families
+// are therefore separated: for cp/mv/install/ln/dd only the destination counts,
+// for rm/mkdir/touch/truncate/chmod/chown/tee every path argument does.
 function writeTargets(seg) {
   const targets = [];
   const redirect = /(?:>>?)\s*(['"]?)([^\s'"|;&<>]+)\1/g;
   let m = redirect.exec(seg);
   while (m) { targets.push(m[2]); m = redirect.exec(seg); }
-  const mutate = /\b(?:cp|mv|rm|mkdir|touch|ln|dd|truncate|install|tee)\b([^;&|\n]*)/g;
-  m = mutate.exec(seg);
+
+  // Every path argument is written.
+  const all = /\b(?:rm|mkdir|touch|truncate|chmod|chown|tee)\b([^;&|\n]*)/g;
+  m = all.exec(seg);
   while (m) {
     const toks = argTokens(m[1]);
     for (let i = 0; i < toks.length; i += 1) {
       if (toks[i].charAt(0) !== '-') targets.push(toks[i]);
     }
-    m = mutate.exec(seg);
+    m = all.exec(seg);
+  }
+
+  // Only the destination is written.
+  const dest = /\b(?:cp|mv|install|ln|dd)\b([^;&|\n]*)/g;
+  m = dest.exec(seg);
+  while (m) {
+    const toks = argTokens(m[1]);
+    let explicit = null;
+    const plain = [];
+    for (let i = 0; i < toks.length; i += 1) {
+      const t = toks[i];
+      if (t.indexOf('of=') === 0) { explicit = t.slice(3); continue; }   // dd
+      if (t.indexOf('if=') === 0) continue;                              // dd source
+      if (t === '-t' || t === '--target-directory') {
+        if (toks[i + 1]) { explicit = toks[i + 1]; i += 1; }
+        continue;
+      }
+      if (t.indexOf('--target-directory=') === 0) {
+        explicit = t.slice('--target-directory='.length);
+        continue;
+      }
+      if (t.charAt(0) === '-') continue;
+      plain.push(t);
+    }
+    if (explicit) targets.push(explicit);
+    else if (plain.length) targets.push(plain[plain.length - 1]);
+    m = dest.exec(seg);
   }
   return targets;
 }
