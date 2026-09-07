@@ -37,12 +37,12 @@ Make the **cut-over: routes, deletions, docs, gate hardening, final gate** scree
 ## Acceptance (definition of done)
 
 - [x] Every item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim. **No `BEHAVIOUR.md` exists for L11** (L2-L10 each have one); the checklist is built from this README's §Scope, which is the spec for a cut-over slice.
-- [~] `verify/l11/report.json` allPass **36/36** (fixture mode) ✅ · `verify/l11/live.json` **20/22** — the two reds are DECK-79 (the shell reads `props.startView`, not `FD.router`, so it ignores `?view=`); the shell is this pack's **Out**. Live screenshots filed (`live-dark.png`, `live-light.png`).
-- [x] `improvised.md` entries I-L11-01 … I-L11-04. No screenshots: L11 writes no markup and adds no pixels, and that log's own rule exempts behaviour-only entries.
-- [x] Hooks provided are defined; hooks used are guarded. Both are **none**, per the cross-slice contract — L11 adds no client JavaScript.
-- [~] `npm test` **314/314** ✅ · `REPORT.md` signed **Alrun** ✅ · branch pushed ✅ · registry row: the box's registry POST answers **401 unauthorized**, so no row could be written.
+- [x] `verify/l11/report.json` allPass **36/36** (fixture mode) · `verify/l11/live.json` allPass **30/30** · 82 screenshots filed, including `live-<screen>.png` for all eight screens.
+- [x] `improvised.md` entries I-L11-01 … I-L11-05. No screenshots: L11 writes no markup and adds no pixels, and that log's own rule exempts behaviour-only entries.
+- [x] Hooks provided are defined; hooks used are guarded. Both are **none** per the contract; the `FD.router` calls added under DECK-79 are guarded and fall back to the mock's own defaults.
+- [~] `npm test` **501/501** ✅ · `REPORT.md` signed **Alrun** ✅ · branch pushed ✅ · registry row: `POST /api/registry` answers **401 unauthorized** from this box, with and without the bearer token, so **no row could be written**.
 
-**Phase 2 remains**: merge `origin/weave/fd-v2`, re-run both gates, push again.
+
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

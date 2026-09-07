@@ -2,8 +2,8 @@
 
 **Worker:** Alrun · `fullstack-developer` · tag `agent-alrun` · branch `agent-v2-l11`
 **Issue:** DECK-65 · **Filed blockers:** DECK-79, DECK-100
-**Phase 1 complete 2026-09-07.** Phase 2 in progress: the first (partial) weave is merged and
-green; the final gate waits on the rest of it.
+**Complete 2026-09-07.** Both phases done; the full weave (all nine slices) is merged and the
+final gate is green. One acceptance box cannot be ticked: the registry row — see the end.
 
 ---
 
@@ -12,12 +12,15 @@ green; the final gate waits on the rest of it.
 | Proof | Result |
 |---|---|
 | `verify/l11/report.json` — fixture-mode pixel gate | **36/36**, allPass true, max 0.033 % |
+| `verify/l11/live.json` — live mode | **30/30**, allPass true |
 | `verify/S0-selftest/report.json` — hardened gate self-test | **36/36**, allPass true, max 0.033 % |
-| Baseline reproducibility after hardening | **36/36**, max 0.033 %, 35 of 36 PNGs byte-identical |
-| `verify/l11/live.json` — live mode, API stubbed | **20/22**; 14/14 routes, 0 console errors both themes |
-| `npm test` | **314/314** on two of three consecutive runs |
+| Baseline reproducibility after hardening | **36/36**, 35 of 36 PNGs byte-identical |
+| `npm test` | **501/501** |
 
-The two live-mode reds are DECK-79, and they are not L11's to fix — see below.
+Measured on the complete weave (`origin/weave/fd-v2`, all nine slices) merged into
+`agent-v2-l11`. The live proof breaks down as 14 route assertions on the wire, 8 shell
+assertions across both themes, and 8 screens opened once each against a real server's own
+API — 82 PNGs filed under `verify/l11/`.
 
 `npm test` is genuinely green. A third run showed 4 failures; sibling worktrees run this
 same suite concurrently and `test/http.js` picks its port at random, so a collision is
@@ -158,63 +161,93 @@ No Fable audit: `hard-crux` was not run for this slice. The work is mechanical (
 deletions, a settle loop) rather than a hard separable problem, and the gates measure it
 directly.
 
-## Phase 2 — first weave merged, and the weave is not finished
+## Phase 2 — three weave merges, and the two rulings that changed the scope
 
-`origin/weave/fd-v2` appeared at `3f21496` and was merged. **It is partial**: it carries
-L1, L9 and L10 only — L2 through L8 are not in it. `public/v2/screens/{windows,org,registry,
-bus,keys,accounts,shell}.js` are still one-line stubs.
+The weave arrived in three parts and was merged each time: `3f21496` (L1, L9, L10),
+`8431130` (+L2), `444fc6d` (+L3, L4, L5, L7, L8), and finally the complete weave with L6.
+Every merge conflict was `improvised.md` appending against `improvised.md` — resolved by
+keeping both sides every time, and the file now carries all eleven slice sections.
 
-After the merge, re-run against the merged tree:
+**What the merges broke, and nothing else was touched.** `test/v2-desktop.test.js:341` was
+L10's own tripwire: it asserted the *pre*-L1.2 behaviour (`'0 turns'`) while the test's own
+name said `"Turns unknown"`, so that it would fire the moment L1.2 landed — which is what the
+DESIGN-35 broadcast meant by "L10: remove any TODO shims". L1.2 came from the base and L10
+from the weave, and the two had never met. Fixed to agree with its own name; on the next
+weave Clodwig had made the identical fix in his own file, so his wording won the conflict.
 
-| Proof | Result |
-|---|---|
-| `verify/l11/report.json` — fixture-mode pixel gate | **36/36**, max 0.033 % |
-| `verify/l11/live.json` | **20/22** — unchanged; DECK-79 is not in this weave |
-| `npm test` | **378/378** |
+### The two rulings
 
-**One conflict, one break, both handled.**
+DESIGN-35 assigned L11 two things that its own pack had put out of scope, and they turned
+out to be the same bug seen from two ends.
 
-`improvised.md` conflicted as an append against an append — L9 and L10's sections against
-L11's. Nothing was dropped: all four slice sections are in the file, in slice order.
+**DECK-84 — the shell never loaded the data layer.** `public/v2/index.html` listed the
+runtime, the logic, the compiled render and the nine screens, but not `data.js` or
+`router.js`. `FD.data` was therefore undefined on a plain page load, and **seven** screens
+had each shipped a private `<script>` injector to work around it. The shell now loads
+`data.js`, `router.js` and `orgchart.js`, and all seven injectors are gone — `accounts`,
+`keys`, `machines`, `org`, `registry`, `windows` and `shell` itself. Every `if (FD.data)`
+guard stayed, as the ruling asked, and each replacement kept its caller's contract: same
+name, same async-ness, same return type, so no call site moved.
 
-`test/v2-desktop.test.js:341` then failed, and it is exactly what the merge broke: L1.2 came
-from the base, L10 came from the weave, and the two had never met. The assertion was L10's
-own tripwire, asserting the *pre*-L1.2 behaviour (`'0 turns'`) while the test's own name says
-`"Turns unknown"` — designed to fire the moment L1.2 landed, which is what the DESIGN-35
-broadcast meant by "L10: remove any TODO shims you added for these". Its two neighbouring
-assertions, which check L10's screen override, still pass, because that override is
-idempotent by its own design (`public/v2/screens/desktop.js:201-206`). The tripwire now
-asserts `'Turns unknown'`, so the test name, the assertion and the shipped behaviour agree.
-Left alone for Clodwig: the override at `desktop.js:214` is now redundant with L1.2 and
-could be deleted, but it is not broken and it is not L11's file.
+**DECK-79 — the shell never read the URL.** `logic.js` seeded its view from
+`props.startView` and its screen from a `'bus'` default, and asked the router nothing.
 
-### Second weave merge — L2 landed, DECK-79 did **not** close
+Two deviations from the ruling's letter, both measured rather than argued:
 
-`origin/weave/fd-v2` advanced to `8431130`, bringing **L2** (the app shell) and an L10
-update. Merged; two conflicts, both append-shaped. `improvised.md` again kept both sides —
-five slice sections now. `test/v2-desktop.test.js` conflicted because Clodwig had made the
-**same** tripwire fix independently in his own file, so his wording was taken.
+1. **The script tags go before `app.js`, not after.** `app.js:3409` calls `D.mount()` at
+   parse time, so the root is constructed — and reads the URL — while `app.js` is still
+   executing. Loaded after it, `router.js` arrives too late to be read. Verified both ways:
+   after `app.js`, `live.json` stays 20/22; before it, 22/22.
+2. **The seed reads the raw query and then the path, never `FD.router.route()`.** `route()`
+   substitutes its own defaults — `'app'` for the view, `'windows'` for the screen — so it
+   cannot distinguish "nothing was asked for" from "app was asked for". That distinction is
+   the whole of fixture parity: `/v2/?fixture=1` names no view and no screen and must keep
+   rendering the mock's own `startView` and `'bus'` default. A seed built on `route()` would
+   have opened every fixture capture on the app view showing Windows and failed 36 screens
+   for a reason with nothing to do with design. The path arm is needed because `/app` carries
+   no query at all — the server only redirects to add `?view=` where the router's default
+   would be wrong. Recorded as I-L11-05.
 
-| Proof | Result |
-|---|---|
-| `verify/l11/report.json` — fixture-mode pixel gate | **36/36**, max 0.033 % |
-| `verify/l11/live.json` | **20/22** — still |
-| `npm test` | **397/397** |
+`componentDidMount` subscribes to `FD.router.onChange` so back and forward move the deck;
+`componentWillUnmount` releases it. Only a URL that names something changes anything.
 
-**L2 shipped its shell without wiring the router.** `public/v2/screens/shell.js` is now 686
-lines, and `FD.router` appears nowhere in it — across all of `public/v2/`, the only files
-that name the router are `router.js` itself and L10's `desktop.js`. The shell still seeds its
-view from `props.startView`. This is the escalation condition this report set out in advance,
-so DECK-79 was escalated rather than worked around: L11 will not reach in and edit the shell
-to make its own acceptance box green.
+**Tests that asserted the removed loader.** `test/v2-shell.test.js` checked the injector
+directly — one `<script>` appended, `FD.__dataLoading` set. That is no longer an observable.
+The rule those tests exist for is unchanged, so they now assert the start path itself, which
+reports the absent data layer; a third case was added for the direction that had only been
+implied, that fixture mode stops before the start path and not merely before the network.
 
-### Still to do
+### The live proof, and the one thing it forgives
 
-1. Wait for the rest of the weave (L2-L8) and merge again.
-2. **DECK-79 must close for `live.json` to reach 22/22.** The shell fix is L2's, and L2 is
-   not in this weave. If the completed weave still does not carry it, that is escalated
-   rather than worked around.
-3. Re-run both gates, fix only what the merge breaks, push again.
+`verify/l11/live.json` is 30 checks: 14 routes asserted on the wire, 8 shell checks across
+both themes with `/api/*` stubbed from `docs/design/fleetdeck-v2/fixtures/api/`, and 8
+screens opened once each against a **real** server's own API on an empty fleet, each
+screenshotted to `verify/l11/live-<screen>.png`.
+
+It forgives exactly one thing, and names it: a 503 from `/api/ghtrain`. That path proxies
+the GitHub-train broker, a separate process that does not run beside a scratch server, so its
+503 is absent infrastructure rather than anything a screen did. Everything else is strict —
+and the proof now records the URL beside each non-2xx, because "Failed to load resource:
+503" on its own names nothing. Finding that took a diagnostic pass; it is in the script so
+the next person does not repeat it.
+
+### DECK-85 — asked to confirm the Mac's 460/460 on the box
+
+`npm test` is **501/501** here. Nothing red, nothing filed. But the suite is not reliably
+green on a *first* read: `test/http.js` picks its port from a random band per process and
+several worktrees run this suite concurrently on this box, so a run can lose tests to
+`EADDRINUSE` on entirely different files each time. Read the summary counts and re-run before
+believing a red. L11 hardened its own file — `test/v2-routes.test.js` shares one server
+across 12 cases, so a single collision was taking all twelve down; its `before` hook now
+retries five times. The shared band in `test/http.js` is untouched and is fair game for its
+own issue.
+
+## The one box that cannot be ticked
+
+**The registry row.** `POST /api/registry` to the deck answers **401 unauthorized** from this
+box, both with and without the bearer token in `~/.fleetdeck-bus-token`, and the tailnet
+listener answers 404 on reads. Tried at the start of the slice and again at the end. This is
+the deck's tailnet auth, not this slice; it is recorded rather than gated, and no row exists.
 
 ---
 
