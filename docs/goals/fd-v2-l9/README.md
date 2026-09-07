@@ -33,11 +33,24 @@ Make the **Machines cards** screen work on live data exactly like today's app (`
 
 ## Acceptance (definition of done)
 
-- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
-- [ ] `verify/l9/report.json` allPass 36/36 (fixture mode); `verify/l9/live.json` all pass; live screenshots filed.
-- [ ] `improvised.md` entries + screenshots for every improvisation.
-- [ ] Hooks provided are defined; hooks used are guarded.
-- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Eckbert**; registry row `done`.
+- [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
+      One item is *partial by design* — the per-session `.sess` lines, which the mock replaced with
+      the count chip and Open in Registry (improvised.md I-L9-07). Two are *n.a.*, both because
+      today's screen does not render them either (`collecting`, the old ids/classes).
+- [x] `verify/l9/report.json` allPass **36/36** (fixture mode), Machines dark and light both
+      0.000000 %; `verify/l9/live.json` **46/46 pass**; `live-dark.png` / `live-light.png` filed.
+- [x] `improvised.md` entries (I-L9-01 … I-L9-09) + the six screenshots in
+      `docs/design/fleetdeck-v2/improvised/`.
+- [x] Hooks provided: none, as specified. Hooks used: `FD.screens.registry.open` (L4), guarded and
+      with a fallback.
+- [~] `npm test` — **278 pass, 1 fail**. The failure is `test/v2-data.test.js`, which fails to load
+      because `public/v2/fixture.js:4` uses a bare `window`; it loads none of this branch's files,
+      reproduces standalone, and is inherited from `origin/agent-v2-base`. Filed as **DECK-80**;
+      `fixture.js` is generated and DESIGN-35 forbids editing it, so this slice did not.
+      `test/v2-machines.test.js` is **55/55**.
+- [x] Branch `agent-v2-l9` pushed; `REPORT.md` signed **Eckbert**.
+- [~] Registry row — `POST /api/registry` answers `unauthorized` from this box on every call,
+      including the opening one. Known and already tracked as XYZ-2137; no new gate filed.
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

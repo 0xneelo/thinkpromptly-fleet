@@ -421,7 +421,7 @@
     // Pure functions, exposed for test/v2-machines.test.js.
     _: { ago: ago, sampleAge: sampleAge, until: until, freshness: freshness, section: section,
       colsOf: colsOf, statusOf: statusOf, kindOf: kindOf, sessionChip: sessionChip,
-      toCards: toCards, errorCard: errorCard, windowNames: windowNames,
+      toCards: toCards, errorCard: errorCard, windowNames: windowNames, validate: validate,
       CLIENTS: CLIENTS, PROOF: PROOF, STATE: STATE, TIER: TIER, WIN_LABEL: WIN_LABEL,
       WIN_ORDER: WIN_ORDER, POLL_MS: POLL_MS, FETCH_ERROR: FETCH_ERROR },
   };

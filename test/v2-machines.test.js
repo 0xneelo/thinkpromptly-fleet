@@ -547,3 +547,55 @@ test('the constant maps are today\'s maps, with only the tone rename', () => {
   });
   assert.deepStrictEqual(_.WIN_ORDER, ['five_hour', 'seven_day', 'extra', 'weekly', 'secondary']);
 });
+
+// validate() is the guard the S2 shim audit's binding instruction 2 asks for: nothing
+// leaves this file unvalidated, so a shape change on /api/machines cannot throw inside
+// renderVals and blank all nine screens. No reachable API shape produces these, which is
+// the point — they are the branches that fire when the endpoint changes under us.
+test('validate coerces every field the template binds to a string', () => {
+  const [card] = _.validate([{ name: 424242, kind: null, sessions: undefined, reported: 7, host: 99, status: null, cols: [] }]);
+  assert.strictEqual(card.name, '424242');
+  assert.strictEqual(card.kind, '');
+  assert.strictEqual(card.sessions, '');
+  assert.strictEqual(card.reported, '7');
+  assert.strictEqual(card.host, '99');
+});
+
+test('validate drops a card that is not an object, and a non-array of cards', () => {
+  assert.deepStrictEqual(_.validate(null), []);
+  assert.deepStrictEqual(_.validate('nope'), []);
+  assert.deepStrictEqual(_.validate(undefined), []);
+  assert.strictEqual(_.validate([null, 'x', 0, { name: 'keep', cols: [] }]).length, 1);
+  assert.strictEqual(_.validate([null, 'x', 0, { name: 'keep', cols: [] }])[0].name, 'keep');
+});
+
+test('validate replaces a non-array cols, sections, chips or bars with an empty one', () => {
+  const [card] = _.validate([{ name: 'm', cols: 'not an array' }]);
+  assert.deepStrictEqual(card.cols, []);
+
+  const [card2] = _.validate([{ name: 'm', cols: [{ client: 'Claude CLI', sections: 'nope' }] }]);
+  assert.deepStrictEqual(card2.cols[0].sections, []);
+
+  const [card3] = _.validate([{ name: 'm', cols: [{ client: 'Claude CLI', sections: [{ chips: 'nope', bars: 3 }] }] }]);
+  assert.deepStrictEqual(card3.cols[0].sections[0].chips, []);
+  assert.deepStrictEqual(card3.cols[0].sections[0].bars, []);
+});
+
+test('validate keeps only tuple chips and bars, and drops falsy cols and sections', () => {
+  const [card] = _.validate([{ name: 'm', cols: [null, { client: 'Codex CLI', sections: [null, { chips: [['pro', 'neutral'], 'junk', null], bars: [['5 hour', 12], 42] }] }] }]);
+  assert.strictEqual(card.cols.length, 1);
+  assert.strictEqual(card.cols[0].sections.length, 1);
+  assert.deepStrictEqual(card.cols[0].sections[0].chips, [['pro', 'neutral']]);
+  assert.deepStrictEqual(card.cols[0].sections[0].bars, [['5 hour', 12]]);
+});
+
+test('validate nulls a status that is not an object and coerces one that is', () => {
+  assert.strictEqual(_.validate([{ name: 'm', status: 'broken', cols: [] }])[0].status, null);
+  const st = _.validate([{ name: 'm', status: { label: 1, text: null, copy: undefined, tone: 'bad' }, cols: [] }])[0].status;
+  assert.deepStrictEqual(st, { label: '1', text: '', copy: '', tone: 'bad' });
+});
+
+test('validate output survives a full round trip through toCards', () => {
+  const cards = _.toCards(payload, NOW);
+  assert.deepStrictEqual(_.validate(cards), cards, 'a well-formed card must pass through unchanged');
+});
