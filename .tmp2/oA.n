@@ -1,0 +1,1277 @@
+<div id="dc-root">
+<div class="sc-host" data-sc-name="index">
+<div data-dc-tpl="3" style="position: relative; width: 100%;">
+<div data-dc-tpl="4" data-fd-view="land" style="display: none;">
+<div data-dc-tpl="5" data-screen-label="Landing" style="position: relative; font-family: Inter, system-ui, sans-serif; color: rgb(255, 255, 255);">
+  <div data-dc-tpl="6" style="position: fixed; inset: 0px; z-index: 0; overflow: hidden; pointer-events: none; background: rgb(10, 10, 10); transition: background 0.4s;">
+    <video crossorigin="anonymous" data-dc-tpl="7" playsinline="" preload="auto" src="/v2/media/hero-dark.mp4" style="position: absolute; inset: 0px; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.5s;">
+</video>
+    <canvas data-dc-tpl="8" height="1000" style="position: absolute; inset: 0px; width: 100%; height: 100%; opacity: 1; transition: opacity 0.5s;" width="1600">
+</canvas>
+    <div data-dc-tpl="9" style="position: absolute; inset: 0px; background: rgba(0, 0, 0, 0.2); transition: background 0.4s;">
+</div>
+  </div>
+  <div data-dc-tpl="10" style="position: relative; z-index: 10;">
+    <nav data-dc-tpl="11" style="position: fixed; top: 0px; left: 0px; right: 0px; z-index: 50; display: flex; align-items: center; justify-content: space-between; padding: 16px 48px; border-bottom: 1px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px) saturate(160%);">
+      <div data-dc-tpl="12" data-reveal="r" style="display: flex; align-items: center; gap: 10px; transition: 0.7s ease-out; will-change: transform;">
+        <img alt="fleetdeck logo" data-dc-tpl="13" height="26" src="/v2/media/fleetdeck-eye-minimal.svg" style="display: block;" width="26">
+        <span data-dc-tpl="14" style="display: flex; align-items: baseline; gap: 7px; white-space: nowrap;">
+<span data-dc-tpl="15" style="font-size: 20px; font-weight: 500; letter-spacing: -0.02em;">fleetdeck.</span>
+<span data-dc-tpl="16" style="font-size: 11px; color: rgba(255, 255, 255, 0.6);">by thinkpromptly</span>
+</span>
+      </div>
+      <div data-dc-tpl="17" style="display: flex; align-items: center; gap: 40px;">
+        <a data-dc-tpl="18" href="#" data-reveal="r" class="scp0" style="font-size: 14px; color: rgba(255, 255, 255, 0.85); transition: 0.7s ease-out 100ms; will-change: transform;">Deck <sup data-dc-tpl="19" style="font-size: 10px; letter-spacing: 0.1em; color: rgba(255, 255, 255, 0.6);">14</sup>
+</a>
+        <a data-dc-tpl="20" href="#" data-reveal="r" class="scp0" style="font-size: 14px; color: rgba(255, 255, 255, 0.85); transition: 0.7s ease-out 150ms; will-change: transform;">App</a>
+        <a data-dc-tpl="21" href="#registry" data-reveal="r" class="scp0" style="font-size: 14px; color: rgba(255, 255, 255, 0.85); transition: 0.7s ease-out 200ms; will-change: transform;">Registry</a>
+        <a data-dc-tpl="22" href="#certs" data-reveal="r" class="scp0" style="font-size: 14px; color: rgba(255, 255, 255, 0.85); transition: 0.7s ease-out 300ms; will-change: transform;">Certs</a>
+        <a data-dc-tpl="23" href="#docs" data-reveal="r" class="scp0" style="font-size: 14px; color: rgba(255, 255, 255, 0.85); transition: 0.7s ease-out 400ms; will-change: transform;">Docs</a>
+      </div>
+      <div data-dc-tpl="24" style="display: flex; align-items: center; gap: 12px;">
+      <button aria-label="Toggle light / dark mode" class="scp1" data-dc-tpl="25" data-reveal="r" style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px) saturate(160%); color: rgb(255, 255, 255); cursor: pointer; padding: 0px; transition: 0.7s ease-out 450ms; will-change: transform;" title="Toggle light / dark mode">
+        <svg data-dc-tpl="27" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+<circle cx="12" cy="12" data-dc-tpl="28" r="4">
+</circle>
+<path d="M12 2v2" data-dc-tpl="29">
+</path>
+<path d="M12 20v2" data-dc-tpl="30">
+</path>
+<path d="m4.93 4.93 1.41 1.41" data-dc-tpl="31">
+</path>
+<path d="m17.66 17.66 1.41 1.41" data-dc-tpl="32">
+</path>
+<path d="M2 12h2" data-dc-tpl="33">
+</path>
+<path d="M20 12h2" data-dc-tpl="34">
+</path>
+<path d="m6.34 17.66-1.41 1.41" data-dc-tpl="35">
+</path>
+<path d="m19.07 4.93-1.41 1.41" data-dc-tpl="36">
+</path>
+</svg>
+        
+      </button>
+      <a data-dc-tpl="40" href="#" data-reveal="r" class="scp2" style="border-radius: 6px; border: 1px solid rgba(255, 255, 255, 0.2); background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px) saturate(160%); padding: 8px 20px; font-size: 14px; color: rgb(255, 255, 255); transition: 0.7s ease-out 500ms; will-change: transform;">Request access</a>
+      </div>
+    </nav>
+    <section data-dc-tpl="41" data-screen-label="Hero" style="min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; padding: 112px 48px 64px; box-sizing: border-box;">
+      <div data-dc-tpl="42" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 32px;">
+        <div data-dc-tpl="43" style="display: flex; flex-direction: column; gap: 8px;">
+          <div data-dc-tpl="44" data-reveal="r" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.9); text-shadow: rgba(0, 0, 0, 0.35) 0px 2px 4px; transition: 0.7s ease-out 150ms; will-change: transform;">/ AGENT SESSION DECK</div>
+          <div data-dc-tpl="45" data-reveal="r" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.9); text-shadow: rgba(0, 0, 0, 0.35) 0px 2px 4px; transition: 0.7s ease-out 270ms; will-change: transform;">/ FLEET REGISTRY</div>
+          <div data-dc-tpl="46" data-reveal="r" style="font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.9); text-shadow: rgba(0, 0, 0, 0.35) 0px 2px 4px; transition: 0.7s ease-out 390ms; will-change: transform;">/ SHORT-LIVED SSH CERTS</div>
+        </div>
+        <p data-dc-tpl="47" data-reveal="r" style="max-width: 320px; text-align: right; font-size: 20px; line-height: 1.6; margin: 0px; color: rgb(255, 255, 255); text-shadow: rgba(0, 0, 0, 0.35) 0px 2px 4px; transition: 0.7s ease-out 300ms; will-change: transform;">We design automation that brings clarity, precision, and efficiency to the way your agents operate.</p>
+      </div>
+      <div data-dc-tpl="48" style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 32px;">
+        <div data-dc-tpl="49">
+          <div data-dc-tpl="50" data-reveal="r" style="display: inline-block; border-left: 2px solid rgb(255, 255, 255); background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px) saturate(160%); padding: 6px 12px; margin-bottom: 20px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; transition: 0.7s ease-out 150ms; will-change: transform;">We Run 100+ Agent Sessions</div>
+          <h1 data-dc-tpl="51" data-reveal="r" style="margin: 0px; font-size: 76px; font-weight: 400; line-height: 1.05; letter-spacing: -0.02em; color: rgb(255, 255, 255); text-shadow: rgba(0, 0, 0, 0.45) 0px 4px 12px; transition: 0.7s ease-out 280ms; will-change: transform;">Attach. Steer.<br data-dc-tpl="52">Audit.</h1>
+        </div>
+        <div data-dc-tpl="53" data-reveal="r" style="display: flex; align-items: center; gap: 16px; border-radius: 12px; background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px) saturate(160%); padding: 12px; transition: 0.7s ease-out 420ms; will-change: transform;">
+          <div data-dc-tpl="54" style="width: 80px; height: 96px; border-radius: 8px; background: rgba(10, 10, 10, 0.55); border: 1px solid rgba(255, 255, 255, 0.2); padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 5px; font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 7px; color: rgba(255, 255, 255, 0.5); overflow: hidden;">
+            <span data-dc-tpl="55" style="color: rgba(255, 255, 255, 0.85);">LC-cdx-re0</span>
+            <span data-dc-tpl="56">cargo clippy</span>
+            <span data-dc-tpl="57">+85 lines</span>
+            <span data-dc-tpl="58">Working 16s</span>
+            <span data-dc-tpl="59" style="margin-top: auto; display: block; height: 4px; background: rgba(255, 255, 255, 0.25); border-radius: 2px;">
+</span>
+          </div>
+          <div data-dc-tpl="60" style="display: flex; flex-direction: column; gap: 6px; padding-right: 8px;">
+            <span data-dc-tpl="61" style="font-size: 14px; font-weight: 500; color: rgb(255, 255, 255);">german-box</span>
+            <span data-dc-tpl="62" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.6);">Holder OK · 12 Active</span>
+            <a data-dc-tpl="63" href="#" class="scp3" style="display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; border-radius: 9999px; background: rgb(255, 255, 255); color: rgb(0, 0, 0); padding: 8px 16px; font-size: 12px; font-weight: 500; transition: background 0.3s;">Open the deck <svg data-dc-tpl="64" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M9 18l6-6-6-6" data-dc-tpl="65">
+</path>
+</svg>
+</a>
+          </div>
+        </div>
+      </div>
+    </section>
+    <div aria-hidden="true" data-dc-tpl="66" style="height: 80vh;">
+</div>
+    <section data-dc-tpl="67" data-screen-label="Capability" style="min-height: 100vh; display: flex; flex-direction: column; justify-content: space-between; padding: 112px 48px 64px; box-sizing: border-box;">
+      <div data-dc-tpl="68" style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 32px;">
+        <div data-dc-tpl="69" data-reveal="r" style="display: inline-block; align-self: flex-start; border-left: 2px solid rgb(255, 255, 255); background: rgba(255, 255, 255, 0.15); backdrop-filter: blur(20px) saturate(160%); padding: 6px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.15em; transition: 0.7s ease-out 120ms; will-change: transform;">Registry On Demand</div>
+        <p data-dc-tpl="70" data-reveal="r" style="max-width: 384px; text-align: right; font-size: 20px; line-height: 1.6; margin: 0px; color: rgb(255, 255, 255); text-shadow: rgba(0, 0, 0, 0.35) 0px 2px 4px; transition: 0.7s ease-out 220ms; will-change: transform;">The registry doesn't just list sessions — it tracks every task, status, and certificate the fleet touches.</p>
+      </div>
+      <div data-dc-tpl="71" style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 64px;">
+        <div data-dc-tpl="72" style="max-width: 576px;">
+          <h2 data-dc-tpl="73" data-reveal="r" style="margin: 0px; font-size: 76px; font-weight: 400; line-height: 1.05; letter-spacing: -0.02em; color: rgb(255, 255, 255); text-shadow: rgba(0, 0, 0, 0.45) 0px 4px 12px; transition: 0.7s ease-out 180ms; will-change: transform;">Nothing runs<br data-dc-tpl="74">unwatched.</h2>
+          <p data-dc-tpl="75" data-reveal="r" style="margin: 24px 0px 0px; max-width: 448px; font-size: 16px; line-height: 1.65; color: rgba(255, 255, 255, 0.8); text-shadow: rgba(0, 0, 0, 0.35) 0px 2px 4px; transition: 0.7s ease-out 320ms; will-change: transform;">From tmux tile to signed report, every run stays attached, labeled, and auditable — kill, tag, or hide any session in one click.</p>
+          <div data-dc-tpl="76" data-reveal="r" style="margin-top: 32px; display: flex; flex-wrap: wrap; gap: 12px; transition: 0.7s ease-out 420ms; will-change: transform;">
+            <a data-dc-tpl="77" href="#" class="scp3" style="display: inline-flex; align-items: center; gap: 4px; border-radius: 9999px; background: rgb(255, 255, 255); color: rgb(0, 0, 0); padding: 10px 20px; font-size: 14px; font-weight: 500; transition: background 0.3s;">Open the deck <svg data-dc-tpl="78" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+<path d="M9 18l6-6-6-6" data-dc-tpl="79">
+</path>
+</svg>
+</a>
+            <a data-dc-tpl="80" href="#docs" class="scp4" style="display: inline-flex; align-items: center; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px) saturate(160%); color: rgb(255, 255, 255); padding: 10px 20px; font-size: 14px; transition: background 0.3s;">Read the docs</a>
+          </div>
+        </div>
+        <div data-dc-tpl="81" style="width: 100%; max-width: 448px; border-radius: 16px; border: 1px solid rgba(255, 255, 255, 0.15); background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px) saturate(160%); padding: 0px 24px; box-sizing: border-box;">
+          <div data-dc-tpl="82" data-reveal="r" style="display: flex; gap: 20px; padding: 20px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.15); transition: 0.7s ease-out 300ms; will-change: transform;">
+            <span data-dc-tpl="83" style="font-size: 11px; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.55); padding-top: 4px;">01</span>
+            <div data-dc-tpl="84">
+              <div data-dc-tpl="85" style="display: flex; align-items: center; gap: 6px; font-size: 17px; font-weight: 500; color: rgb(255, 255, 255);">Live session deck <span data-dc-tpl="86" class="scp5" style="color: rgba(255, 255, 255, 0.4); display: inline-flex; transition: 0.3s;">
+<svg data-dc-tpl="87" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+<path d="M9 18l6-6-6-6" data-dc-tpl="88">
+</path>
+</svg>
+</span>
+</div>
+              <p data-dc-tpl="89" style="margin: 6px 0px 0px; font-size: 14px; line-height: 1.6; color: rgba(255, 255, 255, 0.7);">Every agent window tiled in one view. Attach, interrupt, or go fullscreen without touching tmux.</p>
+            </div>
+          </div>
+          <div data-dc-tpl="90" data-reveal="r" style="display: flex; gap: 20px; padding: 20px 0px; border-bottom: 1px solid rgba(255, 255, 255, 0.15); transition: 0.7s ease-out 410ms; will-change: transform;">
+            <span data-dc-tpl="91" style="font-size: 11px; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.55); padding-top: 4px;">02</span>
+            <div data-dc-tpl="92">
+              <div data-dc-tpl="93" style="display: flex; align-items: center; gap: 6px; font-size: 17px; font-weight: 500; color: rgb(255, 255, 255);">Fleet registry <span data-dc-tpl="94" class="scp5" style="color: rgba(255, 255, 255, 0.4); display: inline-flex; transition: 0.3s;">
+<svg data-dc-tpl="95" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+<path d="M9 18l6-6-6-6" data-dc-tpl="96">
+</path>
+</svg>
+</span>
+</div>
+              <p data-dc-tpl="97" style="margin: 6px 0px 0px; font-size: 14px; line-height: 1.6; color: rgba(255, 255, 255, 0.7);">Sessions, groups, tasks, and status in one sortable table — kill, tag-kill, or hide in a click.</p>
+            </div>
+          </div>
+          <div data-dc-tpl="98" data-reveal="r" style="display: flex; gap: 20px; padding: 20px 0px; transition: 0.7s ease-out 520ms; will-change: transform;">
+            <span data-dc-tpl="99" style="font-size: 11px; letter-spacing: 0.15em; color: rgba(255, 255, 255, 0.55); padding-top: 4px;">03</span>
+            <div data-dc-tpl="100">
+              <div data-dc-tpl="101" style="display: flex; align-items: center; gap: 6px; font-size: 17px; font-weight: 500; color: rgb(255, 255, 255);">Short-lived certs <span data-dc-tpl="102" class="scp5" style="color: rgba(255, 255, 255, 0.4); display: inline-flex; transition: 0.3s;">
+<svg data-dc-tpl="103" fill="none" height="16" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="16">
+<path d="M9 18l6-6-6-6" data-dc-tpl="104">
+</path>
+</svg>
+</span>
+</div>
+              <p data-dc-tpl="105" style="margin: 6px 0px 0px; font-size: 14px; line-height: 1.6; color: rgba(255, 255, 255, 0.7);">Mint scoped SSH certs from the CA in 1Password. Keys stay on disk and expire on schedule.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+</div>
+<div data-dc-tpl="106" data-fd-view="app" style="display: none;">
+<div data-dc-tpl="107" data-screen-label="Fleetdeck app" style="position: relative; height: 100vh; display: flex; box-sizing: border-box; background: rgb(10, 10, 10); color: rgb(255, 255, 255); font-family: Inter, system-ui, sans-serif; overflow: hidden; transition: background 0.3s, color 0.3s;">
+  <div aria-hidden="true" data-dc-tpl="108" style="position: absolute; inset: 0px; z-index: 0; overflow: hidden; pointer-events: none;">
+    
+      <video autoplay="" data-dc-tpl="110" loop="" playsinline="" preload="auto" src="/v2/media/hero-dark.mp4" style="position: absolute; inset: -6%; width: 112%; height: 112%; object-fit: cover; filter: blur(80px) saturate(140%); opacity: 0.55;">
+</video>
+    
+    <div data-dc-tpl="111" style="position: absolute; inset: 0px; background: rgba(0, 0, 0, 0.4); transition: background 0.3s;">
+</div>
+  </div>
+  
+  <aside data-dc-tpl="113" style="position: relative; z-index: 1; width: 252px; flex-shrink: 0; display: flex; flex-direction: column; border-right: 1px solid rgba(255, 255, 255, 0.13); box-sizing: border-box; background: rgba(10, 10, 10, 0.18); backdrop-filter: blur(28px) saturate(150%); overflow: hidden auto; transition: width 0.25s;">
+    <div data-dc-tpl="114" style="display: flex; align-items: center; justify-content: space-between; padding: 18px 12px 14px 18px;">
+      <a data-dc-tpl="115" href="#" style="display: flex; align-items: center; gap: 9px;">
+        <svg data-dc-tpl="116" fill="none" height="19" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24" width="19">
+<path d="M21 16.05v-8.1a2 2 0 0 0-1-1.73l-7-4.05a2 2 0 0 0-2 0l-7 4.05a2 2 0 0 0-1 1.73v8.1a2 2 0 0 0 1 1.73l7 4.05a2 2 0 0 0 2 0l7-4.05a2 2 0 0 0 1-1.73z" data-dc-tpl="117">
+</path>
+</svg>
+        <span data-dc-tpl="119" style="display: flex; flex-direction: column; gap: 1px; white-space: nowrap;">
+<span data-dc-tpl="120" style="font-size: 17px; font-weight: 500; letter-spacing: -0.02em; line-height: 1.1;">fleetdeck</span>
+<span data-dc-tpl="121" style="font-size: 10px; color: rgba(255, 255, 255, 0.45); letter-spacing: 0.01em; line-height: 1.1;">by thinkpromptly</span>
+</span>
+      </a>
+      <div data-dc-tpl="122" style="display: flex; align-items: center; gap: 6px;">
+      <button aria-label="Collapse sidebar" class="scp6" data-dc-tpl="123" style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: transparent; color: rgba(255, 255, 255, 0.6); cursor: pointer; padding: 0px; transition: background 0.2s;" title="Collapse / expand sidebar">
+        <svg data-dc-tpl="125" fill="none" height="14" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="14">
+<path d="m11 17-5-5 5-5" data-dc-tpl="126">
+</path>
+<path d="m18 17-5-5 5-5" data-dc-tpl="127">
+</path>
+</svg>
+        
+      </button>
+      <button aria-label="Toggle light / dark mode" class="scp6" data-dc-tpl="132" style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: transparent; color: rgba(255, 255, 255, 0.6); cursor: pointer; padding: 0px; transition: background 0.2s;" title="Toggle light / dark mode">
+        <svg data-dc-tpl="134" fill="none" height="14" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="14">
+<circle cx="12" cy="12" data-dc-tpl="135" r="4">
+</circle>
+<path d="M12 2v2" data-dc-tpl="136">
+</path>
+<path d="M12 20v2" data-dc-tpl="137">
+</path>
+<path d="m4.93 4.93 1.41 1.41" data-dc-tpl="138">
+</path>
+<path d="m17.66 17.66 1.41 1.41" data-dc-tpl="139">
+</path>
+<path d="M2 12h2" data-dc-tpl="140">
+</path>
+<path d="M20 12h2" data-dc-tpl="141">
+</path>
+<path d="m6.34 17.66-1.41 1.41" data-dc-tpl="142">
+</path>
+<path d="m19.07 4.93-1.41 1.41" data-dc-tpl="143">
+</path>
+</svg>
+        
+      </button>
+      <button aria-label="Toggle background video" class="scp6" data-dc-tpl="147" style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: transparent; color: rgba(255, 255, 255, 0.6); cursor: pointer; padding: 0px; transition: background 0.2s;" title="Toggle background video">
+        <svg data-dc-tpl="149" fill="none" height="14" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" stroke="currentColor" viewBox="0 0 24 24" width="14">
+<path d="m16 13 5.2 3.1a.5.5 0 0 0 .8-.4V8.3a.5.5 0 0 0-.8-.4L16 11" data-dc-tpl="150">
+</path>
+<rect data-dc-tpl="151" height="12" rx="2" width="14" x="2" y="6">
+</rect>
+</svg>
+        
+      </button>
+      </div>
+    </div>
+    <nav data-dc-tpl="157" style="display: flex; flex-direction: column; gap: 3px; padding: 0px 12px;">
+      <button class="scp6" data-dc-tpl="158" style="position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; border-radius: 9999px; padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid transparent; background: transparent; color: rgba(255, 255, 255, 0.6); transition: background 0.2s; box-sizing: border-box; font-weight: 400;" title="Windows">
+<svg data-dc-tpl="159" fill="none" height="15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="15">
+<rect data-dc-tpl="160" height="7" rx="1" width="7" x="3" y="3">
+</rect>
+<rect data-dc-tpl="161" height="7" rx="1" width="7" x="14" y="3">
+</rect>
+<rect data-dc-tpl="162" height="7" rx="1" width="7" x="3" y="14">
+</rect>
+<rect data-dc-tpl="163" height="7" rx="1" width="7" x="14" y="14">
+</rect>
+</svg>
+<span data-dc-tpl="164" style="white-space: nowrap;">Windows</span>
+</button>
+      <button class="scp6" data-dc-tpl="165" style="position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; border-radius: 9999px; padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(255, 255, 255, 0.11); color: rgb(255, 255, 255); transition: background 0.2s; box-sizing: border-box; font-weight: 500;" title="Org chart">
+<svg data-dc-tpl="166" fill="none" height="15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="15">
+<circle cx="12" cy="5" data-dc-tpl="167" r="2.5">
+</circle>
+<circle cx="5" cy="19" data-dc-tpl="168" r="2.5">
+</circle>
+<circle cx="19" cy="19" data-dc-tpl="169" r="2.5">
+</circle>
+<path d="M12 7.5V12m0 0-5.5 4.6M12 12l5.5 4.6" data-dc-tpl="170">
+</path>
+</svg>
+<span data-dc-tpl="171" style="white-space: nowrap;">Org chart</span>
+</button>
+      <button class="scp6" data-dc-tpl="172" style="position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; border-radius: 9999px; padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid transparent; background: transparent; color: rgba(255, 255, 255, 0.6); transition: background 0.2s; box-sizing: border-box; font-weight: 400;" title="Registry">
+<svg data-dc-tpl="173" fill="none" height="15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="15">
+<path d="M8 6h13" data-dc-tpl="174">
+</path>
+<path d="M8 12h13" data-dc-tpl="175">
+</path>
+<path d="M8 18h13" data-dc-tpl="176">
+</path>
+<path d="M3 6h.01" data-dc-tpl="177">
+</path>
+<path d="M3 12h.01" data-dc-tpl="178">
+</path>
+<path d="M3 18h.01" data-dc-tpl="179">
+</path>
+</svg>
+<span data-dc-tpl="180" style="white-space: nowrap;">Registry</span>
+</button>
+      <button class="scp6" data-dc-tpl="181" style="position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; border-radius: 9999px; padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid transparent; background: transparent; color: rgba(255, 255, 255, 0.6); transition: background 0.2s; box-sizing: border-box; font-weight: 400;" title="Message bus">
+<svg data-dc-tpl="182" fill="none" height="15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="15">
+<path d="M22 2 11 13" data-dc-tpl="183">
+</path>
+<path d="M22 2l-7 20-4-9-9-4 20-7z" data-dc-tpl="184">
+</path>
+</svg>
+<span data-dc-tpl="185" style="white-space: nowrap;">Message bus</span>
+<span data-dc-tpl="187" style="margin-left: auto; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; border-radius: 9999px; background: rgb(255, 255, 255); color: rgb(10, 10, 10); font-size: 10.5px; font-weight: 600; padding: 0px 5px; box-sizing: border-box;">
+<span class="sc-interp">1</span>
+</span>
+</button>
+      <button class="scp6" data-dc-tpl="188" style="position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; border-radius: 9999px; padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid transparent; background: transparent; color: rgba(255, 255, 255, 0.6); transition: background 0.2s; box-sizing: border-box; font-weight: 400;" title="SSH keys">
+<svg data-dc-tpl="189" fill="none" height="15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="15">
+<circle cx="7.5" cy="15.5" data-dc-tpl="190" r="4.5">
+</circle>
+<path d="m10.7 12.3 8.8-8.8" data-dc-tpl="191">
+</path>
+<path d="m15 5 3 3" data-dc-tpl="192">
+</path>
+<path d="m18 8 2-2" data-dc-tpl="193">
+</path>
+</svg>
+<span data-dc-tpl="194" style="white-space: nowrap;">SSH keys</span>
+</button>
+      <button class="scp6" data-dc-tpl="195" style="position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; border-radius: 9999px; padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid transparent; background: transparent; color: rgba(255, 255, 255, 0.6); transition: background 0.2s; box-sizing: border-box; font-weight: 400;" title="Accounts">
+<svg data-dc-tpl="196" fill="none" height="15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="15">
+<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" data-dc-tpl="197">
+</path>
+<circle cx="9" cy="7" data-dc-tpl="198" r="4">
+</circle>
+<path d="M22 21v-2a4 4 0 0 0-3-3.87" data-dc-tpl="199">
+</path>
+<path d="M16 3.13a4 4 0 0 1 0 7.75" data-dc-tpl="200">
+</path>
+</svg>
+<span data-dc-tpl="201" style="white-space: nowrap;">Accounts</span>
+</button>
+      <button class="scp6" data-dc-tpl="202" style="position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; border-radius: 9999px; padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid transparent; background: transparent; color: rgba(255, 255, 255, 0.6); transition: background 0.2s; box-sizing: border-box; font-weight: 400;" title="Machines">
+<svg data-dc-tpl="203" fill="none" height="15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="15">
+<rect data-dc-tpl="204" height="7" rx="1.5" width="20" x="2" y="3">
+</rect>
+<rect data-dc-tpl="205" height="7" rx="1.5" width="20" x="2" y="14">
+</rect>
+<path d="M6 6.5h.01" data-dc-tpl="206">
+</path>
+<path d="M6 17.5h.01" data-dc-tpl="207">
+</path>
+</svg>
+<span data-dc-tpl="208" style="white-space: nowrap;">Machines</span>
+</button>
+      <button class="scp6" data-dc-tpl="209" style="position: relative; display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; text-align: left; border-radius: 9999px; padding: 8px 14px; font-size: 13px; cursor: pointer; border: 1px solid transparent; background: transparent; color: rgba(255, 255, 255, 0.6); transition: background 0.2s; box-sizing: border-box; font-weight: 400;" title="Desktop sessions">
+<svg data-dc-tpl="210" fill="none" height="15" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="15">
+<rect data-dc-tpl="211" height="14" rx="2" width="20" x="2" y="3">
+</rect>
+<path d="M8 21h8" data-dc-tpl="212">
+</path>
+<path d="M12 17v4" data-dc-tpl="213">
+</path>
+</svg>
+<span data-dc-tpl="214" style="white-space: nowrap;">Desktop sessions</span>
+</button>
+    </nav>
+    
+    <div data-dc-tpl="216" style="padding: 14px 16px 6px;">
+      <button data-dc-tpl="217" class="scp7" style="width: 100%; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; border-radius: 9999px; background: rgb(255, 255, 255); color: rgb(10, 10, 10); padding: 9px 0px; font-size: 13px; font-weight: 500; cursor: pointer; transition: background 0.3s;">Connect all</button>
+    </div>
+    
+    
+    
+    <div data-dc-tpl="221" style="flex: 1 1 0%; min-height: 180px; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 2px;">
+      
+        <div data-dc-tpl="223" style="display: flex; align-items: baseline; gap: 8px; padding: 10px 8px 5px;">
+          <span data-dc-tpl="224" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">onboarding-box</span>
+</span>
+          <span data-dc-tpl="225" style="font-size: 10px; color: rgba(255, 255, 255, 0.35);">
+<span class="sc-interp">1</span>
+</span>
+        </div>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">ops</span>
+</span>
+          </button>
+        
+      
+        <div data-dc-tpl="223" style="display: flex; align-items: baseline; gap: 8px; padding: 10px 8px 5px;">
+          <span data-dc-tpl="224" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">german-box</span>
+</span>
+          <span data-dc-tpl="225" style="font-size: 10px; color: rgba(255, 255, 255, 0.35);">
+<span class="sc-interp">13</span>
+</span>
+        </div>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-deck11-boardroot</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-deck25-gate</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-deck26-launcher</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-deck27-notifycron</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-desktop-sessions-p…</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-gb-home</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-gk-l1-ledger</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-gk-l2-sessionkind</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-gk-l3-skill</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-gk-l4-sweep</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-gk-l5-hooks</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-gk-l6-goalspage</span>
+</span>
+          </button>
+        
+          <button class="scp6" data-dc-tpl="227" style="display: flex; align-items: center; gap: 9px; border-width: medium; border-style: none; border-color: currentcolor; border-image: none; background: transparent; text-align: left; border-radius: 8px; padding: 5px 8px; cursor: pointer; transition: background 0.2s; width: 100%; box-sizing: border-box;">
+            <span data-dc-tpl="228" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+            <span data-dc-tpl="229" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">FD-rhoda-machines</span>
+</span>
+          </button>
+        
+      
+    </div>
+    <div data-dc-tpl="230" style="border-top: 1px solid rgba(255, 255, 255, 0.07); padding: 14px 16px;">
+      <p data-dc-tpl="231" style="margin: 0px; font-size: 11px; line-height: 1.55; color: rgba(255, 255, 255, 0.35);">detach = ctrl-b then d · closing a tile never kills the remote session · ⤢ fullscreen, ≡ switch, shift+esc back</p>
+    </div>
+    
+  </aside>
+  
+  <main data-dc-tpl="232" style="position: relative; z-index: 1; flex: 1 1 0%; min-width: 0px; overflow-y: auto; visibility: visible;">
+    <div data-dc-tpl="233" style="padding: 24px 32px 48px; box-sizing: border-box;">
+      <header data-dc-tpl="234" style="display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; margin-bottom: 22px;">
+        <div data-dc-tpl="235" style="display: flex; flex-direction: column; gap: 5px;">
+          <h1 data-dc-tpl="236" style="margin: 0px; font-size: 21px; font-weight: 500; letter-spacing: -0.01em; color: rgb(255, 255, 255);">
+<span class="sc-interp">Org chart</span>
+</h1>
+          <p data-dc-tpl="237" style="margin: 0px; font-size: 12.5px; color: rgba(255, 255, 255, 0.6); max-width: 560px; line-height: 1.5;">
+<span class="sc-interp">Parent-child hierarchy across the fleet. A host is a label on a node, never a group.</span>
+</p>
+        </div>
+        <div data-dc-tpl="238" style="display: flex; align-items: center; gap: 10px; flex-shrink: 0; padding-top: 2px;">
+          <span data-dc-tpl="239" style="display: inline-flex; align-items: center; gap: 6px; border-radius: 9999px; border: 1px solid transparent; background: oklch(0.83 0.15 155 / 0.1); color: oklch(0.83 0.15 155); padding: 5px 14px; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em; white-space: nowrap; font-weight: 500;">
+<span data-dc-tpl="240" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>Live API</span>
+          <button data-dc-tpl="241" class="scp6" style="border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: transparent; color: rgba(255, 255, 255, 0.75); padding: 6px 16px; font-size: 12.5px; cursor: pointer; transition: background 0.2s;">Refresh</button>
+          <button aria-label="Toggle accounts panel" class="scp6" data-dc-tpl="242" style="display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.11); color: rgba(255, 255, 255, 0.6); cursor: pointer; padding: 0px; transition: background 0.2s;" title="Toggle accounts panel">
+<svg data-dc-tpl="243" fill="none" height="14" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" stroke="currentColor" viewBox="0 0 24 24" width="14">
+<rect data-dc-tpl="244" height="18" rx="2" width="18" x="3" y="3">
+</rect>
+<path d="M15 3v18" data-dc-tpl="245">
+</path>
+</svg>
+</button>
+        </div>
+      </header>
+
+      
+
+      
+        <div data-dc-tpl="273" data-screen-label="Org chart" style="display: flex; flex-direction: column; gap: 18px;">
+          <div data-dc-tpl="274" style="display: flex; align-items: center; gap: 24px; flex-wrap: wrap; font-size: 12.5px; color: rgba(255, 255, 255, 0.6);">
+            <span data-dc-tpl="275">
+<span data-dc-tpl="276" style="color: rgb(255, 255, 255); font-weight: 500;">102</span> sessions</span>
+            <span data-dc-tpl="277">
+<span data-dc-tpl="278" style="color: rgb(255, 255, 255); font-weight: 500;">2</span> seats</span>
+            <button class="scp8" data-dc-tpl="279" style="border-width: medium medium 1.5px; border-style: none none solid; border-color: currentcolor currentcolor rgb(255, 255, 255); border-image: none; background: transparent; padding: 0px 0px 3px; margin: 0px; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: 12.5px; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; color: rgb(255, 255, 255); cursor: pointer; transition: color 0.2s, border-color 0.2s;">
+<span data-dc-tpl="280" style="color: rgb(255, 255, 255); font-weight: 500;">4</span> attached</button>
+            <button class="scp8" data-dc-tpl="281" style="border-width: medium medium 1.5px; border-style: none none solid; border-color: currentcolor currentcolor transparent; border-image: none; background: transparent; padding: 0px 0px 3px; margin: 0px; font-style: inherit; font-variant: inherit; font-weight: inherit; font-stretch: inherit; font-size: 12.5px; line-height: inherit; font-family: inherit; font-optical-sizing: inherit; font-size-adjust: inherit; font-kerning: inherit; font-feature-settings: inherit; font-variation-settings: inherit; font-language-override: inherit; color: rgba(255, 255, 255, 0.6); cursor: pointer; transition: color 0.2s, border-color 0.2s;">
+<span data-dc-tpl="282" style="color: rgb(255, 255, 255); font-weight: 500;">96</span> unattached</button>
+            
+            <div data-dc-tpl="284" style="margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="scp6" data-dc-tpl="285" style="border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.75); padding: 7px 12px; font-size: 12px; cursor: pointer; width: 150px; text-align: center; transition: background 0.2s;" title="Switch grouping">
+<span class="sc-interp">Sorted by machine</span>
+</button>
+              <select data-dc-tpl="286" style="border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: url(&quot;data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2212%22%20height%3D%2212%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22rgba(255%2C255%2C255%2C0.45)%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%2F%3E%3C%2Fsvg%3E&quot;) right 12px center no-repeat rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.75); padding: 7px 30px 7px 12px; font-size: 12px; cursor: pointer; font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; width: 230px; appearance: none;">
+                
+                  <option data-dc-tpl="288" value="macbook">
+<span class="sc-interp">macbook</span>
+</option>
+                
+                  <option data-dc-tpl="288" value="german-box">
+<span class="sc-interp">german-box</span>
+</option>
+                
+                  <option data-dc-tpl="288" value="onboarding-box">
+<span class="sc-interp">onboarding-box</span>
+</option>
+                
+                  <option data-dc-tpl="288" value="ivy-box">
+<span class="sc-interp">ivy-box</span>
+</option>
+                
+              </select>
+            </div>
+            
+          </div>
+          
+          <div data-dc-tpl="290" style="display: flex; flex-direction: column; align-items: center; padding: 8px 0px 12px;">
+            
+              <div data-dc-tpl="292" style="width: min(470px, 100%); box-sizing: border-box; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.08); box-shadow: none; backdrop-filter: blur(28px) saturate(150%); padding: 16px 20px; display: flex; flex-direction: column; gap: 8px;">
+                <div data-dc-tpl="293" style="display: flex; align-items: center; gap: 10px;">
+                  <span data-dc-tpl="294" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: rgb(255, 255, 255);">
+</span>
+                  <span data-dc-tpl="295" style="flex: 1 1 0%; min-width: 0px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">german-box</span>
+</span>
+                  <span data-dc-tpl="296" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.45); white-space: nowrap;">
+<span class="sc-interp">4 sessions</span>
+</span>
+                </div>
+                <div data-dc-tpl="297" style="display: flex; flex-direction: column; gap: 3px;">
+                  <span data-dc-tpl="298" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+<span class="sc-interp">fleet workers · machine</span>
+</span>
+                  
+                </div>
+                
+                
+              </div>
+              <span data-dc-tpl="307" style="width: 1px; height: 32px; background: rgba(255, 255, 255, 0.13); flex-shrink: 0;">
+</span>
+            
+              <div data-dc-tpl="292" style="width: min(470px, 100%); box-sizing: border-box; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.08); box-shadow: none; backdrop-filter: blur(28px) saturate(150%); padding: 16px 20px; display: flex; flex-direction: column; gap: 8px;">
+                <div data-dc-tpl="293" style="display: flex; align-items: center; gap: 10px;">
+                  <span data-dc-tpl="294" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: rgb(255, 255, 255);">
+</span>
+                  <span data-dc-tpl="295" style="flex: 1 1 0%; min-width: 0px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">coordinator</span>
+</span>
+                  <span data-dc-tpl="296" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.45); white-space: nowrap;">
+<span class="sc-interp">seat</span>
+</span>
+                </div>
+                <div data-dc-tpl="297" style="display: flex; flex-direction: column; gap: 3px;">
+                  <span data-dc-tpl="298" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+<span class="sc-interp">long-lease · weekly</span>
+</span>
+                  <span data-dc-tpl="300" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">mac / coordinator</span>
+</span>
+                </div>
+                
+                  <div data-dc-tpl="302" style="display: flex; justify-content: space-between; gap: 12px; font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; padding-top: 4px;">
+                    <span data-dc-tpl="303" style="color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">lease active</span>
+</span>
+                    <span data-dc-tpl="304" style="color: rgb(255, 255, 255); white-space: nowrap;">
+<span class="sc-interp">6d left</span>
+</span>
+                  </div>
+                
+                
+              </div>
+              <span data-dc-tpl="307" style="width: 1px; height: 32px; background: rgba(255, 255, 255, 0.13); flex-shrink: 0;">
+</span>
+            
+              <div data-dc-tpl="292" style="width: min(470px, 100%); box-sizing: border-box; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.08); box-shadow: none; backdrop-filter: blur(28px) saturate(150%); padding: 16px 20px; display: flex; flex-direction: column; gap: 8px;">
+                <div data-dc-tpl="293" style="display: flex; align-items: center; gap: 10px;">
+                  <span data-dc-tpl="294" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: transparent; border: 1.5px solid rgba(255, 255, 255, 0.6); box-sizing: border-box;">
+</span>
+                  <span data-dc-tpl="295" style="flex: 1 1 0%; min-width: 0px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">orchestrator</span>
+</span>
+                  <span data-dc-tpl="296" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.45); white-space: nowrap;">
+<span class="sc-interp">epoch #10</span>
+</span>
+                </div>
+                <div data-dc-tpl="297" style="display: flex; flex-direction: column; gap: 3px;">
+                  <span data-dc-tpl="298" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+<span class="sc-interp">seat · fenced · high churn</span>
+</span>
+                  <span data-dc-tpl="300" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">mac / orchestrator</span>
+</span>
+                </div>
+                
+                  <div data-dc-tpl="302" style="display: flex; justify-content: space-between; gap: 12px; font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; padding-top: 4px;">
+                    <span data-dc-tpl="303" style="color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">lease suspect · 3m</span>
+</span>
+                    <span data-dc-tpl="304" style="color: oklch(0.73 0.17 25); white-space: nowrap;">
+<span class="sc-interp">expired 2m ago</span>
+</span>
+                  </div>
+                
+                <button data-dc-tpl="306" class="scp6" style="margin-top: 4px; width: 100%; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.05); color: rgb(255, 255, 255); padding: 8px 14px; font-size: 13px; cursor: pointer; transition: background 0.2s;">Send a message</button>
+              </div>
+              <span data-dc-tpl="307" style="width: 1px; height: 32px; background: rgba(255, 255, 255, 0.13); flex-shrink: 0;">
+</span>
+            
+            <div data-dc-tpl="308" style="position: relative; width: 100%; max-width: 1560px; display: grid; grid-template-columns: repeat(4, minmax(0px, 1fr)); gap: 20px; padding-top: 32px;">
+              <span data-dc-tpl="309" style="position: absolute; top: 0px; height: 1px; background: rgba(255, 255, 255, 0.13); left: calc(12.5% - 7.5px); right: calc(12.5% - 7.5px);">
+</span>
+              
+                <div data-dc-tpl="311" style="position: relative; min-width: 0px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.08); box-shadow: none; backdrop-filter: blur(28px) saturate(150%); padding: 16px 20px; display: flex; flex-direction: column; gap: 8px;">
+                  <span data-dc-tpl="312" style="position: absolute; left: 50%; top: -32px; width: 1px; height: 32px; background: rgba(255, 255, 255, 0.13);">
+</span>
+                  <div data-dc-tpl="313" style="display: flex; align-items: center; gap: 10px;">
+                    <span data-dc-tpl="314" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+                    <span data-dc-tpl="315" style="flex: 1 1 0%; min-width: 0px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">Alfons</span>
+</span>
+                    <span data-dc-tpl="316" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">#1</span>
+</span>
+                  </div>
+                  <div data-dc-tpl="317" style="display: flex; flex-direction: column; gap: 3px;">
+                    <span data-dc-tpl="318" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+<span class="sc-interp">frontend-developer</span>
+</span>
+                    <span data-dc-tpl="319" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">lowcap-connector / FD-alfons</span>
+</span>
+                  </div>
+                  <div data-dc-tpl="320" style="display: flex; justify-content: space-between; gap: 12px; font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; padding-top: 4px;">
+                    <span data-dc-tpl="321" style="color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">lease active</span>
+</span>
+                    <span data-dc-tpl="322" style="color: oklch(0.83 0.15 155); white-space: nowrap;">
+<span class="sc-interp">1m left</span>
+</span>
+                  </div>
+                  <button data-dc-tpl="323" class="scp6" style="margin-top: 4px; width: 100%; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.05); color: rgb(255, 255, 255); padding: 8px 14px; font-size: 13px; cursor: pointer; transition: background 0.2s;">Send a message</button>
+                </div>
+              
+                <div data-dc-tpl="311" style="position: relative; min-width: 0px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.08); box-shadow: none; backdrop-filter: blur(28px) saturate(150%); padding: 16px 20px; display: flex; flex-direction: column; gap: 8px;">
+                  <span data-dc-tpl="312" style="position: absolute; left: 50%; top: -32px; width: 1px; height: 32px; background: rgba(255, 255, 255, 0.13);">
+</span>
+                  <div data-dc-tpl="313" style="display: flex; align-items: center; gap: 10px;">
+                    <span data-dc-tpl="314" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+                    <span data-dc-tpl="315" style="flex: 1 1 0%; min-width: 0px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">Edith</span>
+</span>
+                    <span data-dc-tpl="316" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">#1</span>
+</span>
+                  </div>
+                  <div data-dc-tpl="317" style="display: flex; flex-direction: column; gap: 3px;">
+                    <span data-dc-tpl="318" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+<span class="sc-interp">backend-developer</span>
+</span>
+                    <span data-dc-tpl="319" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">lowcap-connector / FD-edith</span>
+</span>
+                  </div>
+                  <div data-dc-tpl="320" style="display: flex; justify-content: space-between; gap: 12px; font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; padding-top: 4px;">
+                    <span data-dc-tpl="321" style="color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">lease active</span>
+</span>
+                    <span data-dc-tpl="322" style="color: oklch(0.83 0.15 155); white-space: nowrap;">
+<span class="sc-interp">1m left</span>
+</span>
+                  </div>
+                  <button data-dc-tpl="323" class="scp6" style="margin-top: 4px; width: 100%; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.05); color: rgb(255, 255, 255); padding: 8px 14px; font-size: 13px; cursor: pointer; transition: background 0.2s;">Send a message</button>
+                </div>
+              
+                <div data-dc-tpl="311" style="position: relative; min-width: 0px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.08); box-shadow: none; backdrop-filter: blur(28px) saturate(150%); padding: 16px 20px; display: flex; flex-direction: column; gap: 8px;">
+                  <span data-dc-tpl="312" style="position: absolute; left: 50%; top: -32px; width: 1px; height: 32px; background: rgba(255, 255, 255, 0.13);">
+</span>
+                  <div data-dc-tpl="313" style="display: flex; align-items: center; gap: 10px;">
+                    <span data-dc-tpl="314" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+                    <span data-dc-tpl="315" style="flex: 1 1 0%; min-width: 0px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">Konrad</span>
+</span>
+                    <span data-dc-tpl="316" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">#1</span>
+</span>
+                  </div>
+                  <div data-dc-tpl="317" style="display: flex; flex-direction: column; gap: 3px;">
+                    <span data-dc-tpl="318" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+<span class="sc-interp">devops-engineer</span>
+</span>
+                    <span data-dc-tpl="319" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">thinkpromptly-fleetdeck / FD-konrad</span>
+</span>
+                  </div>
+                  <div data-dc-tpl="320" style="display: flex; justify-content: space-between; gap: 12px; font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; padding-top: 4px;">
+                    <span data-dc-tpl="321" style="color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">lease active</span>
+</span>
+                    <span data-dc-tpl="322" style="color: oklch(0.83 0.15 155); white-space: nowrap;">
+<span class="sc-interp">1m left</span>
+</span>
+                  </div>
+                  <button data-dc-tpl="323" class="scp6" style="margin-top: 4px; width: 100%; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.05); color: rgb(255, 255, 255); padding: 8px 14px; font-size: 13px; cursor: pointer; transition: background 0.2s;">Send a message</button>
+                </div>
+              
+                <div data-dc-tpl="311" style="position: relative; min-width: 0px; border-radius: 14px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.08); box-shadow: none; backdrop-filter: blur(28px) saturate(150%); padding: 16px 20px; display: flex; flex-direction: column; gap: 8px;">
+                  <span data-dc-tpl="312" style="position: absolute; left: 50%; top: -32px; width: 1px; height: 32px; background: rgba(255, 255, 255, 0.13);">
+</span>
+                  <div data-dc-tpl="313" style="display: flex; align-items: center; gap: 10px;">
+                    <span data-dc-tpl="314" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+                    <span data-dc-tpl="315" style="flex: 1 1 0%; min-width: 0px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">Sylvia</span>
+</span>
+                    <span data-dc-tpl="316" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">#1</span>
+</span>
+                  </div>
+                  <div data-dc-tpl="317" style="display: flex; flex-direction: column; gap: 3px;">
+                    <span data-dc-tpl="318" style="font-size: 13px; color: rgba(255, 255, 255, 0.6);">
+<span class="sc-interp">tooling-engineer</span>
+</span>
+                    <span data-dc-tpl="319" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">thinkpromptly-fleetdeck / FD-sylvia</span>
+</span>
+                  </div>
+                  <div data-dc-tpl="320" style="display: flex; justify-content: space-between; gap: 12px; font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 12.5px; padding-top: 4px;">
+                    <span data-dc-tpl="321" style="color: rgba(255, 255, 255, 0.45);">
+<span class="sc-interp">lease active</span>
+</span>
+                    <span data-dc-tpl="322" style="color: oklch(0.83 0.15 155); white-space: nowrap;">
+<span class="sc-interp">1m left</span>
+</span>
+                  </div>
+                  <button data-dc-tpl="323" class="scp6" style="margin-top: 4px; width: 100%; border-radius: 9999px; border: 1px solid rgba(255, 255, 255, 0.13); background: rgba(255, 255, 255, 0.05); color: rgb(255, 255, 255); padding: 8px 14px; font-size: 13px; cursor: pointer; transition: background 0.2s;">Send a message</button>
+                </div>
+              
+            </div>
+          </div>
+          
+          
+        </div>
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+
+      
+    </div>
+  </main>
+  
+  <aside data-dc-tpl="739" style="position: relative; z-index: 1; width: 222px; flex-shrink: 0; border-left: 1px solid rgba(255, 255, 255, 0.13); background: rgba(10, 10, 10, 0.18); backdrop-filter: blur(28px) saturate(150%); box-sizing: border-box; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 16px;">
+    <div data-dc-tpl="740" style="display: flex; align-items: center; justify-content: space-between;">
+      <span data-dc-tpl="741" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(255, 255, 255, 0.45);">Accounts</span>
+      <button aria-label="Open accounts" class="scpa" data-dc-tpl="742" style="display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 9999px; border: 1px solid transparent; background: transparent; color: rgba(255, 255, 255, 0.6); cursor: pointer; padding: 0px; transition: background 0.15s;" title="Open accounts">
+<svg data-dc-tpl="743" fill="currentColor" height="14" viewBox="0 0 24 24" width="14">
+<circle cx="5" cy="12" data-dc-tpl="744" r="1.8">
+</circle>
+<circle cx="12" cy="12" data-dc-tpl="745" r="1.8">
+</circle>
+<circle cx="19" cy="12" data-dc-tpl="746" r="1.8">
+</circle>
+</svg>
+</button>
+    </div>
+    <div data-dc-tpl="747" style="display: flex; flex-direction: column; gap: 9px;">
+      
+        <div data-dc-tpl="749" style="display: grid; grid-template-columns: 14px minmax(0px, 1fr) 44px; gap: 8px; align-items: center;">
+          <span data-dc-tpl="750" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; color: rgba(255, 255, 255, 0.75);" title="ChatGPT">
+            <img alt="ChatGPT" data-dc-tpl="752" src="/v2/media/chatgpt-logo.png" style="width: 12px; height: 12px; object-fit: contain; display: block; filter: invert(1); opacity: 0.85;">
+            
+          </span>
+          <span data-dc-tpl="755" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 11px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">admin@deus.finance</span>
+</span>
+          <span data-dc-tpl="756" style="font-size: 11px; color: oklch(0.83 0.14 80); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;">
+<span class="sc-interp">80%</span>
+</span>
+          <span data-dc-tpl="757" style="grid-column: 1 / -1; display: block; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden;">
+<span data-dc-tpl="758" style="display: block; height: 100%; width: 80%; border-radius: 2px; background: oklch(0.83 0.14 80);">
+</span>
+</span>
+        </div>
+      
+        <div data-dc-tpl="749" style="display: grid; grid-template-columns: 14px minmax(0px, 1fr) 44px; gap: 8px; align-items: center;">
+          <span data-dc-tpl="750" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; color: rgba(255, 255, 255, 0.75);" title="Claude">
+            
+            <img alt="Claude" data-dc-tpl="754" src="/v2/media/claude-logo.png" style="width: 12px; height: 12px; object-fit: contain; display: block;">
+          </span>
+          <span data-dc-tpl="755" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 11px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">admin@deus.finance</span>
+</span>
+          <span data-dc-tpl="756" style="font-size: 11px; color: oklch(0.83 0.14 80); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;">
+<span class="sc-interp">71%</span>
+</span>
+          <span data-dc-tpl="757" style="grid-column: 1 / -1; display: block; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden;">
+<span data-dc-tpl="758" style="display: block; height: 100%; width: 71%; border-radius: 2px; background: oklch(0.83 0.14 80);">
+</span>
+</span>
+        </div>
+      
+        <div data-dc-tpl="749" style="display: grid; grid-template-columns: 14px minmax(0px, 1fr) 44px; gap: 8px; align-items: center;">
+          <span data-dc-tpl="750" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; color: rgba(255, 255, 255, 0.35);" title="Claude">
+            
+            <img alt="Claude" data-dc-tpl="754" src="/v2/media/claude-logo.png" style="width: 12px; height: 12px; object-fit: contain; display: block;">
+          </span>
+          <span data-dc-tpl="755" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 11px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">neelo@vibe.trading</span>
+</span>
+          <span data-dc-tpl="756" style="font-size: 11px; color: rgba(255, 255, 255, 0.35); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;">
+<span class="sc-interp">no data</span>
+</span>
+          <span data-dc-tpl="757" style="grid-column: 1 / -1; display: block; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden;">
+<span data-dc-tpl="758" style="display: block; height: 100%; width: 0%; border-radius: 2px; background: oklch(0.83 0.15 155);">
+</span>
+</span>
+        </div>
+      
+        <div data-dc-tpl="749" style="display: grid; grid-template-columns: 14px minmax(0px, 1fr) 44px; gap: 8px; align-items: center;">
+          <span data-dc-tpl="750" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; color: rgba(255, 255, 255, 0.35);" title="Claude">
+            
+            <img alt="Claude" data-dc-tpl="754" src="/v2/media/claude-logo.png" style="width: 12px; height: 12px; object-fit: contain; display: block;">
+          </span>
+          <span data-dc-tpl="755" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 11px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">lafayette@infinite-holdings.llc</span>
+</span>
+          <span data-dc-tpl="756" style="font-size: 11px; color: rgba(255, 255, 255, 0.35); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;">
+<span class="sc-interp">no data</span>
+</span>
+          <span data-dc-tpl="757" style="grid-column: 1 / -1; display: block; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden;">
+<span data-dc-tpl="758" style="display: block; height: 100%; width: 0%; border-radius: 2px; background: oklch(0.83 0.15 155);">
+</span>
+</span>
+        </div>
+      
+        <div data-dc-tpl="749" style="display: grid; grid-template-columns: 14px minmax(0px, 1fr) 44px; gap: 8px; align-items: center;">
+          <span data-dc-tpl="750" style="display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; color: rgba(255, 255, 255, 0.35);" title="Claude">
+            
+            <img alt="Claude" data-dc-tpl="754" src="/v2/media/claude-logo.png" style="width: 12px; height: 12px; object-fit: contain; display: block;">
+          </span>
+          <span data-dc-tpl="755" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 11px; color: rgba(255, 255, 255, 0.45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">aylianator@gmail.com</span>
+</span>
+          <span data-dc-tpl="756" style="font-size: 11px; color: rgba(255, 255, 255, 0.35); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;">
+<span class="sc-interp">no data</span>
+</span>
+          <span data-dc-tpl="757" style="grid-column: 1 / -1; display: block; height: 3px; border-radius: 2px; background: rgba(255, 255, 255, 0.1); overflow: hidden;">
+<span data-dc-tpl="758" style="display: block; height: 100%; width: 0%; border-radius: 2px; background: oklch(0.83 0.15 155);">
+</span>
+</span>
+        </div>
+      
+    </div>
+    <div data-dc-tpl="759" style="border-top: 1px solid rgba(255, 255, 255, 0.07); padding-top: 14px; display: flex; flex-direction: column; gap: 10px;">
+      <span data-dc-tpl="760" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: rgba(255, 255, 255, 0.45);">Boxes</span>
+      
+        <div data-dc-tpl="762" style="display: grid; grid-template-columns: 6px minmax(0px, 1fr) auto; gap: 9px; align-items: center;">
+          <span data-dc-tpl="763" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+          <span data-dc-tpl="764" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 11.5px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">german-box</span>
+</span>
+          <span data-dc-tpl="765" style="font-size: 11px; color: rgba(255, 255, 255, 0.45); white-space: nowrap;">
+<span class="sc-interp">holder OK</span>
+</span>
+        </div>
+      
+        <div data-dc-tpl="762" style="display: grid; grid-template-columns: 6px minmax(0px, 1fr) auto; gap: 9px; align-items: center;">
+          <span data-dc-tpl="763" style="width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: oklch(0.83 0.15 155);">
+</span>
+          <span data-dc-tpl="764" style="font-family: ui-monospace, &quot;SF Mono&quot;, Menlo, monospace; font-size: 11.5px; color: rgba(255, 255, 255, 0.75); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+<span class="sc-interp">onboarding-box</span>
+</span>
+          <span data-dc-tpl="765" style="font-size: 11px; color: rgba(255, 255, 255, 0.45); white-space: nowrap;">
+<span class="sc-interp">reachable</span>
+</span>
+        </div>
+      
+    </div>
+  </aside>
+  
+  
+  </div>
+</div>
+<div data-dc-tpl="814" data-fd-view="deck" style="display: block;">
+<div data-dc-tpl="815" style="position: relative; width: 100%; height: 100vh; overflow: hidden; background: rgb(0, 0, 0); font-family: Aeonik, &quot;Helvetica Neue&quot;, system-ui, sans-serif;">
+<div data-dc-tpl="816" data-fd-slide="0" data-screen-label="01 Title" style="position: absolute; inset: 0px; display: flex; flex-direction: column; overflow: hidden; background: rgb(0, 0, 0); transition: opacity 0.35s ease-in-out; opacity: 1; z-index: 10;">
+  <video autoplay="" data-dc-tpl="817" data-src="/v2/media/hero-dark.mp4" loop="" playsinline="" src="/v2/media/hero-dark.mp4" style="position: absolute; inset: 0px calc(-34% + 0px) 0px calc(34% + 0px); width: 100%; height: 100%; object-fit: cover;">
+</video>
+  <div data-dc-tpl="818" data-dim="1" style="position: absolute; inset: 0px; background: rgba(0, 0, 0, 0); pointer-events: none;">
+</div>
+  <div data-dc-tpl="819" style="position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%;">
+    <div data-anim="1" data-dc-tpl="820" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.1s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.1s 1 normal both running fdBlur; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px) saturate(160%);">
+      <div data-dc-tpl="821" style="display: flex; align-items: flex-start; justify-content: space-between; padding: 3.5% 5% 0px;">
+        <div data-dc-tpl="822" style="display: flex; align-items: center; gap: 10px;">
+          <img alt="Fleetdeck" data-dc-tpl="823" height="28" src="/v2/media/fleetdeck-eye-minimal.svg" style="display: block;" width="28">
+          <span data-dc-tpl="824" style="font-size: 22px; font-weight: 500; letter-spacing: -0.02em; color: rgb(255, 255, 255);">fleetdeck.</span>
+        </div>
+        <div data-dc-tpl="825" style="display: flex; gap: 32px;">
+          <div data-dc-tpl="826" style="display: flex; flex-direction: column; gap: 2px;">
+<span data-dc-tpl="827" style="color: rgb(128, 131, 142); font-size: 13px;">Type</span>
+<span data-dc-tpl="828" style="color: rgb(255, 255, 255); font-size: 13px;">Investor Deck</span>
+</div>
+          <div data-dc-tpl="829" style="display: flex; flex-direction: column; gap: 2px;">
+<span data-dc-tpl="830" style="color: rgb(128, 131, 142); font-size: 13px;">Round</span>
+<span data-dc-tpl="831" style="color: rgb(255, 255, 255); font-size: 13px;">Seed</span>
+</div>
+          <div data-dc-tpl="832" style="display: flex; flex-direction: column; gap: 2px;">
+<span data-dc-tpl="833" style="color: rgb(128, 131, 142); font-size: 13px;">Date</span>
+<span data-dc-tpl="834" style="color: rgb(255, 255, 255); font-size: 13px;">September 2026</span>
+</div>
+          <div data-dc-tpl="835" style="display: flex; flex-direction: column; gap: 2px;">
+<span data-dc-tpl="836" style="color: rgb(128, 131, 142); font-size: 13px;">Industry</span>
+<span data-dc-tpl="837" style="color: rgb(255, 255, 255); font-size: 13px;">Agent Infrastructure</span>
+</div>
+        </div>
+      </div>
+      <div data-dc-tpl="838" style="padding: 0px 5%; margin-top: 24px;">
+<div data-dc-tpl="839" style="height: 1px; width: 100%; background: rgba(255, 255, 255, 0.15);">
+</div>
+</div>
+    </div>
+    <div data-dc-tpl="840" style="flex: 1 1 0%; display: flex; align-items: flex-end; padding: 0px 5% 8%;">
+      <h1 data-dc-tpl="841" style="margin: 0px; color: rgb(255, 255, 255); line-height: 0.9; letter-spacing: -0.03em; font-weight: 500; font-size: clamp(48px, 10vw, 140px);">
+        <span data-dc-tpl="842" style="display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: 0.06em; margin-bottom: -0.06em;">
+<span data-dc-tpl="843" data-anim="1" data-fd-anim="0.7s cubic-bezier(0.25, 0.1, 0.25, 1) 0.3s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.7s cubic-bezier(0.25, 0.1, 0.25, 1) 0.3s 1 normal both running fdSlideUp;">Attach. Steer.</span>
+</span>
+<br data-dc-tpl="844">
+        <span data-dc-tpl="845" style="display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: 0.06em; margin-bottom: -0.06em;">
+<span data-dc-tpl="846" data-anim="1" data-fd-anim="0.7s cubic-bezier(0.25, 0.1, 0.25, 1) 0.4s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.7s cubic-bezier(0.25, 0.1, 0.25, 1) 0.4s 1 normal both running fdSlideUp;">Audit.</span>
+</span>
+      </h1>
+    </div>
+  </div>
+</div>
+<div data-dc-tpl="847" data-fd-slide="1" data-screen-label="02 Problem" style="position: absolute; inset: 0px; display: flex; flex-direction: column; overflow: hidden; background: rgb(0, 0, 0); transition: opacity 0.35s ease-in-out; opacity: 0; pointer-events: none;">
+  <video autoplay="" data-dc-tpl="848" data-src="/v2/media/hero-dark.mp4" loop="" playsinline="" src="/v2/media/hero-dark.mp4" style="position: absolute; inset: 0px calc(-27% + 0px) 0px calc(27% + 0px); width: 100%; height: 100%; object-fit: cover; filter: blur(20px);">
+</video>
+  <div data-dc-tpl="849" data-dim="1" style="position: absolute; inset: 0px; background: rgba(0, 0, 0, 0.7); pointer-events: none;">
+</div>
+  <div data-dc-tpl="850" style="position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%;">
+    <div data-anim="1" data-dc-tpl="851" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.05s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.05s 1 normal both running fdBlur; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px) saturate(160%);">
+      <div data-dc-tpl="852" style="display: flex; align-items: flex-start; justify-content: space-between; padding: 3.5% 5% 0px;">
+        <div data-dc-tpl="853" style="display: flex; align-items: center; gap: 10px;">
+          <img alt="Fleetdeck" data-dc-tpl="854" height="28" src="/v2/media/fleetdeck-eye-minimal.svg" style="display: block;" width="28">
+          <span data-dc-tpl="855" style="font-size: 22px; font-weight: 500; letter-spacing: -0.02em; color: rgb(255, 255, 255);">fleetdeck.</span>
+        </div>
+        <span data-dc-tpl="856" style="color: rgb(128, 131, 142); font-size: 20px; line-height: 1.4;">02</span>
+      </div>
+      <div data-dc-tpl="857" style="padding: 0px 5%; margin-top: 24px;">
+<div data-dc-tpl="858" style="height: 1px; width: 100%; background: rgba(255, 255, 255, 0.15);">
+</div>
+</div>
+    </div>
+    <div data-dc-tpl="859" style="display: flex; flex-direction: column; flex: 1 1 0%; justify-content: space-between; padding: 4% 5% 5%;">
+      <div data-dc-tpl="860" style="max-width: 85%;">
+        <div data-dc-tpl="861" data-anim="1" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.15s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.15s 1 normal both running fdBlur; color: rgb(128, 131, 142); font-size: clamp(12px, 1.2vw, 18px); margin-bottom: 16px;">Problem Statement</div>
+        <h2 data-base-delay="0.25" data-dc-tpl="862" data-words="1" style="margin: 0px; color: rgb(255, 255, 255); line-height: 1.04; font-weight: 500; font-size: clamp(22px, 3.5vw, 56px);">
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.25s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.25s 1 normal both running fdSlideUp;">As</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.285s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.285s 1 normal both running fdSlideUp;">agent</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.32s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.32s 1 normal both running fdSlideUp;">fleets</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.355s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.355s 1 normal both running fdSlideUp;">scale,</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.39s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.39s 1 normal both running fdSlideUp;">teams</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.425s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.425s 1 normal both running fdSlideUp;">lose</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.46s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.46s 1 normal both running fdSlideUp;">track</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.495s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.495s 1 normal both running fdSlideUp;">of</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.53s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.53s 1 normal both running fdSlideUp;">live</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.565s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.565s 1 normal both running fdSlideUp;">sessions,</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdSlideUp;">standing</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.635s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.635s 1 normal both running fdSlideUp;">credentials,</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.67s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.67s 1 normal both running fdSlideUp;">and</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.705s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.705s 1 normal both running fdSlideUp;">what</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.74s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.74s 1 normal both running fdSlideUp;">ran</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.775s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.775s 1 normal both running fdSlideUp;">where</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.81s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.81s 1 normal both running fdSlideUp;">on</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.845s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.845s 1 normal both running fdSlideUp;">whose</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.88s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.88s 1 normal both running fdSlideUp;">behalf</span>
+</span>
+</h2>
+      </div>
+      <div data-dc-tpl="863" style="display: flex; gap: 16px; width: 100%;">
+        <div data-anim="1" data-dc-tpl="864" data-fd-anim="0.6s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdCard" style="animation: 0.6s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdCard; display: flex; flex: 1 1 0%; flex-direction: column; gap: 12px; min-width: 0px;">
+          <div data-dc-tpl="865" style="color: rgb(255, 255, 255); line-height: 0.96; letter-spacing: -0.02em; font-size: clamp(32px, 6vw, 96px);">80%</div>
+          <div data-dc-tpl="866" style="color: rgb(255, 255, 255); line-height: 1.4; font-size: clamp(13px, 1.2vw, 20px);">Run agents on standing credentials</div>
+        </div>
+        <div data-anim="1" data-dc-tpl="867" data-fd-anim="0.6s cubic-bezier(0.25, 0.1, 0.25, 1) 0.7s 1 normal both running fdCard" style="animation: 0.6s cubic-bezier(0.25, 0.1, 0.25, 1) 0.7s 1 normal both running fdCard; display: flex; flex: 1 1 0%; flex-direction: column; gap: 12px; min-width: 0px;">
+          <div data-dc-tpl="868" style="color: rgb(255, 255, 255); line-height: 0.96; letter-spacing: -0.02em; font-size: clamp(32px, 6vw, 96px);">63%</div>
+          <div data-dc-tpl="869" style="color: rgb(255, 255, 255); line-height: 1.4; font-size: clamp(13px, 1.2vw, 20px);">Can't attribute actions to a session</div>
+        </div>
+        <div data-anim="1" data-dc-tpl="870" data-fd-anim="0.6s cubic-bezier(0.25, 0.1, 0.25, 1) 0.8s 1 normal both running fdCard" style="animation: 0.6s cubic-bezier(0.25, 0.1, 0.25, 1) 0.8s 1 normal both running fdCard; display: flex; flex: 1 1 0%; flex-direction: column; gap: 12px; min-width: 0px;">
+          <div data-dc-tpl="871" style="color: rgb(255, 255, 255); line-height: 0.96; letter-spacing: -0.02em; font-size: clamp(32px, 6vw, 96px);">47%</div>
+          <div data-dc-tpl="872" style="color: rgb(255, 255, 255); line-height: 1.4; font-size: clamp(13px, 1.2vw, 20px);">Have found orphaned sessions running</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<div data-dc-tpl="873" data-fd-slide="2" data-screen-label="03 Market" style="position: absolute; inset: 0px; display: flex; flex-direction: column; overflow: hidden; background: rgb(0, 0, 0); transition: opacity 0.35s ease-in-out; opacity: 0; pointer-events: none;">
+  <video autoplay="" data-dc-tpl="874" data-src="/v2/media/hero-dark.mp4" loop="" playsinline="" src="/v2/media/hero-dark.mp4" style="position: absolute; inset: 0px calc(-27% + 0px) 0px calc(27% + 0px); width: 100%; height: 100%; object-fit: cover; transform: scale(-1, -1); opacity: 0.5; filter: blur(20px);">
+</video>
+  <div data-dc-tpl="875" data-dim="1" style="position: absolute; inset: 0px; background: rgba(0, 0, 0, 0.7); pointer-events: none;">
+</div>
+  <div data-dc-tpl="876" style="position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%;">
+    <div data-anim="1" data-dc-tpl="877" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.05s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.05s 1 normal both running fdBlur; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px) saturate(160%);">
+      <div data-dc-tpl="878" style="display: flex; align-items: flex-start; justify-content: space-between; padding: 3.5% 5% 0px;">
+        <div data-dc-tpl="879" style="display: flex; align-items: center; gap: 10px;">
+          <img alt="Fleetdeck" data-dc-tpl="880" height="28" src="/v2/media/fleetdeck-eye-minimal.svg" style="display: block;" width="28">
+          <span data-dc-tpl="881" style="font-size: 22px; font-weight: 500; letter-spacing: -0.02em; color: rgb(255, 255, 255);">fleetdeck.</span>
+        </div>
+        <span data-dc-tpl="882" style="color: rgb(128, 131, 142); font-size: 20px; line-height: 1.4;">03</span>
+      </div>
+      <div data-dc-tpl="883" style="padding: 0px 5%; margin-top: 24px;">
+<div data-dc-tpl="884" style="height: 1px; width: 100%; background: rgba(255, 255, 255, 0.15);">
+</div>
+</div>
+    </div>
+    <div data-dc-tpl="885" style="max-width: 55%; padding: 3% 5% 0px;">
+      <div data-dc-tpl="886" data-anim="1" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.15s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.15s 1 normal both running fdBlur; color: rgb(128, 131, 142); font-size: clamp(12px, 1.2vw, 18px); margin-bottom: 14px;">Market Opportunity</div>
+      <h2 data-base-delay="0.25" data-dc-tpl="887" data-words="1" style="margin: 0px; color: rgb(255, 255, 255); line-height: 1.04; font-weight: 500; font-size: clamp(20px, 3.2vw, 52px);">
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.25s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.25s 1 normal both running fdSlideUp;">Fleetdeck</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.285s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.285s 1 normal both running fdSlideUp;">targets</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.32s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.32s 1 normal both running fdSlideUp;">the</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.355s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.355s 1 normal both running fdSlideUp;">growing</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.39s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.39s 1 normal both running fdSlideUp;">market</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.425s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.425s 1 normal both running fdSlideUp;">for</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.46s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.46s 1 normal both running fdSlideUp;">agent</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.495s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.495s 1 normal both running fdSlideUp;">orchestration,</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.53s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.53s 1 normal both running fdSlideUp;">especially</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.565s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.565s 1 normal both running fdSlideUp;">in</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdSlideUp;">access</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.635s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.635s 1 normal both running fdSlideUp;">control</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.67s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.67s 1 normal both running fdSlideUp;">and</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.705s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.705s 1 normal both running fdSlideUp;">audit</span>
+</span>
+</h2>
+      <p data-dc-tpl="888" data-anim="1" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.8s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.8s 1 normal both running fdBlur; color: rgb(128, 131, 142); max-width: 90%; margin: 20px 0px 0px; line-height: 1.6; font-size: clamp(12px, 1.1vw, 18px);">We focus on the operational layer of agent infrastructure — session control, scoped credentials, and audit trails. As fleets move from experiment to production, every team running agents needs a control plane.</p>
+    </div>
+  </div>
+</div>
+<div data-dc-tpl="889" data-fd-slide="3" data-screen-label="04 Sales" style="position: absolute; inset: 0px; display: flex; flex-direction: column; overflow: hidden; background: rgb(0, 0, 0); transition: opacity 0.35s ease-in-out; opacity: 0; pointer-events: none;">
+  <video autoplay="" data-base-left="400px" data-dc-tpl="890" data-src="/v2/media/hero-dark.mp4" loop="" playsinline="" src="/v2/media/hero-dark.mp4" style="position: absolute; inset: 0px calc(-27% + 0px) 0px calc(27% + 400px); height: 100%; object-fit: cover; filter: blur(20px);">
+</video>
+  <div data-dc-tpl="891" data-dim="1" style="position: absolute; inset: 0px; background: rgba(0, 0, 0, 0.7); pointer-events: none;">
+</div>
+  <div data-dc-tpl="892" style="position: relative; z-index: 10; display: flex; flex-direction: column; width: 100%; height: 100%; justify-content: center;">
+    <div data-anim="1" data-dc-tpl="893" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.05s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.05s 1 normal both running fdBlur; position: absolute; top: 0px; left: 0px; right: 0px; padding-top: 3.5%; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px) saturate(160%);">
+      <div data-dc-tpl="894" style="display: flex; align-items: flex-start; justify-content: space-between; padding: 0px 5%;">
+        <div data-dc-tpl="895" style="display: flex; align-items: center; gap: 10px;">
+          <img alt="Fleetdeck" data-dc-tpl="896" height="28" src="/v2/media/fleetdeck-eye-minimal.svg" style="display: block;" width="28">
+          <span data-dc-tpl="897" style="font-size: 22px; font-weight: 500; letter-spacing: -0.02em; color: rgb(255, 255, 255);">fleetdeck.</span>
+        </div>
+        <span data-dc-tpl="898" style="color: rgb(128, 131, 142); font-size: 20px; line-height: 1.4;">04</span>
+      </div>
+      <div data-dc-tpl="899" style="padding: 0px 5%; margin-top: 24px;">
+<div data-dc-tpl="900" style="height: 1px; width: 100%; background: rgba(255, 255, 255, 0.15);">
+</div>
+</div>
+    </div>
+    <div data-dc-tpl="901" style="max-width: 65%; padding: 0px 5%;">
+      <div data-dc-tpl="902" data-anim="1" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.15s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.15s 1 normal both running fdBlur; color: rgb(128, 131, 142); font-size: clamp(12px, 1.2vw, 26px); margin-bottom: 16px;">Sales and Distribution Channels</div>
+      <h2 data-base-delay="0.25" data-dc-tpl="903" data-words="1" style="margin: 0px; color: rgb(255, 255, 255); line-height: 1.04; font-weight: 500; font-size: clamp(20px, 4vw, 80px);">
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.25s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.25s 1 normal both running fdSlideUp;">Our</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.285s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.285s 1 normal both running fdSlideUp;">direct</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.32s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.32s 1 normal both running fdSlideUp;">sales</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.355s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.355s 1 normal both running fdSlideUp;">team</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.39s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.39s 1 normal both running fdSlideUp;">engages</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.425s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.425s 1 normal both running fdSlideUp;">platform</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.46s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.46s 1 normal both running fdSlideUp;">teams,</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.495s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.495s 1 normal both running fdSlideUp;">while</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.53s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.53s 1 normal both running fdSlideUp;">self-serve</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.565s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.565s 1 normal both running fdSlideUp;">CLI</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdSlideUp;">adoption</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.635s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.635s 1 normal both running fdSlideUp;">and</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.67s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.67s 1 normal both running fdSlideUp;">integrations</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.705s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.705s 1 normal both running fdSlideUp;">expand</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.74s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.74s 1 normal both running fdSlideUp;">our</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.775s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.775s 1 normal both running fdSlideUp;">outreach</span>
+</span>
+</h2>
+      <p data-dc-tpl="904" data-anim="1" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 1.2s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 1.2s 1 normal both running fdBlur; color: rgb(128, 131, 142); max-width: 784px; margin: 24px 0px 0px; line-height: 1.6; font-size: clamp(12px, 1.1vw, 26px);">Direct engagement with enterprise platform teams ensures tailored rollouts. Meanwhile, self-serve adoption through the CLI and integrations with secret managers broaden our reach across teams already running agents in production.</p>
+    </div>
+  </div>
+</div>
+<div data-dc-tpl="905" data-fd-slide="4" data-screen-label="05 Expansion" style="position: absolute; inset: 0px; display: flex; flex-direction: column; overflow: hidden; background: rgb(19, 19, 24); transition: opacity 0.35s ease-in-out; opacity: 0; pointer-events: none;">
+  <video autoplay="" data-dc-tpl="906" data-src="/v2/media/hero-dark.mp4" loop="" playsinline="" src="/v2/media/hero-dark.mp4" style="position: absolute; width: 200%; height: 200%; bottom: 0px; left: calc(0% + 0px); object-fit: cover; right: calc(0% + 0px);">
+</video>
+  <div data-dc-tpl="907" data-dim="1" style="position: absolute; inset: 0px; background: rgba(0, 0, 0, 0); pointer-events: none;">
+</div>
+  <div data-dc-tpl="908" style="position: relative; z-index: 10; display: flex; flex-direction: column; height: 100%;">
+    <div data-anim="1" data-dc-tpl="909" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.05s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.05s 1 normal both running fdBlur; background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(20px) saturate(160%);">
+      <div data-dc-tpl="910" style="display: flex; align-items: flex-start; justify-content: space-between; padding: 3.5% 5% 0px;">
+        <div data-dc-tpl="911" style="display: flex; align-items: center; gap: 10px;">
+          <img alt="Fleetdeck" data-dc-tpl="912" height="28" src="/v2/media/fleetdeck-eye-minimal.svg" style="display: block;" width="28">
+          <span data-dc-tpl="913" style="font-size: 22px; font-weight: 500; letter-spacing: -0.02em; color: rgb(255, 255, 255);">fleetdeck.</span>
+        </div>
+        <span data-dc-tpl="914" style="color: rgb(128, 131, 142); font-size: 20px; line-height: 1.4;">05</span>
+      </div>
+      <div data-dc-tpl="915" style="padding: 0px 5%; margin-top: 24px;">
+<div data-dc-tpl="916" style="height: 1px; width: 100%; background: rgba(255, 255, 255, 0.15);">
+</div>
+</div>
+    </div>
+    <div data-dc-tpl="917" style="flex: 1 1 0%;">
+</div>
+    <div data-dc-tpl="918" style="max-width: 55%; padding: 0px 5% 5%;">
+      <div data-dc-tpl="919" data-anim="1" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.15s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.15s 1 normal both running fdBlur; color: rgb(128, 131, 142); font-size: clamp(12px, 1.2vw, 26px); margin-bottom: 16px;">Global Expansion</div>
+      <h2 data-base-delay="0.25" data-dc-tpl="920" data-words="1" style="margin: 0px; color: rgb(255, 255, 255); line-height: 1.04; font-weight: 500; font-size: clamp(20px, 4vw, 80px);">
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.25s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.25s 1 normal both running fdSlideUp;">Opportunities</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.285s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.285s 1 normal both running fdSlideUp;">across</span>
+</span>
+<span style="display: inline-block; overflow: hidden; margin-right: 0.27em; vertical-align: top; padding-bottom: 0.08em; margin-bottom: -0.08em;">
+<span data-anim="1" data-fd-anim="0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.32s 1 normal both running fdSlideUp" style="display: inline-block; animation: 0.55s cubic-bezier(0.25, 0.1, 0.25, 1) 0.32s 1 normal both running fdSlideUp;">continents</span>
+</span>
+</h2>
+      <p data-dc-tpl="921" data-anim="1" data-fd-anim="0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdBlur" style="animation: 0.9s cubic-bezier(0.25, 0.1, 0.25, 1) 0.6s 1 normal both running fdBlur; color: rgb(128, 131, 142); max-width: 680px; margin: 24px 0px 0px; line-height: 1.6; font-size: clamp(12px, 1.1vw, 26px);">Our global break-even journey aligns revenue with expenses worldwide. Through strategic cost management and international growth initiatives, we target break-even within 18 months, fortifying a strong global financial foundation.</p>
+    </div>
+  </div>
+</div>
+<div data-dc-tpl="922" style="position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; gap: 8px;">
+  <button aria-label="Slide 1" data-dc-tpl="923" data-dot="0" style="width: 24px; height: 8px; border-radius: 9999px; background: rgb(255, 255, 255); border-width: medium; border-style: none; border-color: currentcolor; border-image: none; padding: 0px; cursor: pointer; transition: 0.3s;">
+</button>
+  <button aria-label="Slide 2" data-dc-tpl="924" data-dot="1" style="width: 8px; height: 8px; border-radius: 9999px; background: rgba(255, 255, 255, 0.4); border-width: medium; border-style: none; border-color: currentcolor; border-image: none; padding: 0px; cursor: pointer; transition: 0.3s;">
+</button>
+  <button aria-label="Slide 3" data-dc-tpl="925" data-dot="2" style="width: 8px; height: 8px; border-radius: 9999px; background: rgba(255, 255, 255, 0.4); border-width: medium; border-style: none; border-color: currentcolor; border-image: none; padding: 0px; cursor: pointer; transition: 0.3s;">
+</button>
+  <button aria-label="Slide 4" data-dc-tpl="926" data-dot="3" style="width: 8px; height: 8px; border-radius: 9999px; background: rgba(255, 255, 255, 0.4); border-width: medium; border-style: none; border-color: currentcolor; border-image: none; padding: 0px; cursor: pointer; transition: 0.3s;">
+</button>
+  <button aria-label="Slide 5" data-dc-tpl="927" data-dot="4" style="width: 8px; height: 8px; border-radius: 9999px; background: rgba(255, 255, 255, 0.4); border-width: medium; border-style: none; border-color: currentcolor; border-image: none; padding: 0px; cursor: pointer; transition: 0.3s;">
+</button>
+</div>
+</div>
+</div>
+<button data-dc-tpl="928" data-fd-back="1" aria-label="Back to landing" class="scpb" style="display: inline-flex; position: fixed; right: 20px; bottom: 20px; z-index: 9999; align-items: center; gap: 8px; border: 1px solid rgba(255, 255, 255, 0.22); background: rgba(10, 10, 10, 0.72); backdrop-filter: blur(14px); color: rgb(255, 255, 255); font-family: Inter, system-ui, sans-serif; font-size: 12px; letter-spacing: 0.02em; padding: 9px 15px; border-radius: 9999px; cursor: pointer;">← fleetdeck</button>
+</div>
+</div>
+</div>

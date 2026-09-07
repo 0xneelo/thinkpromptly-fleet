@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "slice": "S2",
-  "mode": "self-test",
-  "generatedAt": "2026-09-06T23:54:42.948Z",
+  "mode": "interaction-parity",
+  "generatedAt": "2026-09-07T00:09:14.491Z",
   "sources": {
-    "a": "http://127.0.0.1:3199/v2/pass1/index.html",
-    "b": "http://127.0.0.1:3199/v2/pass1/index.html"
+    "a": "http://127.0.0.1:3214/v2/pass1/index.html",
+    "b": "http://127.0.0.1:3214/v2/index.html"
   },
   "theme": "dark",
   "determinism": {
@@ -28,8 +28,8 @@
       "identical": true,
       "aLength": 92364,
       "bLength": 92364,
-      "aSha256": "0955c4cb82ea9148c9598529fbb8450910dac62e0a8080ea5ae62953a15f5399",
-      "bSha256": "0955c4cb82ea9148c9598529fbb8450910dac62e0a8080ea5ae62953a15f5399",
+      "aSha256": "4f93614e765195f6423b0dfebb871d4bed34f07d5e89e3ac76c26fdba0005b87",
+      "bSha256": "4f93614e765195f6423b0dfebb871d4bed34f07d5e89e3ac76c26fdba0005b87",
       "firstDiffOffset": null
     },
     {
@@ -40,8 +40,8 @@
       "identical": true,
       "aLength": 93926,
       "bLength": 93926,
-      "aSha256": "6086863a98059930859e2625f2688b63a6120cc8fd96cc43360a9ce839fbb509",
-      "bSha256": "6086863a98059930859e2625f2688b63a6120cc8fd96cc43360a9ce839fbb509"
+      "aSha256": "837ae8d5fb6ad7a6ed531daba3ea46eac62a26fc97062ddc7342b05794a89b4f",
+      "bSha256": "837ae8d5fb6ad7a6ed531daba3ea46eac62a26fc97062ddc7342b05794a89b4f"
     },
     {
       "step": "theme-toggle",
@@ -51,8 +51,8 @@
       "identical": true,
       "aLength": 92934,
       "bLength": 92934,
-      "aSha256": "9a1268c458b280de5d6d3e9402ca7f88cc483b7b469b521f855b8e76e8fe12cf",
-      "bSha256": "9a1268c458b280de5d6d3e9402ca7f88cc483b7b469b521f855b8e76e8fe12cf"
+      "aSha256": "928463e160809df586138c67e4536d30ba7b3b14fb6132696cdd15e23b103203",
+      "bSha256": "928463e160809df586138c67e4536d30ba7b3b14fb6132696cdd15e23b103203"
     },
     {
       "step": "sidebar-collapse",
@@ -62,8 +62,8 @@
       "identical": true,
       "aLength": 80307,
       "bLength": 80307,
-      "aSha256": "1d5354721114ef41f0d0bc4725ce7db6b3ceb3e35de09382e0899b700faad7c5",
-      "bSha256": "1d5354721114ef41f0d0bc4725ce7db6b3ceb3e35de09382e0899b700faad7c5"
+      "aSha256": "01f94ce987b22949750e38871efbcd84eb79d5b415e55364988dcef37e547a41",
+      "bSha256": "01f94ce987b22949750e38871efbcd84eb79d5b415e55364988dcef37e547a41"
     },
     {
       "step": "right-rail-toggle",
@@ -73,8 +73,8 @@
       "identical": true,
       "aLength": 71610,
       "bLength": 71610,
-      "aSha256": "758d0c10ae2b9ce25b099537fc6f57ff9b03bf48a07cec0437326b53873286d9",
-      "bSha256": "758d0c10ae2b9ce25b099537fc6f57ff9b03bf48a07cec0437326b53873286d9"
+      "aSha256": "53696f642f360c65e074edf79a08915c5df77d96dfaffbea032828693928312b",
+      "bSha256": "53696f642f360c65e074edf79a08915c5df77d96dfaffbea032828693928312b"
     },
     {
       "step": "video-toggle",
@@ -84,8 +84,8 @@
       "identical": true,
       "aLength": 71796,
       "bLength": 71796,
-      "aSha256": "216f9c92b8fb5fba5be473cd4c113c9416eb47acd5a32dfce753b98db976335c",
-      "bSha256": "216f9c92b8fb5fba5be473cd4c113c9416eb47acd5a32dfce753b98db976335c"
+      "aSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef",
+      "bSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef"
     },
     {
       "step": "nav-windows",
@@ -95,8 +95,8 @@
       "identical": true,
       "aLength": 59981,
       "bLength": 59981,
-      "aSha256": "85eda2f5a46585e6f2c9bb1857e966125cce5c8e5ab1923f6ddc0bef5cf1e0df",
-      "bSha256": "85eda2f5a46585e6f2c9bb1857e966125cce5c8e5ab1923f6ddc0bef5cf1e0df"
+      "aSha256": "d10485b2a7eaf3c06d7fde164cfdd65630ac6c0ee1956501f64f9fe3ecadd5eb",
+      "bSha256": "d10485b2a7eaf3c06d7fde164cfdd65630ac6c0ee1956501f64f9fe3ecadd5eb"
     },
     {
       "step": "nav-org-chart",
@@ -106,8 +106,8 @@
       "identical": true,
       "aLength": 64554,
       "bLength": 64554,
-      "aSha256": "ef04eaa5281eb8b80160e3a804fa6f1c3482d2e95458ed3b1ed85a904c98f933",
-      "bSha256": "ef04eaa5281eb8b80160e3a804fa6f1c3482d2e95458ed3b1ed85a904c98f933"
+      "aSha256": "2ae0b04bd854d16226d40b559a5305dfac9df1f852087a8291861069995b273a",
+      "bSha256": "2ae0b04bd854d16226d40b559a5305dfac9df1f852087a8291861069995b273a"
     },
     {
       "step": "nav-registry",
@@ -117,8 +117,8 @@
       "identical": true,
       "aLength": 87706,
       "bLength": 87706,
-      "aSha256": "6284e878f77a9d544fc9a22d472305114355465efc3cd784194c6db2807613d3",
-      "bSha256": "6284e878f77a9d544fc9a22d472305114355465efc3cd784194c6db2807613d3"
+      "aSha256": "7dae7eb9c5aee71d58afde75aaff9311f4d3deceb2f745e090f74bc45dcb1223",
+      "bSha256": "7dae7eb9c5aee71d58afde75aaff9311f4d3deceb2f745e090f74bc45dcb1223"
     },
     {
       "step": "nav-message-bus",
@@ -128,8 +128,8 @@
       "identical": true,
       "aLength": 71796,
       "bLength": 71796,
-      "aSha256": "8419385ed1aeed9aa033561ab5e006dbf0dc58f54f4609ab09dc54ae1813ce59",
-      "bSha256": "8419385ed1aeed9aa033561ab5e006dbf0dc58f54f4609ab09dc54ae1813ce59"
+      "aSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef",
+      "bSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef"
     },
     {
       "step": "nav-ssh-keys",
@@ -139,8 +139,8 @@
       "identical": true,
       "aLength": 62402,
       "bLength": 62402,
-      "aSha256": "2c096d291a42e2f38d6fe9646391f34daab02ead5832e11c07f927a46579b747",
-      "bSha256": "2c096d291a42e2f38d6fe9646391f34daab02ead5832e11c07f927a46579b747"
+      "aSha256": "f60bbb7cf8a660cfa217e6b7a003c76df15f2da25b8189a5fc7016a4fc82fa6b",
+      "bSha256": "f60bbb7cf8a660cfa217e6b7a003c76df15f2da25b8189a5fc7016a4fc82fa6b"
     },
     {
       "step": "nav-accounts",
@@ -150,8 +150,8 @@
       "identical": true,
       "aLength": 62149,
       "bLength": 62149,
-      "aSha256": "5a5945874cc18557489ef0bb4f1cf15f44471f4c86e6e4c39f2dbf5403f7500a",
-      "bSha256": "5a5945874cc18557489ef0bb4f1cf15f44471f4c86e6e4c39f2dbf5403f7500a"
+      "aSha256": "33bef2dd886ef942793174770c2d042a012ae9850635efd4fa01ba75ba9deb0e",
+      "bSha256": "33bef2dd886ef942793174770c2d042a012ae9850635efd4fa01ba75ba9deb0e"
     },
     {
       "step": "nav-machines",
@@ -161,8 +161,8 @@
       "identical": true,
       "aLength": 58618,
       "bLength": 58618,
-      "aSha256": "076300b48287d7467b18cd649542956d409493e3028377b84413ab22a46de6e8",
-      "bSha256": "076300b48287d7467b18cd649542956d409493e3028377b84413ab22a46de6e8"
+      "aSha256": "c06a50fcbf4feeeb31db691f06b0e9c905eaef066cc279b065083e809fb93ed5",
+      "bSha256": "c06a50fcbf4feeeb31db691f06b0e9c905eaef066cc279b065083e809fb93ed5"
     },
     {
       "step": "nav-desktop-sessions",
@@ -172,8 +172,8 @@
       "identical": true,
       "aLength": 126340,
       "bLength": 126340,
-      "aSha256": "79200fc2d6fdb88bd88ebe79d2b920a09f4521a77b1ecc96651ebebf897ce2b3",
-      "bSha256": "79200fc2d6fdb88bd88ebe79d2b920a09f4521a77b1ecc96651ebebf897ce2b3"
+      "aSha256": "a3d3508b4abcd4cfc9461f03d849f85ae4439be815a0012fa43f3dbfbc786b99",
+      "bSha256": "a3d3508b4abcd4cfc9461f03d849f85ae4439be815a0012fa43f3dbfbc786b99"
     },
     {
       "step": "registry-open",
@@ -183,8 +183,8 @@
       "identical": true,
       "aLength": 87706,
       "bLength": 87706,
-      "aSha256": "6284e878f77a9d544fc9a22d472305114355465efc3cd784194c6db2807613d3",
-      "bSha256": "6284e878f77a9d544fc9a22d472305114355465efc3cd784194c6db2807613d3"
+      "aSha256": "7dae7eb9c5aee71d58afde75aaff9311f4d3deceb2f745e090f74bc45dcb1223",
+      "bSha256": "7dae7eb9c5aee71d58afde75aaff9311f4d3deceb2f745e090f74bc45dcb1223"
     },
     {
       "step": "registry-select-all",
@@ -194,8 +194,8 @@
       "identical": true,
       "aLength": 91763,
       "bLength": 91763,
-      "aSha256": "ba1467621dedbbc4f7ed39aeda995e3e25ce8b5bd5ea3f7ea04c34be5bfe2f3a",
-      "bSha256": "ba1467621dedbbc4f7ed39aeda995e3e25ce8b5bd5ea3f7ea04c34be5bfe2f3a"
+      "aSha256": "d064c72a82a992c92f8150678329518218b1b69ce7973bb07a3de350175b73b6",
+      "bSha256": "d064c72a82a992c92f8150678329518218b1b69ce7973bb07a3de350175b73b6"
     },
     {
       "step": "registry-unselect-row",
@@ -205,8 +205,8 @@
       "identical": true,
       "aLength": 91361,
       "bLength": 91361,
-      "aSha256": "7ca629e85f48ce482bbf1ff0d074cea6b78cb6908a9852c569dadcd5db92ec83",
-      "bSha256": "7ca629e85f48ce482bbf1ff0d074cea6b78cb6908a9852c569dadcd5db92ec83"
+      "aSha256": "1bcebf113cc067401cf2676f79d3ba3a8027af56e6f48072a6cebe54031286f2",
+      "bSha256": "1bcebf113cc067401cf2676f79d3ba3a8027af56e6f48072a6cebe54031286f2"
     },
     {
       "step": "bus-open",
@@ -216,8 +216,8 @@
       "identical": true,
       "aLength": 71796,
       "bLength": 71796,
-      "aSha256": "8419385ed1aeed9aa033561ab5e006dbf0dc58f54f4609ab09dc54ae1813ce59",
-      "bSha256": "8419385ed1aeed9aa033561ab5e006dbf0dc58f54f4609ab09dc54ae1813ce59"
+      "aSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef",
+      "bSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef"
     },
     {
       "step": "bus-select-mode",
@@ -227,8 +227,8 @@
       "identical": true,
       "aLength": 76331,
       "bLength": 76331,
-      "aSha256": "3538cf5c4a963c9f5a94bdb8ab1d9540fb37f76dca2f4fab07d8100dc7f75d06",
-      "bSha256": "3538cf5c4a963c9f5a94bdb8ab1d9540fb37f76dca2f4fab07d8100dc7f75d06"
+      "aSha256": "252e710e087bd03105d87da44b7ac930cd468fcbc0018bb1a34ff5b62bfe9f93",
+      "bSha256": "252e710e087bd03105d87da44b7ac930cd468fcbc0018bb1a34ff5b62bfe9f93"
     },
     {
       "step": "bus-select-mode-off",
@@ -238,8 +238,8 @@
       "identical": true,
       "aLength": 71796,
       "bLength": 71796,
-      "aSha256": "8419385ed1aeed9aa033561ab5e006dbf0dc58f54f4609ab09dc54ae1813ce59",
-      "bSha256": "8419385ed1aeed9aa033561ab5e006dbf0dc58f54f4609ab09dc54ae1813ce59"
+      "aSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef",
+      "bSha256": "9a7e950ad561f9f2a523df5e737958a42f8fc945ff1d021594d22979d254e3ef"
     },
     {
       "step": "bus-compose",
@@ -249,8 +249,8 @@
       "identical": true,
       "aLength": 71799,
       "bLength": 71799,
-      "aSha256": "4edc216256d7651b146f1d1c00e0af0ecef9d6a8d89ba270430374578498f034",
-      "bSha256": "4edc216256d7651b146f1d1c00e0af0ecef9d6a8d89ba270430374578498f034"
+      "aSha256": "c5aadcc590d839fa41d44babf10a814564905f9498ab5528aee9aaad5c8b9e2c",
+      "bSha256": "c5aadcc590d839fa41d44babf10a814564905f9498ab5528aee9aaad5c8b9e2c"
     },
     {
       "step": "windows-open",
@@ -260,8 +260,8 @@
       "identical": true,
       "aLength": 59981,
       "bLength": 59981,
-      "aSha256": "85eda2f5a46585e6f2c9bb1857e966125cce5c8e5ab1923f6ddc0bef5cf1e0df",
-      "bSha256": "85eda2f5a46585e6f2c9bb1857e966125cce5c8e5ab1923f6ddc0bef5cf1e0df"
+      "aSha256": "d10485b2a7eaf3c06d7fde164cfdd65630ac6c0ee1956501f64f9fe3ecadd5eb",
+      "bSha256": "d10485b2a7eaf3c06d7fde164cfdd65630ac6c0ee1956501f64f9fe3ecadd5eb"
     },
     {
       "step": "term-fullscreen",
@@ -271,8 +271,8 @@
       "identical": true,
       "aLength": 61573,
       "bLength": 61573,
-      "aSha256": "a850b8bff751978593c4da9c679f22f2c11a52fc347239cc6c347a60c288eed9",
-      "bSha256": "a850b8bff751978593c4da9c679f22f2c11a52fc347239cc6c347a60c288eed9"
+      "aSha256": "e7da7967fd17d40444eaecfeacd5095b6fe50082f78f4b868bd5211b7af8ec27",
+      "bSha256": "e7da7967fd17d40444eaecfeacd5095b6fe50082f78f4b868bd5211b7af8ec27"
     },
     {
       "step": "term-menu",
@@ -282,8 +282,8 @@
       "identical": true,
       "aLength": 66690,
       "bLength": 66690,
-      "aSha256": "83d2998f10dba7830bf171a663768ebd1897a446cf5f3455f1e51f60db1f138b",
-      "bSha256": "83d2998f10dba7830bf171a663768ebd1897a446cf5f3455f1e51f60db1f138b"
+      "aSha256": "da45de44cdfa51c64270d27eff6ed262592886122679885070f1cdb040b4b3c0",
+      "bSha256": "da45de44cdfa51c64270d27eff6ed262592886122679885070f1cdb040b4b3c0"
     },
     {
       "step": "term-escape-menu",
@@ -293,8 +293,8 @@
       "identical": true,
       "aLength": 61594,
       "bLength": 61594,
-      "aSha256": "a58749032a14a921db9c4087f2435e03975f162a30b581d3fa6a94748de8cf31",
-      "bSha256": "a58749032a14a921db9c4087f2435e03975f162a30b581d3fa6a94748de8cf31"
+      "aSha256": "28da3f969207f6a8911525dcafab6f7e4c6ceb80bf3468aff6c56828531b0b2d",
+      "bSha256": "28da3f969207f6a8911525dcafab6f7e4c6ceb80bf3468aff6c56828531b0b2d"
     },
     {
       "step": "term-escape-close",
@@ -304,8 +304,8 @@
       "identical": true,
       "aLength": 59981,
       "bLength": 59981,
-      "aSha256": "369b3742e65a7ce186df312a4be86e620093283a2433ffff564a7699d84f4385",
-      "bSha256": "369b3742e65a7ce186df312a4be86e620093283a2433ffff564a7699d84f4385"
+      "aSha256": "a1a2aebd18db453d74b4fae3987f93a19dff0e4cf33aac99db9abe53909701d4",
+      "bSha256": "a1a2aebd18db453d74b4fae3987f93a19dff0e4cf33aac99db9abe53909701d4"
     },
     {
       "step": "accounts-open",
@@ -315,8 +315,8 @@
       "identical": true,
       "aLength": 62149,
       "bLength": 62149,
-      "aSha256": "26f3667364159684baad17be57b2fdd9e57e441fc49a357cfc7717c45c895395",
-      "bSha256": "26f3667364159684baad17be57b2fdd9e57e441fc49a357cfc7717c45c895395"
+      "aSha256": "fa7f2f6ca0412f8c8a7f2a204a4d5b540ecd03707a2a862cd729fee4be861961",
+      "bSha256": "fa7f2f6ca0412f8c8a7f2a204a4d5b540ecd03707a2a862cd729fee4be861961"
     },
     {
       "step": "machines-open",
@@ -326,8 +326,8 @@
       "identical": true,
       "aLength": 58618,
       "bLength": 58618,
-      "aSha256": "423ac667cdd74754ff1fe0ab0588b55848464679e0eab158cfc6f1ac039e4f52",
-      "bSha256": "423ac667cdd74754ff1fe0ab0588b55848464679e0eab158cfc6f1ac039e4f52"
+      "aSha256": "e7bb5c6f3b537d91daf4db6fe32985a323264f5e9bd9087ba6739e8af5bbcb40",
+      "bSha256": "e7bb5c6f3b537d91daf4db6fe32985a323264f5e9bd9087ba6739e8af5bbcb40"
     },
     {
       "step": "desktop-open",
@@ -337,8 +337,8 @@
       "identical": true,
       "aLength": 126340,
       "bLength": 126340,
-      "aSha256": "ab4b80e1115e2018cc7ee878e2afd13dc3bd75e4d55dd9574b19bf356485dfc7",
-      "bSha256": "ab4b80e1115e2018cc7ee878e2afd13dc3bd75e4d55dd9574b19bf356485dfc7"
+      "aSha256": "078f3e9b9b6f980a6cf19a6e7548d2e8114d1f2e6857f962b79d71cbeb74a0c1",
+      "bSha256": "078f3e9b9b6f980a6cf19a6e7548d2e8114d1f2e6857f962b79d71cbeb74a0c1"
     },
     {
       "step": "deck-enter",
@@ -348,8 +348,8 @@
       "identical": true,
       "aLength": 114242,
       "bLength": 114242,
-      "aSha256": "176bd28ccc0f2fc4ed3136067f5fc6fa454bed739a327991516d496b1ba58b79",
-      "bSha256": "176bd28ccc0f2fc4ed3136067f5fc6fa454bed739a327991516d496b1ba58b79"
+      "aSha256": "0066cfeadb0d893049b8d80a65cff4b3b9c092b785e3b8e6e7f934995812a6e6",
+      "bSha256": "0066cfeadb0d893049b8d80a65cff4b3b9c092b785e3b8e6e7f934995812a6e6"
     },
     {
       "step": "deck-right-1",
@@ -359,8 +359,8 @@
       "identical": true,
       "aLength": 114312,
       "bLength": 114312,
-      "aSha256": "9bab1af04ccc5a085fa8193e5e62a56be0e8e8a4560bd255cb4fdc45ced1b8f0",
-      "bSha256": "9bab1af04ccc5a085fa8193e5e62a56be0e8e8a4560bd255cb4fdc45ced1b8f0"
+      "aSha256": "7135a5c776479a1ad1f65daed928e33f60532badca426357a69192f8d7cfdf47",
+      "bSha256": "7135a5c776479a1ad1f65daed928e33f60532badca426357a69192f8d7cfdf47"
     },
     {
       "step": "deck-right-2",
@@ -370,8 +370,8 @@
       "identical": true,
       "aLength": 114312,
       "bLength": 114312,
-      "aSha256": "fda4ee53baec630cb67e6dcd1655d0d126fc11d32145f883d24b5278a2969ef4",
-      "bSha256": "fda4ee53baec630cb67e6dcd1655d0d126fc11d32145f883d24b5278a2969ef4"
+      "aSha256": "284d005970bdb37090f028d37c019892672f983a0b904a62dff46ed2be7731f7",
+      "bSha256": "284d005970bdb37090f028d37c019892672f983a0b904a62dff46ed2be7731f7"
     },
     {
       "step": "deck-right-3",
@@ -381,8 +381,8 @@
       "identical": true,
       "aLength": 114312,
       "bLength": 114312,
-      "aSha256": "af0eb28b5f2c0601b03c127447d15dfa48ec85e101ff6f6624371bffe81df631",
-      "bSha256": "af0eb28b5f2c0601b03c127447d15dfa48ec85e101ff6f6624371bffe81df631"
+      "aSha256": "7a08c9338a19767e488585fc61c9d6cc631b28006a0e3ee08d86620d506978ea",
+      "bSha256": "7a08c9338a19767e488585fc61c9d6cc631b28006a0e3ee08d86620d506978ea"
     },
     {
       "step": "deck-right-4",
@@ -392,8 +392,8 @@
       "identical": true,
       "aLength": 114312,
       "bLength": 114312,
-      "aSha256": "3dd4ec8ec1aaf5f8bb7a3f5e7193a15cd19366962099765003c512a3e982dcf4",
-      "bSha256": "3dd4ec8ec1aaf5f8bb7a3f5e7193a15cd19366962099765003c512a3e982dcf4"
+      "aSha256": "72cf1088681f0059a1d790faac6370df567d55473d3776cb9ef83f0104954bf0",
+      "bSha256": "72cf1088681f0059a1d790faac6370df567d55473d3776cb9ef83f0104954bf0"
     }
   ]
 }

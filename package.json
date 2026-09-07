@@ -8,7 +8,9 @@
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true",
     "pretest": "node scripts/check-deps.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
-    "design:diff": "node scripts/design-diff.mjs"
+    "design:diff": "node scripts/design-diff.mjs",
+    "v2:compile": "node tools/dc-compile.mjs",
+    "v2:check": "node tools/dc-compile.mjs --check"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.10.0",
