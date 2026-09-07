@@ -1,0 +1,266 @@
+// L8 acceptance: the Accounts (credits) screen's pure logic must produce exactly what
+// today's public/accounts.js produces — same texts, same thresholds, same ordering.
+// The row shapes come from the response captured from the live deck on 2026-09-07
+// (docs/design/fleetdeck-v2/fixtures/api/credits.json); the states that capture does
+// not contain (expired token, rate limit, no source, capped credits) are built here
+// from the same row shape.
+const test = require('node:test');
+const assert = require('node:assert');
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.join(__dirname, '..');
+const acct = require(path.join(ROOT, 'public/v2/screens/accounts.js'));
+const data = require(path.join(ROOT, 'public/v2/data.js'));
+
+const credits = JSON.parse(fs.readFileSync(path.join(ROOT, 'docs/design/fleetdeck-v2/fixtures/api/credits.json'), 'utf8'));
+
+// Fixed clock so every humanised timestamp is deterministic. The endpoint stores
+// epoch SECONDS.
+const NOW = 1788740000000;
+const SEC = (ms) => ms / 1000;
+
+test('ago: the four buckets and the amber/red ages', () => {
+  assert.equal(acct.ago(SEC(NOW - 30 * 1000), NOW).text, 'just now');
+  assert.equal(acct.ago(SEC(NOW - 5 * 60000), NOW).text, '5m ago');
+  assert.equal(acct.ago(SEC(NOW - 3 * 3600000), NOW).text, '3h ago');
+  assert.equal(acct.ago(SEC(NOW - 2 * 864e5), NOW).text, '2d ago');
+  assert.equal(acct.ago(SEC(NOW - 3600000), NOW).cls, '');
+  assert.equal(acct.ago(SEC(NOW - 2 * 864e5), NOW).cls, 'age-amber');
+  assert.equal(acct.ago(SEC(NOW - 4 * 864e5), NOW).cls, 'age-red');
+});
+
+test('until: resets now, minutes, then hours and minutes', () => {
+  assert.equal(acct.until(0, NOW), '');
+  assert.equal(acct.until(null, NOW), '');
+  assert.equal(acct.until(SEC(NOW - 60000), NOW), 'resets now');
+  assert.equal(acct.until(SEC(NOW + 26 * 60000), NOW), 'resets in 26m');
+  assert.equal(acct.until(SEC(NOW + (4 * 60 + 26) * 60000), NOW), 'resets in 4h 26m');
+});
+
+test('level: red over 90, amber from 70', () => {
+  assert.equal(acct.level(0), '');
+  assert.equal(acct.level(69), '');
+  assert.equal(acct.level(70), 'amber');
+  assert.equal(acct.level(90), 'amber');
+  assert.equal(acct.level(91), 'red');
+  assert.equal(acct.level(100), 'red');
+});
+
+test('worst: the highest main window, null when nothing reported a number', () => {
+  const claude = (windows) => ({ kind: 'claude', windows });
+  assert.equal(acct.worst(claude({ five_hour: { pct: 28 }, seven_day: { pct: 6 }, seven_day_fable: { pct: 100 } })), 100);
+  // The paid extra pool is not a wall, so it never counts.
+  assert.equal(acct.worst(claude({ five_hour: { pct: 12 }, extra: { pct: 99 } })), 12);
+  assert.equal(acct.worst(claude({ five_hour: { pct: null }, seven_day: { pct: null } })), null);
+  assert.equal(acct.worst({ kind: 'codex', weekly: { pct: 80 }, secondary: null }), 80);
+});
+
+test('order: most constrained first, unreported rows last', () => {
+  const pair = (id, kind, windows) => ({ raw: { id, kind, windows }, base: {} });
+  const out = acct.order([
+    pair('a', 'claude', { five_hour: { pct: 28 } }),
+    pair('b', 'claude', { five_hour: { pct: null } }),
+    pair('c', 'claude', { five_hour: { pct: 96 } }),
+    pair('d', 'claude', { five_hour: { pct: 62 } }),
+  ]);
+  assert.deepEqual(out.map((p) => p.raw.id), ['c', 'd', 'a', 'b']);
+});
+
+test('summary: counts, the limit tally and money per currency', () => {
+  assert.deepEqual(acct.summary([]), ['0 accounts', '0 at or over a limit', 'no credits spent']);
+  // One account is singular — accounts.js:207.
+  assert.deepEqual(acct.summary([{ kind: 'claude', windows: {} }]),
+    ['1 account', '0 at or over a limit', 'no credits spent']);
+  assert.deepEqual(acct.summary([
+    { kind: 'claude', windows: { seven_day_fable: { pct: 100 } } },
+    { kind: 'claude', windows: { five_hour: { pct: 12 } }, credit: { used: 1.5, limit: 10, currency: 'USD' } },
+    { kind: 'claude', windows: { five_hour: { pct: 1 } }, credit: { used: 2.25, limit: 10, currency: 'USD', capped: true } },
+    { kind: 'codex', weekly: { pct: 100 } },
+  ]), ['4 accounts', '3 at or over a limit', 'spent 3.75 USD']);
+  // Currencies are listed side by side — adding them would invent a rate.
+  assert.deepEqual(acct.summary([
+    { kind: 'claude', windows: {}, credit: { used: 1, limit: 5, currency: 'USD' } },
+    { kind: 'claude', windows: {}, credit: { used: 2, limit: 5, currency: 'EUR' } },
+  ])[2], 'spent 1.00 USD · 2.00 EUR');
+});
+
+test('creditsLine: money for claude, balance for codex, verbatim suffixes', () => {
+  const claude = (credit) => acct.creditsLine({ kind: 'claude', credit });
+  assert.equal(claude(null), null);
+  assert.equal(claude({ used: null, limit: null, decimals: 0, enabled: false }), null);
+  assert.deepEqual(claude({ used: 1.5, limit: 10, decimals: 2, currency: 'USD', enabled: true, capped: false }),
+    { text: 'credits: 1.50 / 10.00 USD', notice: false });
+  assert.deepEqual(claude({ used: 10, limit: 10, decimals: 2, currency: 'USD', enabled: true, capped: true }),
+    { text: 'credits: 10.00 / 10.00 USD · spend limit reached', notice: true });
+  assert.deepEqual(claude({ used: 1, limit: 10, decimals: 0, currency: 'USD', enabled: false, capped: false }),
+    { text: 'credits: 1 / 10 USD · extra usage off', notice: false });
+  // No currency on the row means no trailing space.
+  assert.equal(claude({ used: 1, limit: 2, decimals: 2, currency: null, enabled: true }).text, 'credits: 1.00 / 2.00');
+
+  const codex = (c) => acct.creditsLine({ kind: 'codex', credits: c });
+  assert.equal(codex({ has_credits: false, balance: '0' }), null);
+  assert.equal(codex({ has_credits: true, unlimited: true }).text, 'credits: unlimited');
+  assert.equal(codex({ has_credits: true, unlimited: false, balance: '12.40' }).text, 'credits: 12.40');
+});
+
+test('banner: one sentence per state, a rate limit is not a fault', () => {
+  assert.equal(acct.banner({ state: 'ok', host: 'h' }), null);
+  assert.deepEqual(acct.banner({ state: 'token_expired', host: 'german-box' }),
+    { text: 'token expired — open Claude Code on german-box', tone: 'notice' });
+  assert.deepEqual(acct.banner({ state: 'rate_limited', host: 'german-box' }),
+    { text: 'usage endpoint busy on german-box — figures below are the last good read', tone: 'muted' });
+  assert.deepEqual(acct.banner({ state: 'error', host: 'german-box' }),
+    { text: 'could not read usage on german-box', tone: 'notice' });
+});
+
+test('staleNote: the two sampled sentences, verbatim', () => {
+  assert.equal(acct.staleNote({ sample_ts: null }, NOW), null);
+  assert.deepEqual(acct.staleNote({ sample_ts: SEC(NOW - 8 * 864e5), stale_windows: true }, NOW),
+    { text: 'sampled 8d ago — older than the window it measured, so these have reset since', cls: 'age-red' });
+  assert.deepEqual(acct.staleNote({ sample_ts: SEC(NOW - 2 * 3600000) }, NOW),
+    { text: 'sampled 2h ago — no reset times in this source', cls: '' });
+});
+
+test('bars: window order and labels, extra last, empty rows still render', () => {
+  const r = {
+    kind: 'claude',
+    windows: {
+      extra: { pct: 3, resets_at: null },
+      seven_day_fable: { pct: 8, resets_at: null },
+      seven_day: { pct: 71, resets_at: null },
+      five_hour: { pct: 12, resets_at: SEC(NOW + (4 * 60 + 26) * 60000) },
+    },
+  };
+  const out = acct.bars(r, NOW);
+  assert.deepEqual(out.map((b) => b.label), ['5 hour', '7 day', '7 day Fable', 'extra usage']);
+  assert.deepEqual(out[0], { label: '5 hour', pct: 12, right: '12%', level: '', resets: 'resets in 4h 26m' });
+  assert.equal(out[1].level, 'amber');
+  // A window with no percentage still gets a row — an empty bar says "reported, unknown".
+  assert.deepEqual(acct.bars({ kind: 'claude', windows: { five_hour: { pct: null, resets_at: null, stale: true } } }, NOW),
+    [{ label: '5 hour', pct: null, right: '—', level: '', resets: '' }]);
+  // Codex: weekly then the session window.
+  assert.deepEqual(acct.bars({ kind: 'codex', weekly: { pct: 80, resets_at: null }, secondary: { pct: 4, resets_at: null } }, NOW)
+    .map((b) => [b.label, b.right]), [['weekly', '80%'], ['session', '4%']]);
+});
+
+test('trend: time-scaled points, tooltip, last sample drives the colour', () => {
+  assert.equal(acct.trend([]), null);
+  assert.equal(acct.trend([{ t: 1, sd: 5 }]), null, 'one point cannot make a line');
+  // Non-numeric samples are dropped before the count is taken.
+  assert.equal(acct.trend([{ t: 1, sd: 5 }, { t: 2, sd: null }]), null);
+
+  const day = 86400;
+  const t = acct.trend([{ t: 0, sd: 0 }, { t: day, sd: 50 }, { t: 2 * day, sd: 95 }]);
+  assert.equal(t.points, '0.00,24.00 50.00,12.00 100.00,1.20');
+  assert.equal(t.pct, '95%');
+  assert.equal(t.level, 'red');
+  assert.equal(t.title, '2 days, 3 samples');
+  // Percentages outside 0-100 are clamped into the box.
+  assert.equal(acct.trend([{ t: 0, sd: -10 }, { t: day, sd: 140 }]).points, '0.00,24.00 100.00,0.00');
+  // Every sample in the same second would divide by zero: spread them by index.
+  assert.equal(acct.trend([{ t: 5, sd: 0 }, { t: 5, sd: 100 }]).points, '0.00,24.00 100.00,0.00');
+  assert.equal(acct.trend([{ t: 0, sd: 1 }, { t: 60, sd: 1 }]).title, '1 days, 2 samples');
+});
+
+test('sourceText: whose numbers are on show', () => {
+  assert.equal(acct.sourceText({ source: null }), '');
+  assert.equal(acct.sourceText({ source: 'oauth' }), 'live');
+  assert.equal(acct.sourceText({ source: 'desktop' }), 'desktop snapshot');
+  assert.equal(acct.sourceText({ source: 'push' }), 'push');
+  assert.equal(acct.sourceText({ source: 'oauth', windows_from: 'desktop' }), 'live · usage from desktop snapshot');
+  // An unknown source shows verbatim rather than as nothing.
+  assert.equal(acct.sourceText({ source: 'ssh' }), 'ssh');
+});
+
+test('enrich: header identity, and the states the capture does not contain', () => {
+  const base = { prov: 'claude' };
+  const row = {
+    kind: 'claude', id: 'x', host: 'german-box', updated_at: SEC(NOW - 5 * 60000), source: 'push',
+    org: '8323fe6e-1111-2222-3333-444455556666', email: 'admin@deus.finance', label: 'Daniel Tabor',
+    confirmed: true, tier: 'default_claude_max_20x', state: 'ok', windows: { five_hour: { pct: 12, resets_at: null } },
+    seen: [{ host: 'german-box', source: 'oauth' }], history: [],
+  };
+  const a = acct.enrich(base, row, NOW);
+  assert.equal(a.name, 'Daniel Tabor');
+  assert.equal(a.id, '8323fe6e', 'the org uuid is cut to eight characters');
+  assert.equal(a.plan, 'Max 20×');
+  assert.equal(a.live, 'push');
+  assert.equal(a.pillTone, 'green');
+  // source 'push' names the push, not the host it arrived from — accounts.js:141.
+  assert.equal(a.right, '5m ago · push');
+  assert.equal(a.seen, 'german-box · live');
+  assert.equal(a.unconfirmed, false);
+  assert.equal(a.noData, false);
+  assert.equal(a.noHistory, true, 'a claude row with nothing to plot says so');
+  assert.equal(a.atLimit, false);
+
+  // No source at all: no bars, one sentence.
+  const none = acct.enrich(base, { kind: 'claude', host: 'h', source: null, state: 'absent', windows: {}, seen: [] }, NOW);
+  assert.equal(none.noData, true);
+  assert.equal(none.pillTone, '');
+  assert.equal(none.right, '');
+  assert.equal(none.noHistory, false, 'a row with no source has nothing to say about history');
+
+  // A source that reported, but not cleanly: amber pill, and the fault named.
+  const expired = acct.enrich(base, { kind: 'claude', host: 'gb', source: 'oauth', state: 'token_expired', windows: {}, seen: [], updated_at: SEC(NOW) }, NOW);
+  assert.equal(expired.pillTone, 'amber');
+  assert.equal(expired.banner, 'token expired — open Claude Code on gb');
+  assert.equal(expired.bannerTone, 'notice');
+  assert.equal(expired.noWindows, true, 'a claude row whose source reported no windows says so');
+
+  const unconfirmed = acct.enrich(base, { kind: 'claude', host: 'h', source: 'oauth', state: 'ok', confirmed: false, windows: {}, seen: [] }, NOW);
+  assert.equal(unconfirmed.unconfirmed, true);
+
+  // The label falls back to the email, then to the id — accounts.js:124.
+  assert.equal(acct.enrich(base, { kind: 'claude', label: '', email: 'a@b.c', id: 'i', windows: {}, seen: [] }, NOW).name, 'a@b.c');
+  assert.equal(acct.enrich(base, { kind: 'claude', label: '', email: '', id: 'i', windows: {}, seen: [] }, NOW).name, 'i');
+});
+
+test('toRows: the captured credits response, most constrained first', () => {
+  const rows = acct.toRows(credits, NOW, data.toAccounts);
+  assert.equal(rows.length, 5);
+  // seven_day_fable at 100 leads; the claude row at 96 % and the codex week at 96 %
+  // tie and keep the response's own order; the row whose windows are all stale-null
+  // sorts last.
+  assert.deepEqual(rows.map((r) => r.name),
+    ['Lafayette Tabor', 'Daniel Tabor', 'Daniel Tabor (personal · ChatGPT)', 'Reiner Garrecht', 'Aylin Yeter']);
+  assert.deepEqual(rows.map((r) => r.atLimit), [true, false, false, false, false]);
+
+  const fable = rows[0];
+  assert.deepEqual(fable.bars.map((b) => [b.label, b.right, b.level]),
+    [['5 hour', '29%', ''], ['7 day', '62%', ''], ['7 day Fable', '100%', 'red']]);
+  // The trend is the desktop app's own samples, not the window: the last sample is 59.
+  assert.equal(fable.trendPct, '59%');
+  assert.equal(fable.trendLevel, '');
+  assert.equal(fable.trendTitle, '37 days, 120 samples');
+  assert.equal(rows[4].trendPct, '88%');
+  assert.equal(rows[4].trendLevel, 'amber');
+  assert.equal(fable.creditsText, '', 'the captured rows report no used/limit pair');
+
+  // The error row keeps its bars and carries both the banner and the sampled note.
+  const errored = rows[4];
+  assert.equal(errored.banner, 'could not read usage on rfc1918-internal');
+  assert.equal(errored.staleNote, 'sampled 15d ago — older than the window it measured, so these have reset since');
+  assert.equal(errored.staleCls, 'age-red');
+  assert.deepEqual(errored.bars.map((b) => b.right), ['—', '—']);
+
+  // Codex rows carry no sparkline at all.
+  const codex = rows[2];
+  assert.equal(codex.prov, 'codex');
+  assert.equal(codex.trendPts, '');
+  assert.equal(codex.noHistory, false);
+  assert.equal(codex.plan, 'pro');
+  assert.equal(codex.creditsText, '', 'has_credits is false on the captured row');
+
+  // The summary the improvised bar shows for this response.
+  assert.deepEqual(acct.summary(rows.map((r) => r.__raw)),
+    ['5 accounts', '1 at or over a limit', 'no credits spent']);
+});
+
+test('toErrors: one line per collector error', () => {
+  assert.deepEqual(acct.toErrors(credits), []);
+  assert.deepEqual(acct.toErrors({ errors: [{ host: 'ivy-box', message: 'ssh: connect: timed out' }] }),
+    ['ivy-box: ssh: connect: timed out']);
+  assert.deepEqual(acct.toErrors(null), []);
+});
