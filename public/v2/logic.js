@@ -285,10 +285,27 @@ class AppLogic extends Sub {
     if (target && org && org.openBus(target)) return;
     this.setState({ screen: 'bus', busActive: 'desktop' });
   }
+  // DESIGN-35 binding (2): one throw in any slice's renderVals section blanks
+  // EVERY screen, because the shim falls back to bare props. So this section is
+  // throw-proof: on a bad row it keeps the last good values and logs.
+  _orgLive(c) {
+    try {
+      const out = this._orgVals(c);
+      this._orgGood = out;
+      return out;
+    } catch (e) {
+      console.error('[org] renderVals section failed; keeping the last good values', e);
+      if (this._orgGood) return this._orgGood;
+      // Nothing good yet: fall back to the mock's own literals, which cannot throw.
+      const live = FD.fixture.orgLive;
+      delete FD.fixture.orgLive;
+      try { return this._orgVals(c); } finally { if (live) FD.fixture.orgLive = live; }
+    }
+  }
   // FD.fixture.orgLive is published by public/v2/screens/org.js in live mode
   // ONLY. When it is absent every value below is the mock's own literal, so
   // fixture mode — and the pixel gate — render byte-for-byte as before.
-  _orgLive(c) {
+  _orgVals(c) {
     const { t, dot, chipTone, mono, orgSort, orgScope, orgKidList, orgCard } = c;
     const hLine = (n) => ({ position: 'absolute', top: 0, height: '1px', background: t.line, left: 'calc(' + (50 / n) + '% - ' + ((n - 1) * 20 / (2 * n)) + 'px)', right: 'calc(' + (50 / n) + '% - ' + ((n - 1) * 20 / (2 * n)) + 'px)' });
     const live = FD.fixture.orgLive || null;
@@ -324,7 +341,11 @@ class AppLogic extends Sub {
       : dot(tone(n));
     const inScope = (r) => !orgScope || (orgSort === 'machine' ? r.mach : r.proj) === orgScope;
     const kids = (live.kids || []).filter(inScope);
-    const cards = (live.cards || []).filter(inScope);
+    // The unattached grid is NOT scope-filtered: the mock puts the sort/scope
+    // control inside the attached tab only, and the "N unattached" count beside
+    // it is fleet-wide, so a filtered grid would contradict its own tab count.
+    // That also matches today's <details> strip, which lists every orphan.
+    const cards = live.cards || [];
     const cols = Math.max(1, kids.length);
 
     const toSpine = (n) => ({
@@ -921,6 +942,13 @@ class AppLogic extends Sub {
       orgScopes: orgScopeList.map((k) => ({ label: k })),
       orgSortBtnStyle: { borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink75, padding: '7px 12px', fontSize: '12px', cursor: 'pointer', width: '150px', textAlign: 'center', transition: 'background .2s' },
       orgScopeSelectStyle: { borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink75, padding: '7px 12px', fontSize: '12px', cursor: 'pointer', fontFamily: mono, width: '230px', appearance: 'none', WebkitAppearance: 'none', paddingRight: '30px', backgroundImage: 'url("data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="' + t.ink45 + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>') + '")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' },
+      orgMsgBtnStyle: { marginTop: '4px', width: '100%', borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink, padding: '8px 14px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s' },
+      orgAttached: !this.state.orgTab || this.state.orgTab === 'attached',
+      orgUnattached: this.state.orgTab === 'unattached',
+      showAttached: () => this.setState({ orgTab: 'attached' }),
+      showUnattached: () => this.setState({ orgTab: 'unattached' }),
+      tabAttachedStyle: orgTabStyle(!this.state.orgTab || this.state.orgTab === 'attached'),
+      tabUnattachedStyle: orgTabStyle(this.state.orgTab === 'unattached'),
       ...this._orgLive({ t, dot, chipTone, mono, orgSort, orgScope, orgKidList, orgCard }),
       // registry
       q: this.state.q, rowCount: filtered.length, regRows,

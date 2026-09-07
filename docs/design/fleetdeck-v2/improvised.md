@@ -253,3 +253,213 @@ and legacy redirects in **L11**. L1 implements the pack: the two are not in conf
 different phases — `?view=` is how the shell selects a view while v2 lives beside the old UI at
 `/v2/`, and L11 maps the final `/` and `/app` routes onto it. Recorded so L11 does not read the query
 scheme as a contradiction of the ruling.
+
+---
+
+## L5 — org chart on live seats + sessions (Dietlind, `agent-v2-l5`, 2026-09-07)
+
+Ledger row **D11**. Owned files: `public/v2/screens/org.js` and the org methods in
+`public/v2/logic.js`. Screenshots referenced below are in
+`docs/design/fleetdeck-v2/improvised/`, captured by
+`docs/design/fleetdeck-v2/verify/l5-live/shots.mjs` against the stubbed API.
+
+### I-L5-01 — the screen loads `data.js` and `orgchart.js` itself
+
+**Serves:** the whole slice. **Data-only, no screenshot.**
+
+`public/v2/index.html` (S2's file) loads `runtime.js`, `fixture.js`, `logic.js`, `app.js` and the
+nine `screens/*.js`. It does **not** load L1's `public/v2/data.js` or `public/v2/orgchart.js`, so
+`FD.data` and `FleetOrgChart` are both `undefined` when a screen runs. The first live load failed
+with `Cannot read properties of undefined (reading 'sessions')`.
+
+`index.html` is the shell's file and not ours to edit, so `org.js` appends the two `<script>` tags
+itself, once, guarded on the globals already existing and marked `data-fd-dep` so a second screen
+reuses the same tag rather than adding another. `async = false` keeps `orgchart.js` before
+`data.js`.
+
+This is a **shell gap, not an org gap** — every L2–L10 slice needs `FD.data`. The right fix is two
+lines in `index.html`, which the shell owner should make; until then each screen pays for itself.
+Filed for the design seat.
+
+### I-L5-02 — the kids grid is one level, so a deeper subtree is flattened depth-first
+
+**Serves:** D11 ("kids grid ⇄ nested `.org-level` tree"). **Screenshot:** `l5-spine-and-kids.png`.
+
+Today's org chart is a `<ul>` tree of arbitrary depth. The mock's kids grid is a single CSS grid row
+with one horizontal connector — it has no affordance for a second level, and inventing one would be
+hand-typed markup.
+
+`org.js` therefore flattens each seat root's subtree **depth-first**, so a child immediately follows
+its parent, and preserves `childSort` within each level by walking `buildTree`'s already-sorted
+output without re-sorting. In the screenshot `Machtild` (a child of `Dietlind`) sits between
+`Dietlind` and `Juergen` for exactly this reason.
+
+**What is lost:** depth. A grandchild is visually indistinguishable from a child; only the
+`host / name` line hints at the relationship. Recorded for the design seat as a real gap in the
+mock — the org chart's whole point is hierarchy, and the mock's attached view shows two levels
+(spine, kids) where the data has N.
+
+### I-L5-03 — one badge slot, precedence tombstone > pinger > idle
+
+**Serves:** BEHAVIOUR §3, §4. **Screenshot:** `l5-unattached-badges.png`.
+
+Today's card can show three badges at once: `pinger` (blue), `idle 15m+` (amber) and `🪦 close me`
+(tombstone). The mock's unattached card has exactly **one** badge slot, always filled with
+`idle 15m+`.
+
+Decision: one badge, precedence **tombstone > pinger > idle**, most-actionable first — a stale Mac
+row needs closing whatever else is true of it, and a dead pinger outranks mere idleness. The verbatim
+`title` from today's app rides on the badge, so the full text is still reachable on hover. A row that
+earns no badge **hides** the pill (`display:none`) rather than showing an empty chip; the mock never
+renders an empty one because its sample data always has a badge.
+
+The mock's chip style uppercases its text — `🪦 close me` renders as `🪦 CLOSE ME`. The string is
+verbatim; the casing is the mock's look, applied unchanged.
+
+**Not wired:** the tombstone badge is a `<span>` in the mock, exactly as it is a `<span>` in today's
+app (`app.js:287`), so it is a marker and not a button in either. No behaviour was dropped.
+
+### I-L5-04 — the stats row is written imperatively, because the mock bound no identifier
+
+**Serves:** D11 ("stats `N sessions · N seats` ⇄ `#org-status` text"), README §Scope 1.
+**Screenshot:** `l5-spine-and-kids.png` (`11 sessions · 4 seats · 5 attached · 6 unattached`).
+
+The mock bakes the four numbers into the compiled template as **plain text nodes** —
+`t(k+"|561","102")`, `"2"`, `"4"`, `"96"` in `app.js`, from `template.dc.html:253-256`. There is no
+`A_` identifier to feed and no `FD.fixture` key behind them, and neither `app.js` nor the template is
+ours to edit. `diff.md` and `decisions.md` carry no rule for this case (checked: the only
+mock-literal note is the SSH-key type at `diff.md:61`), so it is decided here.
+
+`org.js` writes the four numbers with `textContent` after each publish, addressing them positionally
+from `[data-screen-label="Org chart"]`'s first child row — no new elements, no classes, no markup.
+The write survives the next render by the shim's own documented rule: `syncChildren()` returns early
+when the child *set* is unchanged, which is what already lets the deck's imperative `splitWords()`
+edits survive (`runtime.js`, `syncChildren` comment).
+
+**It never runs in `?fixture=1`**, so the pixel gate sees the mock's own `102 / 2 / 4 / 96`. Proven
+both ways: the gate is 0.000000 % on the org chart in both themes, and live check `G2` asserts the
+literals are still there in fixture mode.
+
+The clean fix is four `{{ }}` bindings in the template. Filed for the design seat.
+
+### I-L5-05 — an absent expiry reads `none`, not `expired 20703d 0h ago`
+
+**Serves:** BEHAVIOUR §4. **Data-only, no screenshot.**
+
+`expiryText` today is `const stamp = Number(epoch); if (!Number.isFinite(stamp)) return 'none'`
+(`app.js:230-235`). `Number(null)` is `0`, which *is* finite — and `buildTree`'s `copyShape` turns a
+missing field into `null`, never `undefined`. So a row with no `expires_at` renders
+`expired 20703d 0h ago` today. It is not hypothetical: **4 of the 114 captured rows** in
+`fixtures/api/sessions.json` have `expires_at: null`.
+
+BEHAVIOUR §4 states the contract as `'none' | '<d> left' | 'expired <d> ago'`, and the pack makes
+BEHAVIOUR the spec. L5 follows the spec: `null`, `undefined` and `''` all give `'none'`. This is a
+**deliberate divergence from today's rendered output** — the only one in the slice — and it fixes a
+visible nonsense string rather than porting it. `test/v2-org.test.js` pins the new behaviour.
+
+### I-L5-06 — today's state hexes map onto the mock's theme tokens
+
+**Serves:** BEHAVIOUR §3. **Screenshot:** `l5-spine-and-kids.png`, `l5-unattached-badges.png`.
+
+BEHAVIOUR §3 gives today's literal CSS colours: `#43b779` active, `#e4a354` suspect, `#777570`
+reaped/offline/tombstone. Those are the old stylesheet's; the mock is the look, and its tokens are
+theme-dependent (`t.good`, `t.warn`, `t.ink35`, each different in dark and light).
+
+Mapping: `active → t.good`, `suspect → t.warn`, `reaped | offline | tombstone → t.ink35`, and a
+vacant or conflicting seat gets the **hollow** dot the mock already uses for its own fenced
+orchestrator card. Hard-coding the hexes would have failed the light-theme half of the pixel gate.
+
+`org.js` emits tone *names* and `logic.js` resolves them against `t` at render time — the layer split
+L1 recorded as I-L1-01, so a row adapted in dark renders correctly in light.
+
+**Not carried over:** today's `opacity: .62` on reaped rows and the pulsing shadow on suspect ones.
+Both are stylesheet effects on `.state-*` classes; the mock has no equivalent and grafting classes
+onto mock markup is forbidden. The state is still legible from the dot colour and the `lease` fact.
+
+### I-L5-07 — the error state lives in a spine card, in the mock's tokens
+
+**Serves:** BEHAVIOUR §5, ruling O4. **Screenshot:** `l5-error-state.png`.
+
+Today's error path writes into `#org-status` and drops a three-part empty state into `#org-tree`:
+a bold sentence, a plain sentence, and an `Open fixture preview` link to `/?orgFixture=1`. The mock
+has no status element and no empty state at all.
+
+Decision: render one spine card — the only card shape the mock gives that carries a title, a
+subtitle, a mono line and a two-column footer — and put the four texts in it verbatim:
+
+| Slot | Text |
+|---|---|
+| title | `The frozen seat endpoint is not available on this branch.` |
+| subtitle | `Use the committed contract fixture to review this UI.` |
+| mono path | `/?orgFixture=1` |
+| footer left | `Org chart unavailable: <message>` |
+| footer right | `integration pending`, in `t.bad` |
+
+**What is lost:** `Open fixture preview` is a link today and is plain text here — the mock's only
+in-card affordance is a button whose label `Send a message` is hard-coded in the markup, so it cannot
+be relabelled without editing the template. The URL is shown so the destination is still reachable by
+hand. Filed for the design seat.
+
+The source badge itself is folded into the header "Live API" pill through `FD.shell.setLiveApi`
+(**ruling O4**), with the three verbatim texts `M11 fixture` / `live API` / `integration pending`.
+L2 owns that pill and has not landed, so the call is guarded and currently a no-op; live checks
+`D5`, `E7` and `X2` assert L5 makes it with the right text.
+
+### I-L5-08 — vacant and conflicting seats, and the fixture-only epoch badge
+
+**Serves:** BEHAVIOUR §4, D11. **Screenshot:** `l5-spine-and-kids.png` (the `auditor` and `reviewer`
+cards).
+
+The mock's spine has three cards and no vacant-seat shape. A `seat-vacant` node renders as a spine
+card with: the seat name as title, the verbatim reason as subtitle (`No current owner row` or
+`Owner row already holds another seat`), the `C`/`O` mark plus `owner_host / owner_name` on the mono
+line, `vacant` and the expiry countdown in the footer, and the hollow dot. No `Send a message`
+button, because there is no session to message.
+
+`epoch` is **withheld on the wire** (`server.js:2757`), so the tag slot shows `#<epoch>` only when the
+seat actually carries one — the M11 fixture does, `/api/seats` does not — and falls back to the seat
+name. That reproduces today's rule (`app.js:264,327`) without a fixture-only branch.
+
+### I-L5-09 — the unattached grid is not scope-filtered
+
+**Serves:** D11 ("keep count semantics"). **Screenshot:** `l5-unattached-badges.png`.
+
+The sort and scope controls sit **inside** the mock's attached tab (`template.dc.html:257-266`), so
+there is no scope control while the unattached grid is on screen. Filtering that grid by the scope
+last chosen on the other tab produced a grid of 4 cards under a tab reading `6 unattached` — the view
+contradicting its own count.
+
+Decision: the scope filters the **kids grid only**. The unattached grid is fleet-wide, which also
+matches today's `<details>` strip, which lists every orphan. Live check `S5` asserts the grid length
+equals the tab count.
+
+### I-L5-10 — "Send a message" falls back to the mock's own behaviour until L6 lands
+
+**Serves:** README §Scope 3, ruling O8. **Data-only, no screenshot.**
+
+The button calls `FD.screens.bus.open({type:'tmux', host, session})` — ruling O8's deep-link. L6 owns
+the bus and has not landed, so the hook is guarded; when it is absent the button keeps the mock's own
+action (`setState({screen:'bus', busActive:'desktop'})`) rather than doing nothing. A dead button
+would read as a bug during the parallel build. Live checks `B1`/`B2` assert the payload against a
+probe standing in for L6.
+
+### I-L5-11 — loading and empty states are spine cards
+
+**Serves:** BEHAVIOUR §5. **Screenshot:** `l5-empty-state.png`.
+
+Same reasoning as I-L5-07: the mock has no loading or empty state, and the spine card is its
+general-purpose card. Loading shows `Loading live seats and sessions…` or `Loading M11 fixture…`
+verbatim, chosen by `?orgFixture=1`; an empty fleet shows `No seats or sessions to map.` verbatim
+under the scope head card. Both use the hollow dot, which reads as "nothing here" rather than a
+state colour that would be a lie.
+
+### I-L5-12 — live data makes the spine taller than the mock's three cards
+
+**Serves:** D11. **Screenshot:** `l5-spine-and-kids.png`. **No decision to make, recorded so the
+design seat sees it.**
+
+The mock's spine is exactly three cards (scope → coordinator → orchestrator) and the kids grid sits
+just below the fold at 1440×900. Live data has as many spine cards as there are seats plus the scope
+head — the crafted topology has five — which pushes the kids grid off the first screen. Nothing in
+L5 can fix that inside the mock's markup; the design seat may want a denser seat card or a
+horizontal seat row.

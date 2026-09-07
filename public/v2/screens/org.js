@@ -103,6 +103,46 @@
     return found;
   }
 
+  /* ---- dependencies the shell does not load ------------------------------
+   * public/v2/index.html (S2) lists runtime.js, fixture.js, logic.js, app.js and
+   * the screens; it does NOT list L1's public/v2/data.js or public/v2/orgchart.js,
+   * so FD.data and FleetOrgChart are absent at load. index.html is the shell's
+   * file and not ours to edit, so this screen loads what it needs itself, once,
+   * and shares it with whoever else needs it. Recorded as I-L5-01 and filed for
+   * the shell owner. */
+  var deps = null;
+
+  function loadScript(src) {
+    return new Promise(function (ok, fail) {
+      var doc = global.document;
+      var existing = doc.querySelector('script[data-fd-dep="' + src + '"]');
+      if (existing) {
+        if (existing.getAttribute('data-fd-loaded') === '1') return ok();
+        existing.addEventListener('load', function () { ok(); });
+        existing.addEventListener('error', function () { fail(new Error('failed to load ' + src)); });
+        return;
+      }
+      var el = doc.createElement('script');
+      el.src = src;
+      el.async = false; // keep execution order: orgchart.js before data.js
+      el.setAttribute('data-fd-dep', src);
+      el.addEventListener('load', function () { el.setAttribute('data-fd-loaded', '1'); ok(); });
+      el.addEventListener('error', function () { fail(new Error('failed to load ' + src)); });
+      doc.head.appendChild(el);
+    });
+  }
+
+  function ensureDeps() {
+    if (deps) return deps;
+    var need = [];
+    if (!global.FleetOrgChart) need.push('/v2/orgchart.js');
+    if (!(FD.data && typeof FD.data.toOrg === 'function')) need.push('/v2/data.js');
+    deps = need.reduce(function (chain, src) {
+      return chain.then(function () { return loadScript(src); });
+    }, Promise.resolve());
+    return deps;
+  }
+
   /* ---- state ------------------------------------------------------------ */
 
   var loadId = 0;
@@ -439,7 +479,7 @@
   function load() {
     var id = ++loadId;
     if (!last) publish(loadingPayload());
-    return fetchOrgData().then(
+    return ensureDeps().then(fetchOrgData).then(
       function (data) {
         if (id !== loadId) return;
         last = data;
