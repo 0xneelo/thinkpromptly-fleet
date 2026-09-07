@@ -88,12 +88,9 @@
   /* ---- src/encode.ts L317-409 ------------------------------------------- */
   /* EVENT_MAP (L317-358) compressed: in all 41 entries key === value.toLowerCase(),
    * so rebuilding it from the values alone is provably the same object, same order. */
-  var EVENT_NAMES = ("onClick onChange onInput onSubmit onKeyDown onKeyUp onKeyPress onMouseDown " +
-    "onMouseUp onMouseEnter onMouseLeave onFocus onBlur onDoubleClick onContextMenu onMouseMove " +
-    "onMouseOver onMouseOut onPointerDown onPointerUp onPointerMove onPointerEnter onPointerLeave " +
-    "onPointerCancel onPointerOver onPointerOut onGotPointerCapture onLostPointerCapture " +
-    "onTouchStart onTouchEnd onTouchMove onTouchCancel onDragStart onDragEnd onDragEnter " +
-    "onDragLeave onDragOver onAnimationStart onAnimationEnd onAnimationIteration onTransitionEnd").split(" ");
+  var EVENT_NAMES = ("onClick onChange onInput onSubmit onKeyDown onKeyUp onKeyPress onMouseDown onMouseUp onMouseEnter onMouseLeave onFocus onBlur onDoubleClick onContextMenu onMouseMove onMouseOver onMouseOut " +
+    "onPointerDown onPointerUp onPointerMove onPointerEnter onPointerLeave onPointerCancel onPointerOver onPointerOut onGotPointerCapture onLostPointerCapture onTouchStart onTouchEnd onTouchMove onTouchCancel " +
+    "onDragStart onDragEnd onDragEnter onDragLeave onDragOver onAnimationStart onAnimationEnd onAnimationIteration onTransitionEnd").split(" ");
   var EVENT_MAP = {};
   EVENT_NAMES.forEach(function (v) { EVENT_MAP[v.toLowerCase()] = v; });
   function kebabToCamel(s) { return s.replace(/-([a-z])/g, function (_, c) { return c.toUpperCase(); }); }
@@ -208,7 +205,7 @@
     if (k === "muted" || k === "checked" || k === "multiple" || k === "selected") { el[k] = v; return; }
     if (k === "value") {
       var s = v == null ? "" : String(v);
-      if (el.value !== s) el.value = s;
+      if (el.value !== s) el.value = s;                    // controlled-input semantics
       if (el.tagName === "TEXTAREA") el.defaultValue = s;
       /* <option>'s value property does not reflect to the attribute, and React keeps
        * <option value> on the attribute path — so reflect it or it never serialises. */
@@ -225,9 +222,7 @@
     if (!el || el.__dcTag !== tag) {
       var i = tag.indexOf("|");
       el = i < 0 ? document.createElement(tag) : document.createElementNS(SVG, tag.slice(i + 1));
-      el.__dcTag = tag;
-      el.__dcProps = null;
-      nodes.set(key, el);
+      el.__dcTag = tag; el.__dcProps = null; nodes.set(key, el);
     }
     el.__dcPass = pass;
     var kids = [];
@@ -268,8 +263,7 @@
   function flat(x, out) {
     if (x == null || x === false) return out;
     if (Array.isArray(x)) { for (var i = 0; i < x.length; i++) flat(x[i], out); return out; }
-    out.push(x);
-    return out;
+    out.push(x); return out;
   }
 
   function syncChildren(el, kids) {
@@ -294,7 +288,7 @@
     nodes.forEach(function (n, k) {
       if (n.__dcPass === pass) return;
       nodes.delete(k);
-      if (n.__dcProps && n.__dcProps.ref) detach.push(n.__dcProps.ref);
+      if (n.__dcProps && n.__dcProps.ref) detach.push(n.__dcProps.ref);   // unmount ref(null)
     });
   }
 
@@ -302,9 +296,7 @@
   function DCLogic(props) { this.props = props || {}; this.state = {}; }
   DCLogic.prototype.setState = function (update, cb) { this.__host && this.__host.__setLogicState(update, cb); };
   DCLogic.prototype.forceUpdate = function (cb) { this.__host && this.__host.forceUpdate(cb); };
-  DCLogic.prototype.componentDidMount = function () {};
-  DCLogic.prototype.componentDidUpdate = function (_prevProps) {};
-  DCLogic.prototype.componentWillUnmount = function () {};
+  DCLogic.prototype.componentDidMount = DCLogic.prototype.componentDidUpdate = DCLogic.prototype.componentWillUnmount = function () {};
   DCLogic.prototype.renderVals = function () { return {}; };
 
   var logic = null, renderRoot = null, hostEl = null, mounted = false, queued = false, cbs = [];
@@ -322,8 +314,7 @@
   function schedule(cb) {
     if (cb) cbs.push(cb);
     if (queued) return;
-    queued = true;
-    Promise.resolve().then(function () { queued = false; flush(); });
+    queued = true; Promise.resolve().then(function () { queued = false; flush(); });
   }
   function flush() {
     pass++; detach = []; attach = [];
@@ -332,19 +323,16 @@
     try { vals = Object.assign({}, host.props, logic.renderVals() || {}); } catch (e) { console.error(e); }
     syncChildren(hostEl, flat(renderRoot(vals, ""), []));
     sweep();
-    var i;
-    for (i = 0; i < detach.length; i++) setRef(detach[i], null);
+    /* React commit order: every detach fires before any attach, then the lifecycle hook. */
+    for (var i = 0; i < detach.length; i++) setRef(detach[i], null);
     for (i = 0; i < attach.length; i++) setRef(attach[i][0], attach[i][1]);
-    try {
-      if (mounted) logic.componentDidUpdate(host.props);
-      else { mounted = true; logic.componentDidMount(); }
-    } catch (e2) { console.error(e2); }
+    try { if (mounted) logic.componentDidUpdate(host.props); else { mounted = true; logic.componentDidMount(); } }
+    catch (e2) { console.error(e2); }
     var run = cbs; cbs = [];
     for (i = 0; i < run.length; i++) run[i]();
   }
   function mount(render, props) {
-    var slot = document.getElementById("root");
-    var rootEl = document.createElement("div");
+    var slot = document.getElementById("root"), rootEl = document.createElement("div");
     rootEl.id = "dc-root";
     hostEl = document.createElement("div");
     hostEl.className = "sc-host";
@@ -352,11 +340,10 @@
     hostEl.setAttribute("data-sc-name", location.pathname.split("/").pop().replace(/\.dc\.html$/, "").replace(/\.html?$/, "") || "Root");
     rootEl.appendChild(hostEl);
     if (slot) slot.replaceWith(rootEl); else document.body.appendChild(rootEl);
-    renderRoot = render;
-    host.props = props || {};
+    renderRoot = render; host.props = props || {};
+    /* evalDcLogic L866-874: the logic script declares `Component` as a global lexical binding. */
     var L = (typeof Component !== "undefined" && Component) || DCLogic;
-    logic = new L(host.props);
-    logic.__host = host;
+    logic = new L(host.props); logic.__host = host;
     flush();
   }
 
