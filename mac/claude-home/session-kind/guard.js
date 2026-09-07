@@ -88,132 +88,93 @@ function stripHeredocs(cmd) {
   );
 }
 
-// A shell command whose write DESTINATION is the goalkeeper's repo — the other
-// way a seat could put bytes in there without using a write tool.
 // Split on the operators that sequence commands. This is a conservative
 // scanner, not a shell parser: quoting is not honoured, which can only ever
-// over-segment and so cannot hide a target.
+// over-segment and so cannot hide a segment.
 function segments(cmd) {
   return cmd.split(/\s*(?:&&|\|\||[;|\n])\s*/);
 }
 
-function argTokens(s) {
-  const out = [];
-  const parts = s.split(/\s+/);
-  for (let i = 0; i < parts.length; i += 1) {
-    const t = parts[i].replace(/^['"]|['"]$/g, '');
-    if (t) out.push(t);
+// Expand the spellings a shell expands, ANYWHERE in the text — not just at the
+// front of a path, which is all norm() needs. A two-step
+// `cd "$HOME/.claude" && cd goalkeeper` hid the jail from every earlier check
+// because the `$` was tested before anything expanded it.
+function expandVars(s, cfg) {
+  const home = os.homedir();
+  let out = String(s)
+    .replace(/\$\{HOME\}/g, home)
+    .replace(/\$HOME(?![A-Za-z0-9_])/g, home);
+  const cfgDir = process.env.CLAUDE_CONFIG_DIR || cfg;
+  if (cfgDir) {
+    out = out
+      .replace(/\$\{CLAUDE_CONFIG_DIR\}/g, cfgDir)
+      .replace(/\$CLAUDE_CONFIG_DIR(?![A-Za-z0-9_])/g, cfgDir);
   }
-  return out;
+  return out.replace(/(^|[\s'"=:])~(?=\/|[\s'"]|$)/g, '$1' + home);
 }
 
-// Every path a segment WRITES to.
+// Does the command name the goalkeeper's DIRECTORY?
 //
-// A copy READS its sources and writes only its destination, so treating every
-// argument as a target refused `cp <jail>/audits/2026-09-07.md /tmp/copy.md` —
-// an orchestrator reading the evidence it is meant to read. The two families
-// are therefore separated: for cp/mv/install/ln/dd only the destination counts,
-// for rm/mkdir/touch/truncate/chmod/chown/tee every path argument does.
-function writeTargets(seg) {
-  const targets = [];
-  const redirect = /(?:>>?)\s*(['"]?)([^\s'"|;&<>]+)\1/g;
-  let m = redirect.exec(seg);
-  while (m) { targets.push(m[2]); m = redirect.exec(seg); }
-
-  // Every path argument is written.
-  const all = /\b(?:rm|mkdir|touch|truncate|chmod|chown|tee)\b([^;&|\n]*)/g;
-  m = all.exec(seg);
-  while (m) {
-    const toks = argTokens(m[1]);
-    for (let i = 0; i < toks.length; i += 1) {
-      if (toks[i].charAt(0) !== '-') targets.push(toks[i]);
-    }
-    m = all.exec(seg);
-  }
-
-  // Only the destination is written.
-  const dest = /\b(?:cp|mv|install|ln|dd)\b([^;&|\n]*)/g;
-  m = dest.exec(seg);
-  while (m) {
-    const toks = argTokens(m[1]);
-    let explicit = null;
-    const plain = [];
-    for (let i = 0; i < toks.length; i += 1) {
-      const t = toks[i];
-      if (t.indexOf('of=') === 0) { explicit = t.slice(3); continue; }   // dd
-      if (t.indexOf('if=') === 0) continue;                              // dd source
-      if (t === '-t' || t === '--target-directory') {
-        if (toks[i + 1]) { explicit = toks[i + 1]; i += 1; }
-        continue;
-      }
-      if (t.indexOf('--target-directory=') === 0) {
-        explicit = t.slice('--target-directory='.length);
-        continue;
-      }
-      if (t.charAt(0) === '-') continue;
-      plain.push(t);
-    }
-    if (explicit) targets.push(explicit);
-    else if (plain.length) targets.push(plain[plain.length - 1]);
-    m = dest.exec(seg);
-  }
-  return targets;
-}
-
-// A path is anchored when it names its own root; anything else is relative to
-// wherever the shell happens to be standing.
-function isAnchored(t) {
-  return t.charAt(0) === '/' || t.charAt(0) === '~' || t.charAt(0) === '$';
-}
-
-// Does any anchored token in the command point inside the jail? Only consulted
-// when a `cd "$var"` has made the working directory unknowable, so that such a
-// command is refused when it names the jail and allowed when it does not.
-function namesGoalkeeper(cmd, cfg, cwd) {
-  const toks = cmd.split(/[\s'"=]+/);
-  for (let i = 0; i < toks.length; i += 1) {
-    if (toks[i] && isAnchored(toks[i]) && underGoalkeeper(toks[i], cfg, cwd)) return true;
-  }
-  return false;
-}
-
-// A shell command whose write DESTINATION is the goalkeeper's repo.
+// The §9 addendum says "names the goalkeeper directory", and that is the test —
+// NOT any path segment spelled `goalkeeper`. Matching the bare segment would
+// also catch this repo's own `docs/goals/goalkeeper/`, which §9 settled must
+// stay writable for workers (G-5); every lane report and the goal pack itself
+// live there, so the bare reading would stop the fleet rather than the seat.
 //
-// Targets are resolved against the directory the shell is standing in at that
-// point, not against the session cwd: `cd ~/.claude/goalkeeper && echo x > e.md`
-// writes into the jail with a target that is just `e.md`. So `cd`/`pushd` are
-// tracked across the sequencing operators. A `cd "$var"` cannot be resolved
-// statically; from there relative targets are unknowable, and the command is
-// refused only if it names the jail somewhere anchored — an ordinary relative
-// write in some other repo must never be denied on a guess.
-function commandWritesGoalkeeper(cmd, cfg, cwd) {
-  let here = cwd;                       // null once the cwd stops being knowable
+// Two shapes count:
+//   - the config dir's own `goalkeeper` directory, in any spelling that
+//     expands to it, plus the `.claude/goalkeeper` literal for a non-default
+//     CLAUDE_CONFIG_DIR;
+//   - a bare relative `cd goalkeeper` / `pushd goalkeeper`, which is how a
+//     two-step hop reaches the jail without ever writing its full path.
+const GK_RELATIVE_CD = /(?:^|[\s;&|(){])(?:cd|pushd)\s+['"]?\.?\/?goalkeeper\/?['"]?(?:\s|$|[;&|)}])/i;
+const GK_DOT_CLAUDE = /\.claude\/goalkeeper(?![A-Za-z0-9_-])/i;
+
+function commandNamesGoalkeeper(cmd, cfg) {
+  const s = expandVars(cmd, cfg);
+  if (GK_RELATIVE_CD.test(s) || GK_DOT_CLAUDE.test(s)) return true;
+  const gk = goalkeeperDir(cfg);
+  if (gk && s.toLowerCase().indexOf(gk.toLowerCase()) !== -1) return true;
+  const lexical = path.resolve(cfg, 'goalkeeper');
+  return s.toLowerCase().indexOf(lexical.toLowerCase()) !== -1;
+}
+
+// Anything that can write, relocate, or run code. Static analysis of shell text
+// is never complete — three review rounds each found a new way around a
+// precise rule — so the test is not "does this write?" but "is this so plainly
+// a read that nothing else is possible?".
+const NOT_A_READ = /[>`(){}]|\$\(|<\(|(?:^|\s)(?:cd|pushd)(?:\s|$)|\b(?:bash|sh|zsh)\s+-c\b|\beval\b|\bxargs\b|\bpython[0-9.]*\b|\bnode\b|\bperl\b|\bruby\b|\bosascript\b/;
+
+const READ_HEAD = /^(?:cat|head|tail|less|more|grep|rg|ls|wc|diff|stat|file|md5|md5sum|shasum|jq)(?:\s|$)/;
+const SED_READ = /^sed\s+-n(?:\s|$)/;
+const GIT_READ_C = /^git\s+-C\s+\S+\s+(?:log|show|status|diff|ls-files|rev-parse)(?:\s|$)/;
+const GIT_READ_PATH = /^git\s+(?:log|show|status|diff)\b[^|]*\s--\s/;
+
+// A pure read: every segment is one of a handful of pagers or a read-only git,
+// and the command as a whole carries nothing that could redirect, group,
+// substitute, or hand the text to an interpreter.
+function isPureRead(cmd) {
+  if (NOT_A_READ.test(cmd)) return false;
   const segs = segments(cmd);
   for (let i = 0; i < segs.length; i += 1) {
     const seg = segs[i].trim();
     if (!seg) continue;
-    const cd = /^(?:cd|pushd)(?:\s+(['"]?)(.*?)\1)?\s*$/.exec(seg);
-    if (cd) {
-      const dir = (cd[2] || '').trim();
-      if (!dir) here = os.homedir();                    // bare `cd` goes home
-      else if (/[$`*?]/.test(dir)) here = null;         // not statically knowable
-      else here = norm(dir, here === null ? cwd : here) || null;
-      continue;
-    }
-    const targets = writeTargets(seg);
-    for (let j = 0; j < targets.length; j += 1) {
-      const t = targets[j];
-      if (isAnchored(t)) {
-        if (underGoalkeeper(t, cfg, cwd)) return true;
-      } else if (here !== null) {
-        if (underGoalkeeper(t, cfg, here)) return true;
-      } else if (namesGoalkeeper(cmd, cfg, cwd)) {
-        return true;
-      }
-    }
+    if (!(READ_HEAD.test(seg) || SED_READ.test(seg)
+          || GIT_READ_C.test(seg) || GIT_READ_PATH.test(seg))) return false;
   }
-  return false;
+  return true;
 }
+
+// The rule for every stamped seat that is NOT the goalkeeper: if a command
+// names the goalkeeper's directory, it must be a pure read. Otherwise it is
+// refused, wherever the jail appears in it — so `mv <jail>/thread.md /tmp/x`,
+// which destroys the source, is denied even though its destination is outside.
+// A command that does not name the directory is never touched by this check.
+function commandTouchesGoalkeeper(cmd, cfg) {
+  if (!commandNamesGoalkeeper(cmd, cfg)) return false;
+  return !isPureRead(expandVars(cmd, cfg));
+}
+
 
 function commandAddressesGoalkeeper(cmd) {
   for (const re of CMD_ADDRESSEE) {
@@ -266,6 +227,7 @@ const NO_REACH_GK = 'a goalkeeper never reaches the fleet bus, the deck API or a
 const NO_MSG_TO_GK = 'the 🥅 GOALKEEPER seat cannot be addressed by any seat (PLAN.md v2 §3.4). It reads your files; you never reach it. Raise it with the operator instead.';
 const NO_REACH_TO_GK = 'the 🥅 GOALKEEPER seat cannot be reached over the fleet bus, the deck API or the session registry (PLAN.md v2 §3.4). It reads your files; you never reach it.';
 const NO_WRITE_TO_GK = 'the goalkeeper\'s repo (~/.claude/goalkeeper/) belongs to the 🥅 seat alone — never write there. It reads your files; you never write its.';
+const NO_TOUCH_GK = 'non-goalkeeper seats read the goalkeeper dir with simple commands only; anything with a write, a cd, a subshell or an interpreter is denied. `cat`, `head`, `tail`, `sed -n`, `grep`, `ls`, `wc`, `diff`, `shasum` and read-only `git log/show/status/diff` on ~/.claude/goalkeeper/ are fine — that is the whole allowance, and it is deliberately narrow because shell text cannot be analysed exhaustively (PLAN.md §9 addendum).';
 
 let WHY = '';
 
@@ -423,8 +385,8 @@ try {
       deny(NO_REACH_TO_GK);
     } else if (isWrite && writePath && underGoalkeeper(writePath, cfg, cwd)) {
       deny(NO_WRITE_TO_GK);
-    } else if (command && commandWritesGoalkeeper(scan, cfg, cwd)) {
-      deny(NO_WRITE_TO_GK);
+    } else if (command && commandTouchesGoalkeeper(scan, cfg)) {
+      deny(NO_TOUCH_GK);
     } else if (!kind) {
       // A worker (or any other badge): the goalkeeper rules above are the only
       // ones that bind it. Everything else is allowed.

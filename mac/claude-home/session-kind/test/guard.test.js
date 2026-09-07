@@ -465,6 +465,9 @@ const POST = (body) => `curl -s localhost:3131/${BUS} -d '${body}'`;
 const REACH_POC = POST('{"to":"goalkeeper"}');
 const REACHED = /cannot be reached over the fleet bus/;
 const INTO_GK = /belongs to the 🥅 seat alone/;
+// The Bash jail's own reason. A write TOOL aimed at the jail still says INTO_GK; a COMMAND
+// that names the jail and is not a pure read says this one (GK-M.4, PLAN §9 addendum).
+const TOUCH_GK = /non-goalkeeper seats read the goalkeeper dir with simple commands only/;
 
 test('adversarial: the 2026-09-07T19:28Z incident — a brief whose heredoc BODY quotes a reach', () => {
   // The one that matters. This exact shape was denied live; a heredoc body is data being
@@ -534,11 +537,13 @@ test('adversarial: the deny is about the addressee, not the route', () => {
   expectAllow(ORCH, bash(`${NOTIFY} --to Giselher "rebased"`));
 });
 
-test('adversarial: a shell write whose DESTINATION is the seat\'s repo is denied', () => {
-  assert.match(expectDeny(ORCH, bash(`echo drift >> ${CFG}/goalkeeper/thread.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`cp /tmp/x.md ${CFG}/goalkeeper/audits/x.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`cat /tmp/x.md | tee ${CFG}/goalkeeper/x.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`rm ${CFG}/goalkeeper/thread.md`)), INTO_GK);
+test('adversarial: a shell command naming the seat\'s repo that is not a pure read is denied', () => {
+  // Was "a shell write whose DESTINATION is the seat's repo": the destination analysis is
+  // gone (GK-M.4). Every shape below still denies — each names the jail and none is a read.
+  assert.match(expectDeny(ORCH, bash(`echo drift >> ${CFG}/goalkeeper/thread.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`cp /tmp/x.md ${CFG}/goalkeeper/audits/x.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`cat /tmp/x.md | tee ${CFG}/goalkeeper/x.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`rm ${CFG}/goalkeeper/thread.md`)), TOUCH_GK);
 });
 
 test('adversarial: an ordinary redirect elsewhere is untouched', () => {
@@ -616,35 +621,31 @@ test('adversarial: the JSON addressee shapes handle spaced values too', () => {
 
 // ------------ 12. GK-M.3 item 1 — a `cd` in the same command cannot defeat the jail
 // Write targets used to resolve against the SESSION cwd only, so a `cd` into the jail in the
-// same command put bytes there with a target that is just `evil.md`. `cd`/`pushd` are now
-// tracked across `&&`, `;`, `|` and newlines. A `cd "$var"` cannot be resolved statically:
-// from there a relative target is unknowable, and the command is refused only when it names
-// the jail somewhere anchored — an ordinary relative write in another repo is never guessed at.
+// same command put bytes there with a target that is just `evil.md`. The `cd` tracker that
+// first answered this was REMOVED in GK-M.4 — three review rounds each found a shell form it
+// could not see, and static analysis of shell text is never complete. The verdicts here are
+// unchanged: each of these names the jail and none is a pure read, so each is refused. Only
+// the reason moved, and the "unknowable cwd" carve-out went with the tracker (GK-M.4).
 test('GK-M.3 item 1: the PoC — `cd <jail> && echo pwned > evil.md` is denied', () => {
-  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME} && echo pwned > evil.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME} && echo pwned > evil.md`)), TOUCH_GK);
 });
 
 test('GK-M.3 item 1: every sequencing operator carries the cd', () => {
-  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME} ; echo pwned >> thread.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME}\necho x > e.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME} ; echo pwned >> thread.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME}\necho x > e.md`)), TOUCH_GK);
 });
 
 test('GK-M.3 item 1: a cd into a subdir, and pushd, are the same walk', () => {
-  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME}/audits && touch x.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`pushd ${GK_HOME} && echo x > e.md`)), INTO_GK);
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME}/audits && touch x.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`pushd ${GK_HOME} && echo x > e.md`)), TOUCH_GK);
 });
 
-test('GK-M.3 item 1: a cd elsewhere, or back out again, is allowed', () => {
+test('GK-M.3 item 1: a cd elsewhere is allowed; a cd back out of the jail is not', () => {
   expectAllow(ORCH, bash('cd /tmp && echo x > y.md'));
-  expectAllow(ORCH, bash(`cd ${GK_HOME} && cd /tmp && echo x > y.md`));
   expectAllow(ORCH, bash('echo x > notes.md'));
-});
-
-test('GK-M.3 item 1: an unknowable cwd denies only when the jail is named anchored', () => {
-  // `cd "$D"` cannot be resolved, so a relative write must NOT be denied on a guess...
-  expectAllow(ORCH, bash('cd "$D" && echo x > y.md'));
-  // ...but the same unknowable cwd with the jail spelled out anchored is a write into it.
-  assert.match(expectDeny(ORCH, bash(`cd "$D" && cp ${GK_HOME}/thread.md .`)), INTO_GK);
+  // Reversed in GK-M.4: leaving the jail again does not un-name it, and no tracker is left
+  // to prove where the write lands.
+  assert.match(expectDeny(ORCH, bash(`cd ${GK_HOME} && cd /tmp && echo x > y.md`)), TOUCH_GK);
 });
 
 // ------------ 13. GK-M.3 item 2 — `$HOME` is a spelling of `~`
@@ -659,27 +660,28 @@ const HOME_CFG = path.join(HOMEFIX, '.claude');
 fs.mkdirSync(path.join(HOME_CFG, 'goalkeeper', 'audits'), { recursive: true });
 const HOME_ENV = { HOME: HOMEFIX, CLAUDE_CONFIG_DIR: HOME_CFG };
 
-function decideHome(payload) {
-  const out = runRaw(JSON.stringify({ cwd: CWD[ORCH], ...payload }), HOME_ENV);
+function decideHome(payload, badge) {
+  const out = runRaw(JSON.stringify({ cwd: CWD[badge || ORCH], ...payload }), HOME_ENV);
   if (!out) return null;
   return JSON.parse(out).hookSpecificOutput.permissionDecisionReason;
 }
-const denyHome = (p) => {
-  const r = decideHome(p);
+const denyHome = (p, badge) => {
+  const r = decideHome(p, badge);
   assert.ok(r, `expected deny: ${JSON.stringify(p)}`);
   return r;
 };
-const allowHome = (p) => assert.equal(decideHome(p), null, `expected allow: ${JSON.stringify(p)}`);
+const allowHome = (p, badge) => assert.equal(decideHome(p, badge), null,
+  `expected allow: ${JSON.stringify(p)}`);
 
 test('GK-M.3 item 2: `$HOME` and `${HOME}` reach the jail exactly as `~` does', () => {
-  assert.match(denyHome(bash('echo pwned > "$HOME/.claude/goalkeeper/evil.md"')), INTO_GK);
-  assert.match(denyHome(bash('echo pwned > "${HOME}/.claude/goalkeeper/evil.md"')), INTO_GK);
-  assert.match(denyHome(bash('echo pwned > ~/.claude/goalkeeper/evil.md')), INTO_GK);
+  assert.match(denyHome(bash('echo pwned > "$HOME/.claude/goalkeeper/evil.md"')), TOUCH_GK);
+  assert.match(denyHome(bash('echo pwned > "${HOME}/.claude/goalkeeper/evil.md"')), TOUCH_GK);
+  assert.match(denyHome(bash('echo pwned > ~/.claude/goalkeeper/evil.md')), TOUCH_GK);
 });
 
 test('GK-M.3 item 2: `$CLAUDE_CONFIG_DIR` is a spelling of the jail\'s parent', () => {
-  assert.match(denyHome(bash('echo pwned > "$CLAUDE_CONFIG_DIR/goalkeeper/evil.md"')), INTO_GK);
-  assert.match(denyHome(bash('echo pwned > "${CLAUDE_CONFIG_DIR}/goalkeeper/evil.md"')), INTO_GK);
+  assert.match(denyHome(bash('echo pwned > "$CLAUDE_CONFIG_DIR/goalkeeper/evil.md"')), TOUCH_GK);
+  assert.match(denyHome(bash('echo pwned > "${CLAUDE_CONFIG_DIR}/goalkeeper/evil.md"')), TOUCH_GK);
 });
 
 test('GK-M.3 item 2: an ordinary `$HOME` write is untouched', () => {
@@ -690,37 +692,23 @@ test('GK-M.3 item 2: the expansion lives in norm(), so a write TOOL sees it too'
   assert.match(denyHome(write('$HOME/.claude/goalkeeper/x.md')), INTO_GK);
 });
 
-// ------------ 14. GK-M.3 item 3 — a copy reads its sources and writes its destination
-// Treating every argument of a copy as a target refused `cp <jail>/audits/… /tmp/copy.md` — an
-// orchestrator reading exactly the evidence it is meant to read. cp/mv/install/ln/dd write only
-// their destination; rm/mkdir/touch/truncate/chmod/chown/tee write every path argument.
-test('GK-M.3 item 3: the false positive — `cp <jail>/audits/2026-09-07.md /tmp/copy.md` is allowed', () => {
-  expectAllow(ORCH, bash(`cp ${GK_HOME}/audits/2026-09-07.md /tmp/copy.md`));
+// ------------ 14. GK-M.3 item 3 — a copy names the jail, wherever the jail stands in it
+// This group once split a command's arguments into sources and destinations, so that
+// `cp <jail>/audits/… /tmp/copy.md` read the evidence it is meant to read. GK-M.4 removed that
+// analysis: `mv <jail>/x /tmp/y` destroys its source, and no argument-position rule survived
+// review. A copy that names the jail is now refused in EVERY position; evidence leaves the
+// jail by `cat` or `git show`, which stay allowed (see the pure reads in section 16).
+test('GK-M.3 item 3: moving or copying out of the jail is denied too, not just into it', () => {
+  assert.match(expectDeny(ORCH, bash(`mv ${GK_HOME}/old.md /tmp/old.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`cp /tmp/x.md ${GK_HOME}/x.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`mv /tmp/x.md ${GK_HOME}/x.md`)), TOUCH_GK);
 });
 
-test('GK-M.3 item 3: reading out of the jail is allowed, writing into it is not', () => {
-  expectAllow(ORCH, bash(`mv ${GK_HOME}/old.md /tmp/old.md`));
-  assert.match(expectDeny(ORCH, bash(`cp /tmp/x.md ${GK_HOME}/x.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`mv /tmp/x.md ${GK_HOME}/x.md`)), INTO_GK);
-});
-
-test('GK-M.3 item 3: an explicit destination flag is a destination', () => {
-  assert.match(expectDeny(ORCH, bash(`cp -t ${GK_HOME} /tmp/x.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`cp --target-directory=${GK_HOME} /tmp/x.md`)), INTO_GK);
-});
-
-test('GK-M.3 item 3: dd writes `of=` and reads `if=`', () => {
-  assert.match(expectDeny(ORCH, bash(`dd if=/tmp/x of=${GK_HOME}/x`)), INTO_GK);
-  expectAllow(ORCH, bash(`dd if=${GK_HOME}/thread.md of=/tmp/x`));
-});
-
-test('GK-M.3 item 3: every path argument of the mutating family is a target', () => {
-  assert.match(expectDeny(ORCH, bash(`echo x | tee ${GK_HOME}/x.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`rm ${GK_HOME}/thread.md`)), INTO_GK);
-  assert.match(expectDeny(ORCH, bash(`touch ${GK_HOME}/x`)), INTO_GK);
-  // `newsub`, not `sub`: section 9 makes `<jail>/sub` a symlink pointing OUT of the jail, so
-  // that name resolves outside it — the symlink rule, correctly, rather than this one.
-  assert.match(expectDeny(ORCH, bash(`mkdir ${GK_HOME}/newsub`)), INTO_GK);
+test('GK-M.3 item 3: a mutating command naming the jail is denied', () => {
+  assert.match(expectDeny(ORCH, bash(`echo x | tee ${GK_HOME}/x.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`rm ${GK_HOME}/thread.md`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`touch ${GK_HOME}/x`)), TOUCH_GK);
+  assert.match(expectDeny(ORCH, bash(`mkdir ${GK_HOME}/newsub`)), TOUCH_GK);
 });
 
 test('GK-M.3 item 3: plain reads and ordinary copies are untouched', () => {
@@ -745,4 +733,115 @@ for (const k of ALL_ADDRESSEE_KEYS) {
 
 test('GK-M.3 item 4: a body mention is still not an address', () => {
   expectAllow(ORCH, send({ to: 'Giselher', message: 'the goalkeeper lane' }));
+});
+
+// ------------ 16. GK-M.4 — the jail is conservative
+// PLAN §9 addendum (2026-09-08). Three review rounds each found a new shell form around the
+// precise write-jail analysis, so precision was replaced by a rule that holds whatever the
+// shell does: for a non-goalkeeper stamped kind, a command that NAMES the goalkeeper directory
+// is allowed only when it is a pure read; anything else that names it is refused; a command
+// that does not name it is never touched. NAMES is the DIRECTORY — the absolute jail path, a
+// `.claude/goalkeeper` literal, or a bare relative `cd goalkeeper` — not any segment spelled
+// `goalkeeper`, because this repo's own `docs/goals/goalkeeper/` must stay writable (§9 G-5).
+// This group runs under HOME_ENV, where the jail really is `$HOME/.claude/goalkeeper`.
+const JAIL = path.join(HOME_CFG, 'goalkeeper');
+
+// The three bypasses the final review found, plus the destructive read. Each is named after
+// the form that defeated the tracker.
+test('GK-M.4 DENY bypass: a two-step `cd` through `$HOME` reaches the jail relatively', () => {
+  assert.match(denyHome(bash('cd "$HOME/.claude" && cd goalkeeper && echo pwned > evil.md')), TOUCH_GK);
+});
+
+test('GK-M.4 DENY bypass: a subshell hides the `cd` from a whole-segment rule', () => {
+  assert.match(denyHome(bash(`(cd ${JAIL} && echo pwned > evil.md)`)), TOUCH_GK);
+});
+
+test('GK-M.4 DENY bypass: brace grouping hides it the same way', () => {
+  assert.match(denyHome(bash(`{ cd ${JAIL}; echo pwned > evil.md; }`)), TOUCH_GK);
+});
+
+test('GK-M.4 DENY bypass: `bash -c` hides the whole command inside a string', () => {
+  assert.match(denyHome(bash(`bash -c 'cd ${JAIL} && echo pwned > evil.md'`)), TOUCH_GK);
+});
+
+test('GK-M.4 DENY bypass: `mv` out of the jail destroys its source', () => {
+  assert.match(denyHome(bash(`mv ${JAIL}/thread.md /tmp/stolen.md`)), TOUCH_GK);
+});
+
+const GKM4_DENY = [
+  ['a redirect into the jail', `echo pwned > ${JAIL}/evil.md`],
+  ['cp INTO the jail', `cp /tmp/x.md ${JAIL}/x.md`],
+  // The GK-M.3 item 3 allowance, deliberately REVERSED: cp naming the jail is refused in
+  // every position now. Reading evidence out is `cat` or `git show`, both still allowed.
+  ['cp OUT of the jail — the GK-M.3 allowance, reversed', `cp ${JAIL}/thread.md /tmp/copy.md`],
+  ['rm inside the jail', `rm ${JAIL}/thread.md`],
+  ['rsync mirroring the jail', `rsync -a ${JAIL}/ /tmp/mirror/`],
+  ['tee into the jail', `echo x | tee ${JAIL}/x.md`],
+  ['chmod on the jail', `chmod 777 ${JAIL}/thread.md`],
+  ['an interpreter reading the jail', `python3 -c "print(open('${JAIL}/thread.md').read())"`],
+  ['a command substitution capturing the jail', `X=$(cat ${JAIL}/thread.md)`],
+  ['xargs downstream of a read of the jail', `ls ${JAIL} | xargs rm`],
+  ['eval of a read of the jail', `eval "cat ${JAIL}/thread.md"`],
+];
+for (const [label, cmd] of GKM4_DENY) {
+  test(`GK-M.4 DENY: ${label}`, () => {
+    assert.match(denyHome(bash(cmd)), TOUCH_GK);
+  });
+}
+
+// The whole allowance, deliberately narrow: simple pagers and read-only git, with nothing that
+// could redirect, group, substitute, or hand the text to an interpreter.
+const GKM4_READS = [
+  ['cat with the absolute jail path', `cat ${JAIL}/thread.md`],
+  ['cat with `~`', 'cat ~/.claude/goalkeeper/thread.md'],
+  ['cat with a quoted `$HOME`', 'cat "$HOME/.claude/goalkeeper/thread.md"'],
+  ['git -C log', `git -C ${JAIL} log --oneline -5`],
+  ['git -C status', `git -C ${JAIL} status --porcelain`],
+  ['sed -n piped into head', `sed -n 1,20p ${JAIL}/audits/2026-09-07.md | head`],
+  ['grep -r over the audits', `grep -r drift ${JAIL}/audits`],
+  ['ls -la', `ls -la ${JAIL}/audits`],
+  ['wc -l', `wc -l ${JAIL}/thread.md`],
+  ['shasum', `shasum ${JAIL}/thread.md`],
+  ['head and tail sequenced with &&', `head -5 ${JAIL}/thread.md && tail -5 ${JAIL}/thread.md`],
+];
+for (const [label, cmd] of GKM4_READS) {
+  test(`GK-M.4 ALLOW pure read: ${label}`, () => allowHome(bash(cmd)));
+}
+
+// Never names the jail, so this check never fires — including the forms that ARE bypasses
+// above once the jail is named. The rule is about the directory, not about subshells.
+const GKM4_UNTOUCHED = [
+  ['an ordinary build', 'npm run build && npm test'],
+  ['a redirect elsewhere', 'echo x > /tmp/notes.md'],
+  ['a cd elsewhere', 'cd /tmp && echo x > y.md'],
+  ['a subshell elsewhere', '(cd /tmp && echo x > y.md)'],
+  ['bash -c elsewhere', "bash -c 'echo x > /tmp/y.md'"],
+  ['a push', 'git push origin HEAD'],
+  ['the word in prose', 'git commit -m "the goalkeeper seat audits drift"'],
+];
+for (const [label, cmd] of GKM4_UNTOUCHED) {
+  test(`GK-M.4 ALLOW untouched: ${label}`, () => allowHome(bash(cmd)));
+}
+
+// §9 G-5: this repo's OWN `docs/goals/goalkeeper/` is not the jail. Every lane report and the
+// goal pack live there, so a bare `goalkeeper` segment would stop the fleet rather than the
+// seat. NAMES tests the goalkeeper DIRECTORY, which none of these is.
+const GKM4_REPO_DOCS = [
+  ['a redirect into docs/goals/goalkeeper/', 'echo x > docs/goals/goalkeeper/notes.md'],
+  ['git add of the pending ledger', 'git add docs/goals/goalkeeper/LINEAR-PENDING.md'],
+  ['a heredoc writing a lane report', ["cat > docs/goals/goalkeeper/reports/x.md <<'EOF'", '# report', 'EOF'].join('\n')],
+  ['cd into the pack dir, then write', 'cd docs/goals/goalkeeper && echo x > notes.md'],
+];
+for (const [label, cmd] of GKM4_REPO_DOCS) {
+  test(`GK-M.4 ALLOW docs/goals/goalkeeper/ carve-out: ${label}`, () => allowHome(bash(cmd)));
+}
+
+test('GK-M.4: the 🥅 seat\'s own repo access is unchanged', () => {
+  allowHome(bash(`cat ${JAIL}/thread.md`), GK);
+  allowHome(bash(`git -C ${JAIL} status`), GK);
+  allowHome(bash('python3 ~/.claude/skills/goalkeeper/goalkeeper.py sweep --since 2026-09-01'), GK);
+});
+
+test('GK-M.4: the 🥅 seat\'s unconditional reach ban still fires', () => {
+  assert.match(denyHome(bash(POST('{"body":"status"}')), GK), /a goalkeeper never reaches the fleet bus/);
 });

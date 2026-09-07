@@ -15,6 +15,20 @@ relative paths resolved against the session cwd, lowercase/mixed-case addressee 
 lowercase "goalkeeper" in a message BODY stays allowed), and non-Bash MCP shell wrappers carrying a
 `command`.
 
+The `cd`-tracker and destination-analysis groups were **removed in GK-M.4** and replaced by group 16,
+"the jail is conservative". Three review rounds each found a new shell form around the precise
+write-jail analysis — a two-step `cd` through `$HOME`, subshell and brace grouping, and `mv` out of
+the jail — because static analysis of shell text is never complete. The rule now: for a
+non-goalkeeper stamped kind, a command that NAMES the goalkeeper directory is allowed only when it is
+a pure read (simple pagers, `sed -n`, read-only `git log/show/status/diff`, and nothing that
+redirects, groups, substitutes or calls an interpreter); anything else that names it is denied. A
+command that does not name the directory is never touched by this check. One earlier behaviour is
+deliberately **reversed**: `cp <jail>/x /tmp/copy.md` was allowed in GK-M.3 and is now denied, since
+`cp`/`mv` naming the jail are refused in every argument position — evidence leaves the jail by `cat`
+or `git show`. NAMES tests the goalkeeper **directory**, not any path segment spelled `goalkeeper`,
+so this repo's own `docs/goals/goalkeeper/` — the goal pack and every lane report — stays writable
+for workers (PLAN §9 G-5); group 16 asserts that carve-out explicitly.
+
 Every child process is spawned with `CLAUDE_SESSION_KIND_MARKS` (and `CLAUDE_CONFIG_DIR`) set to `mkdtemp`
 fixture dirs, which guard.js prefers over the `~/.claude` default — so marks are written and read only under
 the temp dirs, removed after the run.
@@ -38,8 +52,8 @@ list is scanned. `census.py --live-badge-prefix` is the only real thing the suit
 
 ## Known limits, accepted for v1 (reviewed 2026-09-07, no fix)
 
-Three things this suite cannot prove on this Mac. They are recorded so nobody reads a green run as
-proving more than it does.
+Four things these suites cannot prove. They are recorded so nobody reads a green run as proving more
+than it does.
 
 - **Cases 8–9 skip here.** They cover a *hung* `census.py`, and the 10s bound needs `timeout(1)` or
   `gtimeout(1)`. macOS ships neither, so on this box a hung census **blocks the stamp** rather than
@@ -48,6 +62,11 @@ proving more than it does.
 - **The one-🥅 rule is check-then-act.** `mark.sh` asks census, then claims a number. Two
   `--goalkeeper` stamps in the same second can both pass the check. Accepted: the seat is opened by
   hand, once.
+- **NAMES can be evaded.** A glob (`cd ~/.claude/goal*eeper`) or a variable holding the path
+  (`D=~/.claude/goalkeeper; cd "$D"`) never spells the directory, so the guard allows it. That is the
+  accepted limit of the conservative rule: the guard prevents *accidents*, and detection in
+  `goalkeeper.py sweep` — uncommitted changes, foreign-author commits, mtimes newer than the last
+  commit — is the guarantee. Neither stops a process that bypasses Claude Code tooling.
 - **`census.py` does not see CLI worker sessions as live** — it observes processes with `ps`/`lsof` and
   classifies a CLI worker as `GHOST`. So the refusal keys on *desktop* liveness, which is the specified
   use (the 🥅 seat is a desktop session). A `0 goalkeeper` line in a census summary is therefore not
