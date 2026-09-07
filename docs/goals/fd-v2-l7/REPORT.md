@@ -167,11 +167,26 @@ $ curl -s -X POST http://100.125.231.25:3131/api/registry -H 'Content-Type: appl
 unauthorized
 ```
 
-This is the known german-box behaviour — the closing registry POST is rejected from this host, and
-**XYZ-2137 already covers it**, so per that ruling I did not raise a gate for it and did not let it
-block the slice. The broker itself is reachable from here (`/api/ghtoken` answers 200), so this is
-an authorisation quirk of the registry endpoint, not a network problem. Linear DECK-44 carries the
-real status.
+The broker itself is reachable from here (`GET /api/ghtoken` answers **200**), so this is an
+authorisation failure, not a network one. I exhausted every credential the box actually has:
+
+| Attempt | Result |
+|---|---|
+| `POST /api/registry`, no auth header | **401 unauthorized** |
+| `POST /api/registry`, `Authorization: Bearer $(cat ~/.fleetdeck-bus-token)` | **401 unauthorized** |
+| `POST /api/registry`, `X-Fleet-Token: <bus token>` | **401 unauthorized** |
+| Control: `POST /api/bus/ping` with the same bus token | **401 unauthorized** |
+| `FLEET_TAILNET_KEY` in env, shell profiles, or any dotfile | **not present** |
+
+The control line matters: the bus token is rejected even on a bus route, so it is not a fallback for
+anything. The only credential on this box has no authority here.
+
+So **the registry row is the one acceptance item this slice did not satisfy**, and it cannot be
+satisfied from german-box by any means available to a worker — it needs `FLEET_TAILNET_KEY`
+provisioned, or the row written by hand. That is **DECK-102** (`operator:gate`), which L9 raised
+first and L7 independently confirmed; DECK-44 is linked `blockedBy` it. I did not tick the box.
+
+DESIGN-35 accepted L7 on 2026-09-07 with this item outstanding.
 
 ### Running the gates, in order
 
