@@ -205,3 +205,19 @@ census refusal. L2 title spoof → cwd check too. L3 uncommitted → committed w
 - **Gates recorded:** G-13 the broker's GitHub App is not installed on `0xneelo/lowcap-connector`,
   so lowcapsxyz evidence is STALE until the operator installs it; P11 the bus `current` shortcut
   bypasses the 🥅 refusal (recommendation: drop `current` as a bus target).
+
+### §9 addendum (2026-09-08T00:05Z) — the Bash jail is conservative; tampering is evidence
+
+Three review rounds each found a new shell form around the write-jail check for other seats
+(two-step `cd` through `$HOME`, subshell and brace grouping, `mv` out of the jail). Static analysis
+of shell text is never complete, so the guarantee moves:
+
+- For non-goalkeeper kinds, a Bash command that names the goalkeeper directory is allowed only
+  when it is a pure read (simple pagers and `git log/show/status/diff` on it, no redirection, no
+  `cd`, no subshell, no interpreter). Everything else that names it is denied. Commands that do
+  not name it are never touched by this check.
+- `goalkeeper.py sweep` records tampering deterministically: uncommitted changes, foreign-author
+  commits, and mtimes newer than the last commit in `~/.claude/goalkeeper/`. `audit` opens with a
+  TAMPER block when any exists, and marks the thread and audits since the last clean SHA unverified.
+- Stated limit: neither mechanism stops a process that bypasses Claude Code tooling; detection is
+  the guarantee, the guard prevents accidents. Brief: lane-giselher-fixes-3.md.
