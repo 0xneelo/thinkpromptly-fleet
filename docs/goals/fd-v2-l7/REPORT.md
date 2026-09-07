@@ -175,11 +175,25 @@ authorisation failure, not a network one. I exhausted every credential the box a
 | `POST /api/registry`, no auth header | **401 unauthorized** |
 | `POST /api/registry`, `Authorization: Bearer $(cat ~/.fleetdeck-bus-token)` | **401 unauthorized** |
 | `POST /api/registry`, `X-Fleet-Token: <bus token>` | **401 unauthorized** |
-| Control: `POST /api/bus/ping` with the same bus token | **401 unauthorized** |
+| `POST /api/bus/ping` with the same bus token | **401 unauthorized** — but see the correction below |
 | `FLEET_TAILNET_KEY` in env, shell profiles, or any dotfile | **not present** |
 
-The control line matters: the bus token is rejected even on a bus route, so it is not a fallback for
-anything. The only credential on this box has no authority here.
+**Correction.** I first read that fourth line as "the bus token is worthless everywhere". It is not a
+valid control: `/api/bus/ping` is not a bus route. `server.js:572` defines
+`BUS_ROUTES = new Set(['/api/messages', '/api/messages/retry'])`, and the gate at `server.js:2989`
+is
+
+```js
+if (req.method === 'POST' && !BUS_ROUTES.has(p) && !notifyPath(p) && !tailnetAuthed(req))
+  return send(res, 401, 'text/plain', 'unauthorized');
+```
+
+Membership of `BUS_ROUTES` (or `notifyPath`) **short-circuits the auth check entirely** — an exempt
+route needs no credential at all, token or otherwise. So `/api/bus/ping` returned 401 because it is
+not exempt, which says nothing about the token.
+
+What stands is the first three rows: `/api/registry` rejects every credential this box has, because
+it is not exempt and `FLEET_TAILNET_KEY` is absent.
 
 So **the registry row is the one acceptance item this slice did not satisfy**, and it cannot be
 satisfied from german-box by any means available to a worker — it needs `FLEET_TAILNET_KEY`
