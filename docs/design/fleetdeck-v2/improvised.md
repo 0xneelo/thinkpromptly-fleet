@@ -1677,3 +1677,34 @@ when `FD.data` is missing. The id is shared, so nine slices asking for it still 
 
 This is a shell gap, not an L8 decision, and it is filed for the design seat as DECK-87 — the fix
 belongs in `index.html`, and once it lands the loader here becomes dead code and should be removed.
+
+### I-L5-13 — the scope select offers only scopes that have an attached kid
+
+**Serves:** L5.1 finding 2 (DESIGN-35 follow-up), ledger D11. **Screenshot:**
+`improvised/l5-empty-scope.png`.
+
+`FD.data.toOrg().scope` buckets **every** session by host and by group. Seat owners are among them —
+and a seat owner is a tree *root*, so it never appears in the kids grid the scope select drives. A
+host whose only sessions are seat owners (`mac`, in the captured and crafted data) was therefore
+offered in the picker and selecting it produced a **silently empty grid**: no cards, no explanation,
+nothing to tell you the choice was meaningless.
+
+Decision, taking the first of the two options the finding offered: **filter the options**. The select
+drives the kids grid and nothing else, so it lists exactly the scopes that have a kid. `toOrg()` stays
+the source — `scopesWithKids()` filters its keys rather than replacing it, so the adapter contract is
+unchanged. Live check `F8` asserts `mac` is no longer offered; `F3` asserts every offered scope
+yields a non-empty grid.
+
+**And the belt to that brace.** With the options filtered, an empty kids grid can now mean only one
+thing: nothing in the fleet reports to a seat at all. That is a real state — it is what the screenshot
+shows — so it says so in a spine card rather than leaving the spine hanging over blank space:
+
+> **No sessions report to a seat.**
+> Every row the fleet knows is in the unattached tab.
+
+Hollow dot, mock tokens, same card shape as I-L5-07 and I-L5-11.
+
+**One rough edge, recorded not hidden:** when there are no offered scopes the `<select>` renders as an
+empty pill (visible in the screenshot, top right). The mock has no empty-select treatment and giving
+it placeholder text would be inventing a control state. It is inert and harmless — there is nothing to
+pick — but the design seat may want a disabled or hidden state for it.

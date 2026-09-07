@@ -169,14 +169,17 @@ async function main() {
     await page.locator(`${ORG} button:has-text("attached")`).first().click();
     await page.waitForTimeout(250);
     o = await readOrg(page);
-    check('F1', 'read the scope select', 'its options are the machines in the live data',
-      o.scopes.includes('german-box') && o.scopes.includes('mac'), o.scopes);
+    check('F1', 'read the scope select', 'its options are the machines that have an attached kid',
+      o.scopes.includes('german-box'), o.scopes);
+    // L5.1 finding 2: 'mac' holds only seat OWNERS, which are roots and never
+    // kids. Offering it gave a silently empty grid.
+    check('F8', 'a host whose only sessions are seat owners', 'is not offered as a scope (I-L5-13)',
+      !o.scopes.includes('mac'), o.scopes);
     check('F2', 'default scope', 'defaults to german-box when the live data has it', o.scope === 'german-box', o.scope);
-    await page.locator(`${ORG} select`).selectOption('onboarding-box');
-    await page.waitForTimeout(250);
-    o = await readOrg(page);
-    check('F3', 'select scope onboarding-box', 'the kids grid empties (that host has no attached row)', o.kids.length === 0, o.kids.length);
-    check('F4', 'select scope onboarding-box', 'the head card retitles to the chosen scope', o.spine[0].name === 'onboarding-box', o.spine[0].name);
+    check('F3', 'every offered scope', 'yields a non-empty kids grid — no silent empty scope',
+      o.scopes.length > 0 && o.kids.length > 0, { scopes: o.scopes, kids: o.kids.length });
+    check('F4', 'the head card', 'is titled with the selected scope',
+      o.spine[0].name === o.scope, { head: o.spine[0].name, scope: o.scope });
     await page.locator(`${ORG} button[title="Switch grouping"]`).click();
     await page.waitForTimeout(250);
     o = await readOrg(page);

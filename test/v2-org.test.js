@@ -454,3 +454,143 @@ test('setLiveApi is inert until L2 lands, and forwards once it has', () => {
   org.setLiveApi('M11 fixture', 'warn');
   assert.deepStrictEqual(seen, [['M11 fixture', 'warn']]);
 });
+
+// ---------------------------------------------------------------------------
+// L5.1 finding 1: the 1 s tick used to call render() unconditionally once a load
+// had cached, so after the org screen was opened once the WHOLE app re-rendered
+// every second forever and setLiveApi kept overwriting the shared header pill
+// from whatever screen the user had moved on to. The tick is now gated on
+// orgOpen(), and start()/stop() are wired to screen enter/leave.
+// ---------------------------------------------------------------------------
+
+// A document whose only job is to answer "is the org screen mounted?".
+function stubDocument(state) {
+  const screen = { firstElementChild: null };
+  global.document = {
+    readyState: 'complete',
+    querySelector: (sel) =>
+      sel.indexOf('data-screen-label="Org chart"') !== -1 && state.open ? screen : null,
+    createElement: () => ({ setAttribute() {}, addEventListener() {} }),
+    head: { appendChild() {} },
+    addEventListener() {},
+  };
+}
+
+function countingFD() {
+  const calls = { setData: [], liveApi: [] };
+  global.FD.setData = function (name, value) {
+    this.fixture[name] = value;
+    calls.setData.push(name);
+  };
+  global.FD.shell.setLiveApi = (text, tone) => calls.liveApi.push([text, tone]);
+  // render() reaches FD.data.toOrg for the scope buckets only.
+  global.FD.data = { toOrg: () => ({ scope: { machine: {}, project: {} } }) };
+  return calls;
+}
+
+const TIMER_ROWS = {
+  sessions: [
+    org.norm({ host: 'mac', name: 'COORD', worker: 'Coordinator', lease_state: 'active', epoch: 1, expires_at: NOW + HOUR, last_seen_at: new Date(NOW - SEC).toISOString() }),
+    org.norm({ host: 'box', name: 'kid', worker: 'Kid', lease_state: 'active', expires_at: NOW + MIN, parent_host: 'mac', parent_name: 'COORD', last_seen_at: new Date(NOW - SEC).toISOString() }),
+  ],
+  seats: [{ seat: 'coordinator', owner_host: 'mac', owner_name: 'COORD', expires_at: NOW + HOUR }],
+  errors: [],
+  fixture: false,
+};
+
+test('the 1 s tick renders only while the org screen is open', (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  const state = { open: true };
+  stubDocument(state);
+  const calls = countingFD();
+  t.after(() => {
+    org._reset();
+    delete global.document;
+    delete global.FD.data;
+    delete global.FD.shell.setLiveApi;
+    global.FD.setData = function (n, v) { this.fixture[n] = v; };
+  });
+
+  org._reset();
+  org._setLast(TIMER_ROWS);
+  // start() would fetch; drive the timers directly instead.
+  org.stop();
+  org.start();
+
+  // Opened: every tick republishes, so the countdown moves.
+  calls.setData.length = 0;
+  calls.liveApi.length = 0;
+  t.mock.timers.tick(3000);
+  const openRenders = calls.setData.filter((n) => n === 'orgLive').length;
+  assert.ok(openRenders >= 3, `open: expected a render per second, got ${openRenders}`);
+  assert.ok(calls.liveApi.length >= 3, 'open: the source pill is written while visible');
+
+  // The user leaves the screen. Nothing may re-render and nothing may touch the
+  // shared header pill from here on, however long the timers keep ticking.
+  state.open = false;
+  calls.setData.length = 0;
+  calls.liveApi.length = 0;
+  t.mock.timers.tick(60000);
+  assert.deepStrictEqual(calls.setData, [], 'left: no FD.setData, so no app re-render');
+  assert.deepStrictEqual(calls.liveApi, [], 'left: the shared header pill is never overwritten');
+
+  // Coming back resumes it.
+  state.open = true;
+  t.mock.timers.tick(3000);
+  assert.ok(calls.setData.filter((n) => n === 'orgLive').length >= 3, 're-entered: rendering resumes');
+});
+
+test('watch() calls stop() on screen leave and start() on re-entry', (t) => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  const state = { open: false };
+  stubDocument(state);
+  countingFD();
+  t.after(() => {
+    org._reset();
+    delete global.document;
+    delete global.FD.data;
+    delete global.FD.shell.setLiveApi;
+    global.FD.setData = function (n, v) { this.fixture[n] = v; };
+  });
+
+  org._reset();
+  org._setLast(TIMER_ROWS);
+  org.watch();
+  assert.strictEqual(org.isRunning(), false, 'closed at boot: nothing runs');
+
+  state.open = true;
+  t.mock.timers.tick(300);
+  assert.strictEqual(org.isRunning(), true, 'enter: the watcher started the screen');
+
+  state.open = false;
+  t.mock.timers.tick(300);
+  assert.strictEqual(org.isRunning(), false, 'leave: the watcher stopped it — stop() is reached');
+
+  state.open = true;
+  t.mock.timers.tick(300);
+  assert.strictEqual(org.isRunning(), true, 're-enter: started again');
+});
+
+test('nothing is published while the screen is closed', (t) => {
+  const state = { open: false };
+  stubDocument(state);
+  const calls = countingFD();
+  t.after(() => {
+    org._reset();
+    delete global.document;
+    delete global.FD.data;
+    delete global.FD.shell.setLiveApi;
+    global.FD.setData = function (n, v) { this.fixture[n] = v; };
+  });
+
+  org._reset();
+  org._setLast(TIMER_ROWS);
+  // A load that resolves after the user has left lands in publish() too.
+  org.render(NOW);
+  assert.deepStrictEqual(calls.setData, [], 'closed: no FD.setData at all — orgScopeData re-renders too');
+  assert.deepStrictEqual(calls.liveApi, [], 'closed: no header-pill write');
+
+  state.open = true;
+  org.render(NOW);
+  assert.ok(calls.setData.includes('orgLive'), 'open: the publish goes through');
+});

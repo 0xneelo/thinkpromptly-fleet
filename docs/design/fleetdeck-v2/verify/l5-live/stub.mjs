@@ -60,6 +60,10 @@ export async function startServer(getScenario, craftedData) {
     const scenario = getScenario();
     if (pathname === '/api/sessions') {
       if (scenario === 'crafted') return { code: 200, body: { sessions: craftedData.sessions, errors: [] } };
+      // Seats and sessions, but nothing reports to a seat: the empty-scope state.
+      if (scenario === 'noKids') return { code: 200, body: {
+        sessions: craftedData.sessions.map((r) => ({ ...r, parent_host: null, parent_name: null })),
+        errors: [] } };
       if (scenario === 'empty') return { code: 200, body: { sessions: [], errors: [] } };
       if (scenario === 'hostErrors') return { code: 200, body: { sessions: craftedData.sessions, errors: ['gb: ssh timeout', 'ivy: refused'] } };
       if (scenario === 'seatsDown') return { code: 200, body: { sessions: craftedData.sessions, errors: [] } };
@@ -67,7 +71,7 @@ export async function startServer(getScenario, craftedData) {
     }
     if (pathname === '/api/seats') {
       if (scenario === 'seatsDown') return { code: 503, body: { ok: false, error: 'seat endpoint frozen' } };
-      if (scenario === 'crafted' || scenario === 'hostErrors') return { code: 200, body: { ok: true, seats: craftedData.seats } };
+      if (scenario === 'crafted' || scenario === 'hostErrors' || scenario === 'noKids') return { code: 200, body: { ok: true, seats: craftedData.seats } };
       if (scenario === 'empty') return { code: 200, body: { ok: true, seats: [] } };
       return { code: 200, body: JSON.parse(await readFile(join(API, 'seats.json'), 'utf8')) };
     }

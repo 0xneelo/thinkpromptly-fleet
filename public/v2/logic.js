@@ -368,9 +368,15 @@ class AppLogic extends Sub {
 
     // The head card is the scope node; the seat roots behind it are fleet-wide.
     const head = { name: orgScope || 'fleet', tag: kids.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) };
+    // With the scope select filtered to scopes that have a kid (I-L5-13), an
+    // empty kids grid can only mean no session reports to a seat at all. Say so
+    // rather than showing a spine over blank space.
+    const noKids = live.mode === 'ok' && !live.empty && !kids.length && (live.spine || []).length
+      ? [toSpine({ name: 'No sessions report to a seat.', sub: 'Every row the fleet knows is in the unattached tab.', dotTone: 'hollow' })]
+      : [];
     const spine = live.mode !== 'ok' ? (live.spine || []).map(toSpine)
       : live.empty ? [head, toSpine({ name: live.empty, dotTone: 'hollow' })]
-      : [head, ...(live.spine || []).map(toSpine)];
+      : [head, ...(live.spine || []).map(toSpine), ...noKids];
 
     return {
       orgSpine: spine,
