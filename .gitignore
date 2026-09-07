@@ -7,3 +7,7 @@ deploy-keys/github-app.env
 deploy-keys/fleet-tailnet.env
 *.pem
 .fleetdeck/
+
+# scratch dirs used by build/verify tooling
+.tmp/
+.tmp2/
