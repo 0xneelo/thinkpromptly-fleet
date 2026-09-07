@@ -2090,7 +2090,8 @@ resolves.
 
 The session rail gets the filter menu Claude Desktop puts next to its own session list. All four
 entries are live-mode only. **Screenshots:** `improvised/bus-filters-dark.png`,
-`improvised/bus-filters-light.png`.
+`improvised/bus-filters-light.png`; project grouping with a collapsed bucket in
+`improvised/bus-groups-dark.png` and `improvised/bus-groups-light.png`.
 
 ### I-L12-01 — the filter set is Claude Desktop's menu, mapped onto the fleet
 
@@ -2179,3 +2180,65 @@ already do. `detach` gained the mirror-image rule: a stale instance's unmount ma
 attached host's poll timer and menu, while a detach that names no host stays an unconditional
 teardown. The open menu is also forgotten whenever the rail bar leaves the DOM, so returning to the
 screen does not re-draw a menu the user never reopened. All three are covered by tests.
+### I-L12-06 — "Group by · Project" reads the project each row kind already carries
+
+**Serves:** the rail's Group by menu.
+
+A fleet row never states its project, but both kinds imply it, and each is read where it lives:
+
+- **Claude Desktop seats** — from the seat's `cwd` in `/api/desktop-sessions`, which `build()` already
+  walks for titles and liveness. The repo root is everything before `/.claude/`, and the project is
+  that directory's own name, so `/Users/misterislez/remote-system/.claude/worktrees/foo-123` and
+  `/Users/misterislez/remote-system` both read `remote-system`, and thirty worktrees of one repo
+  collapse into one bucket instead of thirty. It is recorded per `cliSessionId` **and** per `id`,
+  the two handles a thread can be keyed by, and `restampRows()` stamps it onto the rail when the
+  fetch lands — a row drawn before that simply has no project yet.
+- **Box sessions** — from the session-name prefix, which is this fleet's own convention: `LC-` is
+  lowcap-connector, `FD-` is remote-system. The map is one named constant, `PROJECT_PREFIXES`, at the
+  top of `screens/bus.js`; adding a repo is adding a line to it. The match is case-insensitive and
+  only counts when the prefix is followed by `-`, so `LCX-foo` is not lowcap-connector.
+
+**The label is the directory name, not the product name.** `FD-` sessions are fleetdeck work, but the
+repo is `remote-system`, and that is what the bucket says. A project label the operator cannot find on
+disk is worse than a plain one, and the desktop side can only ever report the directory anyway — so
+both kinds agree by using the same answer.
+
+No match leaves `project` unset, exactly like `group` (I-L12-03): a non-empty string or nothing, with
+`validRow`'s whitelist holding that line at the boundary. Unmatched rows collect under "No project",
+which sorts after the named ones.
+
+**The label is aliased where the directory lies.** `PROJECT_ALIAS` maps `remote-system` to
+`fleetdeck` (operator, 2026-09-07): the repo IS the fleetdeck app and its directory name is an
+accident of history. The alias is applied last, to both derivations at once, so the `FD-` prefix and
+a desktop seat whose cwd is under `remote-system` land in the same bucket, and so the rules above
+keep naming the real directory. Renaming another project is one entry in that map.
+
+### I-L12-07 — the group headers are decorated in place, and collapse is a stored set
+
+**Serves:** the operator's ask for Claude Desktop's collapsible session groups.
+
+**The key is `<grouping>|<label>`, not the label.** "german-box" is a Host bucket and could equally be
+a bucket label under a later grouping; one shared key would make collapsing it in one view collapse a
+different set of sessions in another. `fd-bus-collapsed` holds `{ "host|german-box": true }`, read
+through the same never-throwing `readJson` as every other preference and coerced to true-valued keys,
+so a hand-edited store degrades to "nothing collapsed" rather than to a broken map.
+
+**A collapsed bucket returns with `items: []` but is never dropped.** `shape()` already discards empty
+buckets, and applying that after collapsing would delete the very header the user needs to click to
+get their sessions back. So the empty-bucket rule runs on the pre-collapse list and the emptying is the
+last thing `shape()` does; each bucket also carries `count` — what it holds when open — and
+`collapsed`, so the header can say how much is hidden.
+
+**The headers are decorated, not templated.** They are compiled markup in a frozen template
+(I-L12-02), so `screens/bus.js` finds them structurally — the scroll container is the sibling after
+the search bar, and the rail's headers are its direct `<span>` children, the rows being `<div>`s —
+and adds a chevron, a count and one click handler on the same MutationObserver cycle as the filter
+menu. No `data-dc-tpl` hook is read: those are the compiler's, not an API. The label is read back off
+the header itself, from every child the runtime put there and none of the ones we injected — the
+runtime wraps an interpolation in a `span.sc-interp`, so reading text nodes alone would read every
+header as empty — and a header the runtime re-used for another bucket still reports the bucket it now
+shows. The five layout
+properties are re-set on every apply rather than cached, since the theme toggle rewrites the inline
+style they are merged into. `shape()` records its last label → `{key, count, collapsed}` map in a
+module variable, which is what the DOM pass reads: it decorates headers it did not compute, and
+logic.js calls `shape()` on every render, so the map is never behind the DOM.

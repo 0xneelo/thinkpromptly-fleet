@@ -26,6 +26,8 @@
   var PINNED_KEY = 'fd-bus-pinned';
   // L12: the rail's filter/group/sort preferences (improvised.md I-L12-01, I-L12-04).
   var FILTERS_KEY = 'fd-bus-filters';
+  // L12: which rail group headers the user has collapsed (improvised.md I-L12-07).
+  var COLLAPSED_KEY = 'fd-bus-collapsed';
   // BEHAVIOUR section 7: 15 s while the bus screen is open, 60 s on the app shell.
   var POLL_OPEN_MS = 15000;
   var POLL_SHELL_MS = 60000;
@@ -60,9 +62,11 @@
   var known = {};          // thread id -> { messageId: true }, for new-inbound detection
   var seen = {};           // fd-bus-seen
   var pinned = {};         // fd-bus-pinned, as a set
+  var collapsed = {};      // fd-bus-collapsed: '<grouping>|<label>' -> true
   var booted = false;      // has one poll ever landed
   var provisional = {};    // targets opened by hook before the server knows them
   var desktopTitles = null;// cliSessionId / session id -> human title
+  var desktopProjects = null;// cliSessionId / session id -> project (I-L12-06)
   var desktopLive = null;  // cliSessionId / session id -> live
   var titlesPromise = null;
   var errs = {};           // message key -> receipt error string we own
@@ -92,6 +96,7 @@
   function loadPrefs() {
     seen = readJson(SEEN_KEY, {});
     filters = sanitiseFilters(readJson(FILTERS_KEY, null));
+    collapsed = sanitiseCollapsed(readJson(COLLAPSED_KEY, null));
     var list = readJson(PINNED_KEY, []);
     pinned = {};
     if (Array.isArray(list)) list.forEach(function (id) { pinned[id] = true; });
@@ -108,7 +113,7 @@
   var FILTER_VALUES = {
     status: ['all', 'live', 'offline'],
     env: ['all', 'desktop', 'box'],
-    group: ['recent', 'host', 'env', 'status', 'grp', 'none'],
+    group: ['recent', 'host', 'project', 'env', 'status', 'grp', 'none'],
     sort: ['activity', 'name', 'status'],
   };
 
@@ -123,6 +128,16 @@
   }
 
   var filters = sanitiseFilters(null);
+
+  // A hand-edited or half-written store must not put a non-string key or a
+  // falsy value into the map every render then reads.
+  function sanitiseCollapsed(raw) {
+    var src = raw && typeof raw === 'object' ? raw : {};
+    var out = {};
+    Object.keys(src).forEach(function (k) { if (k && src[k]) out[k] = true; });
+    return out;
+  }
+  function collapseKey(grouping, label) { return grouping + '|' + label; }
 
   // ---------------------------------------------------------------------------
   // Thread identity. L1's toThreads keys a thread by the OTHER party: the target
@@ -139,6 +154,41 @@
     return isSessionSource(msg.source) ? sourceSession(msg.source) : t.session;
   }
   function inboundOf(msg) { return isSessionSource(msg.source); }
+
+  // ---------------------------------------------------------------------------
+  // L12 "Group by - Project". A box session names its project in its own session
+  // name prefix; this fleet's convention, one entry per repo (I-L12-06). Add a
+  // prefix here and every LC-/FD-style row picks it up.
+  // ---------------------------------------------------------------------------
+  var PROJECT_PREFIXES = { LC: 'lowcap-connector', FD: 'remote-system' };
+  // Display names for repos whose directory is not what the fleet calls them.
+  // Applied last, to both row kinds at once, so a rename stays one line here
+  // and the derivation above keeps naming the real directory (operator, 2026-09-07).
+  var PROJECT_ALIAS = { 'remote-system': 'fleetdeck' };
+
+  function aliasProject(p) { return p ? (PROJECT_ALIAS[p] || p) : ''; }
+
+  function projectOfName(name) {
+    if (typeof name !== 'string') return '';
+    var i = name.indexOf('-');
+    if (i <= 0) return '';
+    return aliasProject(PROJECT_PREFIXES[name.slice(0, i).toUpperCase()] || '');
+  }
+
+  // A desktop seat names its project in its cwd. Worktrees live under
+  // <repo>/.claude/worktrees/<slug>, so the repo root is everything before
+  // '/.claude/' and the project is that directory's own name.
+  function projectOfCwd(cwd) {
+    if (typeof cwd !== 'string' || !cwd) return '';
+    var root = cwd.split('/.claude/')[0].replace(/\/+$/, '');
+    return aliasProject(root.slice(root.lastIndexOf('/') + 1));
+  }
+
+  function desktopProject(id) {
+    if (!desktopProjects) return '';
+    var key = id.indexOf(ID_PREFIX) === 0 ? id.slice(ID_PREFIX.length) : id;
+    return desktopProjects[key] || '';
+  }
 
   // The mock's rail label. BEHAVIOUR section 2 quotes the old <option> labels
   // verbatim: "Claude Desktop <dot> <label||'current chat'>" and
@@ -166,17 +216,20 @@
     titlesPromise = FD.data.desktopSessions().then(function (res) {
       var map = {};
       var alive = {};
+      var proj = {};
       ((res && res.groups) || []).forEach(function (g) {
         ((g && g.sessions) || []).forEach(function (x) {
           if (!x) return;
-          if (x.cliSessionId) { if (x.title) map[x.cliSessionId] = x.title; if (x.live) alive[x.cliSessionId] = true; }
-          if (x.id) { if (x.title) map[x.id] = x.title; if (x.live) alive[x.id] = true; }
+          var p = projectOfCwd(x.cwd);
+          if (x.cliSessionId) { if (x.title) map[x.cliSessionId] = x.title; if (x.live) alive[x.cliSessionId] = true; if (p) proj[x.cliSessionId] = p; }
+          if (x.id) { if (x.title) map[x.id] = x.title; if (x.live) alive[x.id] = true; if (p) proj[x.id] = p; }
         });
       });
       desktopTitles = map;
       desktopLive = alive;
+      desktopProjects = proj;
       restampRows();
-    }).catch(function () { desktopTitles = desktopTitles || {}; desktopLive = desktopLive || {}; });
+    }).catch(function () { desktopTitles = desktopTitles || {}; desktopLive = desktopLive || {}; desktopProjects = desktopProjects || {}; });
     return titlesPromise;
   }
 
@@ -192,9 +245,12 @@
       var kind = r.kind || TMUX;
       var name = labelFor(r.id, kind);
       var live = kind === DESKTOP && desktopIsLive(r.id) ? true : r.live;
-      if (name === r.name && live === r.live) return r;
+      var project = kind === DESKTOP ? (desktopProject(r.id) || r.project) : r.project;
+      if (name === r.name && live === r.live && project === r.project) return r;
       changed = true;
-      return Object.assign({}, r, { name: name, live: live });
+      var copy = Object.assign({}, r, { name: name, live: live });
+      if (project) copy.project = project; else delete copy.project;
+      return copy;
     });
     if (!changed) return;
     rows = next;
@@ -299,6 +355,9 @@
       row.kind = kind;
       var grp = groupOf[hostName + ' ' + id];
       if (grp) row.group = grp;
+      // Same whitelist rule as `group`: set only when it is a non-empty string.
+      var project = kind === DESKTOP ? desktopProject(id) : projectOfName(id);
+      if (project) row.project = project;
       return row;
     });
 
@@ -336,6 +395,7 @@
     if (r.pinned) out.pinned = true;
     if (r.kind) out.kind = str(r.kind);
     if (typeof r.group === 'string' && r.group) out.group = r.group;
+    if (typeof r.project === 'string' && r.project) out.project = r.project;
     return out.id ? out : null;
   }
 
@@ -821,6 +881,11 @@
   // Filters apply to sessions only -- a broadcast group is a thing the user made
   // and is never filtered away.
   // ---------------------------------------------------------------------------
+  var LAST_LABEL = { 'No group': true, 'No project': true };
+  // The last shape() result, label -> {key, count, collapsed}. The DOM pass
+  // decorates headers the runtime drew, not ones it computed, so it reads this.
+  var lastShape = {};
+
   function passesFilters(x, f) {
     if (f.status === 'live' && !x.live) return false;
     if (f.status === 'offline' && x.live) return false;
@@ -867,6 +932,25 @@
     return bus.filters();
   };
 
+  bus.collapsed = function () { return Object.assign({}, collapsed); };
+
+  // Live-only and re-rendered exactly like setFilters: the rail is redrawn from
+  // shape(), which reads `collapsed` on its way out.
+  bus.toggleCollapsed = function (label) {
+    if (!bus.live || !label) return;
+    var key = collapseKey(filters.group, label);
+    if (collapsed[key]) delete collapsed[key]; else collapsed[key] = true;
+    writeStore(COLLAPSED_KEY, JSON.stringify(collapsed));
+    if (!host && FD.screens && FD.screens.busHost) bus.attach(FD.screens.busHost);
+    if (host) {
+      if (typeof host.forceUpdate === 'function') host.forceUpdate();
+      else host.setState({});
+    } else {
+      FD.setData('busSessions', validRows(rows));
+    }
+    applyFilterUi();
+  };
+
   bus.shape = function (items, ctx) {
     ctx = ctx || {};
     var f = sanitiseFilters(ctx.filters || filters);
@@ -874,6 +958,20 @@
     var lastM = typeof ctx.lastM === 'function' ? ctx.lastM : function () { return null; };
     var notPinned = function (x) { return !isPinned(x); };
     var cmp = comparatorFor(f.sort, lastM);
+    // Collapsing empties a bucket's items but never removes the bucket: the
+    // header is the only way back, so `count` is taken BEFORE the emptying and
+    // the empty-bucket rule below runs on the expanded list (I-L12-07).
+    var decorate = function (out) {
+      var map = {};
+      var list = out.map(function (g) {
+        var key = collapseKey(f.group, g.label);
+        var shut = !!collapsed[key];
+        map[g.label] = { key: key, count: g.items.length, collapsed: shut };
+        return { label: g.label, items: shut ? [] : g.items, count: g.items.length, collapsed: shut };
+      });
+      lastShape = map;
+      return list;
+    };
     var list = (Array.isArray(items) ? items : []).filter(function (x) { return x && (x.members || passesFilters(x, f)); });
     // Every bucket but the recent grouping's own Pinned/Recent split floats its
     // pins to the top; Array#sort is stable, so equal rows keep their order.
@@ -885,20 +983,21 @@
     };
 
     if (f.group === 'recent') {
-      return keep([
+      return decorate(keep([
         { label: 'Pinned', items: list.filter(isPinned).sort(cmp) },
         { label: 'Recent', items: list.filter(notPinned).sort(cmp) },
-      ], true);
+      ], true));
     }
 
     var groups = list.filter(function (x) { return x.members; });
     var sessions = list.filter(function (x) { return !x.members; });
     var out = groups.length ? [{ label: 'Broadcasts', items: bucket(groups) }] : [];
-    if (f.group === 'none') return out.concat(keep([{ label: 'Sessions', items: bucket(sessions) }], false));
+    if (f.group === 'none') return decorate(out.concat(keep([{ label: 'Sessions', items: bucket(sessions) }], false)));
 
     var order = null;
     var labelOf;
     if (f.group === 'host') labelOf = function (x) { return x.kind === DESKTOP ? 'Claude Desktop' : (x.host || 'Unknown host'); };
+    else if (f.group === 'project') labelOf = function (x) { return x.project || 'No project'; };
     else if (f.group === 'env') { labelOf = function (x) { return x.kind === DESKTOP ? 'Claude Desktop' : 'Box sessions'; }; order = ['Claude Desktop', 'Box sessions']; }
     else if (f.group === 'status') { labelOf = function (x) { return x.live ? 'Live' : 'Offline'; }; order = ['Live', 'Offline']; }
     else labelOf = function (x) { return x.group || 'No group'; };
@@ -910,12 +1009,13 @@
       by[l].push(x);
     });
     var labels = order || Object.keys(by).sort(function (a, b) {
-      // 'No group' collects the ungrouped, so it sits after the named lanes.
-      if (a === 'No group') return 1;
-      if (b === 'No group') return -1;
+      // 'No group' / 'No project' collect the unassigned, so they sit after the
+      // named lanes rather than wherever the alphabet would put them.
+      if (LAST_LABEL[a]) return 1;
+      if (LAST_LABEL[b]) return -1;
       return a.localeCompare(b);
     });
-    return out.concat(keep(labels.map(function (l) { return { label: l, items: bucket(by[l] || []) }; }), !!order));
+    return decorate(out.concat(keep(labels.map(function (l) { return { label: l, items: bucket(by[l] || []) }; }), !!order)));
   };
 
   // ---------------------------------------------------------------------------
@@ -1031,11 +1131,13 @@
     { key: 'status', title: 'Status', opts: [['all', 'All'], ['live', 'Live'], ['offline', 'Offline']] },
     { key: 'env', title: 'Environment', opts: [['all', 'All'], ['desktop', 'Claude Desktop'], ['box', 'Box']] },
     null,
-    { key: 'group', title: 'Group by', opts: [['recent', 'Pinned & recent'], ['host', 'Host'], ['env', 'Environment'], ['status', 'Status'], ['grp', 'Group'], ['none', 'None']] },
+    { key: 'group', title: 'Group by', opts: [['recent', 'Pinned & recent'], ['host', 'Host'], ['project', 'Project'], ['env', 'Environment'], ['status', 'Status'], ['grp', 'Group'], ['none', 'None']] },
     { key: 'sort', title: 'Sort by', opts: [['activity', 'Last activity'], ['name', 'Name'], ['status', 'Live first']] },
   ];
 
   var ROW_CSS = 'display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border-radius:7px;border:0;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;text-align:left;';
+  var CHEVRON_SVG = '<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">'
+    + '<polyline points="9 6 15 12 9 18"></polyline></svg>';
   var SLIDERS_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'
     + '<path d="M4 7h16"></path><path d="M4 17h16"></path>'
     + '<circle cx="9" cy="7" r="2"></circle><circle cx="15" cy="17" r="2"></circle></svg>';
@@ -1216,6 +1318,82 @@
     buildMenu(menu, line);
   }
 
+  // ---------------------------------------------------------------------------
+  // Collapsible group headers (I-L12-07). The rail's headers are compiled markup,
+  // so they are decorated in place rather than templated: a chevron in front, the
+  // bucket's count behind, and one click handler. The label is read back off the
+  // header itself -- everything the runtime put there (a text node, or the
+  // span.sc-interp it wraps an interpolation in) and nothing we injected -- so a
+  // header the runtime re-used for another bucket still reports the right one.
+  // ---------------------------------------------------------------------------
+  function headerLabel(node) {
+    var out = '';
+    for (var i = 0; i < node.childNodes.length; i++) {
+      var c = node.childNodes[i];
+      if (c.nodeType === 3) out += c.nodeValue;
+      else if (c.nodeType === 1 && !c.getAttribute('data-fd-bus')) out += c.textContent;
+    }
+    return out.trim();
+  }
+
+  function decorateHeader(el) {
+    var info = lastShape[headerLabel(el)];
+    // Not a bucket we shaped: leave it exactly as the template drew it.
+    if (!info) return;
+    // Merged onto the template's own inline style, re-set on every apply so the
+    // theme toggle's rewrite takes ours with it.
+    el.style.cursor = 'pointer';
+    el.style.userSelect = 'none';
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.gap = '6px';
+    el.setAttribute('role', 'button');
+    el.tabIndex = 0;
+    el.setAttribute('aria-expanded', info.collapsed ? 'false' : 'true');
+
+    var chev = el.querySelector('span[data-fd-bus="group-chevron"]');
+    if (!chev) {
+      chev = document.createElement('span');
+      chev.setAttribute('data-fd-bus', 'group-chevron');
+      chev.innerHTML = CHEVRON_SVG;
+      el.insertBefore(chev, el.firstChild);
+    }
+    var chevCss = 'display:inline-flex;flex-shrink:0;transition:transform .15s;transform:rotate(' + (info.collapsed ? 0 : 90) + 'deg);';
+    if (chev.style.cssText !== chevCss) chev.style.cssText = chevCss;
+
+    var count = el.querySelector('span[data-fd-bus="group-count"]');
+    if (!count) {
+      count = document.createElement('span');
+      count.setAttribute('data-fd-bus', 'group-count');
+      count.style.cssText = 'margin-left:auto;opacity:.55;';
+      el.appendChild(count);
+    }
+    var n = String(info.count);
+    if (count.textContent !== n) count.textContent = n;
+
+    if (el.__fdBusHeader) return;
+    el.__fdBusHeader = true;
+    el.addEventListener('click', function () { bus.toggleCollapsed(headerLabel(el)); });
+    el.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ' && e.key !== 'Spacebar') return;
+      e.preventDefault();
+      bus.toggleCollapsed(headerLabel(el));
+    });
+  }
+
+  function drawGroupHeaders() {
+    var input = railBar();
+    if (!input || !input.parentNode) return;
+    // The scroll container is the sibling after the search bar, and the rail's
+    // group headers are its direct <span> children -- the rows are <div>s.
+    var scroll = input.parentNode.nextElementSibling;
+    if (!scroll) return;
+    var kids = scroll.children;
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i].tagName === 'SPAN') decorateHeader(kids[i]);
+    }
+  }
+
   function applyFilterUi() {
     if (!bus.live || typeof document === 'undefined' || applying) return;
     applying = true;
@@ -1223,6 +1401,7 @@
     // The rail matters more than its menu, and the live gate asserts a clean
     // console: a throw here is swallowed rather than logged or rethrown.
     try { drawFilterUi(); } catch (e) { /* nothing to draw */ }
+    try { drawGroupHeaders(); } catch (e) { /* nothing to draw */ }
     applying = false;
     observeHost();
   }

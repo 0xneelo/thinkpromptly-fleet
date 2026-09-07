@@ -604,10 +604,10 @@ test('delivering to an unknown target still refreshes, in case the rail is stale
 // Four sessions and one broadcast group, with the ages logic.js would supply.
 const SHAPE_ITEMS = [
   { id: 'g1', name: 'train-84', members: ['a', 'b'] },
-  { id: 'a', name: 'alpha', host: 'german-box', live: true, kind: 'tmux', group: 'fd-v2' },
-  { id: 'b', name: 'bravo', host: 'onboarding-box', live: false, kind: 'tmux' },
+  { id: 'a', name: 'alpha', host: 'german-box', live: true, kind: 'tmux', group: 'fd-v2', project: 'lowcap-connector' },
+  { id: 'b', name: 'bravo', host: 'onboarding-box', live: false, kind: 'tmux', project: 'fleetdeck' },
   { id: 'c', name: 'charlie', host: '', live: true, kind: 'claude-desktop' },
-  { id: 'd', name: 'delta', host: 'german-box', live: false, kind: 'tmux', group: 'fd-v2', pinned: true },
+  { id: 'd', name: 'delta', host: 'german-box', live: false, kind: 'tmux', group: 'fd-v2', project: 'lowcap-connector', pinned: true },
 ];
 const AGES = { a: 30, b: 5, c: 12, g1: 1 }; // d has no thread at all
 const CTX = { isPinned: (x) => !!x.pinned, lastM: (id) => (id in AGES ? AGES[id] : null) };
@@ -739,6 +739,113 @@ test('a rail row carries the registry group, and only when there is one', async 
   const plain = FD.fixture.busSessions.find((r) => r.id === without.name);
   assert.ok(plain, 'the ungrouped session is on the rail');
   assert.strictEqual('group' in plain, false, 'no empty group key reaches the render');
+});
+
+// ---------------------------------------------------------------------------
+// L12.2 — Group by · Project, and collapsible group headers (I-L12-06, I-L12-07).
+// ---------------------------------------------------------------------------
+
+// One seat in a worktree under <repo>/.claude/worktrees/, one checked out plain.
+const seat = (pick) => {
+  for (const g of DESKTOP.groups || []) {
+    for (const x of g.sessions || []) if (x.cliSessionId && x.cwd && pick(x.cwd)) return x;
+  }
+  throw new Error('the desktop-sessions fixture has no seat for this case');
+};
+const WORKTREE_SEAT = seat((cwd) => cwd.includes('/.claude/worktrees/'));
+// The label is the repo directory, except where the fleet renames it (bus.js PROJECT_ALIAS).
+const PROJECT_ALIAS = { 'remote-system': 'fleetdeck' };
+const expectProject = (cwd) => {
+  const dir = path.basename(cwd.split('/.claude/')[0]);
+  return PROJECT_ALIAS[dir] || dir;
+};
+const PLAIN_SEAT = seat((cwd) => !cwd.includes('/.claude/'));
+
+test('a desktop row takes its project from the seat cwd, worktree or not', async () => {
+  const { bus, FD } = await boot();
+  bus.attach(fakeHost());
+  bus.open({ type: 'claude-desktop', session: 'id:' + WORKTREE_SEAT.cliSessionId });
+  bus.open({ type: 'claude-desktop', session: 'id:' + PLAIN_SEAT.cliSessionId });
+  // The projects come from /api/desktop-sessions, fetched on first sight.
+  await settle();
+  await settle();
+  const row = (x) => FD.fixture.busSessions.find((r) => r.id === 'id:' + x.cliSessionId);
+  // The repo root is everything before '/.claude/', so the worktree slug never shows.
+  assert.strictEqual(row(WORKTREE_SEAT).project, expectProject(WORKTREE_SEAT.cwd));
+  assert.ok(!row(WORKTREE_SEAT).project.includes('worktrees'));
+  assert.strictEqual(row(PLAIN_SEAT).project, expectProject(PLAIN_SEAT.cwd));
+});
+
+test('a box row takes its project from the session-name prefix', async () => {
+  const { FD } = await boot({
+    messages: { messages: [], targets: [] },
+    sessions: {
+      sessions: [
+        { host: HOST, name: 'LC-alpha', live: true },
+        { host: HOST, name: 'fd-bravo', live: true },
+        { host: HOST, name: 'XX-charlie', live: true },
+        { host: HOST, name: 'plain', live: true },
+      ],
+    },
+  });
+  const row = (id) => FD.fixture.busSessions.find((r) => r.id === id);
+  assert.strictEqual(row('LC-alpha').project, 'lowcap-connector');
+  assert.strictEqual(row('fd-bravo').project, 'fleetdeck', 'the prefix match is case-insensitive, and FD aliases to fleetdeck');
+  assert.strictEqual('project' in row('XX-charlie'), false, 'an unknown prefix leaves the key off');
+  assert.strictEqual('project' in row('plain'), false, 'and so does a name with no prefix at all');
+});
+
+test('group by project buckets the rail, with No project last', async () => {
+  const { bus } = await boot();
+  const out = bus.shape(SHAPE_ITEMS, Object.assign({ filters: { group: 'project' } }, CTX));
+  assert.deepStrictEqual(labels(out), ['Broadcasts', 'fleetdeck', 'lowcap-connector', 'No project']);
+  assert.deepStrictEqual(ids(out, 'lowcap-connector'), ['d', 'a'], 'the pin floats to the top of its bucket');
+  assert.deepStrictEqual(ids(out, 'fleetdeck'), ['b']);
+  assert.deepStrictEqual(ids(out, 'No project'), ['c']);
+});
+
+test('a collapsed bucket keeps its header, reports its count and renders nothing', async () => {
+  const { bus, store } = await boot();
+  const ctx = { isPinned: CTX.isPinned, lastM: CTX.lastM };
+  bus.setFilters({ group: 'project' });
+  bus.toggleCollapsed('lowcap-connector');
+  const out = bus.shape(SHAPE_ITEMS, ctx);
+  // The empty-bucket rule runs on the EXPANDED list, so collapsing cannot make a
+  // bucket vanish — the header is the only way to get it back.
+  assert.deepStrictEqual(labels(out), ['Broadcasts', 'fleetdeck', 'lowcap-connector', 'No project']);
+  const shut = out.find((g) => g.label === 'lowcap-connector');
+  assert.deepStrictEqual(shut.items, []);
+  assert.strictEqual(shut.count, 2, 'the header still says what it hides');
+  assert.strictEqual(shut.collapsed, true);
+  const open = out.find((g) => g.label === 'fleetdeck');
+  assert.strictEqual(open.collapsed, false);
+  assert.strictEqual(open.count, open.items.length);
+  assert.deepStrictEqual(JSON.parse(store.getItem('fd-bus-collapsed')), { 'project|lowcap-connector': true });
+  bus.toggleCollapsed('lowcap-connector');
+  assert.deepStrictEqual(bus.collapsed(), {}, 'and the same header opens it again');
+});
+
+test('the collapse key is per grouping, and survives a reload', async () => {
+  const { bus } = await boot({ storage: { 'fd-bus-collapsed': JSON.stringify({ 'host|german-box': true, junk: 0 }) } });
+  const ctx = { isPinned: CTX.isPinned, lastM: CTX.lastM };
+  assert.deepStrictEqual(bus.collapsed(), { 'host|german-box': true }, 'falsy values never reach the map');
+  bus.setFilters({ group: 'host' });
+  assert.deepStrictEqual(ids(bus.shape(SHAPE_ITEMS, ctx), 'german-box'), [], 'the stored collapse applies on boot');
+  // The same label under another grouping is a different key, so it stays open.
+  bus.setFilters({ group: 'project' });
+  assert.ok(bus.shape(SHAPE_ITEMS, ctx).every((g) => !g.collapsed));
+  bus.toggleCollapsed('lowcap-connector');
+  assert.deepStrictEqual(bus.collapsed(), { 'host|german-box': true, 'project|lowcap-connector': true });
+});
+
+test('toggleCollapsed is inert in fixture mode', async () => {
+  const t = await boot({ fixture: true });
+  const updates = [];
+  t.bus.attach({ forceUpdate: () => updates.push('render'), setState: () => updates.push('render'), state: {} });
+  t.bus.toggleCollapsed('Recent');
+  assert.deepStrictEqual(t.bus.collapsed(), {}, 'nothing collapses');
+  assert.strictEqual(t.store._dump()['fd-bus-collapsed'], undefined, 'nothing written to storage');
+  assert.deepEqual(updates, [], 'no re-render forced');
 });
 
 // The full Claude conversation of a Claude Desktop seat, merged into the thread.
