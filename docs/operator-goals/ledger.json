@@ -1,6 +1,6 @@
 {
- "project": "weave",
- "updated": "2026-09-06",
+ "project": "remote-system",
+ "updated": "2026-09-07",
  "goals": [
   {
    "id": "G1",
@@ -99,6 +99,56 @@
     {
      "at": "2026-09-06",
      "note": "added"
+    }
+   ]
+  },
+  {
+   "id": "G3",
+   "goal": "Goalkeeper: one 🥅 GOALKEEPER seat, all projects, working 1-on-1 with the operator. It records the operator's dated directions verbatim (the red thread) and audits what the coordinator and orchestrator seats actually did against it. It reports drift to the operator only, as an audit note plus drafted relay lines the operator forwards. It never messages a seat; no seat can address it.",
+   "why": "Seats lose ground to context rot: O30/O32 died without handoffs, O12's items vanished, a 6-lane goal-keeper build stalled unseen. Operator 2026-09-05: 'how would i know what an orchestrator just asked me is not some context rotten problem he just made up'.",
+   "asks": [],
+   "theme": "fleet-ops",
+   "asked": "2026-09-07",
+   "status": "active",
+   "health": "moving",
+   "progress": "GK-D done (a06d903, review WEAVE); GK-M Giselher running on the Mac in auto mode since 2026-09-07 ~03:20Z",
+   "next": "orchestrator: review Giselher's milestones as they push, then weave both lanes as weave/goalkeeper-v1 for one ff-merge + ./up.sh; operator: decide P11 (drop 'current' as a bus target)",
+   "tasks": [
+    {
+     "ref": "P2",
+     "title": "GK-M — session kind, guard, /goalkeeper skill, goalkeeper.py, data repo, installer (Mac-local)",
+     "who": "Giselher",
+     "lane": "goalkeeper-mac",
+     "state": "In Progress"
+    },
+    {
+     "ref": "P3",
+     "title": "GK-D — deck refuses messages to 🥅 at deliverDesktopSession + skill isolation lines",
+     "who": "Luitpold",
+     "lane": "goalkeeper-deck",
+     "state": "Done (review: WEAVE; P11 current-gap pending operator)"
+    }
+   ],
+   "sources": [
+    "operator, ORCHESTRATOR 34 session"
+   ],
+   "updated": "2026-09-07",
+   "log": [
+    {
+     "at": "2026-09-07",
+     "note": "added"
+    },
+    {
+     "at": "2026-09-07",
+     "note": "re-scoped to the 2026-09-07 rulings 2-6 after Fable audit C1: auditor only, no seat nudging (ORCHESTRATOR 34)"
+    },
+    {
+     "at": "2026-09-07",
+     "note": "health → moving"
+    },
+    {
+     "at": "2026-09-07",
+     "note": "health → moving"
     }
    ]
   }
