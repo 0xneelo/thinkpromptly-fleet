@@ -488,3 +488,117 @@ stays STALE), `G-18` (a live plaintext broker token from another `--askpass` cal
 *Known limits*.
 
 Lane GK-M is complete. The weave is the orchestrator's.
+
+---
+
+# GK-M.5 — one hole in NAMES, closed narrowly
+
+Review of `18884eb`: items 1–3 CLOSED, suites 188/33/62 green, the false-positive class allowed as
+it must be. One CRITICAL left: `commandNamesGoalkeeper` recognised only the absolute jail path, the
+`.claude/goalkeeper` literal, or a bare `cd goalkeeper` — so after `cd "$HOME/.claude"` a **relative**
+`goalkeeper/<subpath>` was invisible. Brief: `lane-giselher-fixes-4.md`, rules 1–5 plus item 6.
+
+## Commits
+
+| Item | Commit | What |
+|---|---|---|
+| rules 1–5 | `2b096a2` | a relative `goalkeeper/` after a cd into the config dir is the jail |
+| item 6 | `6c4df94` | prose in a quoted argument is not a command |
+| — | `b029872` | regression groups for both |
+| rule 3 fix | `831b0d6` | a repo's own `.claude/` is not the config dir |
+| — | `9a28f82` | the worktree false positive, pinned |
+| — | this commit | report, ledger, `ACK GKM5` |
+
+## Tests
+
+```
+node --test mac/claude-home/session-kind/test/guard.test.js      # 236 pass  (was 188)
+sh   mac/claude-home/session-kind/test/mark.test.sh              # 33 pass   (2 skipped, no timeout(1))
+python3 -m unittest discover -s mac/claude-home/skills/goalkeeper/tests   # 62 pass
+```
+
+27 GK-M.5 probe shapes green, and every probe suite from GK-M.2 on still passes.
+
+## Rules 1–5
+
+The three reported forms all reproduced ALLOWED before the change. NAMES is now true when the
+absolute jail path appears, or `.claude/goalkeeper`, or the config dir is mentioned **and** a
+`goalkeeper` segment appears, or a `cd`/`pushd` target starts with `goalkeeper`, or the session cwd
+is already inside the config dir and any `goalkeeper` segment appears. The segment pattern is
+bounded, so `goalkeeper-mac` is not a match — that is what keeps the branch name allowed.
+
+## Item 6, and two corrections it needed
+
+The orchestrator's own bus directive to me was denied at 00:58Z because the message it was
+**carrying** quoted a jail PoC. Item 9 taught the guard that a heredoc body is data; a string
+literal is the same lesson. Quoted literals of non-executing text emitters are now blanked before
+the NAMES scan, never for executors.
+
+Two corrections, both caught by things already in place rather than by review — the first time in
+five rounds that has happened:
+
+1. My first comment said "a redirect lives outside the quotes". Only the **operator** does; the
+   **target** can be quoted, so blanking every literal reopened the jail to
+   `echo pwned > "$HOME/.claude/goalkeeper/evil.md"`. Two GK-M.3 item-2 tests failed within seconds
+   and named it. A literal following `>`, `>>` or `tee` is now never blanked.
+2. The first cut split on `&&`/`;`/`|` *before* stripping, which cut a carried message in half and
+   left its tail looking like a command — precisely the shape item 6 exists to allow, so it still
+   failed. Segment boundaries are now found with the quotes honoured.
+
+## The one that mattered: rule 3 would have stopped every worker
+
+Rule 3 says "the config dir is mentioned". I implemented that partly as a bare `.claude` **path
+segment**. Every worktree in this fleet lives at `<repo>/.claude/worktrees/<name>`, so that segment
+sits in the cwd of every worker and in half the commands they run. Combined with rule 3's other
+half — any `goalkeeper` segment — it denied exactly the class the brief said must stay allowed:
+
+```
+cd <worktree> && git add docs/goals/goalkeeper/LINEAR-PENDING.md      DENIED
+cd <worktree> && echo x > docs/goals/goalkeeper/y.md                  DENIED
+```
+
+**Left in, it would have stopped every worker and the orchestrator the moment this branch weaved.**
+
+I found it because it denied me appending the GK-M.5 rows to this very ledger — and I nearly filed
+it as the accepted false positive the brief describes. It is not that: the brief's case is a command
+naming the *real* config dir alongside the repo's docs; this fired on any command run from a
+worktree. Fixed by comparing against the config dir's absolute path only, which is exact because
+`~`, `$HOME` and `$CLAUDE_CONFIG_DIR` are already expanded to it before rule 3 runs — the segment
+test bought nothing and cost everything.
+
+Pinned by 11 tests driven from a **worktree-shaped cwd**. A fixture without that path shape cannot
+catch this class at all, which is why the 225 tests that existed at the time were all green while
+the bug was live.
+
+The denied append also confirmed something recorded in GK-M.2 (`G-17`): a PreToolUse deny loses the
+whole call, so nothing landed and the file was untouched — a denied write is indistinguishable from
+one that did nothing.
+
+## Installer re-run
+
+Twice, because the rule-3 fix came after the first install. The date rolled over mid-round, so the
+stamp is `2026-09-08` — GK-M.3 item 5 working as intended.
+
+```
+changed 1   unchanged 16   backups made 1   stamp 2026-09-08
+```
+
+| Live file | Backup |
+|---|---|
+| `~/.claude/session-kind/guard.js` | `guard.js.bak-2026-09-08` (first run) |
+| `~/.claude/session-kind/guard.js` | `guard.js.bak-2026-09-08-000612` (rule-3 fix) |
+
+Vendored `guard.js` is byte-identical to live. Verified against the **live** guard afterwards: the
+CRITICAL and the quoted-redirect-target deny, the bus directive and a pure read allow, and this
+worker still writes its lane report, stages its pack and pushes.
+
+**Rollback:** `cp ~/.claude/session-kind/guard.js.bak-2026-09-08 ~/.claude/session-kind/guard.js`
+
+## Still open for the operator
+
+`G-13` (gate — the broker's GitHub App is not on `0xneelo/lowcap-connector`, so lowcapsxyz evidence
+stays STALE), `G-18` (a live plaintext broker token from another `--askpass` caller), `G-22` and
+`G-23` (the GK-M.4 reversal and the NAMES narrowing, for confirmation), `G-24`, `G-27` and the test
+README's *Known limits*.
+
+Lane GK-M is complete. The weave is the orchestrator's.
