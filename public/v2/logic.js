@@ -268,6 +268,10 @@ class AppLogic extends Sub {
   }
   componentDidMount() {
     if (this._thread) this._thread.scrollTop = this._thread.scrollHeight;
+    // L6 seam: hand the bus screen its host so public/v2/screens/bus.js can
+    // drive live threads. In fixture mode attach() returns without doing
+    // anything, so the compiled fixture render is untouched.
+    if (window.FD && FD.screens && FD.screens.bus && FD.screens.bus.attach) FD.screens.bus.attach(this);
     this._esc = (e) => {
       if (e.key !== 'Escape') return;
       if (this.state.termMenu) this.setState({ termMenu: false });
@@ -276,7 +280,11 @@ class AppLogic extends Sub {
     };
     window.addEventListener('keydown', this._esc);
   }
-  componentWillUnmount() { if (this._esc) window.removeEventListener('keydown', this._esc); if (this._busRO) this._busRO.disconnect(); }
+  componentWillUnmount() {
+    if (this._esc) window.removeEventListener('keydown', this._esc);
+    if (this._busRO) this._busRO.disconnect();
+    if (window.FD && FD.screens && FD.screens.bus && FD.screens.bus.detach) FD.screens.bus.detach(this);
+  }
   renderVals() {
     const dark = this.isDark();
     const useColor = this.props.statusColors ?? true;
