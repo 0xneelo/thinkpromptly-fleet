@@ -64,5 +64,16 @@ Workaround until the lane lands: address a desktop seat as `id:<its sessionId>` 
 its own uuid from `~/.claude/sessions/<pid>.json` and tells its lanes), or send over the tmux path
 (`HOST:SESSION`) which is unaffected.
 
+## Addendum 2026-09-08T00:5xZ — independent confirmation
+
+🧭 COORDINATOR 12 (lowcap) reached the same cause independently (server.js:2317, `matches.length === 1`
+against `~/.claude/sessions/<pid>.json` names) and reports lowcap fixed its own script to the `id:`
+form; its self-test arrived. Its reading of the remaining remote-system defect is narrower than fix
+item 1 above: "a badge was never a name", so only the silent `200 ok:false` (fix item 2: non-2xx or a
+checked `ok`, plus the live names on the error) is the bug, recorded as a comment on XYZ-2200. Fix
+item 1 (title/registry resolution on the send path) stays in this sketch as a proposal, because the
+notify skill and the deck UI both let a sender address a seat by title; the operator settles scope
+when giving the goal line.
+
 Needs an operator goal line before packaging (`/introduce-goal`); Linear is unreachable from this
 desktop, so the pack records XYZ-2200 as the parent and writes pending entries.
