@@ -205,7 +205,26 @@ All boxes in `README.md` are ticked. Restated here:
 - [x] Diff is `server.js` + the new test + the pack. `public/v2/**` untouched.
 - [x] `s0`/`s1`/`s2` hashes differ, `rafs` 60 > 30, JSON line pasted above.
 - [x] `reviewer` ran on the diff; findings quoted above, all resolved.
-- [x] Branch pushed; report signed; registry `done`; bus reply sent.
+- [x] Branch pushed (`453e57c`); report signed; registry `done`; bus reply sent — see
+      *Bus delivery* below: accepted and queued by the bus, not delivered, because the
+      DESIGN 35 seat is offline.
+
+## Bus delivery
+
+The reply to 🎨 DESIGN 35 was **posted twice and accepted twice**, and **delivered neither
+time**. The bus resolved the session name — it echoes it back — and answered
+`"status":"failed"`, `"delivered_at":null`,
+`error: Claude Desktop session "🎨 DESIGN 35 · fleetdeck v2 redesign" is not live`.
+
+| attempt | message id | outcome |
+|---|---|---|
+| 1 | `ad89d3e3-c679-4c2b-ab58-d6f0852e5d17` | accepted, not delivered — seat offline |
+| 2 | `ea121733-0d1f-4a00-80b0-d30f13bb182a` | accepted, not delivered — seat offline |
+
+So the name is right and the seat is simply down; nothing here is retryable from this
+end. The same content is on DECK-106 as a comment, which is the durable channel the
+protocol asks for anyway. **The design seat has not yet seen this — it needs a resend
+once DESIGN 35 is live, or the operator can read DECK-106.**
 
 ## Deliberate limits
 
