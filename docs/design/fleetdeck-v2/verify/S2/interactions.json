@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice": "S2",
   "mode": "interaction-parity",
-  "generatedAt": "2026-09-07T00:16:53.596Z",
+  "generatedAt": "2026-09-07T00:36:20.536Z",
   "sources": {
     "a": "http://127.0.0.1:3217/v2/pass1/index.html",
     "b": "http://127.0.0.1:3217/v2/index.html"
