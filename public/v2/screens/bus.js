@@ -53,6 +53,7 @@
   var seen = {};           // fd-bus-seen
   var pinned = {};         // fd-bus-pinned, as a set
   var booted = false;      // has one poll ever landed
+  var provisional = {};    // targets opened by hook before the server knows them
   var errs = {};           // message key -> receipt error string we own
 
   // ---------------------------------------------------------------------------
@@ -134,8 +135,20 @@
       offered[t.session] = true;
     });
 
-    // 2. Every live fleet tmux session, merged client-side exactly as today's
-    //    app.js:920-925 does.
+    // 2. Targets and sources the message history knows about. This runs before
+    //    the live-session merge so an existing conversation keeps the host it
+    //    actually happened on: L1 keys a thread by session name alone, so a
+    //    same-named session on another box must not capture the thread, nor
+    //    make it look live (I-L6-11).
+    list.forEach(function (m) {
+      var id = threadIdOf(m);
+      if (!id) return;
+      if (inboundOf(m)) noteTarget(id, { type: TMUX, host: sourceHost(m.source), session: id }, TMUX);
+      else noteTarget(id, m.target, (m.target && m.target.type) || TMUX);
+    });
+
+    // 3. Every live fleet tmux session, merged client-side exactly as today's
+    //    app.js:920-925 does. Liveness is keyed by host AND name.
     var liveSet = {};
     live.forEach(function (s) {
       if (!s || !s.name || !s.live) return;
@@ -143,13 +156,12 @@
       noteTarget(s.name, { type: TMUX, host: s.host, session: s.name }, TMUX);
     });
 
-    // 3. Targets and sources only the message history knows about, so a thread
-    //    with a session that has since died still has a row and a POST body.
-    list.forEach(function (m) {
-      var id = threadIdOf(m);
-      if (!id) return;
-      if (inboundOf(m)) noteTarget(id, { type: TMUX, host: sourceHost(m.source), session: id }, TMUX);
-      else noteTarget(id, m.target, (m.target && m.target.type) || TMUX);
+    // 3b. Targets opened through FD.screens.bus.open() that the server does not
+    //     know yet. today's setBusTarget() keeps its stored value until a
+    //     matching option appears, so the provisional row survives the poll that
+    //     would otherwise drop it (I-L6-08).
+    Object.keys(provisional).forEach(function (id) {
+      noteTarget(id, provisional[id], provisional[id].type || TMUX);
     });
 
     // 4. The adapter owns the per-message shape (L1, data.js:317-334). Its thread
@@ -206,11 +218,66 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Pushing into the render. Data enters ONLY through FD.setData.
+  // Validation. DESIGN-35 (binding, 2026-09-08): validate BEFORE FD.setData,
+  // because one throw inside any slice's renderVals blanks every screen. Nothing
+  // reaches FD.fixture until it has exactly the types the compiled logic reads:
+  // a row is four strings-and-a-boolean, a message is the adapter's key set with
+  // `at` a string and `m` a finite number. A row that cannot be coerced is
+  // dropped rather than rendered half-formed (I-L6-10).
+  // ---------------------------------------------------------------------------
+  var str = function (v) { return typeof v === 'string' ? v : (v === null || v === undefined ? '' : String(v)); };
+
+  function validRow(r) {
+    if (!r || typeof r !== 'object' || !r.id) return null;
+    var out = { id: str(r.id), name: str(r.name) || str(r.id), host: str(r.host), live: !!r.live };
+    if (r.pinned) out.pinned = true;
+    if (r.kind) out.kind = str(r.kind);
+    return out.id ? out : null;
+  }
+
+  function validMessage(m) {
+    if (!m || typeof m !== 'object' || typeof m.text !== 'string') return null;
+    var out = {
+      k: str(m.k),
+      dir: m.dir === 'in' ? 'in' : 'out',
+      from: str(m.from),
+      at: str(m.at),
+      m: Number.isFinite(m.m) ? m.m : 0,
+    };
+    if (!out.k) return null;
+    if (out.dir === 'out') {
+      if (m.per && typeof m.per === 'object') out.per = m.per;
+      else {
+        out.status = str(m.status) || 'queued';
+        if (m.err !== undefined && m.err !== null) out.err = str(m.err);
+      }
+    }
+    out.text = m.text;
+    return out;
+  }
+
+  function validRows(list) {
+    var out = [];
+    (Array.isArray(list) ? list : []).forEach(function (r) { var v = validRow(r); if (v) out.push(v); });
+    return out;
+  }
+
+  function validThreads(map) {
+    var out = {};
+    Object.keys(map || {}).forEach(function (id) {
+      var arr = [];
+      (Array.isArray(map[id]) ? map[id] : []).forEach(function (m) { var v = validMessage(m); if (v) arr.push(v); });
+      out[id] = arr;
+    });
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pushing into the render. Data enters ONLY through FD.setData, validated.
   // ---------------------------------------------------------------------------
   function push(built) {
-    FD.setData('busSessions', built.rows);
-    FD.setData('seedThreads', built.threads);
+    FD.setData('busSessions', validRows(built.rows));
+    FD.setData('seedThreads', validThreads(built.threads));
     // The API has no group concept (L1, data.js:311), so the mock's hard-coded
     // train-84 group is replaced by an empty list; ad-hoc broadcast groups stay
     // client-side in AppLogic.state.adhoc (I-L6-05).
@@ -259,10 +326,12 @@
       // retries. Nothing is written to the console -- the live gate asserts zero
       // console errors.
       bus.lastError = e;
+      bus.polls++;
     }).then(function () { inFlight = false; });
   }
 
   function apply(messagesRes, sessionsRes) {
+    bus.polls++;
     var now = Date.now();
     var previous = known;
     var built = build(messagesRes, sessionsRes, now);
@@ -402,7 +471,7 @@
       });
       threads = Object.assign({}, threads);
       threads[sid] = patched;
-      FD.setData('seedThreads', threads);
+      FD.setData('seedThreads', validThreads(threads));
     }
   }
 
@@ -420,6 +489,9 @@
   // fixture path falls through to the mock's own simulation.
   // ---------------------------------------------------------------------------
   bus.live = false;
+  // Polls that have completed, successfully or not. The live gate waits on it
+  // so an empty API is not indistinguishable from a poll that never returned.
+  bus.polls = 0;
 
   bus.attach = function (h) {
     host = h;
@@ -493,7 +565,7 @@
       if (on) copy.pinned = true; else delete copy.pinned;
       return copy;
     });
-    FD.setData('busSessions', rows);
+    FD.setData('busSessions', validRows(rows));
     return true;
   };
 
@@ -514,6 +586,7 @@
       var kind = target.type || TMUX;
       targets[id] = target;
       kinds[id] = kind;
+      provisional[id] = target;
       rows = rows.concat([{
         id: id,
         name: labelFor(id, kind),
@@ -521,11 +594,11 @@
         live: false,
         kind: kind,
       }]);
-      FD.setData('busSessions', rows);
+      FD.setData('busSessions', validRows(rows));
       if (!threads[id]) {
         threads = Object.assign({}, threads);
         threads[id] = [];
-        FD.setData('seedThreads', threads);
+        FD.setData('seedThreads', validThreads(threads));
       }
     }
 

@@ -420,6 +420,15 @@ class AppLogic extends Sub {
     // is null in fixture mode, where every branch below falls through to the
     // mock's own simulation and the render is byte-for-byte the seeded one.
     const busLive = (typeof FD !== 'undefined' && FD.screens && FD.screens.bus && FD.screens.bus.live) ? FD.screens.bus : null;
+    // DESIGN-35 (binding, 2026-09-08): one throw inside any slice's renderVals
+    // blanks every screen, so each derived bus value is computed behind a guard
+    // that falls back to the last render's value. The rows themselves are
+    // validated in public/v2/screens/bus.js before they ever reach FD.fixture.
+    const busSafe = (key, fallback, fn) => {
+      const last = this._busLast || (this._busLast = {});
+      try { const v = fn(); last[key] = v; return v; }
+      catch (e) { return key in last ? last[key] : fallback; }
+    };
     const busSessions = FD.fixture.busSessions || [];
     const seedGroups = FD.fixture.busGroups
       || [{ id: 'b-train84', name: 'train-84', members: ['constantin', 'ermenhild', 'christa', 'dorothea'], pinned: true }];
@@ -484,7 +493,7 @@ class AppLogic extends Sub {
     const pinnedItems = [...busGroups.filter(isPinned), ...busSessions.filter(isPinned)].filter(match);
     const recentItems = [...busGroups.filter((g) => !isPinned(g)), ...busSessions.filter((s) => !isPinned(s))].filter(match)
       .sort((a, b) => { const la = lastOf(a.id), lb = lastOf(b.id); return (la ? la.m : 1e9) - (lb ? lb.m : 1e9); });
-    const railGroups = [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length);
+    const railGroups = busSafe('railGroups', [], () => [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length));
     const actGroup = busGroups.find((g) => g.id === active);
     const actS = sById(active) || busSessions[0] || { id: '', name: '', host: '', live: false };
     const thOffline = !actGroup && !actS.live;
@@ -492,7 +501,7 @@ class AppLogic extends Sub {
     const busMax = !!this.state.busMax;
     const bubbleMe = dark ? 'rgba(255,255,255,0.16)' : 'rgba(17,17,17,0.09)';
     const bubbleThem = dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)';
-    const thMsgs = thread(active).map((m) => {
+    const thMsgs = busSafe('thMsgs', [], () => thread(active).map((m) => {
       const out = m.dir === 'out';
       const st = out && !m.per ? stOf(m) : null;
       const open = !out && reader;
@@ -512,7 +521,7 @@ class AppLogic extends Sub {
         canRetry: st === 'failed',
         retry: () => { setSt(m.k, 'queued'); if (busLive && busLive.retry({ sid: active, key: m.k })) return; deliverTo(active, m.k, m.text, 0); },
       };
-    });
+    }));
     this._nextThreadKey = active + ':' + thMsgs.length;
     const drafts = this.state.drafts || {};
     const draft = drafts[active] || '';
@@ -620,7 +629,7 @@ class AppLogic extends Sub {
       },
       busMax, notBusMax: !busMax,
       tipStyle: { position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 5, width: '220px', display: 'flex', flexDirection: 'column', gap: '3px', borderRadius: '10px', border: '1px solid ' + t.line, background: dark ? 'rgba(18,18,18,0.94)' : 'rgba(255,255,255,0.96)', padding: '9px 12px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', pointerEvents: 'none', textAlign: 'left' },
-      thActions: (() => {
+      thActions: busSafe('thActions', [], () => {
         const tip = this.state.tip;
         const onBtn = { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink };
         const offBtn = { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' };
@@ -638,7 +647,7 @@ class AppLogic extends Sub {
         ];
         const ordered = list.filter((a) => a.id !== 'max').concat(list.filter((a) => a.id === 'max'));
         return ordered.filter((a) => !a.hide).map((a) => ({ ...a, tipOpen: tip === a.id, enter: () => this.setState({ tip: a.id }), leave: () => this.setState((s) => (s.tip === a.id ? { tip: null } : null)) }));
-      })(),
+      }),
       railStyle: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, borderRight: narrow ? 'none' : '1px solid ' + t.lineSoft, borderBottom: narrow ? '1px solid ' + t.lineSoft : 'none' },
       thMetaStyle: { fontSize: '12px', color: t.ink45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, display: narrow ? 'none' : 'inline' },
       notNarrow: !narrow,
@@ -662,7 +671,7 @@ class AppLogic extends Sub {
       pinBtnStyle: isPinned(actGroup || actS) ? { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink } : iconBtn,
       togglePin: () => { const next = !isPinned(actGroup || actS); const p = { ...pins }; p[active] = next; this.setState({ pins: p }); if (busLive) busLive.setPinned(active, next); },
       copyThread: () => { try { navigator.clipboard.writeText(thread(active).map((m) => '[' + m.at + '] ' + m.from + ': ' + m.text).join('\n\n')); } catch (e) {} },
-      toRow, toChips: selIds.map((id) => ({ t: short(id), dotStyle: dot(sById(id).live ? t.good : t.ink35), remove: () => { const b = { ...busSel }; delete b[id]; this.setState({ busSel: b }); } })),
+      toRow, toChips: busSafe('toChips', [], () => selIds.map((id) => { const r = sById(id); return { t: short(id), dotStyle: dot(r && r.live ? t.good : t.ink35), remove: () => { const b = { ...busSel }; delete b[id]; this.setState({ busSel: b }); } }; })),
       toChipStyle: { display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '9999px', border: '1px solid ' + t.line, background: t.chipBg, color: t.ink, padding: '3px 6px 3px 10px', fontSize: '11.5px', fontFamily: mono },
       warnDotStyle: dot(t.warn),
       draft, three: 3, zero: 0,

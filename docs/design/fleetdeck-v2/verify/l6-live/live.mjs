@@ -11,17 +11,24 @@
  * Writes verify/l6/live.json  {id, action, expectation, pass, detail}
  *        verify/l6/live-dark.png, verify/l6/live-light.png
  *
- * Run: node docs/design/fleetdeck-v2/verify/l6/live.mjs
+ * Run: node docs/design/fleetdeck-v2/verify/l6-live/live.mjs
  * Exit 0 when every check passes and the console stayed clean, 1 otherwise.
+ *
+ * The script lives in verify/l6-live/ but writes into verify/l6/, because
+ * design-diff.mjs publishes a slice by renaming the whole verify/<slice>/
+ * directory away and moving a fresh staging directory in (publish(), line 244).
+ * Anything of ours parked in verify/l6/ is destroyed by the next pixel-gate run,
+ * so ORDER MATTERS: run the pixel gate first, this second.
  */
 import { createServer } from 'node:http';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve, join, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+const OUT = resolve(HERE, '../l6');
 const ROOT = resolve(HERE, '../../../../..');
 const PUBLIC = join(ROOT, 'public');
 const API = join(ROOT, 'docs/design/fleetdeck-v2/fixtures/api');
@@ -143,18 +150,23 @@ async function openBus(browser, plan = {}, opts = {}) {
   }, { theme: opts.theme, store, withL3: opts.withL3 !== false });
 
   const stub = apiStub(plan);
+  // Only /api/**. A second catch-all route would out-rank this one (Playwright
+  // matches the last handler registered first) and route.continue() would send
+  // every API call to the real network. The hero video is already off via
+  // localStorage fd-app-video, so nothing else needs intercepting.
   await context.route('**/api/**', stub.handler);
-  await context.route('**/*', (route) => {
-    const r = route.request();
-    if (r.resourceType() === 'media' || /\.(mp4|webm)(\?|$)/i.test(r.url())) return route.abort();
-    return route.continue();
-  });
 
   const page = await context.newPage();
   const errors = [];
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  const netNoise = [];
+  // Chromium logs a console error of its own for every non-2xx response. Some of
+  // those responses are the failures this gate deliberately stubs (400, 403,
+  // 409), so they are tallied separately from real page errors.
+  const NET = /^Failed to load resource: the server responded with a status of \d+/;
+  page.on('console', (m) => { if (m.type() === 'error') (NET.test(m.text()) ? netNoise : errors).push(m.text()); });
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 
+  if (opts.clock) await page.clock.install();
   await page.goto(opts.url, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-screen-label="Landing"]').waitFor({ state: 'visible' });
   await page.getByRole('link', { name: 'App', exact: true }).click();
@@ -162,9 +174,9 @@ async function openBus(browser, plan = {}, opts = {}) {
   await page.locator('aside button[title="Message bus"]').click();
   await page.locator('[data-screen-label="Message bus"]').waitFor({ state: 'visible' });
   await page.waitForFunction(() => window.FD && FD.screens.bus && FD.screens.bus.live === true);
-  await page.waitForFunction(() => (FD.fixture.busSessions || []).length > 0 || FD.screens.bus.lastError);
+  await page.waitForFunction(() => FD.screens.bus.polls > 0);
 
-  return { context, page, stub, errors, close: () => context.close() };
+  return { context, page, stub, errors, netNoise, close: () => context.close() };
 }
 
 // Handy locators.
@@ -182,6 +194,13 @@ const selectBtn = (p) => bus(p).locator('button[data-dc-tpl="407"]');
 const search = (p) => bus(p).locator('input[data-dc-tpl="406"]');
 const toast = (p) => p.locator('div[data-dc-tpl="767"]');
 
+// thActions puts a.label on the button's aria-label (app.js tpl 435) and repeats
+// it, with the description, in a tooltip that only renders while the wrapper is
+// hovered. The accessible name is the stable handle.
+function action(page, label) {
+  return bus(page).locator('button[data-dc-tpl="435"][aria-label="' + label + '"]');
+}
+
 const openThread = async (page, id) => {
   await page.evaluate((t) => FD.screens.bus.open(t), id);
   await page.waitForTimeout(150);
@@ -193,6 +212,7 @@ async function main() {
   const browser = await chromium.launch();
   const url = server.url;
   const consoleErrors = [];
+  const stubbedHttpNoise = [];
 
   try {
     // =====================================================================
@@ -275,6 +295,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -354,6 +375,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -407,6 +429,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -457,6 +480,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -501,12 +525,12 @@ async function main() {
       await check('L6-27', 'pin the open thread from the header',
         'fd-bus-pinned holds the thread id and the row moves under Pinned',
         async () => {
-          await bus(page).locator('button[data-dc-tpl="435"]').filter({ hasText: 'Pin thread' }).first().click()
-            .catch(async () => { await page.evaluate(() => FD.screens.bus.setPinned(arguments)); });
+          await action(page, 'Pin thread').click();
           await page.waitForTimeout(250);
           const raw = await page.evaluate(() => localStorage.getItem('fd-bus-pinned'));
-          const labels = await groupLabels(page).allInnerTexts();
-          return { pass: (JSON.parse(raw || '[]')).includes(THREAD) && labels.includes('Pinned'), detail: raw + ' groups=' + labels.join('|') };
+          // The heading is uppercased in CSS, so innerText reads "PINNED".
+          const labels = (await groupLabels(page).allInnerTexts()).map((x) => x.trim().toLowerCase());
+          return { pass: (JSON.parse(raw || '[]')).includes(THREAD) && labels.includes('pinned'), detail: raw + ' groups=' + labels.join('|') };
         });
 
       await check('L6-28', 'reload with fd-bus-seen already stamped',
@@ -516,6 +540,7 @@ async function main() {
           const s2 = await openBus(browser, {}, { url, storage: { 'fd-bus-seen': stamp } });
           const left = await s2.page.evaluate((id) => FD.fixture.busUnreadDefault[id], THREAD);
           s2.errors.forEach((e) => consoleErrors.push(e));
+          s2.netNoise.forEach((e) => stubbedHttpNoise.push(e));
           await s2.close();
           return { pass: left === undefined, detail: 'unread=' + left };
         });
@@ -532,6 +557,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -542,9 +568,8 @@ async function main() {
       let payload = MESSAGES;
       const s = await openBus(browser, {
         messages: (route) => json(route, payload),
-      }, { url });
+      }, { url, clock: true });
       const { page, stub } = s;
-      await page.clock.install();
       await openThread(page, { type: 'tmux', host: HOST, session: THREAD });
       const before = stub.seen.filter((r) => r.path.startsWith('/api/messages')).length;
 
@@ -616,6 +641,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -659,7 +685,7 @@ async function main() {
         'FD.screens.windows.openMax(host, session) is called (L3 hook, guarded)',
         async () => {
           await openThread(page, { type: 'tmux', host: HOST, session: THREAD });
-          await bus(page).locator('button[data-dc-tpl="435"]').filter({ hasText: 'Show session' }).first().click();
+          await action(page, 'Show session').click();
           await page.waitForTimeout(250);
           const calls = await page.evaluate(() => window.__openMax);
           return { pass: calls.length === 1 && calls[0][0] === HOST && calls[0][1] === THREAD, detail: JSON.stringify(calls) };
@@ -670,7 +696,7 @@ async function main() {
         async () => {
           await openThread(page, { type: 'claude-desktop', session: 'current' });
           const before = (await page.evaluate(() => window.__openMax)).length;
-          await bus(page).locator('button[data-dc-tpl="435"]').filter({ hasText: 'Show session' }).first().click();
+          await action(page, 'Show session').click();
           await page.waitForTimeout(200);
           const after = (await page.evaluate(() => window.__openMax)).length;
           const full = await page.locator('[data-screen-label="Session full screen"]').isVisible();
@@ -681,7 +707,7 @@ async function main() {
         'the Escape chain leaves full view, per the mock',
         async () => {
           await openThread(page, { type: 'tmux', host: HOST, session: THREAD });
-          await bus(page).locator('button[data-dc-tpl="435"]').filter({ hasText: 'Maximize' }).first().click();
+          await action(page, 'Maximize').click();
           await page.waitForTimeout(200);
           const max = await page.evaluate(() => getComputedStyle(document.querySelector('[data-screen-label="Message bus"]')).position);
           await page.keyboard.press('Escape');
@@ -694,7 +720,7 @@ async function main() {
         'the whole thread lands on the clipboard as plain text',
         async () => {
           await s.context.grantPermissions(['clipboard-read', 'clipboard-write']);
-          await bus(page).locator('button[data-dc-tpl="435"]').filter({ hasText: 'Copy thread' }).first().click();
+          await action(page, 'Copy thread').click();
           await page.waitForTimeout(300);
           const txt = await page.evaluate(() => navigator.clipboard.readText());
           const first = await page.evaluate((id) => FD.fixture.seedThreads[id][0].text, THREAD);
@@ -704,14 +730,20 @@ async function main() {
       await check('L6-40', 'toggle Reader view',
         'agent replies go full width instead of a bubble',
         async () => {
-          const before = await msgRows(page).first().locator('p[data-dc-tpl="479"]').evaluate((el) => getComputedStyle(el).fontSize);
-          await bus(page).locator('button[data-dc-tpl="435"]').filter({ hasText: 'Reader view' }).first().click();
+          // Only inbound replies change; an inbound row is the one carrying a
+          // `from` line (tpl 478, rendered when showFrom is true).
+          const inbound = msgRows(page)
+            .filter({ has: page.locator('span[data-dc-tpl="478"]') })
+            .first().locator('p[data-dc-tpl="479"]');
+          const before = await inbound.evaluate((el) => getComputedStyle(el).fontSize);
+          await action(page, 'Reader view').click();
           await page.waitForTimeout(250);
-          const after = await msgRows(page).first().locator('p[data-dc-tpl="479"]').evaluate((el) => getComputedStyle(el).fontSize);
-          return { pass: before !== after, detail: before + ' -> ' + after };
+          const after = await inbound.evaluate((el) => getComputedStyle(el).fontSize);
+          return { pass: before === '13px' && after === '15px', detail: before + ' -> ' + after };
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -743,6 +775,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -766,6 +799,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -785,6 +819,7 @@ async function main() {
         });
 
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
@@ -795,7 +830,7 @@ async function main() {
       const s = await openBus(browser, {}, { url, theme });
       await openThread(s.page, { type: 'tmux', host: HOST, session: THREAD });
       await s.page.waitForTimeout(400);
-      await s.page.screenshot({ path: join(HERE, `live-${theme}.png`) });
+      await s.page.screenshot({ path: join(OUT, `live-${theme}.png`) });
       await check(`L6-4${theme === 'dark' ? 5 : 6}`, `render the live bus in ${theme} mode`,
         `verify/l6/live-${theme}.png captured with rail, thread and composer`,
         async () => {
@@ -805,13 +840,19 @@ async function main() {
           return { pass: rows > 0 && msgs > 0 && send === 1, detail: `rail=${rows} msgs=${msgs} send=${send}` };
         });
       s.errors.forEach((e) => consoleErrors.push(e));
+      s.netNoise.forEach((e) => stubbedHttpNoise.push(e));
       await s.close();
     }
 
     // =====================================================================
     await check('L6-47', 'across every scenario above',
       'zero console errors and zero uncaught page errors',
-      () => ({ pass: consoleErrors.length === 0, detail: consoleErrors.slice(0, 5).join(' | ') }));
+      () => ({
+        pass: consoleErrors.length === 0,
+        detail: consoleErrors.length
+          ? consoleErrors.slice(0, 5).join(' | ')
+          : 'clean (plus ' + stubbedHttpNoise.length + ' Chromium status lines for the 400/403/409 responses this gate stubs on purpose)',
+      }));
   } finally {
     await browser.close();
     await server.close();
@@ -824,12 +865,14 @@ async function main() {
     capturedAt: new Date().toISOString(),
     api: 'docs/design/fleetdeck-v2/fixtures/api/ + hand-written error/empty/offline variants',
     consoleErrors,
+    stubbedHttpNoise,
     total: results.length,
     passed: results.length - failures,
     allPass: failures === 0,
     results,
   };
-  await writeFile(join(HERE, 'live.json'), JSON.stringify(report, null, 2) + '\n');
+  await mkdir(OUT, { recursive: true });
+  await writeFile(join(OUT, 'live.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(`\n${report.passed}/${report.total} pass; allPass=${report.allPass}; console errors=${consoleErrors.length}`);
   console.log('Report: docs/design/fleetdeck-v2/verify/l6/live.json');
   process.exit(failures === 0 ? 0 : 1);
