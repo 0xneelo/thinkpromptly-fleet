@@ -182,3 +182,26 @@ could write any docs/ → allowlist is its own dir. M1 ledger text as operator w
 stale local refs → fetch + `fetched_at`. M3 stale vendor round trip → Mac-local lane. M4 render +
 cron are card-shaped → deferred. M5 Linear → optional + pending file. L1 two 🥅 → one dir +
 census refusal. L2 title spoof → cwd check too. L3 uncommitted → committed with this v2.
+
+## 9. Amendments after the lane reviews (2026-09-07T19:30Z, binding)
+
+- **§3.1 vendoring.** `mac/claude-home/` re-snapshot + `mac/install-claude-home.sh` ARE in v1:
+  the Mac-local worker made the round trip trivial and gave the reviewer a diff. (Settles G-2.)
+- **§3.1 read-only, precisely.** The goalkeeper never touches another project's working tree or
+  source. One write is permitted: `git fetch --prune origin` into that project's `.git`
+  remote-tracking refs, because evidence must be fresh. (Settles reviewer finding B-3.)
+- **§3.3 filter.** Operator turns exclude, by default, any row whose text opens with a harness
+  tag: cross-session, command, local-command, task-notification, system-reminder. Measured on
+  real data: 127 → 51 rows. (Settles G-9.)
+- **§3.4.2 addressee match.** For non-goalkeeper kinds the SendMessage / send_message deny
+  matches the addressee fields only (`to`, `session_id`, `title`, `target.session`, `name`),
+  case-insensitively — a message that merely mentions the goalkeeper in its body is allowed. The
+  Bash reach deny is addressee-shaped the same way; it never fires on prose or heredocs (live
+  incident 19:28Z, see lane-giselher-fixes.md item 9). The goalkeeper kind's own deny-all is
+  unchanged. (Settles G-7.)
+- **§3.4.2 write ban.** "Under `/goalkeeper/`" means `<CLAUDE_CONFIG_DIR>/goalkeeper/`
+  (realpath), not any path segment named `goalkeeper` — this repo's `docs/goals/goalkeeper/`
+  stays writable for workers. (Settles G-5.)
+- **Gates recorded:** G-13 the broker's GitHub App is not installed on `0xneelo/lowcap-connector`,
+  so lowcapsxyz evidence is STALE until the operator installs it; P11 the bus `current` shortcut
+  bypasses the 🥅 refusal (recommendation: drop `current` as a bus target).
