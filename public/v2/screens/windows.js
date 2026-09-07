@@ -566,16 +566,12 @@
   // by its position among its siblings, computed at click time — a compiled row
   // has no stable identity to store on it. I-L3-06.
   function bindTileChrome() {
-    /* The sidebar's Connect all button is drawn with no handler either
-     * (template.dc.html:182) and it drives this slice's hook, so it is bound
-     * the same way. Matched on its exact label because the mock gives it no id
-     * or title. I-L3-06. */
-    document.addEventListener('click', function (e) {
-      var go = e.target && e.target.closest && e.target.closest('button');
-      if (go && go.textContent.trim() === 'Connect all' && go.closest('aside')) {
-        connectAll();
-      }
-    });
+    /* The sidebar's Connect all button is NOT bound here. It lives in the
+     * shell's region and L2 binds it by template id (screens/shell.js:648,
+     * data-dc-tpl 217) and calls FD.screens.windows.connectAll(). This slice
+     * briefly bound it too, by label match, while L2 was still landing; both
+     * bindings would have fired on one click at the weave. The hook stays, the
+     * binding is L2's. I-L3-06. */
     /* app.js:1038-1040 — double-clicking the tile bar, but not a button on it,
      * toggles maximize. The mock draws no handler for it either, so it is the
      * same delegation: on a tile header it maximizes, on the full-screen header

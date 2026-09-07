@@ -980,27 +980,34 @@ The full-screen footer (`A_termFoot`, mock's `model · path · branch`) is the s
 "Pursuing goal (11m)": the binding map names `label`/`role`/`task` and nothing else, and status is
 already carried by the header dot.
 
-### I-L3-06 — the tile close button and Connect all are bound by delegation
+### I-L3-06 — the tile close button is bound by delegation; Connect all is L2's
 
 **Serves:** ledger D09; `BEHAVIOUR.md` §1 (close), §5 (tile bar).
 
 The mock's tile header draws `⤢` with an `onClick` and `✕` with none (mock L235: `title="Close tile
 (session keeps running)"`, no handler). The compiled template is S2's and cannot be edited to add the
 binding, and the seed data has no `closeTile` field for it to bind to. So the screen file delegates: a
-single document-level click listener matches that exact `title` inside the Windows screen, walks up to
-the `data-l3-key` element and closes that tile. Behaviour is the old one exactly — the observer,
-socket, terminal and DOM node are released and **nothing is sent to the server**, so the remote tmux
-session survives (`app.js:1149-1158`). The tile is identified by its **position** among its
-siblings, computed at click time — a positional row has no stable identity to store on it.
+single document-level click listener matches that exact `title` inside the Windows screen, finds which
+compiled tile contains the clicked button, and closes the model entry at that **index**. Nothing is
+written to the row and nothing is read back off it: a positional `sc-for` row has no identity to carry
+an attribute, so position at click time is the whole relationship. Behaviour is the old one exactly —
+the observer, socket, terminal and DOM node are released and **nothing is sent to the server**, so the
+remote tmux session survives (`app.js:1149-1158`).
 
-The sidebar's **Connect all** button has the same problem and the same fix: `template.dc.html:182`
-draws it with no `onClick`, no id and no title, so it was dead markup. It is matched on its exact
-label inside `<aside>` and calls this slice's `connectAll()` hook. Noted for L2: if the shell slice
-also binds it, the two bindings both fire — one of them should go, and this one is the natural loser
-since the button is in the shell's region.
+`L3-24` exercises this by clicking the real ✕ on the **second** tile and asserting the first is the one
+left open — a matcher that always closed index 0 would pass a single-tile check and fail this one.
+
+The sidebar's **Connect all** button had the same problem — `template.dc.html:182` draws it with no
+`onClick`, no id and no title — and this slice bound it by label match while L2 was still landing.
+**That binding is removed.** L2's shell owns the sidebar and binds the button by its template id
+(`screens/shell.js:648`, `data-dc-tpl="217"`), calling `FD.screens.windows.connectAll()`. Two
+bindings on one button would both have fired at the weave, running the 500 ms staggered sweep twice
+over every live session. The hook stays; the binding is L2's. `L3-38` asserts that one click produces
+exactly one `connectAll` call.
 
 Caught by review: the first version of the live gate called `connectAll()` through the hook, so the
-check passed while the button itself did nothing. The gate now clicks the real button (`L3-25`).
+check passed while the button itself did nothing. The gate clicks the real button (`L3-25`), which now
+also proves the L2 → L3 seam end to end.
 
 ### I-L3-07 — the Windows subtitle reports what is actually attached
 
