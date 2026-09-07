@@ -228,3 +228,12 @@ side's additions are appended). One hunk needed a hand splice: L2's rewritten `b
 block at the same spot (`logic.js` ~L1181-1186) — kept L2's line, dropped the stale copy, kept L3's block. `node
 --check` clean on every v2 file; `npm test` 460/460. Pushed as a branch; preview follows; box gate re-launched
 (`FD-weave-gate`). Outstanding: L6 (bus + toast), L11 phase 1, riders L10.1 and any late L4/L7 pushes.
+
+## 2026-09-08 · DECK-84 (shell never loads data.js/router.js) → L11; DECK-86 closed
+
+L7's report found the one cross-slice gap: S2's shell loads runtime/fixture/logic/app + the nine screens but not
+L1's `data.js`/`router.js`, so `FD.data` is undefined unless a slice self-loads it (L7 added a guarded stopgap).
+Ruling: L11 (Alrun) adds the two tags to the shell, removes the stopgaps, and makes `router.js` drive `/`, `/app`
+(+ hash screens on load and hashchange) and `/deck`. DECK-86 (principal chips from `hosts.json`, ruling O9): no
+user field exists → keep `root`/`vibe` constants as an accepted improvisation. DECK-85 ("npm test red at base"):
+Mac weave run is 460/460; L11 confirms on the box. Alrun is already merging `origin/weave/fd-v2` on his own.
