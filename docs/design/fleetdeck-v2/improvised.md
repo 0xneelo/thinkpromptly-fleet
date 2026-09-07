@@ -317,6 +317,8 @@ follow `machines[]` order unsorted, as `sessions.js:80-81` does. A selection who
 disappeared from a later collection keeps a synthetic option reading exactly
 `Previously selected (unavailable)`, so the filter stays visible instead of silently resetting.
 
+![the filter row with the selects carrying live values](improvised/l10-filters.png)
+
 ### I-L10-02 — `Archived` and `Cached` chips are appended; the mock's status cell has one pill slot
 
 **Serves:** `BEHAVIOUR.md` §3 state chips.
@@ -329,6 +331,8 @@ The status cell is `<span style="display:flex;"><span style="{{ r.pillStyle }}">
 `Live` / `Live unknown` / `Offline` — that part is a logic.js change, not an improvisation). The
 screen file appends the extra chips into the same cell, cloning the live pill's computed style so they
 match the mock's pill tokens in both themes rather than hard-coding colours.
+
+![Cached and Archived beside the template’s own Offline pill](improvised/l10-chips.png)
 
 ### I-L10-03 — `Show` expands the row's own details and scrolls to it
 
@@ -346,6 +350,8 @@ appearance would be invented, and it would duplicate Copy conversation's transcr
 screen whose job is *finding* a conversation and reaching the session. Expand + scroll reuses the
 mock's own `<sc-if value="{{ r.open }}">` panel, so nothing visual is invented at all.
 
+![a row after Show — details expanded and scrolled to](improvised/l10-show.png)
+
 ### I-L10-04 — The copy label cycle needs a label; the mock's copy buttons are icon-only
 
 **Serves:** `BEHAVIOUR.md` §3 copy conversation.
@@ -360,6 +366,8 @@ is removed when the cycle ends, so the resting state is the mock's own. The four
 1500 ms timer are verbatim; `No transcript` is used only when the copy did not succeed *and* the
 transcript request answered 404, exactly as today.
 
+![the transient copy label, inside its 1500 ms window](improvised/l10-copy-label.png)
+
 ### I-L10-05 — The count line is rebuilt; the mock hard-codes "collected 4m ago"
 
 **Serves:** `BEHAVIOUR.md` §2 count and last-collection line.
@@ -371,6 +379,8 @@ supply produces today's two strings.
 **Decision.** The screen file rewrites that span's text to `<shown> of <total> sessions · <live> live`
 and appends a second span, in the same muted style, reading `Last collection: <age>` or
 `No completed collection`. On a first-load failure the first span reads exactly `Sessions unavailable`.
+
+![the rebuilt count and last-collection line](improvised/l10-count.png)
 
 ### I-L10-06 — Machine notes, empty states and the error banner have no markup at all
 
@@ -386,6 +396,8 @@ one per machine whose `state !== 'ok'` or which is stale, `label + ': ' + text`,
 `not_found`, `unavailable`, `partial` and the `Cached metadata. Refresh to collect the latest
 sessions.` fallback — the refresh-failure note, and the empty state.
 
+![the machine-notes panel, all five texts](improvised/l10-notes.png)
+
 ### I-L10-07 — A Refresh control, because the mock only drew Reset
 
 **Serves:** `BEHAVIOUR.md` §5 (`#sessions-refresh` → `load(true)`).
@@ -396,6 +408,8 @@ a user who wants fresh data has no way to ask for it.
 **Decision.** A `Refresh` button is inserted immediately before Reset, cloning Reset's own computed
 style so it is visually indistinguishable from a button the mock drew. While a forced collection is in
 flight it reads `Collecting…` and is disabled — today's exact pair.
+
+![Refresh beside Reset, cloning its style](improvised/l10-refresh.png)
 
 ### I-L10-08 — "Live now" pinned first is the mock's invention, and it is kept
 
