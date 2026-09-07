@@ -576,6 +576,28 @@
         connectAll();
       }
     });
+    /* app.js:1038-1040 — double-clicking the tile bar, but not a button on it,
+     * toggles maximize. The mock draws no handler for it either, so it is the
+     * same delegation: on a tile header it maximizes, on the full-screen header
+     * it restores, which is what "toggle" means once maximize is an overlay. */
+    document.addEventListener('dblclick', function (e) {
+      if (!e.target || !e.target.closest || e.target.closest('button')) return;
+      var full = e.target.closest(FULL_SEL);
+      if (full) {
+        if (e.target.closest(FULL_SEL + ' > div') === full.firstElementChild) {
+          if (FD.l3.closeTerm) FD.l3.closeTerm();
+        }
+        return;
+      }
+      var els = tileEls();
+      for (var i = 0; i < els.length; i++) {
+        if (els[i].children[0] && els[i].children[0].contains(e.target)) {
+          var r = model[i];
+          if (r) openMax(r.host, r.name);
+          return;
+        }
+      }
+    });
     document.addEventListener('click', function (e) {
       var btn = e.target && e.target.closest &&
         e.target.closest('button[title="Close tile (session keeps running)"]');

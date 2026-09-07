@@ -315,6 +315,26 @@ async function main() {
       fullFoot.includes(a.name) && fullFoot.includes(a.host));
     await page.screenshot({ path: path.join(SHOTS, 'l3-full-screen.png') });
 
+    // bar double-click toggles maximize (app.js:1038-1040)
+    await page.locator('[data-screen-label="Session full screen"] button[title="Exit full screen (Esc)"]').click();
+    await settle(page);
+    await page.evaluate(() => {
+      const grid = document.querySelector('[data-screen-label="Windows"]').firstElementChild;
+      grid.children[0].children[0].dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
+    await settle(page);
+    record('L3-36', 'double-click a tile bar away from its buttons', 'the tile maximizes',
+      await page.locator('[data-screen-label="Session full screen"]').isVisible());
+    await page.evaluate(() => {
+      const full = document.querySelector('[data-screen-label="Session full screen"]');
+      full.firstElementChild.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    });
+    await settle(page);
+    record('L3-37', 'double-click the full-screen header away from its buttons', 'it restores',
+      !(await page.locator('[data-screen-label="Session full screen"]').isVisible()));
+    await openMax(page, a.host, a.name);
+    await settle(page);
+
     // ≡ menu
     await page.locator('[data-screen-label="Session full screen"] button[title="Switch session"]').click();
     await settle(page);
