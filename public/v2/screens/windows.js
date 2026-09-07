@@ -253,7 +253,9 @@
 
   function armStall(rec) {
     rec.stallTimer = setTimeout(function () {
-      rec.stallTimer = null;
+      // The handle is deliberately NOT cleared here (app.js:1081-1086): the
+      // next message tests it to decide whether a stall line is on screen and
+      // has to be taken down. Nulling it strands the line forever.
       var host = rec.mount && rec.mount.parentNode;
       if (!host || host.querySelector('[data-l3-overlay]')) return;
       host.appendChild(stallNode());
@@ -637,9 +639,12 @@
       return row ? [row.role, row.label, row.task].filter(Boolean).join(' · ') : '';
     };
     bindTileChrome();
-    // Re-park terminals whenever the shell re-renders the Windows screen.
-    var mo = new MutationObserver(function () { scheduleSync(); });
-    mo.observe(document.body, { childList: true, subtree: true });
+    /* Re-park terminals after every render — screen switches and theme flips
+     * rebuild the tile boxes. A DOM observer cannot be used for this: a live
+     * terminal rewrites its own rows constantly, so watching the subtree would
+     * re-enter sync on every byte of pty output. logic.js calls this hook once
+     * per render instead, which is exactly when the boxes can have moved. */
+    FD.l3.onRender = scheduleSync;
     ensureData()
       .then(refreshSessions)
       .then(function () { scheduleSync(); })

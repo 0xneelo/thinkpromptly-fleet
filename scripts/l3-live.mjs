@@ -122,6 +122,9 @@ async function newPage(browser, theme, { empty = false } = {}) {
   await context.addInitScript(initPage, theme);
   await context.addInitScript(installFakeWs);
   const errors = [];
+  // Only /api/* is stubbed. The hero videos are served for real from the local
+  // server: aborting them raises net::ERR_FAILED in the console, which would
+  // make the zero-console-errors check (L3-27) unable to see a genuine one.
   await context.route('**/api/**', async (route) => {
     const pathname = new URL(route.request().url()).pathname;
     // The empty variant is hand-written here, not a file: it is the same shape
@@ -131,9 +134,6 @@ async function newPage(browser, theme, { empty = false } = {}) {
       : await fixtureBody(pathname);
     await route.fulfill({ status: 200, contentType: 'application/json', body });
   });
-  // Videos are heavy and irrelevant to this gate.
-  await context.route('**/*', (route) =>
-    route.request().resourceType() === 'media' ? route.abort() : route.continue());
   const page = await context.newPage();
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e && e.message ? e.message : e)));

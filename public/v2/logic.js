@@ -568,6 +568,10 @@ class AppLogic extends Sub {
       termBg: dark ? 'rgba(10,10,10,0.55)' : 'rgba(242,241,238,0.6)', mono, dark,
     };
     l3.term = term;
+    /* One render-tick signal for the screen file: the tile boxes it parks its
+     * terminals in are rebuilt by screen switches and theme flips, and this is
+     * the only moment that can have happened. */
+    if (l3.onRender) l3.onRender();
     l3.openTerm = openTerm;
     l3.closeTerm = () => this.setState({ termOpen: null, termMenu: false });
     const l3Live = !!FD.fixture.l3Live;
