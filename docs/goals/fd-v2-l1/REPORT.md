@@ -160,3 +160,139 @@ the label derivations are recorded as `improvised.md` I-L1-12.
 
 —
 **Juergen** · frontend-developer
+
+---
+
+# Addendum — L1.1: standing down from `public/v2/fixture.js`
+
+| | |
+|---|---|
+| Worker | **Juergen** · `frontend-developer` |
+| Date | 2026-09-07 |
+| Trigger | DESIGN-35 follow-up: S2 landed at `origin/agent-v2-s2` `f370e4e` with its own generated `public/v2/fixture.js`; both slices had written that path, the merge conflicted, and the design seat resolved `origin/agent-v2-base` to S2's file. |
+
+## What changed
+
+1. **Merged `origin/agent-v2-base`** into `agent-v2-l1`. Clean — the base had already resolved the
+   conflict. `public/v2/fixture.js` is now S2's compiled file and this slice no longer writes it.
+2. **`tools/extract-fixture.mjs` writes `public/v2/fixture-extract.js`**, holding only the seeds S2
+   did not substitute.
+3. **`npm run v2:fixture -- --check` is now a two-part gate**: the generated file must be current
+   *and* every seed S2 owns must still extract to exactly what S2 shipped.
+4. **`data.js` fixture mode reads `FD.fixture` first**, falling back to `FD.fixtureExtract`, and loads
+   `fixture-extract.js` lazily — only on a page that asked for fixture mode.
+
+## The seven seeds S2 owns are not the seven the brief listed
+
+The brief named `regData, busSessions, seedThreads, orgScopeData, keyRows, accounts, machines`.
+S2's shipped `public/v2/fixture.js` actually defines:
+
+`regData` · `busSessions` · `seedThreads` · `orgScopeData` · `keyRows` · **`dsData`** · **`titles`**
+
+Still seven, but `dsData` and `titles` are substituted and `accounts` and `machines` are not. I
+followed the file rather than the list, and the split is derived at build time from S2's own keys
+rather than hard-coded — so if S2 substitutes an eighth seed, this tool drops it from
+`fixture-extract.js` and starts drift-checking it on the next run, with no edit here.
+
+Resulting split, verified to have **zero overlap**:
+
+| File | Owner | Seeds |
+|---|---|---|
+| `public/v2/fixture.js` | S2 (`tools/dc-compile.mjs`) | `regData, busSessions, seedThreads, orgScopeData, keyRows, dsData, titles` |
+| `public/v2/fixture-extract.js` | L1 (`tools/extract-fixture.mjs`) | `tiles, groups, busGroups, accounts, machines, gbSessions, termLinesFor` |
+
+## What "byte-for-byte" means across two generators
+
+The two files are formatted differently on purpose: S2 preserves the mock's own literal style, this
+extractor emits JSON. A literal byte comparison of source text would always fail. The check therefore
+compares **values** — canonical JSON with key order preserved — which is what "identical seed" can
+mean across two generators, and it is the property that actually matters: the app renders from S2's
+copy while the tests assert against both, so the two must carry the same data.
+
+Both generators independently produce the same seven seeds from the same mock. That agreement is now
+enforced:
+
+```
+$ npm run v2:fixture -- --check
+public/v2/fixture-extract.js is up to date; 7 S2-owned seeds match public/v2/fixture.js
+```
+
+and on drift it names the exact path and exits 1:
+
+```
+seed drift against public/v2/fixture.js (S2 owns these 7 keys):
+  regData — [0].s: "LC-constantin-train-78" here vs "LC-TAMPERED" in S2
+S2's fixture.js is the authority. Re-run S2's compiler or fix this extractor; do not edit either by hand.
+```
+
+Verified by tampering with a value in S2's file and confirming exit code 1, then restoring it. The
+check runs on the plain path too, so `npm run v2:fixture` cannot write a file while drifted, and it is
+wired into `pretest` — the merge had dropped that, so `npm test` can once again not pass against a
+stale or drifted fixture.
+
+## Lookup order in `data.js`
+
+`fixtureFor(name)` reads `FD.fixture` first and `FD.fixtureExtract` only as a fallback, so S2 is
+always the authority. Because the two files never define the same key, that order is a safety net
+rather than a merge — and a test proves the precedence by shadowing one of S2's keys in
+`FD.fixtureExtract` and asserting S2 still wins.
+
+`loadFixtures()` is called by the fixture-mode fetchers before first use: a `require` under Node, and
+in a browser it injects `/v2/fixture-extract.js` if the shell has not already included it. That means
+**no edit to S2's `index.html` is required** — but if the design seat prefers an explicit tag, adding
+`<script src="/v2/fixture-extract.js"></script>` next to `fixture.js` under fixture mode makes the
+injection a no-op.
+
+## Verification
+
+| Check | Result |
+|---|---|
+| `npm test` (merged suite, S2's tests included) | **298 pass, 0 fail** |
+| `test/v2-data.test.js` alone | 69 pass (4 new: ownership split, S2 precedence, cold `fixtureFor`, undefined-vs-missing drift) |
+| S2-owned seeds vs S2's file | 7/7 identical |
+| Overlap between the two fixture files | none |
+| `npm run v2:fixture` idempotent | yes |
+| Drift detection | tampering with S2's file exits 1 and names the path |
+
+## Reviewer pass on L1.1
+
+Five findings. Three fixed in code, two recorded.
+
+**Fixed — the drift gate could not see a missing key.** `canon()` used plain `JSON.stringify`, which
+drops a key whose value is `undefined` and turns an undefined array slot into `null`. So
+`{tk: undefined}` and `{}` serialised identically and the check would have reported "seeds match"
+while the two files genuinely disagreed about which keys exist — and key *presence* is exactly what
+the template's conditionals test (I-L1-06: an inbound bus message carries no `status` key at all).
+The comparison now encodes `undefined` as a sentinel, so the difference is visible. A regression test
+pins all four cases (missing vs undefined, undefined vs null, key order, and equal-stays-equal).
+
+**Fixed — one failed script load killed fixture mode for the page.** The browser injection path cached
+its rejected promise forever, so a single 404 or network hiccup left every later fixture-mode fetcher
+rejecting with no way back. It now clears the memo and removes the dead tag so the next call retries.
+
+**Fixed — `fixtureFor()` threw when called before `loadFixtures()`.** It is exported for screen slices,
+and a slice reading a seed on mount before any fetcher ran would have hit a throw. Under Node it now
+falls back to a synchronous require; in a browser the error names the fix
+(`await FD.data.loadFixtures()`).
+
+**Recorded — no static `<script>` tag for `fixture-extract.js`.** `index.html` is S2's file, so the
+lazy injection is currently the only delivery path for this slice's seven seeds. That is fine today,
+but a future CSP that blocks dynamically inserted scripts would leave S2's seeds working and these
+silently unreachable. **Suggestion for the design seat or L11:** add
+`<script src="/v2/fixture-extract.js"></script>` beside `fixture.js`; the injection then becomes a
+no-op and the failure mode disappears.
+
+**Recorded — the sandbox loader assumes S2 keeps assigning through `window`.** `loadS2Fixture()` reads
+S2's seeds back off a `node:vm` context that is its own `window`, which matches S2's current output
+exactly. If S2 ever switched to a top-level `const FD = {...}` that never touches `window`, vm
+top-level bindings are not own properties of the context and the seeds would read back as absent. Not
+a live bug — the tool already throws a named error saying its format changed — but a real blind spot
+worth knowing about.
+
+## Still open, unchanged from L1
+
+- The registry row was never written — `POST /api/registry` answers `unauthorized` from the box (XYZ-2137).
+- `improvised.md` **I-L1-01** (the data-layer boundary) remains **unaudited**: Fable was rate-limited.
+
+—
+**Juergen** · frontend-developer

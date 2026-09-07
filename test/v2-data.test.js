@@ -2,11 +2,14 @@
 // its adapters must produce exactly the shapes the design mock's seed arrays have.
 // Adapters run against the responses captured from the live deck on 2026-09-07
 // (docs/design/fleetdeck-v2/fixtures/api/) and are compared, key by key and in
-// order, against the extracted mock arrays (public/v2/fixture.js).
+// order, against the mock seeds. Those live in two generated files: S2's
+// public/v2/fixture.js (the seeds its compiler substituted into the template) and
+// public/v2/fixture-extract.js (the rest). No key is defined in both.
 const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { startServer } = require('./http');
 
 const ROOT = path.join(__dirname, '..');
@@ -14,12 +17,15 @@ const API = path.join(ROOT, 'docs/design/fleetdeck-v2/fixtures/api');
 
 const data = require(path.join(ROOT, 'public/v2/data.js'));
 const router = require(path.join(ROOT, 'public/v2/router.js'));
-// fixture.js is the compiled browser artifact: it opens with `window.FD = window.FD || {}`
-// and has no Node guard, because dc-compile emits it for the page, not for a test runner.
-// One global stands in for the window it expects, so the suite can read the same bytes
-// the browser gets rather than a second, drifting copy of the mock's seed data.
+// S2's fixture.js is a browser script, so load it the way the page does — into the
+// real global as window.FD.fixture. data.js then finds it exactly as it would in a
+// browser, and the precedence under test is the shipping one.
 globalThis.window = globalThis;
-const mock = require(path.join(ROOT, 'public/v2/fixture.js'));
+vm.runInThisContext(fs.readFileSync(path.join(ROOT, 'public/v2/fixture.js'), 'utf8'));
+const s2Fixture = globalThis.FD.fixture;
+const extract = require(path.join(ROOT, 'public/v2/fixture-extract.js'));
+// Every seed, whichever file owns it — what the adapters are compared against.
+const mock = Object.assign({}, extract, s2Fixture);
 
 const api = (name) => JSON.parse(fs.readFileSync(path.join(API, name + '.json'), 'utf8'));
 
@@ -574,6 +580,7 @@ test('in fixture mode the fetchers resolve the mock seed arrays unchanged', asyn
   enableFixture();
   // Any real network call would be a bug, so there is no fetch to fall back to.
   data._fetch = async () => { throw new Error('fixture mode must not fetch'); };
+  await data.loadFixtures();
   const cases = [
     ['sessions', 'groups'],
     ['messages', 'busSessions'],
@@ -594,12 +601,63 @@ test('in fixture mode the fetchers resolve the mock seed arrays unchanged', asyn
   }
 });
 
-test('fixtureFor reaches every seed array by name', () => {
+test('fixtureFor reaches every seed array by name, from either file', async () => {
+  await data.loadFixtures();
   const names = ['tiles', 'groups', 'regData', 'busSessions', 'busGroups', 'seedThreads',
     'orgScopeData', 'keyRows', 'accounts', 'machines', 'dsData', 'titles', 'gbSessions',
     'termLinesFor'];
   for (const n of names) assert.ok(data.fixtureFor(n) !== undefined, n);
   assert.throws(() => data.fixtureFor('nope'), /no fixture named/);
+});
+
+test('S2 owns its seeds and this slice never redefines one', () => {
+  const owned = keys(s2Fixture);
+  assert.ok(owned.length > 0, 'S2 ships seeds');
+  const mine = keys(extract);
+  const overlap = mine.filter((k) => owned.includes(k));
+  assert.deepStrictEqual(overlap, [], 'fixture-extract.js must not define a key S2 owns');
+  // Together they still cover every seed the adapters and the template need.
+  for (const n of ['tiles', 'groups', 'regData', 'busSessions', 'busGroups', 'seedThreads',
+    'orgScopeData', 'keyRows', 'accounts', 'machines', 'dsData', 'titles', 'gbSessions', 'termLinesFor']) {
+    assert.ok(owned.includes(n) || mine.includes(n), n + ' is defined by exactly one of the two files');
+  }
+});
+
+test('fixtureFor resolves an extract-owned seed without an explicit load', () => {
+  // A screen slice may read a seed before any fetcher ran. Under Node that is a
+  // synchronous require rather than a throw.
+  delete globalThis.FD.fixtureExtract;
+  try {
+    assert.ok(Array.isArray(data.fixtureFor('tiles')), 'tiles resolves cold');
+  } finally {
+    globalThis.FD.fixtureExtract = extract;
+  }
+});
+
+test('the drift check distinguishes a missing key from an undefined one', () => {
+  // JSON.stringify drops undefined-valued keys, so a naive canonical form would
+  // report these identical — and key presence is exactly what the template tests
+  // (improvised.md I-L1-06). Mirrors tools/extract-fixture.mjs canon().
+  const UNDEF = ' undefined';
+  const canon = (v) => JSON.stringify(v, (k, val) => (val === undefined ? UNDEF : val), 1);
+  assert.notStrictEqual(canon({ id: 1, tk: undefined }), canon({ id: 1 }), 'missing vs undefined key');
+  assert.notStrictEqual(canon([1, undefined, 3]), canon([1, null, 3]), 'undefined vs null slot');
+  assert.notStrictEqual(canon({ a: 1, b: 2 }), canon({ b: 2, a: 1 }), 'key order still caught');
+  assert.strictEqual(canon({ a: 1, b: [2, 3] }), canon({ a: 1, b: [2, 3] }), 'equal stays equal');
+});
+
+test('FD.fixture wins over FD.fixtureExtract for a key in both', async () => {
+  await data.loadFixtures();
+  const key = keys(s2Fixture)[0];
+  const before = globalThis.FD.fixtureExtract[key];
+  globalThis.FD.fixtureExtract[key] = 'SHADOW';
+  try {
+    assert.notStrictEqual(data.fixtureFor(key), 'SHADOW', 'S2 is the authority');
+    assert.deepStrictEqual(data.fixtureFor(key), s2Fixture[key]);
+  } finally {
+    if (before === undefined) delete globalThis.FD.fixtureExtract[key];
+    else globalThis.FD.fixtureExtract[key] = before;
+  }
 });
 
 test('fixture mode makes every WRITING endpoint a no-op', async () => {
@@ -646,7 +704,7 @@ test('the checked-in fixture is what the extractor produces', () => {
     const v = mock[k];
     assert.ok(v && (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0), k + ' is non-empty');
   }
-  const src = fs.readFileSync(path.join(ROOT, 'public/v2/fixture.js'), 'utf8');
+  const src = fs.readFileSync(path.join(ROOT, 'public/v2/fixture-extract.js'), 'utf8');
   assert.ok(/DO NOT EDIT/i.test(src), 'generated banner present');
   // Presentation must not have survived extraction (I-L1-01).
   assert.strictEqual(/"[a-zA-Z]*[sS]tyle":/.test(src), false, 'no style keys in the fixture');
