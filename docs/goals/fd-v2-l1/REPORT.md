@@ -247,12 +247,47 @@ injection a no-op.
 
 | Check | Result |
 |---|---|
-| `npm test` (merged suite, S2's tests included) | **296 pass, 0 fail** |
-| `test/v2-data.test.js` alone | 67 pass (2 new: the ownership split, and S2 precedence) |
+| `npm test` (merged suite, S2's tests included) | **298 pass, 0 fail** |
+| `test/v2-data.test.js` alone | 69 pass (4 new: ownership split, S2 precedence, cold `fixtureFor`, undefined-vs-missing drift) |
 | S2-owned seeds vs S2's file | 7/7 identical |
 | Overlap between the two fixture files | none |
 | `npm run v2:fixture` idempotent | yes |
 | Drift detection | tampering with S2's file exits 1 and names the path |
+
+## Reviewer pass on L1.1
+
+Five findings. Three fixed in code, two recorded.
+
+**Fixed — the drift gate could not see a missing key.** `canon()` used plain `JSON.stringify`, which
+drops a key whose value is `undefined` and turns an undefined array slot into `null`. So
+`{tk: undefined}` and `{}` serialised identically and the check would have reported "seeds match"
+while the two files genuinely disagreed about which keys exist — and key *presence* is exactly what
+the template's conditionals test (I-L1-06: an inbound bus message carries no `status` key at all).
+The comparison now encodes `undefined` as a sentinel, so the difference is visible. A regression test
+pins all four cases (missing vs undefined, undefined vs null, key order, and equal-stays-equal).
+
+**Fixed — one failed script load killed fixture mode for the page.** The browser injection path cached
+its rejected promise forever, so a single 404 or network hiccup left every later fixture-mode fetcher
+rejecting with no way back. It now clears the memo and removes the dead tag so the next call retries.
+
+**Fixed — `fixtureFor()` threw when called before `loadFixtures()`.** It is exported for screen slices,
+and a slice reading a seed on mount before any fetcher ran would have hit a throw. Under Node it now
+falls back to a synchronous require; in a browser the error names the fix
+(`await FD.data.loadFixtures()`).
+
+**Recorded — no static `<script>` tag for `fixture-extract.js`.** `index.html` is S2's file, so the
+lazy injection is currently the only delivery path for this slice's seven seeds. That is fine today,
+but a future CSP that blocks dynamically inserted scripts would leave S2's seeds working and these
+silently unreachable. **Suggestion for the design seat or L11:** add
+`<script src="/v2/fixture-extract.js"></script>` beside `fixture.js`; the injection then becomes a
+no-op and the failure mode disappears.
+
+**Recorded — the sandbox loader assumes S2 keeps assigning through `window`.** `loadS2Fixture()` reads
+S2's seeds back off a `node:vm` context that is its own `window`, which matches S2's current output
+exactly. If S2 ever switched to a top-level `const FD = {...}` that never touches `window`, vm
+top-level bindings are not own properties of the context and the seeds would read back as absent. Not
+a live bug — the tool already throws a named error saying its format changed — but a real blind spot
+worth knowing about.
 
 ## Still open, unchanged from L1
 

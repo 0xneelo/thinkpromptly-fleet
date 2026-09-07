@@ -578,9 +578,17 @@
   function fixtureFor(name) {
     const owned = root.FD && root.FD.fixture;
     if (owned && name in owned) return owned[name];
-    const extra = root.FD && root.FD.fixtureExtract;
+    let extra = root.FD && root.FD.fixtureExtract;
+    // Under Node the extract is a synchronous require, so a caller that reaches
+    // here before loadFixtures() resolved still gets an answer rather than a throw.
+    if (!extra && typeof require === 'function') {
+      extra = require('./fixture-extract.js');
+    }
     if (extra && name in extra) return extra[name];
-    throw new Error('no fixture named ' + name + ' (is fixture-extract.js loaded?)');
+    throw new Error(
+      'no fixture named ' + name + ' — if it is one of this slice\'s seeds, ' +
+      'await FD.data.loadFixtures() before reading it'
+    );
   }
 
   // Resolves once fixture-extract.js is available. In Node it is a require; in the
@@ -600,7 +608,14 @@
       // so it resolves the same from /v2/ and from /v2/index.html.
       el.src = '/v2/fixture-extract.js';
       el.onload = () => resolve(root.FD && root.FD.fixtureExtract);
-      el.onerror = () => reject(new Error('could not load fixture-extract.js'));
+      el.onerror = () => {
+        // Forget the failure so a later call retries. Caching a rejected promise
+        // would turn one network hiccup into fixture mode being dead for the life
+        // of the page.
+        fixturesLoading = null;
+        el.parentNode && el.parentNode.removeChild(el);
+        reject(new Error('could not load /v2/fixture-extract.js'));
+      };
       root.document.head.appendChild(el);
     });
     return fixturesLoading;

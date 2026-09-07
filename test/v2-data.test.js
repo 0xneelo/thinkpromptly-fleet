@@ -626,6 +626,29 @@ test('S2 owns its seeds and this slice never redefines one', () => {
   }
 });
 
+test('fixtureFor resolves an extract-owned seed without an explicit load', () => {
+  // A screen slice may read a seed before any fetcher ran. Under Node that is a
+  // synchronous require rather than a throw.
+  delete globalThis.FD.fixtureExtract;
+  try {
+    assert.ok(Array.isArray(data.fixtureFor('tiles')), 'tiles resolves cold');
+  } finally {
+    globalThis.FD.fixtureExtract = extract;
+  }
+});
+
+test('the drift check distinguishes a missing key from an undefined one', () => {
+  // JSON.stringify drops undefined-valued keys, so a naive canonical form would
+  // report these identical — and key presence is exactly what the template tests
+  // (improvised.md I-L1-06). Mirrors tools/extract-fixture.mjs canon().
+  const UNDEF = ' undefined';
+  const canon = (v) => JSON.stringify(v, (k, val) => (val === undefined ? UNDEF : val), 1);
+  assert.notStrictEqual(canon({ id: 1, tk: undefined }), canon({ id: 1 }), 'missing vs undefined key');
+  assert.notStrictEqual(canon([1, undefined, 3]), canon([1, null, 3]), 'undefined vs null slot');
+  assert.notStrictEqual(canon({ a: 1, b: 2 }), canon({ b: 2, a: 1 }), 'key order still caught');
+  assert.strictEqual(canon({ a: 1, b: [2, 3] }), canon({ a: 1, b: [2, 3] }), 'equal stays equal');
+});
+
 test('FD.fixture wins over FD.fixtureExtract for a key in both', async () => {
   await data.loadFixtures();
   const key = keys(s2Fixture)[0];

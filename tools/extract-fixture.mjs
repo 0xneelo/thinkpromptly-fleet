@@ -270,8 +270,15 @@ function loadS2Fixture() {
 // Byte-for-byte over the value, not the source text: the two generators format differently on
 // purpose (S2 preserves the mock's own literal style, this one emits JSON), so canonical JSON with
 // key order preserved is what "identical seed" can mean across them.
+//
+// The replacer matters. Plain JSON.stringify DROPS a key whose value is undefined and turns an
+// undefined array slot into null, so {tk: undefined} and {} would serialize identically — and
+// key PRESENCE is exactly what the template's conditionals test (improvised.md I-L1-06: an inbound
+// message carries no `status` key at all). Encoding undefined as a sentinel keeps that difference
+// visible instead of silently passing the drift check.
+const UNDEF = ' undefined';
 function canon(value) {
-  return JSON.stringify(value, null, 1);
+  return JSON.stringify(value, (k, v) => (v === undefined ? UNDEF : v), 1);
 }
 
 function firstDrift(a, b, path = '') {
