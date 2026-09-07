@@ -38,10 +38,15 @@
 
   /* ---- hooks L2 PROVIDES -------------------------------------------------- */
 
-  /* L6 reports the message-bus unread count; it lands on the sidebar nav badge. */
+  /* L6 reports the message-bus unread count; it lands on the sidebar nav badge.
+   *
+   * The count is remembered rather than dropped. The bus screen can set it
+   * during its own synchronous mount, which races the shell's asynchronous
+   * data.js load, so a count set before `ready` used to be lost until L6
+   * happened to call again — and with a quiet bus that could be never. */
   FD.shell.setBadge = function (n) {
-    if (!ready) return;
-    FD.setData('l2Badge', typeof n === 'number' && n >= 0 ? n : 0);
+    badge = typeof n === 'number' && n >= 0 ? n : 0;
+    if (ready) FD.setData('l2Badge', badge);
   };
 
   /* L5 reports the org-chart source badge; ruling O4 folds it into the page
@@ -77,6 +82,9 @@
     accountPct: function (r) { return accountPct(r); },
     accountBar: function (r) { return accountBar(r); },
     accountMeta: function (r) { return accountMetaFor(r); },
+    // For the boot-race test: what the shell is holding, and whether it is live yet.
+    badge: function () { return badge; },
+    ready: function () { return ready; },
   };
 
   /* ---- fixture mode: do nothing at all ----------------------------------- */
@@ -98,6 +106,7 @@
 
   var ready = false;              // data.js loaded and live mode confirmed
   var liveApiText = DEFAULT_LIVE_API;
+  var badge = null;               // last count L6 reported, kept across the boot race
   var sessions = [];              // normalised /api/sessions rows
   var sessionErrors = [];
   var rowIndex = [];              // flat list of shown rows, in render order
@@ -116,6 +125,8 @@
     .then(function () {
       if (!FD.data || FD.data.isFixture()) return;
       ready = true;
+      // Anything reported while the data layer was still loading applies now.
+      if (badge !== null) FD.setData('l2Badge', badge);
       applyTheme();
       hookRenders();
       delegate();
@@ -544,7 +555,7 @@
     if (!shown) return;
     paintRowMax(u, t);
     paintListFoot(u, t);
-    paintEmpty(u, t);
+    paintEmpty(u);
   }
 
   /* The mock's sidebar row is dot + name; today's row also carries a ghost ⤢
@@ -601,19 +612,17 @@
     return parts;
   }
 
-  /* Operator ruling: today's "No terminals open — pick a session, Connect all,
-   * or open the Registry" becomes one sentence, and the mock has no empty state
-   * at all (O1, I-L2-08). Counted off the DOM, so it answers to whatever L3
-   * ends up feeding the tile grid. */
-  function paintEmpty(u, t) {
-    var screen = tpl(TPL.windows);
-    if (!screen || screen.offsetParent === null || tplAll(TPL.tile, screen).length) { u.empty.style.display = 'none'; return; }
-    var r = screen.getBoundingClientRect();
-    u.empty.style.display = 'block';
-    u.empty.style.color = t.ink45;
-    u.empty.style.left = Math.round(r.left) + 'px';
-    u.empty.style.width = Math.round(r.width) + 'px';
-    u.empty.style.top = Math.round(r.top + 48) + 'px';
+  /* The Windows empty state moved to L3 in the weave.
+   *
+   * L2 built it first (the operator's copy, ruling O1) because L3 had not landed
+   * and the old `#empty` lived in the shell. L3 now renders the same sentence
+   * from `windows.js`, keyed to the tile model it owns rather than to a DOM
+   * count — which is the better home for it — so the two were drawn on top of
+   * each other. This slice yields: the empty state belongs to whoever owns the
+   * tiles. I-L2-08 records the handover; `EMPTY_COPY` stays here only so the
+   * unit test can assert the two files still agree word for word. */
+  function paintEmpty(u) {
+    if (u.empty.style.display !== 'none') u.empty.style.display = 'none';
   }
 
   /* ---- clicks and hover --------------------------------------------------- */

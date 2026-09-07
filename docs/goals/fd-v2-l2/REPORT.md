@@ -15,9 +15,9 @@
 |---|---|---|
 | Pixel gate, fixture mode, 36 screens | **`allPass: true`**, max mismatch **0.032948 %** | `verify/l2/report.json` |
 | Live-mode proof, API stubbed | **59/59**, `allPass: true`, **zero console errors** | `verify/l2/live.json`, `live-dark.png`, `live-light.png` |
-| Unit tests (`test/v2-shell.test.js`) | **19 pass** | below |
-| `npm test` | **322 pass / 0 fail** | below |
-| Improvisation log | 15 entries, 6 screenshots | `improvised.md` §L2, `improvised/l2-*.png` |
+| Unit tests (`test/v2-shell.test.js`) | **24 pass** | below |
+| `npm test` | **465 pass / 0 fail** (woven tree) | below |
+| Improvisation log | 15 entries, 7 screenshots | `improvised.md` §L2, `improvised/l2-*.png` |
 
 The pixel maximum is the same number on the same screen (`registry` dark) that S1, S2 and my own
 control run before writing any code all measured: `0.03294753086419753`. Fixture mode is untouched to
@@ -31,7 +31,7 @@ the digit.
 | `public/v2/logic.js` | **four hunks**, all guarded: `groups`, `miniAccounts`, `boxRows`, the nav badge |
 | `docs/design/fleetdeck-v2/verify/l2-live/live.mjs` + `stubs/` | the live proof and six hand-written API variants |
 | `docs/design/fleetdeck-v2/verify/l2-live/shots.mjs` | the improvisation screenshots |
-| `test/v2-shell.test.js` | 19 unit tests over the pure halves and the fixture-mode gate |
+| `test/v2-shell.test.js` | 24 unit tests over the pure halves, the fixture-mode gate and the badge boot race |
 | `docs/design/fleetdeck-v2/improvised.md` | 15 entries, I-L2-01 … I-L2-15 |
 
 Commits: `4da1a09` (pack + seam) · `bef3c0a` (the slice) · `8afc195` (the oracle audit's three
@@ -216,6 +216,16 @@ The captured `sessions.json` contains no hidden row, no `kill-requested` row and
 `/api/*` requests and does not even load `data.js`, and `F03` confirms the mock's own seed groups still
 render.
 
+### The live proof runs L2 alone
+
+Once the weave landed, the page under test stopped being the shell and became the whole app: L3's
+terminals cover the sidebar the moment a row is clicked, five more slices fetch their own endpoints,
+and a failure here would have said nothing about L2. The harness therefore serves the other eight
+`screens/*.js` files empty (`isolate`, on by default) and the L3 seam is a **spy** rather than a
+stand-in — it records `openTile` / `openMax` / `connectAll` and hands them on, so the checks prove the
+shell talks to the real hook when there is one. Cross-slice behaviour is the weave's to prove, and
+`verify/l2/live.json` says what it can honestly say: L2 works.
+
 ### Order matters
 
 `scripts/design-diff.mjs` **republishes `verify/<slice>/` wholesale** — it renames the directory away
@@ -280,6 +290,29 @@ it, and worth a Linear issue from whoever owns the reaper.
     rather than replacing. It composes if another slice does the same. The alternative was a line of
     shell plumbing in `logic.js` that nine slices would then conflict over. Stated so a reviewer can
     overrule it.
+
+## L2.1 — after the weave
+
+Three things, on `agent-v2-l2` merged with `origin/weave/fd-v2`.
+
+**`setBadge(n)` dropped the count while the shell was still booting.** It returned early when
+`!ready`, so a count L6 reports during its own synchronous mount — which races the shell's asynchronous
+`data.js` load — was lost until L6 happened to call again, and on a quiet bus that could be never. It
+now remembers the last count the way `setLiveApi` remembers its text, and applies it when `ready`
+flips. Four unit tests cover it, including the case where nobody ever calls (no `l2Badge` key, so the
+bus's own count still wins) and a nonsense argument (`0`, never the template's problem). **Mutation-
+tested:** restoring the early return fails three of the four.
+
+**The Windows empty state is now L3's.** L3 renders the same operator sentence from `windows.js`, keyed
+to the tile model it owns rather than to a DOM count. Drawn from both files the user saw it twice, so
+L2 yields. `EMPTY_COPY` stays in `shell.js` only so a unit test asserts the two files still quote the
+operator word for word. Two further duplications between L2 and L3 — the "Connect all" binding and a
+doubled `openTile` on a sidebar row click — are filed as **DECK-104** with evidence; both need an
+ownership ruling rather than a unilateral fix.
+
+**The screenshot count in this report was wrong** — seven PNGs, not six. `l2-right-rail-offline.png`
+was captured but never cited; it now belongs to I-L2-09, which is where the two whole-list failure
+states (`health unreachable`, `accounts unavailable`) are described.
 
 ## The reviewer pass, and what it changed
 
