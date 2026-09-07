@@ -265,9 +265,22 @@ class AppLogic extends Sub {
   componentDidUpdate() {
     if (this._video) this._video.playbackRate = this.props.videoSpeed ?? 1;
     if (this._thread && this._threadKey !== this._nextThreadKey) { this._threadKey = this._nextThreadKey; this._thread.scrollTop = this._thread.scrollHeight; }
+    this._fdAfterRender();
+  }
+  // L9: the compiled template hard-codes the machine card's "reported just now" and leaves the
+  // header Refresh button unbound, so the Machines slice finishes its own render here. No-op in
+  // fixture mode and whenever the slice is absent. See improvised.md I-L9-01 / I-L9-02.
+  _fdAfterRender() {
+    const m = FD.screens && FD.screens.machines;
+    if (m && typeof m.afterRender === 'function') m.afterRender();
   }
   componentDidMount() {
+    this._fdAfterRender();
     if (this._thread) this._thread.scrollTop = this._thread.scrollHeight;
+    // L6 seam: hand the bus screen its host so public/v2/screens/bus.js can
+    // drive live threads. In fixture mode attach() returns without doing
+    // anything, so the compiled fixture render is untouched.
+    if (window.FD && FD.screens && FD.screens.bus && FD.screens.bus.attach) FD.screens.bus.attach(this);
     this._esc = (e) => {
       if (e.key !== 'Escape') return;
       if (this.state.termMenu) this.setState({ termMenu: false });
@@ -276,7 +289,119 @@ class AppLogic extends Sub {
     };
     window.addEventListener('keydown', this._esc);
   }
-  componentWillUnmount() { if (this._esc) window.removeEventListener('keydown', this._esc); if (this._busRO) this._busRO.disconnect(); }
+  componentWillUnmount() {
+    if (this._esc) window.removeEventListener('keydown', this._esc);
+    if (this._busRO) this._busRO.disconnect();
+    if (window.FD && FD.screens && FD.screens.bus && FD.screens.bus.detach) FD.screens.bus.detach(this);
+  }
+  // ---- L5 · Org chart (Dietlind, agent-v2-l5) ------------------------------
+  // "Send a message" deep-links into the bus thread (ruling O8). L6 owns the bus,
+  // so the hook is guarded; until L6 lands we keep the mock's own behaviour.
+  _orgMessage(target) {
+    const org = FD.screens && FD.screens.org;
+    if (target && org && org.openBus(target)) return;
+    this.setState({ screen: 'bus', busActive: 'desktop' });
+  }
+  // DESIGN-35 binding (2): one throw in any slice's renderVals section blanks
+  // EVERY screen, because the shim falls back to bare props. So this section is
+  // throw-proof: on a bad row it keeps the last good values and logs.
+  _orgLive(c) {
+    try {
+      const out = this._orgVals(c);
+      this._orgGood = out;
+      return out;
+    } catch (e) {
+      console.error('[org] renderVals section failed; keeping the last good values', e);
+      if (this._orgGood) return this._orgGood;
+      // Nothing good yet: fall back to the mock's own literals, which cannot throw.
+      const live = FD.fixture.orgLive;
+      delete FD.fixture.orgLive;
+      try { return this._orgVals(c); } finally { if (live) FD.fixture.orgLive = live; }
+    }
+  }
+  // FD.fixture.orgLive is published by public/v2/screens/org.js in live mode
+  // ONLY. When it is absent every value below is the mock's own literal, so
+  // fixture mode — and the pixel gate — render byte-for-byte as before.
+  _orgVals(c) {
+    const { t, dot, chipTone, mono, orgSort, orgScope, orgKidList, orgCard } = c;
+    const hLine = (n) => ({ position: 'absolute', top: 0, height: '1px', background: t.line, left: 'calc(' + (50 / n) + '% - ' + ((n - 1) * 20 / (2 * n)) + 'px)', right: 'calc(' + (50 / n) + '% - ' + ((n - 1) * 20 / (2 * n)) + 'px)' });
+    const live = FD.fixture.orgLive || null;
+
+    if (!live) return {
+      orgSpine: [
+        { name: orgScope, tag: orgKidList.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) },
+        { name: 'coordinator', tag: 'seat', sub: 'long-lease · weekly', path: 'mac / coordinator', lease: 'lease active', exp: '6d left', expStyle: { color: t.ink, whiteSpace: 'nowrap' }, dotStyle: dot(t.ink) },
+        { name: 'orchestrator', tag: 'epoch #10', sub: 'seat · fenced · high churn', path: 'mac / orchestrator', lease: 'lease suspect · 3m', exp: 'expired 2m ago', expStyle: { color: t.bad, whiteSpace: 'nowrap' }, dotStyle: { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }, canMsg: true, message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) },
+      ],
+      orgKids: orgKidList.map(([name, role, path, on]) => ({ name, role, path, epoch: '#1', lease: on === false ? 'lease suspect' : 'lease active', exp: on === false ? 'expired 4m ago' : '1m left', expStyle: { color: on === false ? t.bad : t.good, whiteSpace: 'nowrap' }, dotStyle: dot(on === false ? t.warn : t.good), message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) })),
+      orgKidCols: orgKidList.length,
+      orgHLineStyle: hLine(orgKidList.length),
+      orgCards: [
+        orgCard('Bettina', true, 'backend-developer', 'german-box / ST-bettina', 'st-lanes-0831 / VIB-344', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('Margery', true, 'backend-developer', 'german-box / ST-margery', 'st-lanes-0831 / VIB-345', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('ops', true, 'unassigned role', 'onboarding-box / ops', 'no group / no task', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
+        orgCard('Adelgund', false, 'unassigned role', 'german-box / LC-adelgund-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '16h 30m', 'expired 22h ago', t.bad),
+        orgCard('Adelmar', true, 'devops-engineer', 'german-box / FD-gb-home', 'xyz-1890 / XYZ-1890', '#1', 'active', t.good, '3s', '1m left', t.good),
+        orgCard('Albrecht', true, 'unassigned role', 'german-box / LC-albrecht-xyz…', 'no group / no task', '#1', 'active', t.good, '3s', '1m left', t.good),
+        orgCard('Alwin', false, 'unassigned role', 'german-box / LC-alwin-xyz-19…', 'no group / no task', '#1', 'suspect', t.warn, '1d 15h', 'expired 1d 15h ago', t.bad),
+        orgCard('Amalberga', false, 'unassigned role', 'german-box / LC-amalberga-xy…', 'no group / no task', '#1', 'suspect', t.warn, '23h 52m', 'expired 23h 51m ago', t.bad),
+        orgCard('Amalia', false, 'unassigned role', 'german-box / LC-amalia-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '1d 16h', 'expired 1d 16h ago', t.bad),
+      ],
+    };
+
+    // Live. org.js emits tone NAMES; the theme tokens resolve here so both themes
+    // stay correct — the layer split L1 recorded as I-L1-01.
+    const tone = (n) => n === 'good' ? t.good : n === 'warn' ? t.warn : n === 'bad' ? t.bad
+      : n === 'ink' ? t.ink : n === 'ink75' ? t.ink75 : n === 'ink60' ? t.ink60 : t.ink35;
+    const dotFor = (n) => n === 'hollow'
+      ? { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }
+      : dot(tone(n));
+    const inScope = (r) => !orgScope || (orgSort === 'machine' ? r.mach : r.proj) === orgScope;
+    const kids = (live.kids || []).filter(inScope);
+    // The unattached grid is NOT scope-filtered: the mock puts the sort/scope
+    // control inside the attached tab only, and the "N unattached" count beside
+    // it is fleet-wide, so a filtered grid would contradict its own tab count.
+    // That also matches today's <details> strip, which lists every orphan.
+    const cards = live.cards || [];
+    const cols = Math.max(1, kids.length);
+
+    const toSpine = (n) => ({
+      name: n.name, tag: n.tag || '', sub: n.sub || '', path: n.path || '',
+      lease: n.lease || '', exp: n.exp || '',
+      expStyle: { color: tone(n.expTone), whiteSpace: 'nowrap' },
+      dotStyle: dotFor(n.dotTone),
+      canMsg: !!n.canMsg,
+      message: () => this._orgMessage(n.target),
+    });
+
+    // The head card is the scope node; the seat roots behind it are fleet-wide.
+    const head = { name: orgScope || 'fleet', tag: kids.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) };
+    const spine = live.mode !== 'ok' ? (live.spine || []).map(toSpine)
+      : live.empty ? [head, toSpine({ name: live.empty, dotTone: 'hollow' })]
+      : [head, ...(live.spine || []).map(toSpine)];
+
+    return {
+      orgSpine: spine,
+      orgKids: kids.map((k) => ({
+        name: k.name, role: k.role, path: k.path, epoch: k.epoch, lease: k.lease, exp: k.exp,
+        expStyle: { color: tone(k.expTone), whiteSpace: 'nowrap' },
+        dotStyle: dotFor(k.dotTone),
+        message: () => this._orgMessage(k.target),
+      })),
+      orgKidCols: cols,
+      orgHLineStyle: hLine(cols),
+      orgCards: cards.map((x) => {
+        const m = x.meta || [];
+        const base = orgCard(x.name, true, x.role, x.path, x.grp,
+          m[0] && m[0].v, m[1] && m[1].v, tone(m[1] && m[1].tone), m[2] && m[2].v, m[3] && m[3].v, tone(m[3] && m[3].tone));
+        // The mock's card has one badge slot and always fills it; a row with no
+        // badge hides the pill rather than showing an empty one (I-L5-03).
+        return { ...base, badge: x.badge || '',
+          dotStyle: dotFor(x.dotTone),
+          badgeStyle: x.badge ? { ...chipTone(x.badgeTone === 'warn' ? 'warn' : 'neutral'), marginLeft: 'auto' } : { display: 'none' } };
+      }),
+    };
+  }
   renderVals() {
     const dark = this.isDark();
     const useColor = this.props.statusColors ?? true;
@@ -336,62 +461,128 @@ class AppLogic extends Sub {
     // Desktop sessions
     const hex = (seed, n) => { let s = seed * 2654435761 % 4294967296; let o = ''; while (o.length < n) { s = (s * 1103515245 + 12345) % 4294967296; o += s.toString(16).padStart(8, '0'); } return o.slice(0, n); };
     const uuid = (seed) => hex(seed, 8) + '-' + hex(seed + 1, 4) + '-4' + hex(seed + 2, 3) + '-' + hex(seed + 3, 4) + '-' + hex(seed + 4, 12);
-    const dsData = FD.fixture.dsData;
-    const dq = (this.state.dq || '').toLowerCase();
+    const dsData = Array.isArray(FD.fixture.dsData) ? FD.fixture.dsData : [];
+    // toLocaleLowerCase on both sides, as today's sessions.js matches (BEHAVIOUR 2).
+    const dq = (this.state.dq || '').trim().toLocaleLowerCase();
     const dsExp = this.state.dsExp || {};
-    let dsCount = 0, dsLive = 0;
+    let dsCount = 0, dsLive = 0, dsGroups;
     const liveRows = [];
     const iconBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', flexShrink: 0, borderRadius: '9999px', border: '1px solid ' + t.line, background: 'transparent', color: t.ink75, cursor: 'pointer', padding: 0, transition: 'background .15s' };
+    // L10: the screen slice registers rowAction only in live mode, so fixture
+    // mode keeps the mock's own handlers untouched and pixel-identical.
+    const dsAct = (FD.screens && FD.screens.desktop && FD.screens.desktop.rowAction) || null;
     const dsRow = (g, gi, r, ri, where) => {
       const key = gi + '-' + ri; const open = !!dsExp[key]; const seed = gi * 100 + ri * 7 + 3;
-      const cli = r.cli || uuid(seed), sid = r.sid || 'local_' + uuid(seed + 40);
-      const cut = r.path.lastIndexOf('/') + 1;
+      // The mock invents a CLI/session id for seed rows that lack one. That is right
+      // for the mock and wrong for live data: sessions.js:199-202 OMITS a details row
+      // whose value is absent rather than showing a plausible invention as fact.
+      // dsAct is registered only in live mode, so it is exactly the "is this real" test.
+      const cli = r.cli || (dsAct ? '' : uuid(seed));
+      const sid = r.sid || (dsAct ? '' : 'local_' + uuid(seed + 40));
+      // Live rows can arrive without a cwd; the mock's seed always has one.
+      const path = r.path || '';
+      const cut = path.lastIndexOf('/') + 1;
+      // liveState is 'live' | 'offline' | 'unknown' and only the live feed sets it.
+      const st = r.liveState || (r.live ? 'live' : 'offline');
+      // The two disabled texts, verbatim from sessions.js:246.
+      const offText = st === 'unknown' ? 'Live check unavailable' : 'Not running';
       return {
-        title: r.title, dir: r.path.slice(0, cut), leaf: r.path.slice(cut), branch: r.branch, model: r.model, when: r.when, turns: r.turns,
+        title: r.title, dir: path.slice(0, cut), leaf: path.slice(cut), branch: r.branch, model: r.model, when: r.when, turns: r.turns,
         where: where ? g.name + ' · ' + g.machine : '',
-        live: !!r.live, notLive: !r.live, status: r.live ? 'Live' : 'Offline',
-        pillStyle: chipTone(r.live ? 'good' : 'neutral'), dotStyle: dot(r.live ? t.good : t.ink35),
+        live: !!r.live, notLive: !r.live,
+        status: st === 'live' ? 'Live' : st === 'unknown' ? 'Live unknown' : 'Offline',
+        pillStyle: chipTone(st === 'live' ? 'good' : 'neutral'), dotStyle: dot(st === 'live' ? t.good : t.ink35),
         open, chevStyle: { transition: 'transform .2s', transform: open ? 'rotate(90deg)' : 'none', color: t.ink45, flexShrink: 0, marginTop: '3px' },
         toggle: () => { const e2 = { ...(this.state.dsExp || {}) }; e2[key] = !e2[key]; this.setState({ dsExp: e2 }); },
         stop: (e) => e.stopPropagation(),
-        show: (e) => { e.stopPropagation(); if (r.live && this._openTerm) this._openTerm(r.title, g.machine); },
-        message: (e) => { e.stopPropagation(); if (r.live) this.setState({ screen: 'bus', busActive: 'desktop' }); },
-        showTitle: r.live ? 'Show session' : 'Show — session is not running',
-        msgTitle: r.live ? 'Message this session' : 'Message — session is not running',
-        liveBtnStyle: r.live ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
-        details: [{ k: 'Created', v: r.created }, { k: 'CLI session', v: cli }, { k: 'Session', v: sid }, { k: 'Full path', v: r.path }],
-        copy: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(r.title + '\n' + r.path + '\n' + r.branch + '\ncli=' + cli + '\nsession=' + sid); } catch (e2) {} },
-        copyConv: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText('# ' + r.title + '\n' + r.model + ' · ' + r.turns + ' · ' + r.branch + '\n\n[conversation transcript for ' + sid + ']'); } catch (e2) {} },
+        show: (e) => { e.stopPropagation(); if (dsAct) return dsAct('show', r, e.currentTarget); if (r.live && this._openTerm) this._openTerm(r.title, g.machine); },
+        message: (e) => { e.stopPropagation(); if (dsAct) return dsAct('message', r, e.currentTarget); if (r.live) this.setState({ screen: 'bus', busActive: 'desktop' }); },
+        // BEHAVIOUR §3: when a row cannot be messaged, today's app shows a text in the
+        // action cell — 'Live check unavailable' for liveState 'unknown', else 'Not
+        // running' (sessions.js:246). The mock replaced that cell with two icon buttons
+        // and a static aria-label, so `title` is the only slot left to carry it, and it
+        // carries the string verbatim. Live mode only (dsAct): in fixture mode there is
+        // no liveState and the mock's own copy is the mock's look, which also keeps the
+        // compiled DOM byte-identical for S2's attribute parity gate.
+        showTitle: st === 'live' ? 'Show session' : dsAct ? offText : 'Show — session is not running',
+        msgTitle: st === 'live' ? 'Message this session' : dsAct ? offText : 'Message — session is not running',
+        liveBtnStyle: st === 'live' ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
+        details: [{ k: 'Created', v: r.created }, { k: 'CLI session', v: cli }, { k: 'Session', v: sid }, { k: 'Full path', v: path }]
+          .concat(r.worktree ? [{ k: 'Worktree', v: r.worktree }] : [])
+          .filter((d) => d.v),
+        copy: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copy', r, e.currentTarget); try { navigator.clipboard.writeText(r.title + '\n' + path + '\n' + r.branch + '\ncli=' + cli + '\nsession=' + sid); } catch (e2) {} },
+        copyConv: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copyConv', r, e.currentTarget); try { navigator.clipboard.writeText('# ' + r.title + '\n' + r.model + ' · ' + r.turns + ' · ' + r.branch + '\n\n[conversation transcript for ' + sid + ']'); } catch (e2) {} },
       };
     };
-    const dsGroups = dsData.map((g, gi) => {
-      const kept = g.rows.map((r, ri) => [r, ri]).filter(([r]) => !dq || (r.title + ' ' + r.path + ' ' + r.branch).toLowerCase().includes(dq));
-      kept.forEach(([r, ri]) => { dsCount++; if (r.live) { dsLive++; liveRows.push(dsRow(g, gi, r, ri, true)); } });
-      const rows = kept.sort((a, b) => (b[0].live ? 1 : 0) - (a[0].live ? 1 : 0)).map(([r, ri]) => dsRow(g, gi, r, ri, false));
-      return { name: g.name, sub: g.email + ' · ' + g.acct, machine: g.machine, n: rows.length, rows, isLive: false };
-    }).filter((g) => g.rows.length > 0);
-    if (liveRows.length) dsGroups.unshift({ name: 'Live now', sub: 'can receive a message on the next turn', machine: '', n: liveRows.length, rows: liveRows, isLive: true });
+    // S2 oracle audit F2 (2026-09-08, binding instruction 2): a throw anywhere in
+    // renderVals makes the runtime render with vals = host.props, which turns every
+    // sc-if false and empties every list — one malformed row from one slice blanks
+    // all nine screens. So this block cannot throw: every field access on an
+    // incoming row is guarded, and if one still does, the screen keeps its last
+    // good values instead of taking the whole app down with it.
+    try {
+      dsGroups = dsData.filter((g) => g && Array.isArray(g.rows)).map((g, gi) => {
+        const kept = g.rows.map((r, ri) => [r, ri]).filter(([r]) => r && (!dq
+          || [r.title, r.path, r.worktree, r.branch, r.model]
+            .filter((v) => typeof v === 'string').join(' ').toLocaleLowerCase().includes(dq)));
+        kept.forEach(([r, ri]) => { dsCount++; if (r.live) { dsLive++; liveRows.push(dsRow(g, gi, r, ri, true)); } });
+        const rows = kept.sort((a, b) => (b[0].live ? 1 : 0) - (a[0].live ? 1 : 0)).map(([r, ri]) => dsRow(g, gi, r, ri, false));
+        return { name: g.name, sub: g.email + ' · ' + g.acct, machine: g.machine, n: rows.length, rows, isLive: false };
+      }).filter((g) => g.rows.length > 0);
+      if (liveRows.length) dsGroups.unshift({ name: 'Live now', sub: 'can receive a message on the next turn', machine: '', n: liveRows.length, rows: liveRows, isLive: true });
+      this._dsLastGood = { dsGroups, dsCount, dsLive };
+    } catch (e) {
+      console.error('[fd-v2 l10] desktop rows failed to render; keeping the last good view', e);
+      const last = this._dsLastGood || { dsGroups: [], dsCount: 0, dsLive: 0 };
+      dsGroups = last.dsGroups; dsCount = last.dsCount; dsLive = last.dsLive;
+    }
     // Registry data + selection
-    const regData = FD.fixture.regData;
-    const q = (this.state.q || '').toLowerCase();
-    const filtered = regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
+    // L4 (DECK-43): fixture mode renders the mock's rows untouched — FD.setData is
+    // never called there, so the pixel gate stays byte-for-byte the mock (DESIGN-35,
+    // 2026-09-07). In live mode FD.screens.registry publishes FD.fixture.l4, whose
+    // rows are already filtered and sorted, and owns filter, sort and selection.
+    const regScreen = (FD.screens && FD.screens.registry) || null;
+    if (regScreen && regScreen.setTokens) regScreen.setTokens(t, this);
+    if (screen === 'registry' && regScreen && regScreen.start) regScreen.start();
+    // One throw anywhere in renderVals blanks every screen, so this block never
+    // leaves one: it keeps the last values it rendered and logs once (oracle
+    // audit of the shim, 2026-09-08).
     const sel = this.state.sel || {};
-    const selCount = filtered.filter((r) => sel[r.id]).length;
-    const stTone = (st) => st === 'active' ? 'good' : st === 'kill-requested' ? 'warn' : 'dim';
-    const regRows = filtered.map((r) => {
-      const tone = stTone(r.st);
-      const dim = r.gone;
-      return {
-        s: r.s, g: r.g, t: r.tk, st: r.st, active: r.active, msg: r.msg, seen: r.seen, sel: !!sel[r.id],
-        toggle: () => { const s2 = { ...(this.state.sel || {}) }; s2[r.id] = !s2[r.id]; this.setState({ sel: s2 }); },
-        checkStyle: check(!!sel[r.id]),
-        nameStyle: { ...goneName, color: dim ? t.ink45 : t.ink },
-        cellStyle: { fontSize: '12.5px', color: dim ? t.ink35 : t.ink60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-        taskStyle: r.tk === '—' ? { fontSize: '12.5px', color: t.ink35 } : { fontSize: '12.5px', color: dim ? t.ink45 : t.ink, textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationColor: t.ink35, whiteSpace: 'nowrap', cursor: 'pointer' },
-        pillStyle: chipTone(tone === 'dim' ? 'neutral' : tone),
-        stDotStyle: dot(tone === 'good' ? t.good : tone === 'warn' ? t.warn : t.ink35),
-      };
-    });
+    let l4 = null, filtered = [], selCount = 0, regRows = [];
+    try {
+      // Rows always come from regData — the live screen publishes into that same
+      // key, so FD.setData('regData', …) reaches the table whoever calls it. l4
+      // carries only what a row cannot: the counts and the search text.
+      l4 = FD.fixture.l4 || null;
+      const regData = FD.fixture.regData || [];
+      const q = l4 ? String(l4.q || '').toLowerCase() : (this.state.q || '').toLowerCase();
+      filtered = l4 ? regData : regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
+      const regSel = (r) => (l4 ? !!r.sel : !!sel[r.id]);
+      selCount = l4 ? l4.selLive + l4.selGone : filtered.filter((r) => sel[r.id]).length;
+      const stTone = (st) => st === 'active' ? 'good' : st === 'kill-requested' ? 'warn' : 'dim';
+      regRows = filtered.map((r) => {
+        const tone = stTone(r.st);
+        const dim = r.gone;
+        return {
+          s: r.s, g: r.g, t: r.tk, st: r.st, active: r.active, msg: r.msg, seen: r.seen, sel: regSel(r),
+          toggle: () => {
+            if (l4) return regScreen.toggleRow(r.id);
+            const s2 = { ...(this.state.sel || {}) }; s2[r.id] = !s2[r.id]; this.setState({ sel: s2 });
+          },
+          checkStyle: check(regSel(r)),
+          nameStyle: { ...goneName, color: dim ? t.ink45 : t.ink },
+          cellStyle: { fontSize: '12.5px', color: dim ? t.ink35 : t.ink60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+          taskStyle: r.tk === '—' ? { fontSize: '12.5px', color: t.ink35 } : { fontSize: '12.5px', color: dim ? t.ink45 : t.ink, textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationColor: t.ink35, whiteSpace: 'nowrap', cursor: 'pointer' },
+          pillStyle: chipTone(tone === 'dim' ? 'neutral' : tone),
+          stDotStyle: dot(tone === 'good' ? t.good : tone === 'warn' ? t.warn : t.ink35),
+        };
+      });
+      this.__l4Last = { l4, filtered, selCount, regRows };
+    } catch (err) {
+      if (!this.__l4Failed) { this.__l4Failed = true; console.error('registry render failed', err); }
+      const last = this.__l4Last;
+      if (last) { l4 = last.l4; filtered = last.filtered; selCount = last.selCount; regRows = last.regRows; }
+    }
     // Sessions sidebar
     const gbSessions = ['FD-deck11-boardroot', 'FD-deck25-gate', 'FD-deck26-launcher', 'FD-deck27-notifycron', 'FD-desktop-sessions-p…', 'FD-gb-home', 'FD-gk-l1-ledger', 'FD-gk-l2-sessionkind', 'FD-gk-l3-skill', 'FD-gk-l4-sweep', 'FD-gk-l5-hooks', 'FD-gk-l6-goalspage', 'FD-rhoda-machines'];
     // Org cards
@@ -408,8 +599,23 @@ class AppLogic extends Sub {
       meta: orgMeta(epoch, lease, leaseTone, age, exp, expTone),
     });
     // Bus: sessions, threads, composer
-    const busSessions = FD.fixture.busSessions;
-    const busGroups = [{ id: 'b-train84', name: 'train-84', members: ['constantin', 'ermenhild', 'christa', 'dorothea'], pinned: true }, ...(this.state.adhoc || [])];
+    // L6 seam. `busLive` is the live controller in public/v2/screens/bus.js; it
+    // is null in fixture mode, where every branch below falls through to the
+    // mock's own simulation and the render is byte-for-byte the seeded one.
+    const busLive = (typeof FD !== 'undefined' && FD.screens && FD.screens.bus && FD.screens.bus.live) ? FD.screens.bus : null;
+    // DESIGN-35 (binding, 2026-09-08): one throw inside any slice's renderVals
+    // blanks every screen, so each derived bus value is computed behind a guard
+    // that falls back to the last render's value. The rows themselves are
+    // validated in public/v2/screens/bus.js before they ever reach FD.fixture.
+    const busSafe = (key, fallback, fn) => {
+      const last = this._busLast || (this._busLast = {});
+      try { const v = fn(); last[key] = v; return v; }
+      catch (e) { return key in last ? last[key] : fallback; }
+    };
+    const busSessions = FD.fixture.busSessions || [];
+    const seedGroups = FD.fixture.busGroups
+      || [{ id: 'b-train84', name: 'train-84', members: ['constantin', 'ermenhild', 'christa', 'dorothea'], pinned: true }];
+    const busGroups = [...seedGroups, ...(this.state.adhoc || [])];
     const sById = (id) => busSessions.find((s) => s.id === id);
     const short = (id) => { const s = sById(id); if (!s) return id; return /^(LC|FD)-/.test(s.name) ? s.name.slice(3).split('-')[0] : s.name; };
     const seedThreads = FD.fixture.seedThreads;
@@ -421,8 +627,8 @@ class AppLogic extends Sub {
     const stLabel = { queued: 'queued', delivered: 'delivered', acked: 'acked', failed: 'failed', offline: 'queued · offline' };
     const receipt = (name, st, err) => ({ t: (name ? name + ' · ' : '') + stLabel[st] + (err && st === 'failed' ? ' · ' + err : ''), dotStyle: dot(stColor[st]), style: { display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: st === 'failed' ? t.bad : st === 'offline' ? t.warn : t.ink45, whiteSpace: 'nowrap', fontFamily: name ? mono : 'inherit' } });
     const setSt = (k, st) => this.setState((s) => ({ stOv: { ...(s.stOv || {}), [k]: st } }));
-    const unread = this.state.unread || { dorothea: 1 };
-    const active = this.state.busActive || 'ermenhild';
+    const unread = this.state.unread || FD.fixture.busUnreadDefault || { dorothea: 1 };
+    const active = this.state.busActive || FD.fixture.busActiveDefault || 'ermenhild';
     const busQ = (this.state.busQ || '').toLowerCase();
     const selecting = !!this.state.selecting;
     const busSel = this.state.busSel || {};
@@ -430,7 +636,8 @@ class AppLogic extends Sub {
     const isPinned = (x) => pins[x.id] != null ? pins[x.id] : !!x.pinned;
     const lastOf = (id) => { const th = thread(id); return th[th.length - 1]; };
     const arrive = (sid, text) => {
-      const name = sById(sid).name;
+      const known = sById(sid);
+      const name = known ? known.name : sid;
       this.setState((s) => {
         const ex = { ...(s.extraMsgs || {}) };
         ex[sid] = [...(ex[sid] || []), { k: 'r' + Date.now() + sid, dir: 'in', from: name, at: 'just now', m: 0, text }];
@@ -442,8 +649,10 @@ class AppLogic extends Sub {
       setTimeout(() => this.setState((s) => (s.toast && s.toast.from === name ? { toast: null } : null)), 7000);
     };
     const deliverTo = (sid, key, text, i) => {
+      // Live: one POST /api/messages per target, receipts from the response.
+      if (busLive && busLive.deliver({ sid, key, text, index: i, source: this.state.src ?? 'fleetdeck-ui' })) return;
       const s = sById(sid);
-      if (!s.live) return;
+      if (!s || !s.live) return;
       setTimeout(() => setSt(key, 'delivered'), 900 + i * 250);
       setTimeout(() => setSt(key, 'acked'), 3000 + i * 450);
       setTimeout(() => arrive(sid, 'ACK. Received: "' + text.slice(0, 72) + (text.length > 72 ? '…' : '') + '" — applying on this turn.'), 5200 + i * 800);
@@ -458,7 +667,7 @@ class AppLogic extends Sub {
         dotStyle: isGroup ? { width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, border: '1.5px solid ' + t.ink60, boxSizing: 'border-box', marginTop: '5px' } : { ...dot(x.live ? t.good : t.ink35), marginTop: '5px' },
         rowStyle: { display: 'flex', alignItems: 'flex-start', gap: '9px', width: '100%', textAlign: 'left', borderRadius: '10px', border: '1px solid ' + (act ? t.navActBorder : 'transparent'), background: act ? t.navActBg : 'transparent', padding: compact ? '6px 8px' : '8px 8px', cursor: 'pointer', boxSizing: 'border-box', color: t.ink, transition: 'background .15s' },
         nameStyle: { fontFamily: mono, fontSize: '12px', fontWeight: un ? 600 : 500, color: t.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
-        open: () => { const un2 = { ...unread }; un2[x.id] = 0; this.setState({ busActive: x.id, unread: un2 }); },
+        open: () => { const un2 = { ...unread }; un2[x.id] = 0; this.setState({ busActive: x.id, unread: un2 }); if (busLive) busLive.markSeen(x.id); },
         showCheck: selecting && !isGroup, checkStyle: { ...check(!!busSel[x.id]), marginTop: '1px' },
         toggleSel: (e) => { e.stopPropagation(); const b = { ...busSel }; b[x.id] = !b[x.id]; this.setState({ busSel: b }); },
       };
@@ -467,15 +676,15 @@ class AppLogic extends Sub {
     const pinnedItems = [...busGroups.filter(isPinned), ...busSessions.filter(isPinned)].filter(match);
     const recentItems = [...busGroups.filter((g) => !isPinned(g)), ...busSessions.filter((s) => !isPinned(s))].filter(match)
       .sort((a, b) => { const la = lastOf(a.id), lb = lastOf(b.id); return (la ? la.m : 1e9) - (lb ? lb.m : 1e9); });
-    const railGroups = [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length);
+    const railGroups = busSafe('railGroups', [], () => [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length));
     const actGroup = busGroups.find((g) => g.id === active);
-    const actS = sById(active) || busSessions[0];
+    const actS = sById(active) || busSessions[0] || { id: '', name: '', host: '', live: false };
     const thOffline = !actGroup && !actS.live;
     const reader = !!this.state.busReader;
     const busMax = !!this.state.busMax;
     const bubbleMe = dark ? 'rgba(255,255,255,0.16)' : 'rgba(17,17,17,0.09)';
     const bubbleThem = dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)';
-    const thMsgs = thread(active).map((m) => {
+    const thMsgs = busSafe('thMsgs', [], () => thread(active).map((m) => {
       const out = m.dir === 'out';
       const st = out && !m.per ? stOf(m) : null;
       const open = !out && reader;
@@ -493,9 +702,9 @@ class AppLogic extends Sub {
         footStyle: { display: 'flex', alignItems: 'center', gap: '6px 12px', flexWrap: 'wrap', justifyContent: out ? 'flex-end' : 'flex-start' },
         receipts: !out ? [] : m.per ? Object.keys(m.per).map((mid) => receipt(short(mid), stOf(m, mid))) : [receipt('', st, m.err)],
         canRetry: st === 'failed',
-        retry: () => { setSt(m.k, 'queued'); deliverTo(active, m.k, m.text, 0); },
+        retry: () => { setSt(m.k, 'queued'); if (busLive && busLive.retry({ sid: active, key: m.k })) return; deliverTo(active, m.k, m.text, 0); },
       };
-    });
+    }));
     this._nextThreadKey = active + ':' + thMsgs.length;
     const drafts = this.state.drafts || {};
     const draft = drafts[active] || '';
@@ -510,9 +719,9 @@ class AppLogic extends Sub {
       if (toRow) {
         tid = 'b-' + Date.now();
         adhoc = [...adhoc, { id: tid, name: selIds.map(short).join(', '), members: selIds }];
-        per = {}; selIds.forEach((id) => { per[id] = sById(id).live ? 'queued' : 'offline'; });
+        per = {}; selIds.forEach((id) => { const r = sById(id); per[id] = r && r.live ? 'queued' : 'offline'; });
       } else if (actGroup) {
-        per = {}; actGroup.members.forEach((id) => { per[id] = sById(id).live ? 'queued' : 'offline'; });
+        per = {}; actGroup.members.forEach((id) => { const r = sById(id); per[id] = r && r.live ? 'queued' : 'offline'; });
       }
       const msg = { k: key, dir: 'out', from: src, at: 'just now', m: 0, text, status: per ? undefined : (actS.live ? 'queued' : 'offline'), per };
       const ex = { ...extra }; ex[tid] = [...(ex[tid] || []), msg];
@@ -553,23 +762,68 @@ class AppLogic extends Sub {
       ];
     };
     const openTerm = (name, host, id) => this.setState({ termOpen: { name, host, id: id || null }, termMenu: false });
+    /* fd-v2 L3 (windows tiles + session full screen) — owned by that slice.
+     * The screen file paints the nodes the mock leaves out (stall line, dead
+     * overlay, empty state) and it must do so in the mock's own tokens, so the
+     * palette is republished on every render and a theme switch repaints them.
+     * l3Live is set by public/v2/screens/windows.js in live mode only; in
+     * fixture mode it is absent and every branch below stays on the seed. */
+    const l3 = (FD.l3 = FD.l3 || {});
+    /* Throw-proofing (oracle audit item 2): one exception raised inside any
+     * slice's renderVals blanks every screen, not just that slice's. Each L3
+     * value is produced through l3Try, which keeps the last good result and
+     * falls back to it rather than letting the render die. */
+    const l3Last = (l3.lastGood = l3.lastGood || { tiles: [], termSessions: [], termFoot: '' });
+    const l3Try = (k, fn) => {
+      try { const v = fn(); l3Last[k] = v; return v; }
+      catch (e) { console.error('fd-v2 L3:', e); return l3Last[k]; }
+    };
+    l3.tokens = {
+      ink: t.ink, ink75: t.ink75, ink60: t.ink60, ink45: t.ink45, ink35: t.ink35,
+      line: t.line, lineSoft: t.lineSoft, panel: t.panel, panelHead: t.panelHead,
+      panelShadow: t.panelShadow, hoverBg: t.hoverBg, good: t.good, warn: t.warn, bad: t.bad,
+      ctaBg: t.ctaBg, ctaFg: t.ctaFg,
+      termBg: dark ? 'rgba(10,10,10,0.55)' : 'rgba(242,241,238,0.6)', mono, dark,
+    };
+    l3.term = term;
+    l3.termMenu = !!this.state.termMenu;
+    /* One render-tick signal for the screen file: the tile boxes it parks its
+     * terminals in are rebuilt by screen switches and theme flips, and this is
+     * the only moment that can have happened. */
+    if (l3.onRender) l3.onRender();
+    l3.openTerm = openTerm;
+    l3.closeTerm = () => this.setState({ termOpen: null, termMenu: false });
+    const l3Live = !!FD.fixture.l3Live;
     const termVals = {
       termOpen: !!term,
       termBg: dark ? 'rgba(10,10,10,0.55)' : 'rgba(242,241,238,0.6)',
       termName: term ? term.name : '', termHost: term ? term.host : '',
-      termLines: term ? termLinesFor(term.name) : [],
-      termFoot: term ? 'gpt-6-astra xhigh fast · ~/projects/remote-system/.claude/worktrees/' + term.name.replace(/^(LC|FD)-/, '').toLowerCase() + ' · Main [default]' : '',
-      termRef: (el) => { if (el) el.scrollTop = el.scrollHeight; },
+      /* Live, the body is an xterm mount, so the template renders no lines and
+       * termRef hands the box to the screen file to park the terminal in. */
+      termLines: term ? (l3Live ? [] : termLinesFor(term.name)) : [],
+      termFoot: term ? (l3Live ? l3Try('termFoot', () => (l3.footFull ? l3.footFull(term.host, term.name) : '')) : 'gpt-6-astra xhigh fast · ~/projects/remote-system/.claude/worktrees/' + term.name.replace(/^(LC|FD)-/, '').toLowerCase() + ' · Main [default]') : '',
+      termRef: (el) => {
+        if (l3Live) { l3.termBody = el; if (FD.screens.windows) FD.screens.windows._sync(); return; }
+        if (el) el.scrollTop = el.scrollHeight;
+      },
       closeTerm: () => this.setState({ termOpen: null, termMenu: false }),
-      termMessage: () => { const id = term && term.id; this.setState({ termOpen: null, termMenu: false, screen: 'bus', busActive: id || active }); },
+      termMessage: () => {
+        /* Live, Message hands the session to the bus slice (L6) rather than
+         * jumping the local view; the guard keeps it a no-op until L6 lands. */
+        if (l3Live) { if (FD.screens.windows) FD.screens.windows._message(); return; }
+        const id = term && term.id; this.setState({ termOpen: null, termMenu: false, screen: 'bus', busActive: id || active });
+      },
       termMenuOpen: !!this.state.termMenu,
       toggleTermMenu: () => this.setState({ termMenu: !this.state.termMenu }),
       termMenuBtnStyle: this.state.termMenu ? { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink } : iconBtn,
-      termSessions: busSessions.filter((s) => s.live && s.id !== 'desktop').map((s) => ({
+      /* The ≡ menu is the old sidebar drawer switcher: live sessions only. */
+      termSessions: l3Try('termSessions', () => (l3Live ? (FD.fixture.l3TermSessions || []) : busSessions).filter((s) => s && s.live && s.id !== 'desktop').map((s) => ({
         name: s.name, host: s.host, dotStyle: dot(t.good),
         style: { display: 'flex', alignItems: 'center', gap: '9px', width: '100%', border: '1px solid ' + (term && term.name === s.name ? t.navActBorder : 'transparent'), background: term && term.name === s.name ? t.navActBg : 'transparent', color: t.ink, borderRadius: '8px', padding: '7px 9px', cursor: 'pointer', boxSizing: 'border-box' },
-        open: () => openTerm(s.name, s.host, s.id),
-      })),
+        /* Live, switching sessions must attach the tile first, not just swap
+         * the header — openMax opens it (deduped) and maximizes it. */
+        open: () => (l3Live && FD.screens.windows ? FD.screens.windows.openMax(s.host, s.name) : openTerm(s.name, s.host, s.id)),
+      }))),
     };
     this._openTerm = openTerm;
     const busUnread = Object.values(unread).reduce((a, b) => a + b, 0);
@@ -603,22 +857,25 @@ class AppLogic extends Sub {
       },
       busMax, notBusMax: !busMax,
       tipStyle: { position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 5, width: '220px', display: 'flex', flexDirection: 'column', gap: '3px', borderRadius: '10px', border: '1px solid ' + t.line, background: dark ? 'rgba(18,18,18,0.94)' : 'rgba(255,255,255,0.96)', padding: '9px 12px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', pointerEvents: 'none', textAlign: 'left' },
-      thActions: (() => {
+      thActions: busSafe('thActions', [], () => {
         const tip = this.state.tip;
         const onBtn = { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink };
         const offBtn = { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' };
         const pinned = isPinned(actGroup || actS);
-        const canShow = !actGroup && actS.live;
+        // Claude Desktop threads have no tmux terminal; the row carries `kind`
+        // only in live mode, so this is inert against the mock's seed rows.
+        const isDesktopRow = !actGroup && actS.kind === 'claude-desktop';
+        const canShow = !actGroup && actS.live && !isDesktopRow;
         const list = [
           { id: 'reader', label: reader ? 'Bubbles' : 'Reader view', desc: reader ? 'Show agent replies as chat bubbles again.' : 'Agent replies go full width, no box, larger text — like the desktop app.', style: reader ? onBtn : iconBtn, click: () => this.setState({ busReader: !reader }), isReader: true },
           { id: 'max', label: busMax ? 'Exit full view' : 'Maximize', desc: busMax ? 'Return the message bus to the page. Esc also works.' : 'Expand the whole message bus to fill the window. Esc to exit.', style: busMax ? onBtn : iconBtn, click: () => this.setState({ busMax: !busMax }), isMax: !busMax, isUnmax: busMax },
-          { id: 'pin', hide: narrow, label: pinned ? 'Unpin' : 'Pin thread', desc: pinned ? 'Move this thread back into Recent.' : 'Keep this thread at the top of the rail under Pinned.', style: pinned ? onBtn : iconBtn, click: () => { const p = { ...pins }; p[active] = !pinned; this.setState({ pins: p }); }, isPin: true },
-          { id: 'show', label: 'Show session', desc: actGroup ? 'Broadcasts have no single terminal. Open a member thread to show it.' : canShow ? 'Open this session\'s live terminal full screen.' : 'Session is not running, so there is no terminal to show.', style: canShow ? iconBtn : offBtn, click: () => { if (canShow) this.setState({ termOpen: { name: actS.name, host: actS.host, id: actS.id }, termMenu: false }); }, isShow: true },
+          { id: 'pin', hide: narrow, label: pinned ? 'Unpin' : 'Pin thread', desc: pinned ? 'Move this thread back into Recent.' : 'Keep this thread at the top of the rail under Pinned.', style: pinned ? onBtn : iconBtn, click: () => { const p = { ...pins }; p[active] = !pinned; this.setState({ pins: p }); if (busLive) busLive.setPinned(active, !pinned); }, isPin: true },
+          { id: 'show', label: 'Show session', desc: actGroup ? 'Broadcasts have no single terminal. Open a member thread to show it.' : isDesktopRow ? 'Claude Desktop threads have no tmux terminal to show.' : canShow ? 'Open this session\'s live terminal full screen.' : 'Session is not running, so there is no terminal to show.', style: canShow ? iconBtn : offBtn, click: () => { if (!canShow) return; if (busLive && busLive.openMax(actS.host, actS.name)) return; this.setState({ termOpen: { name: actS.name, host: actS.host, id: actS.id }, termMenu: false }); }, isShow: true },
           { id: 'copy', hide: narrow, label: 'Copy thread', desc: 'Copy every message in this thread as plain text.', style: iconBtn, click: () => { try { navigator.clipboard.writeText(thread(active).map((m) => '[' + m.at + '] ' + m.from + ': ' + m.text).join('\n\n')); } catch (e) {} }, isCopy: true },
         ];
         const ordered = list.filter((a) => a.id !== 'max').concat(list.filter((a) => a.id === 'max'));
         return ordered.filter((a) => !a.hide).map((a) => ({ ...a, tipOpen: tip === a.id, enter: () => this.setState({ tip: a.id }), leave: () => this.setState((s) => (s.tip === a.id ? { tip: null } : null)) }));
-      })(),
+      }),
       railStyle: { display: 'flex', flexDirection: 'column', minHeight: 0, minWidth: 0, borderRight: narrow ? 'none' : '1px solid ' + t.lineSoft, borderBottom: narrow ? '1px solid ' + t.lineSoft : 'none' },
       thMetaStyle: { fontSize: '12px', color: t.ink45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, display: narrow ? 'none' : 'inline' },
       notNarrow: !narrow,
@@ -640,9 +897,9 @@ class AppLogic extends Sub {
       thShowStyle: !actGroup && actS.live ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
       pinTitle: isPinned(actGroup || actS) ? 'Unpin' : 'Pin',
       pinBtnStyle: isPinned(actGroup || actS) ? { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink } : iconBtn,
-      togglePin: () => { const p = { ...pins }; p[active] = !isPinned(actGroup || actS); this.setState({ pins: p }); },
+      togglePin: () => { const next = !isPinned(actGroup || actS); const p = { ...pins }; p[active] = next; this.setState({ pins: p }); if (busLive) busLive.setPinned(active, next); },
       copyThread: () => { try { navigator.clipboard.writeText(thread(active).map((m) => '[' + m.at + '] ' + m.from + ': ' + m.text).join('\n\n')); } catch (e) {} },
-      toRow, toChips: selIds.map((id) => ({ t: short(id), dotStyle: dot(sById(id).live ? t.good : t.ink35), remove: () => { const b = { ...busSel }; delete b[id]; this.setState({ busSel: b }); } })),
+      toRow, toChips: busSafe('toChips', [], () => selIds.map((id) => { const r = sById(id); return { t: short(id), dotStyle: dot(r && r.live ? t.good : t.ink35), remove: () => { const b = { ...busSel }; delete b[id]; this.setState({ busSel: b }); } }; })),
       toChipStyle: { display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '9999px', border: '1px solid ' + t.line, background: t.chipBg, color: t.ink, padding: '3px 6px 3px 10px', fontSize: '11.5px', fontFamily: mono },
       warnDotStyle: dot(t.warn),
       draft, three: 3, zero: 0,
@@ -660,7 +917,7 @@ class AppLogic extends Sub {
       hasToast: !!toast, toastFrom: toast ? toast.from : '', toastText: toast ? toast.text : '',
       toastBg: dark ? 'rgba(18,18,18,0.82)' : 'rgba(255,255,255,0.9)',
       dismissToast: () => this.setState({ toast: null }),
-      openToast: () => { if (!toast) return; const un2 = { ...unread }; un2[toast.sid] = 0; this.setState({ screen: 'bus', busActive: toast.sid, unread: un2, toast: null }); },
+      openToast: () => { if (!toast) return; const un2 = { ...unread }; un2[toast.sid] = 0; this.setState({ screen: 'bus', busActive: toast.sid, unread: un2, toast: null }); if (busLive) busLive.markSeen(toast.sid); },
     };
     // Keys screen chips
     const ttl = this.state.ttl;
@@ -691,9 +948,10 @@ class AppLogic extends Sub {
     // Org chart scope
     const orgSort = this.state.orgSort || 'machine';
     const orgScopeData = FD.fixture.orgScopeData;
-    const orgScopeList = Object.keys(orgScopeData[orgSort]);
-    const orgScope = this.state.orgScope && orgScopeList.includes(this.state.orgScope) ? this.state.orgScope : (orgSort === 'machine' ? 'german-box' : orgScopeList[0]);
-    const orgKidList = orgScopeData[orgSort][orgScope];
+    // L5: live scope data need not contain the mock's own default scope.
+    const orgScopeList = Object.keys(orgScopeData[orgSort] || {});
+    const orgScope = this.state.orgScope && orgScopeList.includes(this.state.orgScope) ? this.state.orgScope : (orgSort === 'machine' && orgScopeList.includes('german-box') ? 'german-box' : orgScopeList[0]);
+    const orgKidList = (orgScopeData[orgSort] || {})[orgScope] || [];
     const orgTabStyle = (on) => ({ border: 'none', background: 'transparent', padding: '0 0 3px', margin: 0, font: 'inherit', fontSize: '12.5px', color: on ? t.ink : t.ink60, cursor: 'pointer', borderBottom: '1.5px solid ' + (on ? t.ink : 'transparent'), transition: 'color .2s, border-color .2s' });
     // Machines
     const mSec = (env, name, email, chips, bars, note) => {
@@ -708,14 +966,22 @@ class AppLogic extends Sub {
           : { fontSize: '12.5px', fontWeight: 500, color: name === '—' ? t.ink35 : t.ink },
         fullSecondary: email ? name : '',
         chips: (chips || []).map(([txt, tone]) => ({ t: txt, style: chipTone(tone) })),
-        bars: (bars || []).map((b) => bar(b[0], b[1], '', b[2])),
+        bars: (bars || []).map((b) => bar(b[0], b[1], b[3] || '', b[2])),
         collapsedSummary: stale ? 'stale' : top ? top[0] + ' · ' + top[1] + '%' : '',
         summaryStyle: { fontSize: '11px', color: stale ? t.warn : t.ink45 },
       };
     };
     const mOpen = this.state.mOpen || {};
+    // L9: live cards default to expanded (today's table is always visible, improvised.md
+    // I-L9-03); the fixture's seed keeps the mock's collapsed cards, so the gate is unmoved.
+    const mLive = FD.fixture.machinesLive;
     const mCard = (mach, idx) => {
-      const open = !!mOpen[idx];
+      // DESIGN-35 binding instruction 1 (S2 shim audit F1, 2026-09-08): sc-for rows are
+      // positional, so per-card state is keyed by the machine's name, not its index —
+      // a machine dropping out of /api/machines must not hand its open state to its
+      // neighbour. Names are unique per fleet; the index is only the last resort.
+      const mKey = mach.name || String(idx);
+      const open = mOpen[mKey] === undefined ? !!mLive : !!mOpen[mKey];
       const rows = [];
       mach.cols.forEach((c) => c.sections.forEach((s) => {
         if (s.primary === '—') return;
@@ -729,16 +995,140 @@ class AppLogic extends Sub {
           note: open ? s.note : '',
         });
       }));
+      // L9 improvisation I-L9-04: the mock's card body has no slot for a machine-level error
+      // or the push "no report yet" line, so they lead the grid as one status cell.
+      if (mach.status) rows.unshift({
+        env: mach.status.label, client: '',
+        primary: mach.status.text,
+        primaryStyle: { fontSize: '12.5px', fontWeight: 500, color: mach.status.tone === 'bad' ? t.bad : t.ink },
+        summary: '', summaryStyle: {}, secondary: '',
+        chips: [], hasChips: false, bars: [], hasBars: false,
+        note: mach.status.copy || '',
+      });
       return {
         name: mach.name, kind: mach.kind, sessions: mach.sessions,
         open, closed: !open,
         gridStyle: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(' + (open ? '300px' : '230px') + ',1fr))', borderTop: '1px solid ' + t.lineSoft, margin: '0 -1px -1px 0' },
         rows: rows.map((r) => ({ ...r, rowStyle: { padding: open ? '14px 16px' : '11px 16px', borderRight: '1px solid ' + t.lineSoft, borderBottom: '1px solid ' + t.lineSoft, display: 'flex', flexDirection: 'column', gap: open ? '7px' : '4px', minWidth: 0 } })),
-        toggle: () => { const o = { ...(this.state.mOpen || {}) }; o[idx] = !o[idx]; this.setState({ mOpen: o }); },
-        openRegistry: (e) => { e.stopPropagation(); this.setState({ screen: 'registry' }); },
+        toggle: () => { const o = { ...(this.state.mOpen || {}) }; o[mKey] = !open; this.setState({ mOpen: o }); },
+        // L9: hook used — FD.screens.registry.open (L4), guarded; the mock's own screen
+        // switch stays the fallback until L4 defines it (improvised.md I-L9-02).
+        openRegistry: (e) => {
+          e.stopPropagation();
+          const q = mach.host || mach.name;
+          if (FD.screens && FD.screens.registry && typeof FD.screens.registry.open === 'function') { FD.screens.registry.open({ q }); return; }
+          this.setState({ screen: 'registry' });
+        },
         chevStyle: { transition: 'transform .2s', transform: open ? 'rotate(90deg)' : 'none', color: t.ink45, flexShrink: 0 },
       };
     };
+    // L9: the mock's seed, moved out of the returned object unchanged — fixture mode
+    // renders exactly this, so the pixel gate is untouched.
+    const mSeed = [
+        { name: 'MacBook Pro', kind: 'macos · local', sessions: '', cols: [
+          { client: 'Claude CLI', sections: [mSec('', 'Reiner Garrecht', 'neelo@vibe.trading', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', null, true], ['7 day', null, true]], 'token valid in 4 h · sampled 8d ago — window has reset since')] },
+          { client: 'Codex CLI', sections: [mSec('', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 1d ago · resets in 129h 2m · sampled just now')] },
+          { client: 'Claude Desktop', sections: [mSec('', 'Lafayette Tabor', '', [['last active 13m ago', 'neutral']], [['5 hour', null, true], ['7 day', null, true], ['extra usage', null, true]], 'sampled 9d ago — window has reset since')] },
+          { client: 'Codex Desktop', sections: [mSec('', 'signed in, account unknown', '', [], [], 'Codex desktop keeps the account under safeStorage/IndexedDB, which this reader cannot read · no usage data')] },
+        ]},
+        { name: 'german-box', kind: 'windows+wsl · ssh gb-deploy', sessions: '65 sessions', cols: [
+          { client: 'Claude CLI', sections: [
+            mSec('WSL', 'Daniel Tabor', 'admin@deus.finance', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'token valid in 6 h · 65 sessions run as Daniel Tabor'),
+            mSec('Windows', 'Daniel Tabor', 'admin@deus.finance', [['config only', 'warn']], [['5 hour', 12], ['7 day', 71]], ''),
+          ]},
+          { client: 'Codex CLI', sections: [
+            mSec('WSL', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 9d ago · resets in 129h 2m'),
+            mSec('Windows', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['plus', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 101d ago'),
+          ]},
+          { client: 'Claude Desktop', sections: [
+            mSec('WSL', '—', '', [], [], ''),
+            mSec('Windows', 'Daniel Tabor', '', [['last active 1d ago', 'neutral']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'sampled just now'),
+          ]},
+          { client: 'Codex Desktop', sections: [
+            mSec('WSL', '—', '', [], [], ''),
+            mSec('Windows', '—', '', [], [], ''),
+          ]},
+        ]},
+    ];
+    // L9: live data arrives as FD.setData('machinesLive', cards) from screens/machines.js.
+    // S2 could not byte-safely substitute the `machines` literal, so this slice reads its own
+    // key (DESIGN-35 broadcast, 2026-09-07). Sections come back as plain layer-1 data and go
+    // through the mock's own mSec() here, per improvised.md I-L1-01.
+    // DESIGN-35 binding instruction 2 (S2 shim audit F2): a throw anywhere in renderVals
+    // renders every screen from host.props alone — one malformed machine row would blank
+    // all nine. This block keeps its last good cards instead of propagating.
+    let mCards;
+    try {
+      const mList = mLive ? mLive.map((m) => Object.assign({}, m, {
+        cols: (m && m.cols ? m.cols : []).map((c) => ({
+          client: c && c.client,
+          sections: (c && c.sections ? c.sections : []).map((sc) => mSec(sc && sc.env, sc && sc.name, sc && sc.email, sc && sc.chips, sc && sc.bars, sc && sc.note)),
+        })),
+      })) : mSeed;
+      mCards = mList.map(mCard);
+      this._mLastCards = mCards;
+    } catch (e) {
+      console.error(e);
+      mCards = this._mLastCards || [];
+    }
+    // ---- accounts (fd-v2 L8) -------------------------------------------------
+    // This screen builds its own bars rather than calling the shared bar(): today's
+    // Accounts page turns a bar red over 90 %, a step the mock's bar() does not have
+    // (BEHAVIOUR.md 3), and bar() is also the Machines screen's helper.
+    // The improvised chrome in screens/accounts.js paints in the mock's tokens, so the
+    // ones it uses are published here and follow the theme toggle.
+    FD.screens = FD.screens || {};
+    FD.screens.accounts = FD.screens.accounts || {};
+    FD.screens.accounts.tokens = {
+      ink: t.ink, ink75: t.ink75, ink60: t.ink60, ink45: t.ink45, ink35: t.ink35,
+      warn: t.warn, warnBg: t.warnBg, bad: t.bad, good: t.good, line: t.line,
+      panel: t.panel, panelShadow: t.panelShadow, track: t.track, hoverBg: t.hoverBg,
+      cardPad: compact ? '14px 16px' : '18px 20px',
+    };
+    const accTone = (lvl) => (lvl === 'red' ? t.bad : lvl === 'amber' ? t.warn : t.good);
+    const accBar = (b) => ({
+      label: b.label,
+      resets: b.resets || '',
+      fillStyle: { display: 'block', height: '100%', width: (b.pct == null ? 0 : Math.max(0, Math.min(100, b.pct))) + '%', borderRadius: '2px', background: b.pct == null ? t.ink35 : accTone(b.level) },
+      right: b.right,
+      // Only the fill carries the level colour: the mock's bar() and today's .pct rule
+      // both render the percentage itself in neutral ink.
+      rightStyle: { fontSize: '11px', textAlign: 'right', whiteSpace: 'nowrap', color: b.pct == null ? t.ink35 : t.ink75 },
+    });
+    // A rate limit says nothing about the account, so it must not read like a fault —
+    // today's page renders it as plain muted text, not as the boxed notice that an
+    // expired token or a failed read gets.
+    const accBannerStyle = (tone) => tone === 'notice'
+      ? { borderRadius: '8px', border: '1px solid ' + t.warn, background: t.warnBg, color: t.warn, padding: '9px 14px', fontSize: '12.5px' }
+      : { fontSize: '12.5px', color: t.ink60 };
+    const accView = (a) => ({
+      prov: a.prov, name: a.name, email: a.email, id: a.id, plan: a.plan, live: a.live,
+      right: a.right, seen: a.seen, atLimit: a.atLimit, noData: a.noData, noWindows: a.noWindows,
+      // The mock's pill is a neutral chip with a coloured dot: green when a source
+      // reported and the read was clean, amber when it reported anything else.
+      provStyle: chipTone('neutral'),
+      provDotStyle: dot(a.pillTone === 'green' ? t.good : a.pillTone === 'amber' ? t.warn : t.ink35),
+      planStyle: chipTone('neutral'),
+      banner: a.banner, bannerStyle: accBannerStyle(a.bannerTone),
+      // The mock's one free text line per card. screens/accounts.js joins every note
+      // today's page shows into it and recolours the <p> to match the strongest tone.
+      staleNote: a.note,
+      bars: (a.bars || []).map(accBar),
+      trendPts: a.trendPts, trendColor: accTone(a.trendLevel), trendPct: a.trendPct,
+    });
+    // One throw anywhere in renderVals blanks every screen, so this block is fenced:
+    // a row the API shapes unexpectedly costs the Accounts screen its last update, not
+    // the whole app (DESIGN-35 binding, 2026-09-08, point 2).
+    const accStore = FD.screens.accounts;
+    let accRows = null;
+    try {
+      const live = FD.fixture.accountsLive;
+      if (live) accStore.lastGood = accRows = live.map(accView);
+    } catch (e) {
+      console.error(e);
+      accRows = accStore.lastGood || null;
+    }
+    const accLive = !!accRows;
     return {
       dark, notDark: !dark, ...t, four: 4,
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
@@ -793,31 +1183,42 @@ class AppLogic extends Sub {
       chipBtnStyle: selChip(false),
       headCheckStyle: check(selCount > 0 && selCount === filtered.length),
       // sidebar
-      groups: [
-        { box: 'onboarding-box', n: 1, items: [{ n: 'ops', dotStyle: dot(t.good) }] },
-        { box: 'german-box', n: gbSessions.length, items: gbSessions.map((n) => ({ n, dotStyle: dot(t.good) })) },
-      ],
-      miniAccounts: [
+      /* L2 (D03): live rows arrive as FD.setData('l2Groups', …). The seed below is
+       * the mock's, so fixture mode renders exactly as before. A live item may carry
+       * `tone` — 'muted' idle, 'good' tile open, 'warn' kill-requested (BEHAVIOUR §1). */
+      groups: (Array.isArray(FD.fixture.l2Groups) ? FD.fixture.l2Groups : [
+        { box: 'onboarding-box', n: 1, items: [{ n: 'ops' }] },
+        { box: 'german-box', n: gbSessions.length, items: gbSessions.map((n) => ({ n })) },
+      ]).map((g) => ({
+        box: g && g.box, n: g && g.n,
+        items: (g && Array.isArray(g.items) ? g.items : []).map((s) => ({ n: s && s.n, dotStyle: dot(s && s.tone === 'warn' ? t.warn : s && s.tone === 'muted' ? t.ink35 : t.good) })),
+      })),
+      /* L2 (D05): live bars arrive as FD.setData('l2Accounts', …); an item may carry
+       * a ready-made `txt` (BEHAVIOUR §3 prints '—' where the mock prints 'no data'). */
+      miniAccounts: (Array.isArray(FD.fixture.l2Accounts) ? FD.fixture.l2Accounts : [
         { prov: 'gpt', name: 'admin@deus.finance', pct: 80 }, { prov: 'claude', name: 'admin@deus.finance', pct: 71 }, { prov: 'claude', name: 'neelo@vibe.trading', pct: null }, { prov: 'claude', name: 'lafayette@infinite-holdings.llc', pct: null }, { prov: 'claude', name: 'aylianator@gmail.com', pct: null },
-      ].map((a) => {
+      ]).map((a0) => {
+        const a = a0 || {};
         const has = a.pct != null;
         return {
-          name: a.name, txt: has ? a.pct + '%' : 'no data',
+          name: a.name, txt: a.txt != null ? a.txt : (has ? a.pct + '%' : 'no data'),
           isGpt: a.prov === 'gpt', isClaude: a.prov === 'claude', provTitle: a.prov === 'gpt' ? 'ChatGPT' : 'Claude',
           provStyle: { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '14px', height: '14px', color: has ? t.ink75 : t.ink35 },
           nameStyle: { fontFamily: mono, fontSize: '11px', color: has ? t.ink75 : t.ink45, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
           txtStyle: { fontSize: '11px', color: has ? (a.pct >= 70 ? t.warn : t.ink75) : t.ink35, textAlign: 'right', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' },
-          fillStyle: barFill(a.pct, has && a.pct >= 70 ? t.warn : t.good),
+          fillStyle: barFill(a.pct, has ? (a.pct > 90 ? t.bad : a.pct >= 70 ? t.warn : t.good) : t.good),
         };
       }),
       gptLogoStyle: { width: '12px', height: '12px', objectFit: 'contain', display: 'block', filter: dark ? 'invert(1)' : 'none', opacity: 0.85 },
       claudeLogoStyle: { width: '12px', height: '12px', objectFit: 'contain', display: 'block' },
-      boxRows: [
+      /* L2 (D05): live health arrives as FD.setData('l2Boxes', …); tone 'bad' is the
+       * red pill of BEHAVIOUR §2, which the mock's two seed rows never reach. */
+      boxRows: (Array.isArray(FD.fixture.l2Boxes) ? FD.fixture.l2Boxes : [
         { name: 'german-box', st: 'holder OK', tone: 'good' },
         { name: 'onboarding-box', st: 'reachable', tone: 'good' },
-      ].map((b) => ({ name: b.name, st: b.st, dotStyle: dot(b.tone === 'good' ? t.good : t.warn), stStyle: { fontSize: '11px', color: t.ink45, whiteSpace: 'nowrap' } })),
-      // windows
-      tiles: [
+      ]).map((b0) => (b0 || {})).map((b) => ({ name: b.name, st: b.st, dotStyle: dot(b.tone === 'good' ? t.good : b.tone === 'bad' ? t.bad : t.warn), stStyle: { fontSize: '11px', color: t.ink45, whiteSpace: 'nowrap' } })),
+      // windows — live tiles come from the screen file via FD.setData('l3Tiles')
+      tiles: l3Try('tiles', () => (l3Live ? (FD.fixture.l3Tiles || []) : [
         { name: 'LC-cdx-readpath', box: 'german-box', foot1: 'gpt-5.6-sol xhigh · ~/projects/lowcap-connecto…', foot2: 'Pursuing goal (11m)', lines: [
           { t: 'Interacted with /root/xyz_1630_review', style: { color: t.ink75 } },
           { t: 'Ran cargo clippy -p lowcap-pools-management --tests --no-deps', style: { color: t.ink60 } },
@@ -846,7 +1247,7 @@ class AppLogic extends Sub {
           { t: '— Worked for 30m 21s ———————', style: { color: t.ink45 } },
           { t: '› Ask Codex to do anything', style: { color: t.ink35 } },
         ]},
-      ].map((tl) => ({ ...tl, openTerm: () => openTerm(tl.name, tl.box) })),
+      ]).map((tl) => ({ ...tl, openTerm: () => (l3Live && FD.screens.windows ? FD.screens.windows.openMax(tl.box, tl.name) : openTerm(tl.name, tl.box)) }))),
       // org
       orgSort, orgScope,
       orgSortLabel: 'Sorted by ' + orgSort,
@@ -855,14 +1256,6 @@ class AppLogic extends Sub {
       orgScopes: orgScopeList.map((k) => ({ label: k })),
       orgSortBtnStyle: { borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink75, padding: '7px 12px', fontSize: '12px', cursor: 'pointer', width: '150px', textAlign: 'center', transition: 'background .2s' },
       orgScopeSelectStyle: { borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink75, padding: '7px 12px', fontSize: '12px', cursor: 'pointer', fontFamily: mono, width: '230px', appearance: 'none', WebkitAppearance: 'none', paddingRight: '30px', backgroundImage: 'url("data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="' + t.ink45 + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>') + '")', backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' },
-      orgSpine: [
-        { name: orgScope, tag: orgKidList.length + ' sessions', sub: orgSort === 'machine' ? 'fleet workers · machine' : 'fleet workers · project', dotStyle: dot(t.ink) },
-        { name: 'coordinator', tag: 'seat', sub: 'long-lease · weekly', path: 'mac / coordinator', lease: 'lease active', exp: '6d left', expStyle: { color: t.ink, whiteSpace: 'nowrap' }, dotStyle: dot(t.ink) },
-        { name: 'orchestrator', tag: 'epoch #10', sub: 'seat · fenced · high churn', path: 'mac / orchestrator', lease: 'lease suspect · 3m', exp: 'expired 2m ago', expStyle: { color: t.bad, whiteSpace: 'nowrap' }, dotStyle: { ...dot('transparent'), border: '1.5px solid ' + t.ink60, boxSizing: 'border-box' }, canMsg: true, message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) },
-      ],
-      orgKids: orgKidList.map(([name, role, path, live]) => ({ name, role, path, epoch: '#1', lease: live === false ? 'lease suspect' : 'lease active', exp: live === false ? 'expired 4m ago' : '1m left', expStyle: { color: live === false ? t.bad : t.good, whiteSpace: 'nowrap' }, dotStyle: dot(live === false ? t.warn : t.good), message: () => this.setState({ screen: 'bus', busActive: 'desktop' }) })),
-      orgKidCols: orgKidList.length,
-      orgHLineStyle: { position: 'absolute', top: 0, height: '1px', background: t.line, left: 'calc(' + (50 / orgKidList.length) + '% - ' + ((orgKidList.length - 1) * 20 / (2 * orgKidList.length)) + 'px)', right: 'calc(' + (50 / orgKidList.length) + '% - ' + ((orgKidList.length - 1) * 20 / (2 * orgKidList.length)) + 'px)' },
       orgMsgBtnStyle: { marginTop: '4px', width: '100%', borderRadius: '9999px', border: '1px solid ' + t.line, background: t.inputBg, color: t.ink, padding: '8px 14px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s' },
       orgAttached: !this.state.orgTab || this.state.orgTab === 'attached',
       orgUnattached: this.state.orgTab === 'unattached',
@@ -870,39 +1263,44 @@ class AppLogic extends Sub {
       showUnattached: () => this.setState({ orgTab: 'unattached' }),
       tabAttachedStyle: orgTabStyle(!this.state.orgTab || this.state.orgTab === 'attached'),
       tabUnattachedStyle: orgTabStyle(this.state.orgTab === 'unattached'),
-      orgCards: [
-        orgCard('Bettina', true, 'backend-developer', 'german-box / ST-bettina', 'st-lanes-0831 / VIB-344', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('Margery', true, 'backend-developer', 'german-box / ST-margery', 'st-lanes-0831 / VIB-345', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('ops', true, 'unassigned role', 'onboarding-box / ops', 'no group / no task', 'legacy', 'tmux live', t.ink75, '3s', 'expired 1d 15h ago', t.bad),
-        orgCard('Adelgund', false, 'unassigned role', 'german-box / LC-adelgund-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '16h 30m', 'expired 22h ago', t.bad),
-        orgCard('Adelmar', true, 'devops-engineer', 'german-box / FD-gb-home', 'xyz-1890 / XYZ-1890', '#1', 'active', t.good, '3s', '1m left', t.good),
-        orgCard('Albrecht', true, 'unassigned role', 'german-box / LC-albrecht-xyz…', 'no group / no task', '#1', 'active', t.good, '3s', '1m left', t.good),
-        orgCard('Alwin', false, 'unassigned role', 'german-box / LC-alwin-xyz-19…', 'no group / no task', '#1', 'suspect', t.warn, '1d 15h', 'expired 1d 15h ago', t.bad),
-        orgCard('Amalberga', false, 'unassigned role', 'german-box / LC-amalberga-xy…', 'no group / no task', '#1', 'suspect', t.warn, '23h 52m', 'expired 23h 51m ago', t.bad),
-        orgCard('Amalia', false, 'unassigned role', 'german-box / LC-amalia-xyz…', 'no group / no task', '#1', 'suspect', t.warn, '1d 16h', 'expired 1d 16h ago', t.bad),
-      ],
+      ...this._orgLive({ t, dot, chipTone, mono, orgSort, orgScope, orgKidList, orgCard }),
       // registry
-      q: this.state.q, rowCount: filtered.length, regRows,
-      setQ: (e) => this.setState({ q: e.target.value }),
-      resetFilters: () => this.setState({ q: '', sel: {} }),
+      // BEHAVIOUR §2: the count reads "<n> rows" or "<k> of <n> rows"; the
+      // template supplies the " rows" suffix, so live mode hands over the
+      // "<k> of <n>" string and fixture mode the plain number, as the mock does.
+      q: l4 ? l4.q : this.state.q,
+      rowCount: l4 ? l4.count : filtered.length,
+      regRows,
+      setQ: (e) => (l4 ? regScreen.setFilter('q', e.target.value) : this.setState({ q: e.target.value })),
+      resetFilters: () => (l4 ? regScreen.reset() : this.setState({ q: '', sel: {} })),
       hasSel: selCount > 0, selCount,
       allSel: selCount > 0 && selCount === filtered.length,
       toggleAll: () => {
+        if (l4) return regScreen.toggleAll();
         const all = selCount === filtered.length;
         const s2 = {};
         if (!all) filtered.forEach((r) => { s2[r.id] = true; });
         this.setState({ sel: s2 });
       },
-      clearSel: () => this.setState({ sel: {} }),
+      clearSel: () => (l4 ? regScreen.clearSel() : this.setState({ sel: {} })),
       // bus
       ...busVals, ...termVals,
+      /* L2 (D03): the sidebar nav badge is shell chrome. L6 owns the count and
+       * reports it through FD.shell.setBadge(n); until it does, busVals wins. */
+      ...(typeof FD.fixture.l2Badge !== 'number' ? {} : {
+        hasBusUnread: FD.fixture.l2Badge > 0,
+        navBadgeText: leftOpen ? String(FD.fixture.l2Badge) : '',
+      }),
       // keys
       ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
       prinChips: ['root', 'vibe'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: FD.fixture.keyRows,
-      // accounts
-      accounts: [
+      // accounts (fd-v2 L8) — the mock's seed, or the live rows that
+      // screens/accounts.js feeds in through FD.setData('accountsLive', ...).
+      // S2 could not substitute this seed into fixture.js (the mock literal calls
+      // bar()/spark()/chipTone() on it), so L8 reads its own key here instead.
+      accounts: (accRows || [
         { prov: 'codex', name: 'Daniel Tabor (personal · ChatGPT)', email: 'admin@deus.finance', id: '', plan: 'pro', live: 'live', right: 'just now · DESKTOP-LJMEJQN',
           provStyle: chipTone('neutral'), provDotStyle: dot(t.good), planStyle: chipTone('neutral'),
           bars: [bar('weekly', 80, 'resets in 129h 2m')], trendPts: '', seen: 'rfc1918-internal · live, DESKTOP-LJMEJQN · live, ubuntu-8gb-nbg1-1 · live' },
@@ -931,8 +1329,12 @@ class AppLogic extends Sub {
           bars: [bar('5 hour', null), bar('7 day', null)],
           trendPts: spark([1,2,3,3.5,3,4,4.5,4,3.5,4,3,4.5,5,4.5,2,4,4.5,5,4.5,7]), trendColor: t.warn, trendPct: '88%',
           seen: 'rfc1918-internal · live, rfc1918-internal · desktop snapshot, DESKTOP-LJMEJQN' },
-      ].map((a, i) => {
-        const open = !!(this.state.aOpen || {})[i];
+      ]).map((a, i) => {
+        // Untouched rows keep the mock's default (collapsed). On live data a row at or
+        // over a limit — or one carrying a banner — opens by itself, so a wall and a
+        // fault are never hidden behind a chevron. improvised.md I-L8-02.
+        const aOpen = this.state.aOpen || {};
+        const open = i in aOpen ? !!aOpen[i] : (accLive ? !!(a.atLimit || a.banner || a.noData || a.noWindows) : false);
         const primary = a.bars.find((b) => b.label === '5 hour') || a.bars[0];
         return {
           ...a, open,
@@ -943,32 +1345,7 @@ class AppLogic extends Sub {
         };
       }),
       // machines
-      machines: [
-        { name: 'MacBook Pro', kind: 'macos · local', sessions: '', cols: [
-          { client: 'Claude CLI', sections: [mSec('', 'Reiner Garrecht', 'neelo@vibe.trading', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', null, true], ['7 day', null, true]], 'token valid in 4 h · sampled 8d ago — window has reset since')] },
-          { client: 'Codex CLI', sections: [mSec('', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 1d ago · resets in 129h 2m · sampled just now')] },
-          { client: 'Claude Desktop', sections: [mSec('', 'Lafayette Tabor', '', [['last active 13m ago', 'neutral']], [['5 hour', null, true], ['7 day', null, true], ['extra usage', null, true]], 'sampled 9d ago — window has reset since')] },
-          { client: 'Codex Desktop', sections: [mSec('', 'signed in, account unknown', '', [], [], 'Codex desktop keeps the account under safeStorage/IndexedDB, which this reader cannot read · no usage data')] },
-        ]},
-        { name: 'german-box', kind: 'windows+wsl · ssh gb-deploy', sessions: '65 sessions', cols: [
-          { client: 'Claude CLI', sections: [
-            mSec('WSL', 'Daniel Tabor', 'admin@deus.finance', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'token valid in 6 h · 65 sessions run as Daniel Tabor'),
-            mSec('Windows', 'Daniel Tabor', 'admin@deus.finance', [['config only', 'warn']], [['5 hour', 12], ['7 day', 71]], ''),
-          ]},
-          { client: 'Codex CLI', sections: [
-            mSec('WSL', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 9d ago · resets in 129h 2m'),
-            mSec('Windows', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['plus', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 101d ago'),
-          ]},
-          { client: 'Claude Desktop', sections: [
-            mSec('WSL', '—', '', [], [], ''),
-            mSec('Windows', 'Daniel Tabor', '', [['last active 1d ago', 'neutral']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'sampled just now'),
-          ]},
-          { client: 'Codex Desktop', sections: [
-            mSec('WSL', '—', '', [], [], ''),
-            mSec('Windows', '—', '', [], [], ''),
-          ]},
-        ]},
-      ].map(mCard),
+      machines: mCards,
     };
   }
 }

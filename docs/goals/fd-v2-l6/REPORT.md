@@ -1,0 +1,257 @@
+# fd-v2-l6 — Message bus threads + reply toast
+
+**Worker:** Gerhild · `frontend-developer` · tag `agent-gerhild` · session `cli-worker`
+**Branch:** `agent-v2-l6` off `origin/agent-v2-base` · **Linear:** DECK-49
+**Ledger rows:** D13 (Message bus), D08 (Reply toast)
+**Date:** 2026-09-07
+
+---
+
+## Result
+
+| Gate | Required | Actual |
+|---|---|---|
+| Pixel gate, fixture mode | `verify/l6/report.json` allPass 36/36 | **36/36, allPass=true**, max 0.0329 % |
+| Live mode, API stubbed | `verify/l6/live.json` all pass | **47/47, allPass=true**, 0 console errors |
+| Unit tests | pure logic covered | **29/29** in `test/v2-bus.test.js` |
+| Full suite | `npm test` green | **332/332, 0 fail** |
+| Improvisations | logged + screenshots | **12 entries** I-L6-01..12, **6 screenshots** |
+| Branch | pushed | `agent-v2-l6` pushed |
+
+The pixel gate's 0.0329 % is on `registry dark` and is the same anti-aliasing noise S1 and S2
+recorded on that screen; every other one of the 36 shots is 0.000000 %. **The Message bus shot
+itself is 0.000000 % in both themes** — the screen this slice rewrote did not move a pixel in
+fixture mode.
+
+### Reproducing, in this order
+
+```bash
+# a static server rooted at public/
+python3 -m http.server 4180 --bind 127.0.0.1 --directory public &
+
+npm run design:diff -- --app "http://127.0.0.1:4180/v2/index.html?fixture=1" --slice l6
+node docs/design/fleetdeck-v2/verify/l6-live/live.mjs      # writes verify/l6/live.json + PNGs
+node docs/design/fleetdeck-v2/verify/l6-live/shots.mjs     # writes improvised/l6-*.png
+npm test
+```
+
+**Order matters.** `design-diff.mjs` publishes a slice by renaming the whole `verify/<slice>/`
+directory away and moving a staging directory in (`publish()`, line 244), so it destroys
+anything else parked there. That is why the live harness lives in `verify/l6-live/` and writes
+its output into `verify/l6/`, and why the pixel gate has to run first. (Learned the hard way:
+the first copy of `live.mjs` was written into `verify/l6/` and the next gate run deleted it.)
+
+---
+
+## What was built
+
+### `public/v2/screens/bus.js` — the live controller (the one file this slice owns)
+
+Everything that talks to the network, stores anything, or runs on a timer. In fixture mode it
+does **nothing at all**: `live` stays `false`, `FD.setData` is never called, no timer starts and
+`/v2/data.js` is never even requested. That is asserted, not assumed — see the last unit test and
+L6-43/44 in the live gate.
+
+- **Threads.** `FD.data.toThreads(messages, now)` for the per-message shape; the rail is a union
+  of the server's `targets[]`, every live fleet tmux session merged client-side the way
+  `app.js:920-925` does today, every target and source the history mentions, and the adapter's
+  own `busSessions`.
+- **Unread** from `localStorage['fd-bus-seen']`, **pins** from `localStorage['fd-bus-pinned']` —
+  both key names verbatim from `BEHAVIOUR.md` §7. Unread counts inbound rows whose `created_at`
+  is newer than the stamp; the total goes to `FD.shell.setBadge` (guarded).
+- **Send** is `POST /api/messages {source, target, text}` — exactly those three keys. A broadcast
+  is N POSTs, one per selected target. **Retry** is `POST /api/messages/retry {id}`.
+- **Poll**: one 15 s timer that fetches immediately while the bus screen is open and throttles to
+  60 s on the app shell.
+- **Reply toast** (D08): a new inbound row for a thread other than the open one raises
+  `"<from> replied"` with a preview and **Open thread**, auto-dismissed at 7 s.
+- **`FD.screens.bus.open(target)`** — the hook this slice provides.
+
+### `public/v2/logic.js` — this screen's methods only
+
+Every live branch is behind `busLive`, which is `null` in fixture mode. Seeds are read through
+`FD.fixture` (`busGroups`, `busUnreadDefault`, `busActiveDefault`) with the mock's own literals as
+the fallback, so with no live data the block evaluates to exactly what it did before.
+
+Two lines outside the bus block: `componentDidMount` hands `AppLogic` to the bus screen and
+`componentWillUnmount` releases it. Both guarded; `attach()` returns immediately in fixture mode.
+
+### DESIGN-35 binding directives (2026-09-08)
+
+1. **No foreign DOM inside a compiled node.** L6 mounts none. The one element it creates is a
+   `<script>` appended to `document.head`, outside `#dc-root`.
+2. **Validate before `FD.setData`; make the block throw-proof.** Both done: `validRows()` /
+   `validMessage()` coerce or drop every incoming row before it reaches `FD.fixture` (I-L6-10),
+   and `railGroups`, `thMsgs`, `thActions` and `toChips` each compute behind `busSafe()`, which
+   returns the previous render's value if the computation throws.
+3. **Bind raw input state.** The composer, the search box and the `from` chip bind the mock's own
+   raw state and are unchanged. Nothing is set in `componentDidUpdate`. There is no `<select>` on
+   this screen — the mock replaced it with the rail.
+
+---
+
+## Behaviour checklist — every item in `BEHAVIOUR.md`
+
+`done` = ported and covered by a gate check. Live-gate ids are `L6-nn` in `verify/l6/live.json`.
+
+### §1 Data
+
+| Item | State | Evidence |
+|---|---|---|
+| `GET /api/messages?limit=50` | done | L6-01 asserts the exact URL and method |
+| Response `{messages, targets}` | done | L6-03, L6-04 |
+| `messages[]` shape, `created_at DESC` | done | unit: "a thread carries the adapter key set"; reversed per I-L6-04 |
+| `targets[]`: desktop `current` first, then live desktop sessions, then local tmux | done | L6-04; ordering is the server's, passed through |
+| Client merges `{type:'tmux',host,session}` for every live fleet session | done | L6-05; unit: "the rail unions declared targets, live tmux sessions and the history" |
+
+### §2 Send
+
+| Item | State | Evidence |
+|---|---|---|
+| Target required; option label `"Claude Desktop · <label\|\|'current chat'>"` / `"<host> · <session>"` | done, adapted | I-L6-02 — the rail splits name and host into two slots; L6-09, unit "a Claude Desktop row is labelled the way the old `<option>` was" |
+| `#bus-source` defaults to `fleetdeck-ui`, editable | done | L6-10, L6-14 |
+| `#bus-message`, "Send now" button | done, adapted | the mock's composer + `Send`/`Queue`; L6-11 |
+| `POST /api/messages {source, target, text}` | done | L6-11 asserts the key set is exactly `source,target,text`; unit "deliver POSTs exactly…" |
+| ok → clear the text | done | L6-12 |
+| `"Delivering message…"` / `"Message delivered"` | done, adapted | I-L6-07 — the mock has no slot for them; they map onto the `queued`→`delivered` receipt. L6-13 |
+| `"Delivery failed: <error\|\|'unknown error'>"` | **done, verbatim** | L6-16; units "an HTTP error body is read verbatim" and "a failure with no error field says unknown error" |
+| always `loadBus()` afterwards | done | `deliver()` ends `.then(refresh)` |
+| Server validation errors displayed verbatim (400/409/413) | done | L6-16, L6-19 |
+| Duplicate client `id` idempotency | **n.a.** | today's UI never sends `id`; the body stays the three documented keys |
+| `maxlength` 80 / 65536 | **partial** | the mock's composer and `from` chip carry no `maxlength`; the server still enforces `^[A-Za-z0-9._:@/-]{1,80}$` and 64 KiB and its rejection is shown verbatim. Adding the attribute would mean editing mock markup. |
+
+### §3 Statuses and retry
+
+| Item | State | Evidence |
+|---|---|---|
+| `queued → sending → delivered \| failed` | done | `sending` has no mock label and renders as `queued` (stLabel has no `sending` key) |
+| Boot resets stale rows to failed | **n.a.** | server-side (`message-bus.js:54-74`); the client shows whatever status it is handed |
+| Row: When · Source · Target · Status · Message · Retry | done, adapted | the mock's chat replaces the table; each message carries `at`, `from` and its own receipt |
+| `error` as tooltip | done, adapted | shown inline in the receipt instead — see I-L6-07 |
+| Retry only on `failed` | done | L6-17 |
+| `POST /api/messages/retry {id}`; 404 / 409 | done | L6-18 asserts the body is exactly `{id}`; L6-19 the 409 text |
+| `"Retrying message…"` / `"Message delivered"` / `"Retry failed: <error>"` | done, adapted + verbatim | I-L6-07; L6-19; unit "retry POSTs /api/messages/retry {id} and quotes the 409 verbatim" |
+| `#bus-refresh` → `loadBus()` | done, adapted | the 15 s poll replaces the manual button; `FD.screens.bus.refresh()` is still exposed |
+| **No poll** today | **deliberately changed** | D08 requires one. 15 s open / 60 s shell, per `BEHAVIOUR.md` §7 |
+
+### §4 Delivery semantics
+
+| Item | State | Evidence |
+|---|---|---|
+| Per-target FIFO, tmux/desktop transports | **n.a.** | entirely server-side |
+| Receipts are `status` + `delivered_at` only; no ack on `/api/messages` | done | `acked` is unreachable in live mode — the mock's `acked` state only ever appears in fixture |
+
+### §5 `setBusTarget(target)` → `FD.screens.bus.open(target)`
+
+| Item | State | Evidence |
+|---|---|---|
+| Selects the thread immediately when it exists | done | L6-41; unit "open() selects a known thread…" |
+| Otherwise selects it on the next load | done, adapted | I-L6-08 — a provisional row, kept across polls. L6-42; unit "…survives a poll" |
+| Navigates to the bus screen | done | L6-41 (called from the Registry screen) |
+| Called before the screen has mounted | done | unit "open() before attach is remembered, not dropped" |
+
+### §6 Keys, ids, keyboard, server rules
+
+| Item | State | Evidence |
+|---|---|---|
+| No bus localStorage today | **deliberately added** | `fd-bus-seen`, `fd-bus-pinned` — both required by `BEHAVIOUR.md` §7, names verbatim |
+| Ids `#bus #bus-close #bus-form …` | **n.a.** | the mock's markup has none of them; hooks are `data-*`/id only and no markup was added |
+| Escape closes the panel | done | the mock's chain (menu → terminal → bus max) is kept; L6-38 |
+| Origin gate, `BUS_TOKEN`, body cap | **n.a.** | server-side |
+| Errors `{ok:false,error}` displayed verbatim | done | L6-16, L6-19 |
+
+### §7 Mock counterparts and improvisations
+
+| Item | State | Evidence |
+|---|---|---|
+| Threads grouped by target; rail rows incl. targets with no messages | done | I-L6-01; L6-03, L6-04 |
+| Preview = last text, timestamp = last `created_at`, Pinned/Recent split | done | screenshots; L6-27 |
+| Unread via `fd-bus-seen`; badge → `FD.shell.setBadge(n)` | done | L6-24..26; 4 units |
+| Pinned via `fd-bus-pinned`; pin action in the header | done | L6-27; units |
+| Receipts from `status`/`delivered_at`/`error`; failed + Retry | done | L6-13, L6-16, L6-17 |
+| Broadcast = N POSTs, correlated by text; per-recipient receipts | done | L6-34, L6-35 |
+| Offline banner + `Queue` label (queue chosen, documented) | done | I-L6-12; L6-20..23 |
+| Inbound poll 15 s open / 60 s shell | done | I-L6-06; L6-30 |
+| Reply toast `"<from> replied"`, preview, Open thread, 7 s | done | L6-31, L6-32, L6-33 |
+| Composer `⌘/Ctrl+Enter`; `from` chip = source | done | L6-15, L6-14 |
+| Reader view, maximize, pin, show session, copy thread | done | L6-36..40 |
+| Show session: tmux → `FD.screens.windows.openMax`, desktop → no-op | done | L6-36, L6-37; unit "setBadge and openMax are safe when L2 and L3 are not loaded yet" |
+| Escape priority chain from the mock | done | L6-38 |
+
+**Totals: 41 items — 31 done, 4 done-and-adapted with the reason recorded, 1 partial, 5 n.a.
+(server-side or absent from the mock's markup), plus 2 deliberate changes the pack itself asks
+for (the poll and the two localStorage keys).**
+
+---
+
+## Hooks
+
+**Provided** — defined as a no-op in the first commit (`440fbaa`), wired in the second:
+
+- `FD.screens.bus.open(target)` — `{type, host?, session}`, or a bare session id.
+
+**Used** — every call site guarded, and proven to survive both absence and a throwing implementation
+(unit: "setBadge and openMax are safe when L2 and L3 are not loaded yet"):
+
+- `FD.shell.setBadge(n)` — **L2**. Called with the unread total after every poll and every
+  `markSeen`. Absent today; the wrapper swallows it.
+- `FD.screens.windows.openMax(host, session)` — **L3**. "Show session" on a tmux thread. Until L3
+  lands the wrapper returns `false` and the caller falls back to the mock's own full-screen
+  terminal, so the action works either way.
+
+**Dependencies on other slices:** none blocking. L2 and L3 can land in any order.
+
+---
+
+## Deviations, and what the next slice should know
+
+1. **`FD.data.toThreads` does not have the signature the pack promised.** `README.md` §Data
+   identifiers says `toThreads(messages, targets, sessions)`; L1 shipped `toThreads(messages, now)`
+   returning `{busSessions, busGroups, threads}`, and L1's own report does not flag the difference.
+   Nothing is missing — L6 folds `targets[]` and `/api/sessions` in itself — but a slice reading
+   the pack alone will write a call that silently ignores its 2nd and 3rd arguments.
+
+2. **`public/v2/index.html` never loads `data.js`.** Nothing in the browser does. `bus.js` injects
+   it, tagged `data-fd-dep="data"` so slices share one tag. **Filed as DECK-103**; when the shell
+   owner adds the two script tags, delete I-L6-09 and the injection.
+
+3. **A thread's identity is a bare session name** (L1's keying, I-L6-01). Two live sessions with
+   the same name on different hosts would share a rail row. Not reachable with today's fleet
+   naming; not fixable inside `screens/bus.js`.
+
+4. **New `FD.fixture` keys this screen reads**, all with the mock's literal as the fallback so
+   fixture mode is untouched: `busGroups`, `busUnreadDefault`, `busActiveDefault`. Per DESIGN-35
+   item 4, they are set only via `FD.setData` and are noted here rather than added to `fixture.js`.
+
+5. **`npm test` was red on base when this slice started** — S2's browser-only `fixture.js` against
+   L1's Node `require`. Filed as DECK-70; **resolved** by the L1.1 base move (`fixture-extract.js`),
+   and closed.
+
+6. **`design-diff` destroys `verify/<slice>/`.** Worth putting in the pack for the remaining
+   slices: keep hand-written verify scripts in a sibling directory.
+
+---
+
+## Commits
+
+| Commit | What |
+|---|---|
+| `440fbaa` | hooks defined as no-ops, hooks used guarded, goal pack, registry note |
+| `1c330de` | the live controller and the guarded bus methods in `logic.js` |
+| `78bc2e0`, and later merges | `origin/agent-v2-base` moves (S2 shim fix, S2.2, L1.1, L1.2) |
+| — | the live gate harness, the unit tests, the improvisation log, this report |
+
+Pushed to `origin/agent-v2-l6` with a fresh train-broker token per push.
+
+## Registry
+
+`POST http://100.125.231.25:3131/api/registry` answers `unauthorized` / HTTP 401 from german-box —
+the known box-side failure. Both rows are recorded in `REGISTRY-PENDING.md` in this directory;
+DECK-49 carries the real state. Not a gate, and it did not block anything.
+
+Linear itself was reachable throughout, so there is no `LINEAR-PENDING.md`: DECK-49 (this slice),
+DECK-70 (base `npm test`, now Done) and DECK-103 (the unloaded `data.js`) were all filed live.
+
+---
+
+**Signed: Gerhild** · frontend-developer · `agent-gerhild` · 2026-09-07

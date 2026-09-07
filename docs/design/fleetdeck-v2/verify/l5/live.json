@@ -1,0 +1,415 @@
+{
+  "slice": "l5",
+  "worker": "Dietlind",
+  "generatedAt": "2026-09-07T01:18:29.289Z",
+  "app": "public/v2/index.html",
+  "apiStub": "docs/design/fleetdeck-v2/fixtures/api/ + crafted error/empty/topology variants (verify/l5-live/stub.mjs)",
+  "total": 50,
+  "passed": 50,
+  "allPass": true,
+  "consoleErrors": [],
+  "suppressedMediaAborts": 64,
+  "expectedStubbed503": 1,
+  "results": [
+    {
+      "id": "D1",
+      "action": "load with the captured /api/sessions + /api/seats",
+      "expectation": "the stats row shows the live session count, not the mock literal 102",
+      "pass": true,
+      "detail": "114"
+    },
+    {
+      "id": "D2",
+      "action": "load with the captured fixtures",
+      "expectation": "the stats row shows 1 seat (seats.json has one row)",
+      "pass": true,
+      "detail": "1"
+    },
+    {
+      "id": "D3",
+      "action": "load with the captured fixtures",
+      "expectation": "attached + unattached equals the session count",
+      "pass": true,
+      "detail": "114/1/0/114"
+    },
+    {
+      "id": "D4",
+      "action": "read FD.fixture.orgLive",
+      "expectation": "status is \"<N> sessions · <N> seats[ · <N> unattached]\"",
+      "pass": true,
+      "detail": "114 sessions · 1 seats · 114 unattached"
+    },
+    {
+      "id": "D5",
+      "action": "read the source-badge hook",
+      "expectation": "FD.shell.setLiveApi called with \"live API\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "D6",
+      "action": "seats.json names an owner with no session row",
+      "expectation": "that seat renders as a vacant root, \"No current owner row\"",
+      "pass": true,
+      "detail": [
+        "german-box",
+        "orchestrator"
+      ]
+    },
+    {
+      "id": "T1",
+      "action": "load the crafted topology",
+      "expectation": "stats: 11 sessions, 4 seats, 5 attached, 6 unattached",
+      "pass": true,
+      "detail": "11,4,5,6"
+    },
+    {
+      "id": "T2",
+      "action": "read the spine",
+      "expectation": "the head card is the scope node, then the seat roots",
+      "pass": true,
+      "detail": [
+        "german-box",
+        "Coordinator",
+        "Orchestrator",
+        "auditor",
+        "reviewer"
+      ]
+    },
+    {
+      "id": "T3",
+      "action": "read the spine",
+      "expectation": "coordinator sorts before orchestrator",
+      "pass": true,
+      "detail": [
+        "german-box",
+        "Coordinator",
+        "Orchestrator",
+        "auditor",
+        "reviewer"
+      ]
+    },
+    {
+      "id": "T4",
+      "action": "seat \"auditor\" names an owner with no session row",
+      "expectation": "the vacant card says \"No current owner row\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "T5",
+      "action": "seat \"reviewer\" names an owner another seat already claimed",
+      "expectation": "the conflict card says \"Owner row already holds another seat\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "T6",
+      "action": "read the kids grid in scope german-box",
+      "expectation": "the depth-2 grandchild is flattened into the grid (3 kids)",
+      "pass": true,
+      "detail": [
+        "Dietlind",
+        "Machtild",
+        "Juergen"
+      ]
+    },
+    {
+      "id": "T7",
+      "action": "read the kids grid",
+      "expectation": "the flattened subtree is depth-first, so a child follows its parent",
+      "pass": true,
+      "detail": "Dietlind,Machtild,Juergen"
+    },
+    {
+      "id": "S3",
+      "action": "attached kid whose active_at is 16 minutes old",
+      "expectation": "the row is present and marked idle",
+      "pass": true,
+      "detail": [
+        "Dietlind",
+        "Machtild",
+        "Juergen"
+      ]
+    },
+    {
+      "id": "T8",
+      "action": "switch to the unattached tab",
+      "expectation": "the row with a dangling parent is in the card grid",
+      "pass": true,
+      "detail": 6
+    },
+    {
+      "id": "T9",
+      "action": "read the unattached grid",
+      "expectation": "both members of a 2-node cycle are unattached",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "S1",
+      "action": "row with lease_state reaped on host mac",
+      "expectation": "tombstone badge \"🪦 close me\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "S2",
+      "action": "row with pinger_dead",
+      "expectation": "badge \"pinger\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "S5",
+      "action": "the unattached tab has no scope control",
+      "expectation": "the grid is fleet-wide and matches the tab count",
+      "pass": true,
+      "detail": {
+        "cards": 6,
+        "tab": "6"
+      }
+    },
+    {
+      "id": "S4",
+      "action": "inspect the pinger badge",
+      "expectation": "its title is the verbatim BEHAVIOUR §3 text",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C1",
+      "action": "row with epoch null",
+      "expectation": "the epoch fact reads \"legacy\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C2",
+      "action": "row with lease_state null and live true",
+      "expectation": "the lease fact reads \"tmux live\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C3",
+      "action": "row with expires_at null",
+      "expectation": "the expires fact reads \"none\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C4",
+      "action": "row with no role",
+      "expectation": "the role line reads \"unassigned role\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C5",
+      "action": "row with no group and no task",
+      "expectation": "the work row reads \"no group / no task\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "C6",
+      "action": "read the org-facts",
+      "expectation": "all four fact labels are present, in order",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "F1",
+      "action": "read the scope select",
+      "expectation": "its options are the machines in the live data",
+      "pass": true,
+      "detail": [
+        "mac",
+        "german-box",
+        "onboarding-box"
+      ]
+    },
+    {
+      "id": "F2",
+      "action": "default scope",
+      "expectation": "defaults to german-box when the live data has it",
+      "pass": true,
+      "detail": "german-box"
+    },
+    {
+      "id": "F3",
+      "action": "select scope onboarding-box",
+      "expectation": "the kids grid empties (that host has no attached row)",
+      "pass": true,
+      "detail": 0
+    },
+    {
+      "id": "F4",
+      "action": "select scope onboarding-box",
+      "expectation": "the head card retitles to the chosen scope",
+      "pass": true,
+      "detail": "onboarding-box"
+    },
+    {
+      "id": "F5",
+      "action": "click Switch grouping",
+      "expectation": "the label flips to \"Sorted by project\"",
+      "pass": true,
+      "detail": "Sorted by project"
+    },
+    {
+      "id": "F6",
+      "action": "after switching to project",
+      "expectation": "the scope options become the groups",
+      "pass": true,
+      "detail": [
+        "fleetdeck"
+      ]
+    },
+    {
+      "id": "F7",
+      "action": "scope fleetdeck in project mode",
+      "expectation": "the three fleetdeck workers show as kids",
+      "pass": true,
+      "detail": [
+        "Dietlind",
+        "Machtild",
+        "Juergen"
+      ]
+    },
+    {
+      "id": "B1",
+      "action": "click \"Send a message\" on a card",
+      "expectation": "FD.screens.bus.open is called",
+      "pass": true,
+      "detail": 1
+    },
+    {
+      "id": "B2",
+      "action": "inspect the bus payload",
+      "expectation": "it is {type:\"tmux\", host, session}",
+      "pass": true,
+      "detail": {
+        "type": "tmux",
+        "host": "german-box",
+        "session": "FD-kid-b"
+      }
+    },
+    {
+      "id": "P1",
+      "action": "wait 2 s on an open org screen",
+      "expectation": "the expiry countdown re-renders each second",
+      "pass": true,
+      "detail": {
+        "first": "54s left",
+        "second": "52s left"
+      }
+    },
+    {
+      "id": "E1",
+      "action": "/api/sessions returns errors[]",
+      "expectation": "the status appends \"<N> host errors\"",
+      "pass": true,
+      "detail": "11 sessions · 4 seats · 6 unattached · 2 host errors"
+    },
+    {
+      "id": "E2",
+      "action": "no sessions and no seats",
+      "expectation": "the empty state reads \"No seats or sessions to map.\"",
+      "pass": true,
+      "detail": [
+        "fleet",
+        "No seats or sessions to map."
+      ]
+    },
+    {
+      "id": "E3",
+      "action": "no sessions and no seats",
+      "expectation": "the stats row reads 0/0/0/0",
+      "pass": true,
+      "detail": "0,0,0,0"
+    },
+    {
+      "id": "E4",
+      "action": "/api/seats answers 503",
+      "expectation": "the status is \"Org chart unavailable: /api/seats HTTP 503\"",
+      "pass": true,
+      "detail": "Org chart unavailable: /api/seats HTTP 503"
+    },
+    {
+      "id": "E5",
+      "action": "/api/seats answers 503",
+      "expectation": "the error card carries the frozen-endpoint sentence",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E6",
+      "action": "/api/seats answers 503",
+      "expectation": "the error card offers the fixture-preview URL",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "E7",
+      "action": "/api/seats answers 503",
+      "expectation": "the source hook reports \"integration pending\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "X1",
+      "action": "load with ?orgFixture=1",
+      "expectation": "the M11 contract fixture renders",
+      "pass": true,
+      "detail": "8"
+    },
+    {
+      "id": "X2",
+      "action": "load with ?orgFixture=1",
+      "expectation": "the source hook reports \"M11 fixture\"",
+      "pass": true,
+      "detail": null
+    },
+    {
+      "id": "X3",
+      "action": "load with ?orgFixture=1",
+      "expectation": "timestamps are rebased, so no expiry is decades stale",
+      "pass": true,
+      "detail": [
+        "expired 2h 20m ago",
+        "1m left",
+        "1m left"
+      ]
+    },
+    {
+      "id": "G1",
+      "action": "load with ?fixture=1",
+      "expectation": "org.js publishes nothing — FD.fixture.orgLive stays absent",
+      "pass": true,
+      "detail": "PRESENT"
+    },
+    {
+      "id": "G2",
+      "action": "load with ?fixture=1",
+      "expectation": "the mock's own stats literals survive (102 / 2 / 4 / 96)",
+      "pass": true,
+      "detail": "102,2,4,96"
+    },
+    {
+      "id": "G3",
+      "action": "load with ?fixture=1",
+      "expectation": "the mock's own three-card spine renders",
+      "pass": true,
+      "detail": 3
+    },
+    {
+      "id": "Z1",
+      "action": "watch the console across every scenario",
+      "expectation": "zero unexpected console errors",
+      "pass": true,
+      "detail": []
+    }
+  ]
+}
