@@ -265,8 +265,17 @@ class AppLogic extends Sub {
   componentDidUpdate() {
     if (this._video) this._video.playbackRate = this.props.videoSpeed ?? 1;
     if (this._thread && this._threadKey !== this._nextThreadKey) { this._threadKey = this._nextThreadKey; this._thread.scrollTop = this._thread.scrollHeight; }
+    this._fdAfterRender();
+  }
+  // L9: the compiled template hard-codes the machine card's "reported just now" and leaves the
+  // header Refresh button unbound, so the Machines slice finishes its own render here. No-op in
+  // fixture mode and whenever the slice is absent. See improvised.md I-L9-01 / I-L9-02.
+  _fdAfterRender() {
+    const m = FD.screens && FD.screens.machines;
+    if (m && typeof m.afterRender === 'function') m.afterRender();
   }
   componentDidMount() {
+    this._fdAfterRender();
     if (this._thread) this._thread.scrollTop = this._thread.scrollHeight;
     this._esc = (e) => {
       if (e.key !== 'Escape') return;
@@ -336,41 +345,72 @@ class AppLogic extends Sub {
     // Desktop sessions
     const hex = (seed, n) => { let s = seed * 2654435761 % 4294967296; let o = ''; while (o.length < n) { s = (s * 1103515245 + 12345) % 4294967296; o += s.toString(16).padStart(8, '0'); } return o.slice(0, n); };
     const uuid = (seed) => hex(seed, 8) + '-' + hex(seed + 1, 4) + '-4' + hex(seed + 2, 3) + '-' + hex(seed + 3, 4) + '-' + hex(seed + 4, 12);
-    const dsData = FD.fixture.dsData;
-    const dq = (this.state.dq || '').toLowerCase();
+    const dsData = Array.isArray(FD.fixture.dsData) ? FD.fixture.dsData : [];
+    // toLocaleLowerCase on both sides, as today's sessions.js matches (BEHAVIOUR 2).
+    const dq = (this.state.dq || '').trim().toLocaleLowerCase();
     const dsExp = this.state.dsExp || {};
-    let dsCount = 0, dsLive = 0;
+    let dsCount = 0, dsLive = 0, dsGroups;
     const liveRows = [];
     const iconBtn = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', flexShrink: 0, borderRadius: '9999px', border: '1px solid ' + t.line, background: 'transparent', color: t.ink75, cursor: 'pointer', padding: 0, transition: 'background .15s' };
+    // L10: the screen slice registers rowAction only in live mode, so fixture
+    // mode keeps the mock's own handlers untouched and pixel-identical.
+    const dsAct = (FD.screens && FD.screens.desktop && FD.screens.desktop.rowAction) || null;
     const dsRow = (g, gi, r, ri, where) => {
       const key = gi + '-' + ri; const open = !!dsExp[key]; const seed = gi * 100 + ri * 7 + 3;
-      const cli = r.cli || uuid(seed), sid = r.sid || 'local_' + uuid(seed + 40);
-      const cut = r.path.lastIndexOf('/') + 1;
+      // The mock invents a CLI/session id for seed rows that lack one. That is right
+      // for the mock and wrong for live data: sessions.js:199-202 OMITS a details row
+      // whose value is absent rather than showing a plausible invention as fact.
+      // dsAct is registered only in live mode, so it is exactly the "is this real" test.
+      const cli = r.cli || (dsAct ? '' : uuid(seed));
+      const sid = r.sid || (dsAct ? '' : 'local_' + uuid(seed + 40));
+      // Live rows can arrive without a cwd; the mock's seed always has one.
+      const path = r.path || '';
+      const cut = path.lastIndexOf('/') + 1;
+      // liveState is 'live' | 'offline' | 'unknown' and only the live feed sets it.
+      const st = r.liveState || (r.live ? 'live' : 'offline');
       return {
-        title: r.title, dir: r.path.slice(0, cut), leaf: r.path.slice(cut), branch: r.branch, model: r.model, when: r.when, turns: r.turns,
+        title: r.title, dir: path.slice(0, cut), leaf: path.slice(cut), branch: r.branch, model: r.model, when: r.when, turns: r.turns,
         where: where ? g.name + ' · ' + g.machine : '',
-        live: !!r.live, notLive: !r.live, status: r.live ? 'Live' : 'Offline',
-        pillStyle: chipTone(r.live ? 'good' : 'neutral'), dotStyle: dot(r.live ? t.good : t.ink35),
+        live: !!r.live, notLive: !r.live,
+        status: st === 'live' ? 'Live' : st === 'unknown' ? 'Live unknown' : 'Offline',
+        pillStyle: chipTone(st === 'live' ? 'good' : 'neutral'), dotStyle: dot(st === 'live' ? t.good : t.ink35),
         open, chevStyle: { transition: 'transform .2s', transform: open ? 'rotate(90deg)' : 'none', color: t.ink45, flexShrink: 0, marginTop: '3px' },
         toggle: () => { const e2 = { ...(this.state.dsExp || {}) }; e2[key] = !e2[key]; this.setState({ dsExp: e2 }); },
         stop: (e) => e.stopPropagation(),
-        show: (e) => { e.stopPropagation(); if (r.live && this._openTerm) this._openTerm(r.title, g.machine); },
-        message: (e) => { e.stopPropagation(); if (r.live) this.setState({ screen: 'bus', busActive: 'desktop' }); },
+        show: (e) => { e.stopPropagation(); if (dsAct) return dsAct('show', r, e.currentTarget); if (r.live && this._openTerm) this._openTerm(r.title, g.machine); },
+        message: (e) => { e.stopPropagation(); if (dsAct) return dsAct('message', r, e.currentTarget); if (r.live) this.setState({ screen: 'bus', busActive: 'desktop' }); },
         showTitle: r.live ? 'Show session' : 'Show — session is not running',
         msgTitle: r.live ? 'Message this session' : 'Message — session is not running',
         liveBtnStyle: r.live ? iconBtn : { ...iconBtn, opacity: 0.3, cursor: 'not-allowed' },
-        details: [{ k: 'Created', v: r.created }, { k: 'CLI session', v: cli }, { k: 'Session', v: sid }, { k: 'Full path', v: r.path }],
-        copy: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText(r.title + '\n' + r.path + '\n' + r.branch + '\ncli=' + cli + '\nsession=' + sid); } catch (e2) {} },
-        copyConv: (e) => { e.stopPropagation(); try { navigator.clipboard.writeText('# ' + r.title + '\n' + r.model + ' · ' + r.turns + ' · ' + r.branch + '\n\n[conversation transcript for ' + sid + ']'); } catch (e2) {} },
+        details: [{ k: 'Created', v: r.created }, { k: 'CLI session', v: cli }, { k: 'Session', v: sid }, { k: 'Full path', v: path }]
+          .concat(r.worktree ? [{ k: 'Worktree', v: r.worktree }] : [])
+          .filter((d) => d.v),
+        copy: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copy', r, e.currentTarget); try { navigator.clipboard.writeText(r.title + '\n' + path + '\n' + r.branch + '\ncli=' + cli + '\nsession=' + sid); } catch (e2) {} },
+        copyConv: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copyConv', r, e.currentTarget); try { navigator.clipboard.writeText('# ' + r.title + '\n' + r.model + ' · ' + r.turns + ' · ' + r.branch + '\n\n[conversation transcript for ' + sid + ']'); } catch (e2) {} },
       };
     };
-    const dsGroups = dsData.map((g, gi) => {
-      const kept = g.rows.map((r, ri) => [r, ri]).filter(([r]) => !dq || (r.title + ' ' + r.path + ' ' + r.branch).toLowerCase().includes(dq));
-      kept.forEach(([r, ri]) => { dsCount++; if (r.live) { dsLive++; liveRows.push(dsRow(g, gi, r, ri, true)); } });
-      const rows = kept.sort((a, b) => (b[0].live ? 1 : 0) - (a[0].live ? 1 : 0)).map(([r, ri]) => dsRow(g, gi, r, ri, false));
-      return { name: g.name, sub: g.email + ' · ' + g.acct, machine: g.machine, n: rows.length, rows, isLive: false };
-    }).filter((g) => g.rows.length > 0);
-    if (liveRows.length) dsGroups.unshift({ name: 'Live now', sub: 'can receive a message on the next turn', machine: '', n: liveRows.length, rows: liveRows, isLive: true });
+    // S2 oracle audit F2 (2026-09-08, binding instruction 2): a throw anywhere in
+    // renderVals makes the runtime render with vals = host.props, which turns every
+    // sc-if false and empties every list — one malformed row from one slice blanks
+    // all nine screens. So this block cannot throw: every field access on an
+    // incoming row is guarded, and if one still does, the screen keeps its last
+    // good values instead of taking the whole app down with it.
+    try {
+      dsGroups = dsData.filter((g) => g && Array.isArray(g.rows)).map((g, gi) => {
+        const kept = g.rows.map((r, ri) => [r, ri]).filter(([r]) => r && (!dq
+          || [r.title, r.path, r.worktree, r.branch, r.model]
+            .filter((v) => typeof v === 'string').join(' ').toLocaleLowerCase().includes(dq)));
+        kept.forEach(([r, ri]) => { dsCount++; if (r.live) { dsLive++; liveRows.push(dsRow(g, gi, r, ri, true)); } });
+        const rows = kept.sort((a, b) => (b[0].live ? 1 : 0) - (a[0].live ? 1 : 0)).map(([r, ri]) => dsRow(g, gi, r, ri, false));
+        return { name: g.name, sub: g.email + ' · ' + g.acct, machine: g.machine, n: rows.length, rows, isLive: false };
+      }).filter((g) => g.rows.length > 0);
+      if (liveRows.length) dsGroups.unshift({ name: 'Live now', sub: 'can receive a message on the next turn', machine: '', n: liveRows.length, rows: liveRows, isLive: true });
+      this._dsLastGood = { dsGroups, dsCount, dsLive };
+    } catch (e) {
+      console.error('[fd-v2 l10] desktop rows failed to render; keeping the last good view', e);
+      const last = this._dsLastGood || { dsGroups: [], dsCount: 0, dsLive: 0 };
+      dsGroups = last.dsGroups; dsCount = last.dsCount; dsLive = last.dsLive;
+    }
     // Registry data + selection
     const regData = FD.fixture.regData;
     const q = (this.state.q || '').toLowerCase();
@@ -686,14 +726,22 @@ class AppLogic extends Sub {
           : { fontSize: '12.5px', fontWeight: 500, color: name === '—' ? t.ink35 : t.ink },
         fullSecondary: email ? name : '',
         chips: (chips || []).map(([txt, tone]) => ({ t: txt, style: chipTone(tone) })),
-        bars: (bars || []).map((b) => bar(b[0], b[1], '', b[2])),
+        bars: (bars || []).map((b) => bar(b[0], b[1], b[3] || '', b[2])),
         collapsedSummary: stale ? 'stale' : top ? top[0] + ' · ' + top[1] + '%' : '',
         summaryStyle: { fontSize: '11px', color: stale ? t.warn : t.ink45 },
       };
     };
     const mOpen = this.state.mOpen || {};
+    // L9: live cards default to expanded (today's table is always visible, improvised.md
+    // I-L9-03); the fixture's seed keeps the mock's collapsed cards, so the gate is unmoved.
+    const mLive = FD.fixture.machinesLive;
     const mCard = (mach, idx) => {
-      const open = !!mOpen[idx];
+      // DESIGN-35 binding instruction 1 (S2 shim audit F1, 2026-09-08): sc-for rows are
+      // positional, so per-card state is keyed by the machine's name, not its index —
+      // a machine dropping out of /api/machines must not hand its open state to its
+      // neighbour. Names are unique per fleet; the index is only the last resort.
+      const mKey = mach.name || String(idx);
+      const open = mOpen[mKey] === undefined ? !!mLive : !!mOpen[mKey];
       const rows = [];
       mach.cols.forEach((c) => c.sections.forEach((s) => {
         if (s.primary === '—') return;
@@ -707,16 +755,82 @@ class AppLogic extends Sub {
           note: open ? s.note : '',
         });
       }));
+      // L9 improvisation I-L9-04: the mock's card body has no slot for a machine-level error
+      // or the push "no report yet" line, so they lead the grid as one status cell.
+      if (mach.status) rows.unshift({
+        env: mach.status.label, client: '',
+        primary: mach.status.text,
+        primaryStyle: { fontSize: '12.5px', fontWeight: 500, color: mach.status.tone === 'bad' ? t.bad : t.ink },
+        summary: '', summaryStyle: {}, secondary: '',
+        chips: [], hasChips: false, bars: [], hasBars: false,
+        note: mach.status.copy || '',
+      });
       return {
         name: mach.name, kind: mach.kind, sessions: mach.sessions,
         open, closed: !open,
         gridStyle: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(' + (open ? '300px' : '230px') + ',1fr))', borderTop: '1px solid ' + t.lineSoft, margin: '0 -1px -1px 0' },
         rows: rows.map((r) => ({ ...r, rowStyle: { padding: open ? '14px 16px' : '11px 16px', borderRight: '1px solid ' + t.lineSoft, borderBottom: '1px solid ' + t.lineSoft, display: 'flex', flexDirection: 'column', gap: open ? '7px' : '4px', minWidth: 0 } })),
-        toggle: () => { const o = { ...(this.state.mOpen || {}) }; o[idx] = !o[idx]; this.setState({ mOpen: o }); },
-        openRegistry: (e) => { e.stopPropagation(); this.setState({ screen: 'registry' }); },
+        toggle: () => { const o = { ...(this.state.mOpen || {}) }; o[mKey] = !open; this.setState({ mOpen: o }); },
+        // L9: hook used — FD.screens.registry.open (L4), guarded; the mock's own screen
+        // switch stays the fallback until L4 defines it (improvised.md I-L9-02).
+        openRegistry: (e) => {
+          e.stopPropagation();
+          const q = mach.host || mach.name;
+          if (FD.screens && FD.screens.registry && typeof FD.screens.registry.open === 'function') { FD.screens.registry.open({ q }); return; }
+          this.setState({ screen: 'registry' });
+        },
         chevStyle: { transition: 'transform .2s', transform: open ? 'rotate(90deg)' : 'none', color: t.ink45, flexShrink: 0 },
       };
     };
+    // L9: the mock's seed, moved out of the returned object unchanged — fixture mode
+    // renders exactly this, so the pixel gate is untouched.
+    const mSeed = [
+        { name: 'MacBook Pro', kind: 'macos · local', sessions: '', cols: [
+          { client: 'Claude CLI', sections: [mSec('', 'Reiner Garrecht', 'neelo@vibe.trading', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', null, true], ['7 day', null, true]], 'token valid in 4 h · sampled 8d ago — window has reset since')] },
+          { client: 'Codex CLI', sections: [mSec('', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 1d ago · resets in 129h 2m · sampled just now')] },
+          { client: 'Claude Desktop', sections: [mSec('', 'Lafayette Tabor', '', [['last active 13m ago', 'neutral']], [['5 hour', null, true], ['7 day', null, true], ['extra usage', null, true]], 'sampled 9d ago — window has reset since')] },
+          { client: 'Codex Desktop', sections: [mSec('', 'signed in, account unknown', '', [], [], 'Codex desktop keeps the account under safeStorage/IndexedDB, which this reader cannot read · no usage data')] },
+        ]},
+        { name: 'german-box', kind: 'windows+wsl · ssh gb-deploy', sessions: '65 sessions', cols: [
+          { client: 'Claude CLI', sections: [
+            mSec('WSL', 'Daniel Tabor', 'admin@deus.finance', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'token valid in 6 h · 65 sessions run as Daniel Tabor'),
+            mSec('Windows', 'Daniel Tabor', 'admin@deus.finance', [['config only', 'warn']], [['5 hour', 12], ['7 day', 71]], ''),
+          ]},
+          { client: 'Codex CLI', sections: [
+            mSec('WSL', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 9d ago · resets in 129h 2m'),
+            mSec('Windows', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['plus', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 101d ago'),
+          ]},
+          { client: 'Claude Desktop', sections: [
+            mSec('WSL', '—', '', [], [], ''),
+            mSec('Windows', 'Daniel Tabor', '', [['last active 1d ago', 'neutral']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'sampled just now'),
+          ]},
+          { client: 'Codex Desktop', sections: [
+            mSec('WSL', '—', '', [], [], ''),
+            mSec('Windows', '—', '', [], [], ''),
+          ]},
+        ]},
+    ];
+    // L9: live data arrives as FD.setData('machinesLive', cards) from screens/machines.js.
+    // S2 could not byte-safely substitute the `machines` literal, so this slice reads its own
+    // key (DESIGN-35 broadcast, 2026-09-07). Sections come back as plain layer-1 data and go
+    // through the mock's own mSec() here, per improvised.md I-L1-01.
+    // DESIGN-35 binding instruction 2 (S2 shim audit F2): a throw anywhere in renderVals
+    // renders every screen from host.props alone — one malformed machine row would blank
+    // all nine. This block keeps its last good cards instead of propagating.
+    let mCards;
+    try {
+      const mList = mLive ? mLive.map((m) => Object.assign({}, m, {
+        cols: (m && m.cols ? m.cols : []).map((c) => ({
+          client: c && c.client,
+          sections: (c && c.sections ? c.sections : []).map((sc) => mSec(sc && sc.env, sc && sc.name, sc && sc.email, sc && sc.chips, sc && sc.bars, sc && sc.note)),
+        })),
+      })) : mSeed;
+      mCards = mList.map(mCard);
+      this._mLastCards = mCards;
+    } catch (e) {
+      console.error(e);
+      mCards = this._mLastCards || [];
+    }
     return {
       dark, notDark: !dark, ...t, four: 4,
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
@@ -921,32 +1035,7 @@ class AppLogic extends Sub {
         };
       }),
       // machines
-      machines: [
-        { name: 'MacBook Pro', kind: 'macos · local', sessions: '', cols: [
-          { client: 'Claude CLI', sections: [mSec('', 'Reiner Garrecht', 'neelo@vibe.trading', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', null, true], ['7 day', null, true]], 'token valid in 4 h · sampled 8d ago — window has reset since')] },
-          { client: 'Codex CLI', sections: [mSec('', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 1d ago · resets in 129h 2m · sampled just now')] },
-          { client: 'Claude Desktop', sections: [mSec('', 'Lafayette Tabor', '', [['last active 13m ago', 'neutral']], [['5 hour', null, true], ['7 day', null, true], ['extra usage', null, true]], 'sampled 9d ago — window has reset since')] },
-          { client: 'Codex Desktop', sections: [mSec('', 'signed in, account unknown', '', [], [], 'Codex desktop keeps the account under safeStorage/IndexedDB, which this reader cannot read · no usage data')] },
-        ]},
-        { name: 'german-box', kind: 'windows+wsl · ssh gb-deploy', sessions: '65 sessions', cols: [
-          { client: 'Claude CLI', sections: [
-            mSec('WSL', 'Daniel Tabor', 'admin@deus.finance', [['claude_max', 'neutral'], ['Max 20×', 'neutral'], ['token-proved', 'good']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'token valid in 6 h · 65 sessions run as Daniel Tabor'),
-            mSec('Windows', 'Daniel Tabor', 'admin@deus.finance', [['config only', 'warn']], [['5 hour', 12], ['7 day', 71]], ''),
-          ]},
-          { client: 'Codex CLI', sections: [
-            mSec('WSL', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['pro', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 9d ago · resets in 129h 2m'),
-            mSec('Windows', 'Daniel Tabor (personal · ChatGPT)', 'admin@deus.finance', [['plus', 'neutral'], ['token-proved', 'good']], [['weekly', 80]], 'refreshed 101d ago'),
-          ]},
-          { client: 'Claude Desktop', sections: [
-            mSec('WSL', '—', '', [], [], ''),
-            mSec('Windows', 'Daniel Tabor', '', [['last active 1d ago', 'neutral']], [['5 hour', 12], ['7 day', 71], ['7d fable', 8]], 'sampled just now'),
-          ]},
-          { client: 'Codex Desktop', sections: [
-            mSec('WSL', '—', '', [], [], ''),
-            mSec('Windows', '—', '', [], [], ''),
-          ]},
-        ]},
-      ].map(mCard),
+      machines: mCards,
     };
   }
 }
