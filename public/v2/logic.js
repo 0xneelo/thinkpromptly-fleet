@@ -703,7 +703,7 @@ class AppLogic extends Sub {
         dotStyle: isGroup ? { width: '6px', height: '6px', borderRadius: '50%', flexShrink: 0, border: '1.5px solid ' + t.ink60, boxSizing: 'border-box', marginTop: '5px' } : { ...dot(x.live ? t.good : t.ink35), marginTop: '5px' },
         rowStyle: { display: 'flex', alignItems: 'flex-start', gap: '9px', width: '100%', textAlign: 'left', borderRadius: '10px', border: '1px solid ' + (act ? t.navActBorder : 'transparent'), background: act ? t.navActBg : 'transparent', padding: compact ? '6px 8px' : '8px 8px', cursor: 'pointer', boxSizing: 'border-box', color: t.ink, transition: 'background .15s' },
         nameStyle: { fontFamily: mono, fontSize: '12px', fontWeight: un ? 600 : 500, color: t.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 },
-        open: () => { const un2 = { ...unread }; un2[x.id] = 0; this.setState({ busActive: x.id, unread: un2 }); if (busLive) busLive.markSeen(x.id); },
+        open: () => { const un2 = { ...unread }; un2[x.id] = 0; this.setState({ busActive: x.id, unread: un2, busTranscript: null }); if (busLive) { busLive.markSeen(x.id); busLive.wantTranscript(active, false); } },
         showCheck: selecting && !isGroup, checkStyle: { ...check(!!busSel[x.id]), marginTop: '1px' },
         toggleSel: (e) => { e.stopPropagation(); const b = { ...busSel }; b[x.id] = !b[x.id]; this.setState({ busSel: b }); },
       };
@@ -729,25 +729,103 @@ class AppLogic extends Sub {
     const busMax = !!this.state.busMax;
     const bubbleMe = dark ? 'rgba(255,255,255,0.16)' : 'rgba(17,17,17,0.09)';
     const bubbleThem = dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.65)';
-    const thMsgs = busSafe('thMsgs', [], () => thread(active).map((m) => {
-      const out = m.dir === 'out';
-      const st = out && !m.per ? stOf(m) : null;
-      const open = !out && reader;
+    // Four bubble colours, one per source: a message the deck sent, a reply from the seat,
+    // and -- when the full Claude conversation is merged in -- an operator turn and an agent
+    // turn. A fixture row carries no `kind`, so the mock keeps its two greys untouched.
+    const TINT = dark ? {
+      sent: { bg: 'oklch(0.75 0.13 250 / 0.20)', line: 'oklch(0.75 0.13 250 / 0.45)', fg: 'oklch(0.80 0.12 250)' },
+      recv: { bg: 'oklch(0.83 0.15 155 / 0.14)', line: 'oklch(0.83 0.15 155 / 0.40)', fg: t.good },
+      op: { bg: 'oklch(0.83 0.14 80 / 0.16)', line: 'oklch(0.83 0.14 80 / 0.45)', fg: t.warn },
+      agent: { bg: 'oklch(0.78 0.13 300 / 0.16)', line: 'oklch(0.78 0.13 300 / 0.40)', fg: 'oklch(0.80 0.12 300)' },
+    } : {
+      sent: { bg: 'oklch(0.55 0.14 250 / 0.12)', line: 'oklch(0.55 0.14 250 / 0.35)', fg: 'oklch(0.50 0.14 250)' },
+      recv: { bg: 'oklch(0.52 0.14 155 / 0.10)', line: 'oklch(0.52 0.14 155 / 0.35)', fg: t.good },
+      op: { bg: 'oklch(0.55 0.13 70 / 0.11)', line: 'oklch(0.55 0.13 70 / 0.35)', fg: t.warn },
+      agent: { bg: 'oklch(0.55 0.15 300 / 0.10)', line: 'oklch(0.55 0.15 300 / 0.35)', fg: 'oklch(0.50 0.15 300)' },
+    };
+    const meWrap = { display: 'flex', flexDirection: 'column', gap: '4px', borderRadius: '16px 16px 4px 16px', background: bubbleMe, padding: '9px 14px 7px 14px', maxWidth: reader ? '60%' : '72%', minWidth: 0, boxSizing: 'border-box' };
+    const openWrap = { display: 'flex', flexDirection: 'column', gap: '6px', padding: '6px 0', width: '100%', maxWidth: '820px', minWidth: 0, boxSizing: 'border-box' };
+    const themWrap = { display: 'flex', flexDirection: 'column', gap: '4px', borderRadius: '16px 16px 16px 4px', background: bubbleThem, border: '1px solid ' + t.lineSoft, padding: '9px 14px 7px 14px', maxWidth: '72%', minWidth: 0, boxSizing: 'border-box' };
+    // `kind` is a live-only row key (screens/bus.js build()), so every branch below is
+    // provably inert against the mock's seed rows.
+    const tinted = !!actS.kind && !actGroup;
+    // The toggle stores the thread it was armed on, not a bare flag: busActive also moves
+    // through a toast and a broadcast send, and a boolean would stay armed on the new thread
+    // while the poll kept running on the old one.
+    const busTranscript = !!active && this.state.busTranscript === active;
+    const trAll = FD.fixture.busTranscripts;
+    const tr = busTranscript && tinted && actS.kind === 'claude-desktop' && trAll ? trAll[active] : null;
+    // A bus message stores `m` as minutes-ago (data.js minutesAgo), so a thread reads
+    // oldest-first when it is sorted by m descending -- and a transcript turn joins it by
+    // the same measure. Sort is stable, so a turn and a message of the same age keep order.
+    const atOf = (ts) => (FD.data && FD.data.ago ? FD.data.ago(ts) : '');
+    const minsAgo = (ms) => Math.floor(Math.max(0, Date.now() - ms) / 60000);
+    const note = (text) => ({ m: 0, kind: 'note', msg: { k: 'n' + text.length, dir: 'in', from: '', at: '', text } });
+    // A message another session delivered arrives in the seat as a wrapped user turn
+    // (server.js deliverDesktopSession). It is not the operator talking, so it is drawn as
+    // the sender's own blue bubble -- or dropped, when this thread's bus bubble already is it.
+    const XSESSION = /<cross-session-message\b[^>]*\bfrom-name="([^"]*)"[^>]*>\n?([\s\S]*?)\n?<\/cross-session-message>/;
+    const thItems = busSafe('thItems', [], () => {
+      const items = thread(active).map((m) => ({ m: m.m, kind: m.dir === 'out' ? 'sent' : 'recv', msg: m }));
+      if (!tr) return items;
+      const ours = new Set(items.filter((it) => it.kind === 'sent').map((it) => String(it.msg.text).trim()));
+      const turns = [];
+      // The transcript is chronological, so a turn with no usable timestamp keeps the age of
+      // the turn before it; without that it would read as "just now" and sort to the bottom.
+      let prevM = null;
+      (tr.turns || []).forEach((x) => {
+        const ms = Date.parse(x.ts);
+        const m = Number.isNaN(ms) ? prevM : minsAgo(ms);
+        prevM = m;
+        const xs = x.role === 'user' ? XSESSION.exec(x.text) : null;
+        if (xs) {
+          const inner = xs[2].trim();
+          if (ours.has(inner)) return;
+          turns.push({ m, kind: 'sent', tr: true, msg: { k: 'tr', dir: 'out', from: xs[1], at: atOf(x.ts), text: inner } });
+          return;
+        }
+        turns.push({
+          m,
+          kind: x.role === 'user' ? 'op' : 'agent',
+          msg: { k: 'tr', dir: 'in', from: x.role === 'user' ? 'operator' : 'agent', at: atOf(x.ts), text: x.text },
+        });
+      });
+      // A leading run of untimed turns has no earlier age to inherit, so it takes the age of
+      // the first turn that has one -- the oldest end of the thread, where it belongs.
+      const firstM = turns.reduce((a, it) => (a === null && it.m !== null ? it.m : a), null);
+      turns.forEach((it) => { if (it.m === null) it.m = firstM === null ? 0 : firstM; });
+      const head = tr.omitted > 0 ? [note('… ' + tr.omitted + ' earlier turns not shown')] : [];
+      const tail = tr.state === 'loading' ? [note('Loading the conversation…')]
+        : tr.state === 'not_found' ? [note('No transcript found for this session on its machine.')]
+          : tr.state === 'unavailable' ? [note('Transcript unavailable — the machine did not answer.')] : [];
+      return head.concat(items.concat(turns).sort((a, b) => b.m - a.m), tail);
+    });
+    const copyText = () => thItems.map((it) => '[' + it.msg.at + '] ' + it.msg.from + ': ' + it.msg.text).join('\n\n');
+    const thMsgs = busSafe('thMsgs', [], () => thItems.map((it) => {
+      const m = it.msg;
+      const kind = it.kind;
+      const right = kind === 'sent' || kind === 'op';
+      const st = kind === 'sent' && !it.tr && !m.per ? stOf(m) : null;
+      const open = reader && (kind === 'recv' || kind === 'agent');
+      const tone = tinted && useColor && kind !== 'note' ? TINT[kind] : null;
       return {
-        from: m.from, at: out ? m.from + ' · ' + m.at : m.at, text: m.text,
-        showFrom: !out,
-        rowStyle: { display: 'flex', justifyContent: out ? 'flex-end' : 'flex-start', minWidth: 0 },
-        wrapStyle: out
-          ? { display: 'flex', flexDirection: 'column', gap: '4px', borderRadius: '16px 16px 4px 16px', background: bubbleMe, padding: '9px 14px 7px 14px', maxWidth: reader ? '60%' : '72%', minWidth: 0, boxSizing: 'border-box' }
-          : open
-            ? { display: 'flex', flexDirection: 'column', gap: '6px', padding: '6px 0', width: '100%', maxWidth: '820px', minWidth: 0, boxSizing: 'border-box' }
-            : { display: 'flex', flexDirection: 'column', gap: '4px', borderRadius: '16px 16px 16px 4px', background: bubbleThem, border: '1px solid ' + t.lineSoft, padding: '9px 14px 7px 14px', maxWidth: '72%', minWidth: 0, boxSizing: 'border-box' },
-        fromStyle: { fontFamily: mono, fontSize: open ? '12px' : '11px', color: open ? t.ink60 : t.ink45, fontWeight: 500 },
-        textStyle: { margin: 0, fontSize: open ? '15px' : '13px', lineHeight: open ? 1.7 : 1.6, color: t.ink, whiteSpace: 'pre-wrap', textWrap: 'pretty', overflowWrap: 'anywhere' },
-        footStyle: { display: 'flex', alignItems: 'center', gap: '6px 12px', flexWrap: 'wrap', justifyContent: out ? 'flex-end' : 'flex-start' },
-        receipts: !out ? [] : m.per ? Object.keys(m.per).map((mid) => receipt(short(mid), stOf(m, mid))) : [receipt('', st, m.err)],
+        from: m.from, at: kind === 'sent' ? m.from + ' · ' + m.at : m.at, text: m.text,
+        showFrom: kind === 'recv' || kind === 'op' || kind === 'agent',
+        rowStyle: { display: 'flex', justifyContent: right ? 'flex-end' : 'flex-start', minWidth: 0 },
+        wrapStyle: kind === 'note' ? { ...themWrap, border: '1px dashed ' + t.line }
+          : open ? openWrap
+            : tone ? { ...(right ? meWrap : themWrap), background: tone.bg, border: '1px solid ' + tone.line }
+              : tinted && kind === 'op' ? { ...meWrap, border: '1px solid ' + t.line }
+                : tinted && kind === 'agent' ? { ...themWrap, border: '1px dashed ' + t.line }
+                  : right ? meWrap : themWrap,
+        fromStyle: { fontFamily: mono, fontSize: open ? '12px' : '11px', color: tone ? tone.fg : !tinted && open ? t.ink60 : t.ink45, fontWeight: 500 },
+        textStyle: kind === 'note'
+          ? { margin: 0, fontSize: '13px', lineHeight: 1.6, color: t.ink45, fontStyle: 'italic', whiteSpace: 'pre-wrap', textWrap: 'pretty', overflowWrap: 'anywhere' }
+          : { margin: 0, fontSize: open ? '15px' : '13px', lineHeight: open ? 1.7 : 1.6, color: t.ink, whiteSpace: 'pre-wrap', textWrap: 'pretty', overflowWrap: 'anywhere' },
+        footStyle: { display: 'flex', alignItems: 'center', gap: '6px 12px', flexWrap: 'wrap', justifyContent: right ? 'flex-end' : 'flex-start' },
+        receipts: kind !== 'sent' || it.tr ? [] : m.per ? Object.keys(m.per).map((mid) => receipt(short(mid), stOf(m, mid))) : [receipt('', st, m.err)],
         canRetry: st === 'failed',
-        retry: () => { setSt(m.k, 'queued'); if (busLive && busLive.retry({ sid: active, key: m.k })) return; deliverTo(active, m.k, m.text, 0); },
+        retry: () => { if (kind !== 'sent' || it.tr) return; setSt(m.k, 'queued'); if (busLive && busLive.retry({ sid: active, key: m.k })) return; deliverTo(active, m.k, m.text, 0); },
       };
     }));
     this._nextThreadKey = active + ':' + thMsgs.length;
@@ -915,8 +993,10 @@ class AppLogic extends Sub {
           { id: 'reader', label: reader ? 'Bubbles' : 'Reader view', desc: reader ? 'Show agent replies as chat bubbles again.' : 'Agent replies go full width, no box, larger text — like the desktop app.', style: reader ? onBtn : iconBtn, click: () => this.setState({ busReader: !reader }), isReader: true },
           { id: 'max', label: busMax ? 'Exit full view' : 'Maximize', desc: busMax ? 'Return the message bus to the page. Esc also works.' : 'Expand the whole message bus to fill the window. Esc to exit.', style: busMax ? onBtn : iconBtn, click: () => this.setState({ busMax: !busMax }), isMax: !busMax, isUnmax: busMax },
           { id: 'pin', hide: narrow, label: pinned ? 'Unpin' : 'Pin thread', desc: pinned ? 'Move this thread back into Recent.' : 'Keep this thread at the top of the rail under Pinned.', style: pinned ? onBtn : iconBtn, click: () => { const p = { ...pins }; p[active] = !pinned; this.setState({ pins: p }); if (busLive) busLive.setPinned(active, !pinned); }, isPin: true },
-          { id: 'show', label: 'Show session', desc: actGroup ? 'Broadcasts have no single terminal. Open a member thread to show it.' : isDesktopRow ? 'Claude Desktop threads have no tmux terminal to show.' : canShow ? 'Open this session\'s live terminal full screen.' : 'Session is not running, so there is no terminal to show.', style: canShow ? iconBtn : offBtn, click: () => { if (!canShow) return; if (busLive && busLive.openMax(actS.host, actS.name)) return; this.setState({ termOpen: { name: actS.name, host: actS.host, id: actS.id }, termMenu: false }); }, isShow: true },
-          { id: 'copy', hide: narrow, label: 'Copy thread', desc: 'Copy every message in this thread as plain text.', style: iconBtn, click: () => { try { navigator.clipboard.writeText(thread(active).map((m) => '[' + m.at + '] ' + m.from + ': ' + m.text).join('\n\n')); } catch (e) {} }, isCopy: true },
+          isDesktopRow
+            ? { id: 'show', label: busTranscript ? 'Bus only' : 'Full conversation', desc: busTranscript ? 'Back to the Fleetdeck bus messages only.' : 'Show the whole Claude session — operator turns and agent replies — merged with the bus messages.', style: busTranscript ? onBtn : iconBtn, click: () => { const next = !busTranscript; this.setState({ busTranscript: next ? active : null }); if (busLive) busLive.wantTranscript(active, next); }, isShow: true }
+            : { id: 'show', label: 'Show session', desc: actGroup ? 'Broadcasts have no single terminal. Open a member thread to show it.' : canShow ? 'Open this session\'s live terminal full screen.' : 'Session is not running, so there is no terminal to show.', style: canShow ? iconBtn : offBtn, click: () => { if (!canShow) return; if (busLive && busLive.openMax(actS.host, actS.name)) return; this.setState({ termOpen: { name: actS.name, host: actS.host, id: actS.id }, termMenu: false }); }, isShow: true },
+          { id: 'copy', hide: narrow, label: 'Copy thread', desc: 'Copy every message in this thread as plain text.', style: iconBtn, click: () => { try { navigator.clipboard.writeText(copyText()); } catch (e) {} }, isCopy: true },
         ];
         const ordered = list.filter((a) => a.id !== 'max').concat(list.filter((a) => a.id === 'max'));
         return ordered.filter((a) => !a.hide).map((a) => ({ ...a, tipOpen: tip === a.id, enter: () => this.setState({ tip: a.id }), leave: () => this.setState((s) => (s.tip === a.id ? { tip: null } : null)) }));
@@ -943,7 +1023,7 @@ class AppLogic extends Sub {
       pinTitle: isPinned(actGroup || actS) ? 'Unpin' : 'Pin',
       pinBtnStyle: isPinned(actGroup || actS) ? { ...iconBtn, background: t.navActBg, borderColor: t.navActBorder, color: t.ink } : iconBtn,
       togglePin: () => { const next = !isPinned(actGroup || actS); const p = { ...pins }; p[active] = next; this.setState({ pins: p }); if (busLive) busLive.setPinned(active, next); },
-      copyThread: () => { try { navigator.clipboard.writeText(thread(active).map((m) => '[' + m.at + '] ' + m.from + ': ' + m.text).join('\n\n')); } catch (e) {} },
+      copyThread: () => { try { navigator.clipboard.writeText(copyText()); } catch (e) {} },
       toRow, toChips: busSafe('toChips', [], () => selIds.map((id) => { const r = sById(id); return { t: short(id), dotStyle: dot(r && r.live ? t.good : t.ink35), remove: () => { const b = { ...busSel }; delete b[id]; this.setState({ busSel: b }); } }; })),
       toChipStyle: { display: 'inline-flex', alignItems: 'center', gap: '6px', borderRadius: '9999px', border: '1px solid ' + t.line, background: t.chipBg, color: t.ink, padding: '3px 6px 3px 10px', fontSize: '11.5px', fontFamily: mono },
       warnDotStyle: dot(t.warn),

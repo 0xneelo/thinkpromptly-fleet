@@ -67,6 +67,23 @@ class DesktopSessions {
     try { return sessionRow(JSON.parse(stored.payload)); } catch { return null; }
   }
 
+  // The freshest stored row for one CLI session UUID, with the machine that owns it, so a
+  // caller holding only the id the message bus knows can reach the transcript.
+  byCli(id) {
+    const cli = uuid(id);
+    if (!cli) return null;
+    const machines = new Map(this.machines().map((m) => [m.id, m]));
+    let best = null;
+    for (const stored of this.all.all()) {
+      const machine = machines.get(stored.machine);
+      if (!machine || (best && stored.updated_at <= best.at)) continue;
+      let row;
+      try { row = sessionRow(JSON.parse(stored.payload)); } catch { continue; }
+      if (row && row.cliSessionId === cli) best = { row, machine, at: stored.updated_at };
+    }
+    return best ? { row: best.row, machine: best.machine } : null;
+  }
+
   machines() {
     return this.config().filter((m) => m.desktop_sessions === true && ['local', 'ssh'].includes(m.route));
   }

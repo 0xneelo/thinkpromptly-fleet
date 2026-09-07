@@ -259,6 +259,16 @@ test('desktop-transcript.sh renders text and tool calls, drops thinking, meta, a
     '> Result: ' + 'x'.repeat(400) + ' … (+100 chars)',
     'Done.', ''].join('\n'));
   assert.ok(!r.text.includes('private reasoning') && !r.text.includes('hidden meta') && !r.text.includes('subagent chatter'));
+  // The same content, split one entry per role section, for the message bus to merge.
+  assert.equal(r.title, 'Fixture chat');
+  assert.equal(r.cwd, '/workspace/app');
+  assert.equal(r.branch, 'feature/x');
+  assert.deepEqual(r.turns, [
+    { role: 'user', ts: '2026-09-06T10:00:00.000Z', text: 'Fix the bug' },
+    { role: 'assistant', ts: '2026-09-06T10:00:01.000Z', text: [
+      'Reading the file.', '> Tool Read: {"file_path": "/workspace/app/a.js"}',
+      '> Result: ' + 'x'.repeat(400) + ' … (+100 chars)', 'Done.'].join('\n') },
+  ]);
   assert.deepEqual(render('33333333-3333-4333-8333-333333333333'), { v: 1, state: 'not_found' });
   assert.deepEqual(render('../escape'), { v: 1, state: 'unavailable' });
 });
@@ -293,4 +303,58 @@ test('GET /api/desktop-sessions/transcript renders on the owning machine, local 
   assert.equal((await server.get(query(mac.id))).status, 404);
   assert.equal((await server.post('/api/desktop-sessions/transcript', {})).status, 405);
   assert.equal((await server.tailGet(query(mac.id))).status, 404);
+});
+
+test('GET /api/desktop-sessions/transcript takes seat=<thread id> and serves per-turn JSON', async (t) => {
+  const f = await routeFixture(t, [mac]);
+  const home = transcriptFixture(f.dir);
+  await f.server.stop();
+  const server = await startServer({
+    HOME: home, FLEET_MACHINES_FILE: path.join(f.dir, 'machines.json'), FLEET_DESKTOP_SESSIONS_SH: f.script,
+    CLAUDE_SESSIONS_DIR: path.join(f.dir, 'registry'), FLEETDECK_BUS_TOKEN_FILE: path.join(f.dir, 'bus-fixture-key'),
+  }, { dir: f.dir, hosts: [] });
+  t.after(() => server.stop());
+  assert.equal((await server.get('/api/desktop-sessions')).status, 200);
+  const seat = (id, format = '&format=json') =>
+    server.get('/api/desktop-sessions/transcript?seat=' + encodeURIComponent(id) + format);
+  const json = await seat('id:' + CLI);
+  assert.equal(json.status, 200);
+  assert.equal(json.body.state, 'ok');
+  assert.equal(json.body.title, 'Fixture chat');
+  assert.equal(json.body.cwd, '/workspace/app');
+  assert.equal(json.body.branch, 'feature/x');
+  assert.deepEqual(json.body.turns.map((x) => x.role), ['user', 'assistant']);
+  assert.equal(json.body.turns[0].text, 'Fix the bug');
+  assert.equal(json.body.text, undefined, 'the JSON form carries turns, not the 4 MB text');
+  // A message-bus thread id is the live seat's display name, not an id: form. The registry
+  // fixture publishes this session as 'current' (routeFixture), so the name resolves too.
+  const byName = await seat('current');
+  assert.equal(byName.status, 200);
+  assert.deepEqual(byName.body.turns, json.body.turns);
+  // The same id, without format=json, is still the plain text the Desktop screen copies.
+  const plain = await seat('id:' + CLI.toUpperCase(), '');
+  assert.equal(plain.status, 200);
+  assert.match(plain.text, /^# Fixture chat\n/);
+  const unknown = await seat('id:33333333-3333-4333-8333-333333333333');
+  assert.equal(unknown.status, 404);
+  assert.deepEqual(unknown.body, { state: 'not_found' });
+  const missName = await seat('🎛 ORCHESTRATOR 28 = O45');
+  assert.equal(missName.status, 404);
+  assert.deepEqual(missName.body, { state: 'not_found' }, 'a name no live seat answers to is not found');
+  const bad = await seat('id:not-a-uuid');
+  assert.equal(bad.status, 404);
+  // A seat the collector has not stored yet is still live in the registry, and still renders
+  // -- on the deck's own machine, which is where an unstored session can only be.
+  const fresh = '44444444-4444-4444-8444-444444444444';
+  transcriptFixture(f.dir, fresh);
+  fs.writeFileSync(path.join(f.dir, 'registry', process.ppid + '.json'), JSON.stringify({
+    pid: process.ppid, name: 'unstored seat', sessionId: fresh, messagingSocketPath: path.join(f.dir, 'fixture.sock'),
+  }));
+  const unstored = await seat('unstored seat');
+  assert.equal(unstored.status, 200);
+  assert.equal(unstored.body.turns[0].text, 'Fix the bug');
+  fs.rmSync(path.join(home, '.claude'), { recursive: true });
+  const gone = await seat('id:' + CLI);
+  assert.equal(gone.status, 404);
+  assert.deepEqual(gone.body, { state: 'not_found' });
 });

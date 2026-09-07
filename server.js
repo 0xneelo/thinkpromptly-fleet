@@ -1660,9 +1660,41 @@ async function desktopTranscript(machine, cliSessionId) {
   if (result.err || Buffer.byteLength(result.stdout || '') > options.maxBuffer) return { state: 'unavailable' };
   try {
     const data = JSON.parse((result.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop());
-    if (data?.v === 1 && data.state === 'ok' && typeof data.text === 'string') return { state: 'ok', text: data.text };
+    if (data?.v === 1 && data.state === 'ok' && typeof data.text === 'string')
+      return {
+        state: 'ok', text: data.text,
+        title: str(data.title, 1000) || '', cwd: str(data.cwd, 4096) || '', branch: str(data.branch, 300) || '',
+        turns: transcriptTurns(data.turns),
+      };
     return { state: data?.state === 'not_found' ? 'not_found' : 'unavailable' };
   } catch { return { state: 'unavailable' }; }
+}
+
+// The message bus holds a thread id, not a store key: 'id:<cli uuid>' when the Desktop screen
+// opened the thread, else the live seat's display name -- resolved exactly as
+// deliverDesktopSession resolves a delivery, so a rename or a duplicate name can never
+// redirect to another conversation. A live seat the collector has not stored yet still
+// renders, on the deck's own machine.
+function desktopSeat(seat) {
+  let id = null;
+  if (seat.startsWith('id:')) id = desktopUuid(seat.slice(3));
+  else {
+    const live = desktopSessions().filter((s) => s.name === seat);
+    if (live.length === 1) id = live[0].sessionId;
+  }
+  if (!id) return null;
+  const local = desktopSessionStore.machines().find((m) => m.route === 'local') || { id: 'local', route: 'local' };
+  return desktopSessionStore.byCli(id) || { row: { cliSessionId: id }, machine: local };
+}
+
+// One entry per role section of the same transcript. A malformed entry is dropped rather
+// than served: the renderer runs on another machine and its output is not trusted here.
+function transcriptTurns(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((t) => t && typeof t === 'object' && (t.role === 'user' || t.role === 'assistant')
+      && typeof t.ts === 'string' && typeof t.text === 'string')
+    .map((t) => ({ role: t.role, ts: t.ts, text: t.text }));
 }
 
 const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : null);
@@ -2874,10 +2906,23 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/desktop-sessions/transcript') {
       if (req.method !== 'GET') return send(res, 405, 'text/plain', 'method not allowed');
       const q = url.searchParams;
-      const row = desktopSessionStore.row(q.get('machine'), q.get('account'), q.get('org'), q.get('id'));
-      const machine = desktopSessionStore.machines().find((m) => m.id === q.get('machine'));
-      if (!row?.cliSessionId || !machine) return send(res, 404, 'text/plain', 'not found');
-      const result = await desktopTranscript(machine, row.cliSessionId);
+      // `seat=<thread id>` is the message bus's handle on a thread; machine/account/org/id is
+      // the Desktop screen's. `format=json` adds the per-turn split the bus merges into a thread.
+      const asJson = q.get('format') === 'json';
+      const seat = str(q.get('seat'), 300);
+      const found = seat !== null
+        ? desktopSeat(seat)
+        : {
+          row: desktopSessionStore.row(q.get('machine'), q.get('account'), q.get('org'), q.get('id')),
+          machine: desktopSessionStore.machines().find((m) => m.id === q.get('machine')),
+        };
+      if (!found?.row?.cliSessionId || !found.machine)
+        return asJson ? json(res, { state: 'not_found' }, 404) : send(res, 404, 'text/plain', 'not found');
+      const result = await desktopTranscript(found.machine, found.row.cliSessionId);
+      if (asJson) {
+        if (result.state !== 'ok') return json(res, { state: result.state }, result.state === 'not_found' ? 404 : 502);
+        return json(res, { state: 'ok', title: result.title, cwd: result.cwd, branch: result.branch, turns: result.turns });
+      }
       if (result.state === 'ok') return send(res, 200, 'text/plain; charset=utf-8', result.text);
       if (result.state === 'not_found') return send(res, 404, 'text/plain', 'no transcript');
       return send(res, 502, 'text/plain', 'transcript unavailable');
