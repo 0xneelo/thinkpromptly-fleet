@@ -29,6 +29,19 @@ or `git show`. NAMES tests the goalkeeper **directory**, not any path segment sp
 so this repo's own `docs/goals/goalkeeper/` — the goal pack and every lane report — stays writable
 for workers (PLAN §9 G-5); group 16 asserts that carve-out explicitly.
 
+GK-M.5 widened NAMES from three spellings to **five rules**, because after a `cd "$HOME/.claude"` a
+relative `goalkeeper/thread.md` named the jail and was invisible. NAMES now holds when: (1) the
+absolute jail path appears, realpath or lexical; (2) the `.claude/goalkeeper` literal appears; (3) the
+config dir is mentioned anywhere **and** a `goalkeeper` path segment appears anywhere; (4) a
+`cd`/`pushd` target starts with `goalkeeper`; or (5) the session's own cwd is inside the config dir and
+any `goalkeeper` segment appears. `goalkeeper-mac` is not a segment, so the lane branch still merges.
+Item 6 blanks quoted string literals before that scan, but only for non-executing text emitters
+(`echo`, `printf`, `say`, `tmux display-message`, `git commit -m|-F`, `node …/fleet-message|fleet-notify`)
+and never for executors (`bash/sh/zsh -c`, `eval`, `xargs`, `tmux send-keys`, `ssh`, `scp`, `python*`,
+`node -e`, `perl`, `ruby`, `osascript`, `env`) — a bus directive quoting a PoC is prose, a `bash -c`
+string is a command. A literal that follows `>`, `>>` or `tee` is a redirect **target** and is never
+stripped, so `echo pwned > "$HOME/.claude/goalkeeper/evil.md"` still denies.
+
 Every child process is spawned with `CLAUDE_SESSION_KIND_MARKS` (and `CLAUDE_CONFIG_DIR`) set to `mkdtemp`
 fixture dirs, which guard.js prefers over the `~/.claude` default — so marks are written and read only under
 the temp dirs, removed after the run.
@@ -52,7 +65,7 @@ list is scanned. `census.py --live-badge-prefix` is the only real thing the suit
 
 ## Known limits, accepted for v1 (reviewed 2026-09-07, no fix)
 
-Four things these suites cannot prove. They are recorded so nobody reads a green run as proving more
+Five things these suites cannot prove. They are recorded so nobody reads a green run as proving more
 than it does.
 
 - **Cases 8–9 skip here.** They cover a *hung* `census.py`, and the 10s bound needs `timeout(1)` or
@@ -67,6 +80,9 @@ than it does.
   accepted limit of the conservative rule: the guard prevents *accidents*, and detection in
   `goalkeeper.py sweep` — uncommitted changes, foreign-author commits, mtimes newer than the last
   commit — is the guarantee. Neither stops a process that bypasses Claude Code tooling.
+- **Rule 3 has one accepted false positive.** A single command that mentions both `.claude/...` and
+  `docs/goals/goalkeeper/...` is denied, because rule 3 asks only that both appear somewhere in the
+  line. Split it into two commands.
 - **`census.py` does not see CLI worker sessions as live** — it observes processes with `ps`/`lsof` and
   classifies a CLI worker as `GHOST`. So the refusal keys on *desktop* liveness, which is the specified
   use (the 🥅 seat is a desktop session). A `0 goalkeeper` line in a census summary is therefore not

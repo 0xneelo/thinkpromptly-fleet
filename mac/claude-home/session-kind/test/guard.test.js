@@ -660,17 +660,20 @@ const HOME_CFG = path.join(HOMEFIX, '.claude');
 fs.mkdirSync(path.join(HOME_CFG, 'goalkeeper', 'audits'), { recursive: true });
 const HOME_ENV = { HOME: HOMEFIX, CLAUDE_CONFIG_DIR: HOME_CFG };
 
-function decideHome(payload, badge) {
-  const out = runRaw(JSON.stringify({ cwd: CWD[badge || ORCH], ...payload }), HOME_ENV);
+// `cwd` overrides the badge's default fixture cwd — rule 5 turns on where the
+// session is STANDING, so that group needs a seat inside the config dir and one
+// outside it, both stamped with the same badge.
+function decideHome(payload, badge, cwd) {
+  const out = runRaw(JSON.stringify({ cwd: cwd || CWD[badge || ORCH], ...payload }), HOME_ENV);
   if (!out) return null;
   return JSON.parse(out).hookSpecificOutput.permissionDecisionReason;
 }
-const denyHome = (p, badge) => {
-  const r = decideHome(p, badge);
+const denyHome = (p, badge, cwd) => {
+  const r = decideHome(p, badge, cwd);
   assert.ok(r, `expected deny: ${JSON.stringify(p)}`);
   return r;
 };
-const allowHome = (p, badge) => assert.equal(decideHome(p, badge), null,
+const allowHome = (p, badge, cwd) => assert.equal(decideHome(p, badge, cwd), null,
   `expected allow: ${JSON.stringify(p)}`);
 
 test('GK-M.3 item 2: `$HOME` and `${HOME}` reach the jail exactly as `~` does', () => {
@@ -845,3 +848,129 @@ test('GK-M.4: the 🥅 seat\'s own repo access is unchanged', () => {
 test('GK-M.4: the 🥅 seat\'s unconditional reach ban still fires', () => {
   assert.match(denyHome(bash(POST('{"body":"status"}')), GK), /a goalkeeper never reaches the fleet bus/);
 });
+
+// ------------ 17. GK-M.5 rules 1-5 — a relative goalkeeper/ after a cd into the config dir
+// GK-M.4 recognised only the absolute jail path, the `.claude/goalkeeper` literal, or a bare
+// `cd goalkeeper`, so after a `cd "$HOME/.claude"` a RELATIVE `goalkeeper/thread.md` was
+// invisible (the CRITICAL of 2026-09-08T00:55Z). NAMES now holds when: (1) the absolute jail
+// path appears, realpath or lexical; (2) `.claude/goalkeeper` appears; (3) the config dir is
+// mentioned anywhere AND a `goalkeeper` path segment appears anywhere; (4) a `cd`/`pushd`
+// target starts with `goalkeeper`; (5) the session cwd is inside the config dir and any
+// `goalkeeper` segment appears. `goalkeeper-mac` is not a segment, and a bare relative
+// segment from a repo cwd still is not the jail — that is the §9 G-5 carve-out.
+//
+// Two more stamped seats under HOME_ENV: one standing INSIDE the config dir (rule 5), one in
+// an ordinary repo outside it (the false-positive class).
+const HOME_REPO = path.join(HOMEFIX, 'remote-system');
+fs.mkdirSync(HOME_REPO, { recursive: true });
+fs.writeFileSync(path.join(MARKS, key(HOME_CFG)), ORCH + '\n');
+fs.writeFileSync(path.join(MARKS, key(HOME_REPO)), ORCH + '\n');
+
+test('GK-M.5 rules 1-5: the CRITICAL — `cd "$HOME/.claude" && rm goalkeeper/thread.md`', () => {
+  assert.match(denyHome(bash('cd "$HOME/.claude" && rm goalkeeper/thread.md'), ORCH, HOME_REPO), TOUCH_GK);
+});
+
+const GKM5_DENY = [
+  ['rule 3: a redirect into a relative goalkeeper/ after cd into cfg',
+    'cd "$HOME/.claude" && echo pwn > goalkeeper/evil.md'],
+  ['rule 3: a second cd into a jail subdir, then a write',
+    'cd "$HOME/.claude" && cd goalkeeper/audits && echo pwn > x.md'],
+  ['rule 3: an unquoted cd, `;` sequenced, then rm -rf',
+    'cd $HOME/.claude; rm -rf goalkeeper'],
+  ['rule 3: $CLAUDE_CONFIG_DIR is the config dir too, and tee is not a read',
+    'cd "$CLAUDE_CONFIG_DIR" && tee goalkeeper/thread.md'],
+  ['rule 1: the absolute jail path still names it', `rm ${JAIL}/thread.md`],
+  ['rule 4: a bare `cd goalkeeper` still names it',
+    'cd "$HOME/.claude" && cd goalkeeper && echo x > e.md'],
+];
+for (const [label, cmd] of GKM5_DENY) {
+  test(`GK-M.5 DENY: ${label}`, () => {
+    assert.match(denyHome(bash(cmd), ORCH, HOME_REPO), TOUCH_GK);
+  });
+}
+
+test('GK-M.5 rule 5: standing in the config dir, a bare `goalkeeper/` IS the jail', () => {
+  assert.match(denyHome(bash('echo x > goalkeeper/t.md'), ORCH, HOME_CFG), TOUCH_GK);
+});
+
+// The false-positive class the review cleared: a `goalkeeper` segment with no config dir in
+// sight and a cwd outside it. Each of these is ordinary fleet work and must stay allowed.
+const GKM5_ALLOW = [
+  ['this repo\'s pending ledger, staged and committed',
+    'git add docs/goals/goalkeeper/LINEAR-PENDING.md && git commit -m x'],
+  ['the lane branch name — `goalkeeper-mac` is not a segment',
+    'git merge origin/agent-giselher/goalkeeper-mac'],
+  ['the installer\'s own skill source', 'cp mac/claude-home/skills/goalkeeper/SKILL.md /tmp/'],
+  ['a pure read of the jail', `cat ${JAIL}/thread.md`],
+  // No `.claude` anywhere and the cwd is a repo, so this relative path lands in the repo.
+  ['a relative goalkeeper/ from a repo cwd', 'echo x > goalkeeper/t.md'],
+  ['an ordinary build', 'npm run build && npm test'],
+  ['a push', 'git push origin HEAD'],
+];
+for (const [label, cmd] of GKM5_ALLOW) {
+  test(`GK-M.5 ALLOW: ${label}`, () => allowHome(bash(cmd), ORCH, HOME_REPO));
+}
+
+// ------------ 18. GK-M.5 item 6 — prose in a quoted argument is not a command
+// Item 9 taught the guard that a heredoc body is data; a string literal carried by a text
+// emitter is the same lesson. Before the NAMES scan, quoted literals are blanked for
+// non-executing emitters (echo, printf, say, tmux display-message, git commit -m|-F,
+// node …/fleet-message|fleet-notify) and never for executors (bash/sh/zsh -c, eval, xargs,
+// tmux send-keys, ssh, scp, python*, node -e, perl, ruby, osascript, env). Segment boundaries
+// are found with the quotes honoured, because a carried message usually contains `&&` and `;`.
+// A literal that follows `>`, `>>` or `tee` is a redirect TARGET and is never blanked.
+
+test('GK-M.5 item 6: the 00:58Z incident — the bus directive carrying the PoC is allowed', () => {
+  allowHome(bash('node bin/fleet-message.js --to mac:LC-giselher --text "GK-M.5: verified ALLOWED'
+    + ' — cd \\"$HOME/.claude\\" && rm goalkeeper/thread.md and cd \\"$HOME/.claude\\" && echo pwn'
+    + ' > goalkeeper/evil.md"'), ORCH, HOME_REPO);
+});
+
+const GKM5_PROSE_ALLOW = [
+  ['echo quoting the PoC', 'echo "cd ~/.claude && rm goalkeeper/thread.md is the PoC"'],
+  ['a commit message naming the hole', 'git commit -m "close the ~/.claude/goalkeeper hole"'],
+  ['printf with a format and a quoted path', 'printf "%s\\n" "rm ~/.claude/goalkeeper/thread.md"'],
+];
+for (const [label, cmd] of GKM5_PROSE_ALLOW) {
+  test(`GK-M.5 item 6 ALLOW: ${label}`, () => allowHome(bash(cmd), ORCH, HOME_REPO));
+}
+
+// The literal is blanked, the command AROUND it is not — and a quoted redirect target is
+// never blanked, which is the regression the existing suite caught.
+const GKM5_PROSE_DENY = [
+  ['a blanked literal, but the redirect is outside it', `echo "rm x" > ${JAIL}/x`],
+  ['printf with a format, redirected into the jail', `printf "%s" hi > ${JAIL}/x`],
+  ['a quoted redirect target', 'echo pwned > "$HOME/.claude/goalkeeper/evil.md"'],
+  ['a quoted append target', 'echo pwned >> "$HOME/.claude/goalkeeper/evil.md"'],
+  ['a single-quoted redirect target', "echo pwned > '$HOME/.claude/goalkeeper/evil.md'"],
+  ['a quoted tee target', 'echo x | tee "$HOME/.claude/goalkeeper/x.md"'],
+  ['executor: bash -c', `bash -c 'rm ${JAIL}/x'`],
+  ['executor: sh -c', `sh -c 'rm ${JAIL}/x'`],
+  ['executor: eval', `eval 'rm ${JAIL}/x'`],
+  ['executor: ssh', `ssh box 'rm ${JAIL}/x'`],
+  ['executor: tmux send-keys', `tmux send-keys -t x 'rm ${JAIL}/x' Enter`],
+  ['executor: python3 -c', `python3 -c "open('${JAIL}/x','w')"`],
+];
+for (const [label, cmd] of GKM5_PROSE_DENY) {
+  test(`GK-M.5 item 6 DENY: ${label}`, () => {
+    assert.match(denyHome(bash(cmd), ORCH, HOME_REPO), TOUCH_GK);
+  });
+}
+
+// Malformed and oversized quoting must not wedge the scanner. The guard exits 0 on every
+// input — runRaw asserts that — so these assert termination and a well-formed decision only.
+const GKM5_ROBUST = [
+  ['an unterminated double quote', 'echo "unterminated'],
+  ['an unterminated single quote', "echo 'unterminated"],
+  ['nested quotes', 'echo "he said \'rm ~/.claude/goalkeeper/x\' loudly"'],
+  ['a trailing backslash inside a literal', String.raw`echo "ends with a backslash \"`],
+  ['a 200 KB quoted literal', 'echo "' + 'a'.repeat(200 * 1024) + '"'],
+  ['5000 alternating quoted segments',
+    Array.from({ length: 5000 }, (_, i) => `echo "m${i}"`).join(' && ')],
+];
+for (const [label, cmd] of GKM5_ROBUST) {
+  test(`GK-M.5 item 6 robustness: ${label}`, () => {
+    const r = decideHome(bash(cmd), ORCH, HOME_REPO);
+    assert.ok(r === null || typeof r === 'string');
+  });
+}
