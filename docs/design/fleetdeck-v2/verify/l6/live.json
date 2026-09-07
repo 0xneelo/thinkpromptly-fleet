@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice": "l6",
   "mode": "live",
-  "capturedAt": "2026-09-07T01:33:19.856Z",
+  "capturedAt": "2026-09-07T01:42:49.501Z",
   "api": "docs/design/fleetdeck-v2/fixtures/api/ + hand-written error/empty/offline variants",
   "consoleErrors": [],
   "stubbedHttpNoise": [
@@ -54,7 +54,7 @@
       "action": "read a thread",
       "expectation": "messages oldest-first, so the newest sits at the bottom of the body",
       "pass": true,
-      "detail": "m=[165,164,164,163,160,160,156,152,142,141,135,135]"
+      "detail": "m=[174,174,173,173,170,169,165,162,151,151,145,145]"
     },
     {
       "id": "L6-07",
@@ -138,7 +138,7 @@
       "action": "click Retry",
       "expectation": "POST /api/messages/retry {id}",
       "pass": true,
-      "detail": "{\"id\":\"x1788744692777\"}"
+      "detail": "{\"id\":\"x1788745264280\"}"
     },
     {
       "id": "L6-19",
@@ -187,7 +187,7 @@
       "action": "open a thread with unread messages",
       "expectation": "fd-bus-seen records an ISO stamp under that thread id",
       "pass": true,
-      "detail": "{\"LC-wendelgard-clean-pure-voting\":\"2026-09-07T01:31:38.233Z\"}"
+      "detail": "{\"LC-wendelgard-clean-pure-voting\":\"2026-09-07T01:41:08.881Z\"}"
     },
     {
       "id": "L6-26",
