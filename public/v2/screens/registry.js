@@ -901,7 +901,15 @@
   // attributes, properties and listeners, and draws the rest in the layer.
   function decorate() {
     var root = container();
-    if (!root || !FD.fixture.l4) { closeMenu(); closeEditor(); return; }
+    if (!root || !FD.fixture.l4) {
+      // Left the screen: prune first, or every anchored overlay would hang over
+      // whichever screen the user moved to. position() drops the ones whose
+      // anchor is gone, which is all of them once the table has unmounted.
+      closeMenu();
+      closeEditor();
+      position();
+      return;
+    }
     stylesheet();
     decorateFilters(root);
     decorateBulk(root);
