@@ -145,3 +145,10 @@ slices keep building on `agent-v2-base`; S2.1 will be merged into the base and b
 `branch`/`model` null passthrough. Rulings: `trendPts = history[].sd` (numbers, time order); null turns → "Turns
 unknown", null branch → "No branch", null model → "Model unknown" (today's texts). Follow-up L1.2 sent to Juergen;
 Kunhild (L8) and Clodwig (L10) warned to build against the fixed shapes.
+
+## 2026-09-08 · base moved to `42b56bb` (S2 fix folded in)
+
+Julius pushed `3e64200` + `8abf779` (arrayKids reconciliation fix in `runtime.js`, restored `logic-roundtrip.txt` and
+`t3-substitutions.txt`, 34/34 interactions, gates green). Merged into `agent-v2-base` @ `42b56bb` (no conflicts),
+pushed, and all ten L-workers told to merge it. Still open in S2.1: keystroke interaction step, `logic.js sha256`
+label, `.claude/launch.json` / `.gitignore` scope cleanup. Preview follows the base.
