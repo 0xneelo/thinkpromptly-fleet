@@ -84,6 +84,27 @@ class DesktopSessions {
     return best ? { row: best.row, machine: best.machine } : null;
   }
 
+  // The freshest stored row whose title is this one, with its machine. The message bus
+  // holds a seat's display name, and a seat that has gone offline is no longer in the live
+  // registry -- but its transcript is still on the machine that ran it. Two live tabs can
+  // share a title, so an ambiguous name resolves to nothing rather than to a coin flip.
+  byTitle(title) {
+    if (typeof title !== 'string' || !title) return null;
+    const machines = new Map(this.machines().map((m) => [m.id, m]));
+    let best = null;
+    let ambiguous = false;
+    for (const stored of this.all.all()) {
+      const machine = machines.get(stored.machine);
+      if (!machine) continue;
+      let row;
+      try { row = sessionRow(JSON.parse(stored.payload)); } catch { continue; }
+      if (!row || !row.cliSessionId || row.title !== title) continue;
+      if (best && row.cliSessionId !== best.row.cliSessionId) ambiguous = true;
+      if (!best || stored.updated_at > best.at) best = { row, machine, at: stored.updated_at };
+    }
+    return best && !ambiguous ? { row: best.row, machine: best.machine } : null;
+  }
+
   machines() {
     return this.config().filter((m) => m.desktop_sessions === true && ['local', 'ssh'].includes(m.route));
   }
