@@ -3,7 +3,7 @@
   "mode": "live",
   "slice": "l4",
   "status": "complete",
-  "capturedAt": "2026-09-07T01:16:17.858Z",
+  "capturedAt": "2026-09-07T01:20:10.529Z",
   "source": "http://127.0.0.1:3247/v2/index.html",
   "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api",
   "environment": {

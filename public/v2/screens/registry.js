@@ -263,8 +263,12 @@
     state.view = validate(state.view);
     var live = 0, gone = 0;
     state.view.forEach(function (r) { if (r.sel) { if (r.live) live++; else gone++; } });
+    // The rows go into regData, the key the compiled logic already reads and the
+    // key S2's standing seam check drives (tools/v2-setdata-check.mjs). Only what
+    // a row cannot carry — the counts, the raw search text, the selection totals —
+    // needs a key of its own, which is what DESIGN-35 allows. Both are set before
+    // the render flushes, so this is one re-render, not two.
     FD.setData('l4', {
-      rows: state.view,
       total: state.sessions.length,
       q: state.filter.q,
       count: state.view.length === state.sessions.length
@@ -275,6 +279,7 @@
       sort: state.sort,
       loading: state.loading
     });
+    FD.setData('regData', state.view);
   }
 
   // ------------------------------------------------------------------- toasts

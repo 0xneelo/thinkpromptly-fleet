@@ -15,6 +15,7 @@
 |---|---|---|
 | Fixture-mode pixel gate | **36/36, `allPass: true`**, max mismatch **0.0329 %** | `verify/l4/report.json`, full run under `docs/design/fleetdeck-v2/verify/l4/` |
 | Live gate, API stubbed from `fixtures/api/` | **36/36, `allPass: true`** | `verify/l4/live.json`, tool `tools/v2-live-check.mjs` |
+| S2's standing seam check | **PASS** — `FD.setData('regData', …)` reaches the table | `node tools/v2-setdata-check.mjs --app <url>` |
 | `test/v2-data.test.js` | **74 pass, 0 fail** | run alone |
 | `npm test`, whole suite | **not green — see "npm test" below** | 298 tests |
 
@@ -27,6 +28,12 @@ The screen is one file plus one block. `public/v2/screens/registry.js` owns the 
 filter, sort, selection, edits — and publishes a single validated payload with
 `FD.setData('l4', …)`. The registry block in `logic.js` reads `FD.fixture.l4` fresh inside
 `renderVals()` and renders it through the mock's own bindings.
+
+The rows are published into **`regData`** — the key the compiled logic already reads and the one
+S2's standing seam check drives — and only what a row cannot carry (the count string, the raw
+search text, the two selection totals) goes into a key of its own, which is what DESIGN-35 allows.
+Publishing the rows under a private key instead would have silently broken
+`tools/v2-setdata-check.mjs` for this screen; it now passes.
 
 **Fixture mode does nothing at all.** `?fixture=1` returns from `start()` before a listener is
 installed or a node is created, `FD.setData` is never called, `FD.fixture.l4` stays undefined and

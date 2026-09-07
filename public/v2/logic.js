@@ -385,8 +385,11 @@ class AppLogic extends Sub {
     const sel = this.state.sel || {};
     let l4 = null, filtered = [], selCount = 0, regRows = [];
     try {
+      // Rows always come from regData — the live screen publishes into that same
+      // key, so FD.setData('regData', …) reaches the table whoever calls it. l4
+      // carries only what a row cannot: the counts and the search text.
       l4 = FD.fixture.l4 || null;
-      const regData = (l4 ? l4.rows : FD.fixture.regData) || [];
+      const regData = FD.fixture.regData || [];
       const q = l4 ? String(l4.q || '').toLowerCase() : (this.state.q || '').toLowerCase();
       filtered = l4 ? regData : regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
       const regSel = (r) => (l4 ? !!r.sel : !!sel[r.id]);
