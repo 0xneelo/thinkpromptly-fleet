@@ -114,6 +114,7 @@
     // Fixture mode.
     isFixture,
     fixtureFor,
+    loadFixtures,
     // Time helpers the adapters share, exported so screen slices format the
     // same way rather than growing their own.
     ago,
@@ -147,7 +148,10 @@
     api[name] = function (...args) {
       if (!isFixture()) return live.apply(null, args);
       const key = FIXTURE_ROUTES[name];
-      return Promise.resolve(key === null ? fixtureShim(name) : fixtureFor(key));
+      if (key === null) return Promise.resolve(fixtureShim(name));
+      // Loading is deferred to here so fixture-extract.js is fetched only on a
+      // page that actually asked for fixture mode.
+      return loadFixtures().then(() => fixtureFor(key));
     };
   });
 
@@ -566,19 +570,40 @@
     return typeof search === 'string' && /[?&]fixture=1(&|$)/.test(search);
   }
 
+  // FD.fixture is S2's — the seeds its compiler moved out of the template, and the
+  // ones the app itself renders. FD.fixtureExtract holds only the seeds S2 did not
+  // substitute. FD.fixture always wins, and by construction the two never define
+  // the same key (tools/extract-fixture.mjs filters S2's keys out and its --check
+  // proves the overlap still agrees), so this order is a safety net, not a merge.
   function fixtureFor(name) {
-    const all = fixtures();
-    if (!(name in all)) throw new Error('no fixture named ' + name);
-    return all[name];
+    const owned = root.FD && root.FD.fixture;
+    if (owned && name in owned) return owned[name];
+    const extra = root.FD && root.FD.fixtureExtract;
+    if (extra && name in extra) return extra[name];
+    throw new Error('no fixture named ' + name + ' (is fixture-extract.js loaded?)');
   }
 
-  // Resolved at call time so a browser load never attempts a require and a Node
-  // test never depends on load order.
-  function fixtures() {
-    const found = root.FD && root.FD.fixture;
-    if (found) return found;
-    if (typeof require === 'function') return require('./fixture.js');
-    throw new Error('FD.fixture is not loaded');
+  // Resolves once fixture-extract.js is available. In Node it is a require; in the
+  // browser the shell is expected to have included it under ?fixture=1, and if it
+  // did not we inject it rather than fail. Never called outside fixture mode.
+  let fixturesLoading = null;
+  function loadFixtures() {
+    if (root.FD && root.FD.fixtureExtract) return Promise.resolve(root.FD.fixtureExtract);
+    if (fixturesLoading) return fixturesLoading;
+    if (typeof require === 'function') {
+      fixturesLoading = Promise.resolve(require('./fixture-extract.js'));
+      return fixturesLoading;
+    }
+    fixturesLoading = new Promise((resolve, reject) => {
+      const el = root.document.createElement('script');
+      // Absolute, matching how the shell loads S2's fixture.js (index.html:36),
+      // so it resolves the same from /v2/ and from /v2/index.html.
+      el.src = '/v2/fixture-extract.js';
+      el.onload = () => resolve(root.FD && root.FD.fixtureExtract);
+      el.onerror = () => reject(new Error('could not load fixture-extract.js'));
+      root.document.head.appendChild(el);
+    });
+    return fixturesLoading;
   }
 
   function orgChart() {

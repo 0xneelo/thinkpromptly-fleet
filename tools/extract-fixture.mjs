@@ -1,5 +1,10 @@
 #!/usr/bin/env node
-// Extracts the mock's seed arrays into public/v2/fixture.js.
+// Extracts the mock's seed arrays into public/v2/fixture-extract.js.
+//
+// S2's compiler (tools/dc-compile.mjs) owns public/v2/fixture.js and moves the seeds it substituted
+// into it byte-for-byte. Those keys are S2's; this tool must never define them. It writes only the
+// seeds S2 left behind, and --check re-extracts S2's keys and compares them against S2's file so a
+// drift between the two generators fails loudly instead of silently disagreeing.
 //
 // The seeds are not JSON: they live inside AppLogic.renderVals() and mix plain data with theme
 // helpers (dot/chipTone/t.*) and behaviour (arrow functions). We slice each literal's source text
@@ -15,7 +20,9 @@ import vm from 'node:vm';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MOCK = 'docs/design/fleetdeck-v2/mock/Fleetdeck Final.dc.html';
-const OUT = 'public/v2/fixture.js';
+const OUT = 'public/v2/fixture-extract.js';
+// S2's file, the authority for every seed it substituted.
+const S2_FIXTURE = 'public/v2/fixture.js';
 
 // name -> declaration text to locate. Must occur exactly once in the mock; the slice starts at the
 // first '[' or '{' at or after the match and ends at its bracket match. For the .map()-chained
@@ -40,7 +47,7 @@ const SEEDS = {
 // output for every session name the fixture knows. Anchor text must occur exactly once.
 const TERM_LINES_DECL = 'const termLinesFor = ';
 
-// Emitted key order of fixture.js.
+// Full extraction order; the keys S2 owns are filtered out before emitting.
 const ORDER = ['tiles', 'groups', 'regData', 'busSessions', 'busGroups', 'seedThreads',
   'orgScopeData', 'keyRows', 'accounts', 'machines', 'dsData', 'titles', 'gbSessions',
   'termLinesFor'];
@@ -213,20 +220,25 @@ function extract() {
   return out;
 }
 
-function render(seeds) {
-  const body = ORDER.map((k) => {
+function render(seeds, names) {
+  const body = names.map((k) => {
     if (!(k in seeds)) throw new Error(`seed "${k}" is in the output order but was not extracted`);
     return `    ${k}: ${JSON.stringify(seeds[k], null, 2).split('\n').join('\n    ')},`;
   }).join('\n');
   return `// GENERATED FILE — DO NOT EDIT BY HAND.
 // Source: ${MOCK}
 // Tool:   tools/extract-fixture.mjs   ·   regenerate with: npm run v2:fixture
+//
+// The seeds S2 did NOT substitute. S2's tools/dc-compile.mjs owns public/v2/fixture.js and the seeds
+// in it; this file must never define one of those keys, so that FD.fixture always wins and there is
+// exactly one definition of every seed. npm run v2:fixture -- --check proves the two agree.
+//
 // Seed data only: theme styles and behaviour handlers from the mock are deliberately not extracted.
 (function (root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
   root.FD = root.FD || {};
-  root.FD.fixture = api;
+  root.FD.fixtureExtract = api;
 })(typeof globalThis === 'object' ? globalThis : this, function () {
   return {
 ${body}
@@ -235,18 +247,92 @@ ${body}
 `;
 }
 
-const text = render(extract());
+// S2's fixture.js is a browser script (window.FD = ...; FD.fixture = ...). Evaluate it in a sandbox
+// that is its own window, which is exactly the shape it expects, and read the seeds back.
+function loadS2Fixture() {
+  let src;
+  try {
+    src = readFileSync(join(ROOT, S2_FIXTURE), 'utf8');
+  } catch {
+    throw new Error(`${S2_FIXTURE} is missing — S2 owns it; merge origin/agent-v2-base first`);
+  }
+  const sandbox = {};
+  sandbox.window = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox, { filename: S2_FIXTURE });
+  const seeds = sandbox.FD && sandbox.FD.fixture;
+  if (!seeds || typeof seeds !== 'object') {
+    throw new Error(`${S2_FIXTURE} defined no FD.fixture — its format changed, this tool must be updated`);
+  }
+  return seeds;
+}
+
+// Byte-for-byte over the value, not the source text: the two generators format differently on
+// purpose (S2 preserves the mock's own literal style, this one emits JSON), so canonical JSON with
+// key order preserved is what "identical seed" can mean across them.
+function canon(value) {
+  return JSON.stringify(value, null, 1);
+}
+
+function firstDrift(a, b, path = '') {
+  if (canon(a) === canon(b)) return null;
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return `${path || '(root)'}: length ${b.length} here vs ${a.length} in S2`;
+    for (let i = 0; i < a.length; i++) {
+      const hit = firstDrift(a[i], b[i], `${path}[${i}]`);
+      if (hit) return hit;
+    }
+  }
+  if (a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a)) {
+    const ka = Object.keys(a); const kb = Object.keys(b);
+    if (canon(ka) !== canon(kb)) return `${path || '(root)'}: keys ${canon(kb)} here vs ${canon(ka)} in S2`;
+    for (const k of ka) {
+      const hit = firstDrift(a[k], b[k], path ? `${path}.${k}` : k);
+      if (hit) return hit;
+    }
+  }
+  return `${path || '(root)'}: ${canon(b)} here vs ${canon(a)} in S2`;
+}
+
+// Every seed S2 substituted must still extract to exactly what S2 shipped. A mismatch means the two
+// generators have diverged and the app would render one thing while the tests assert another.
+function checkAgainstS2(all) {
+  const s2 = loadS2Fixture();
+  const owned = Object.keys(s2);
+  const drifted = [];
+  for (const name of owned) {
+    if (!(name in all)) {
+      drifted.push(`${name}: S2 defines it, this extractor does not know it`);
+      continue;
+    }
+    const hit = firstDrift(s2[name], all[name]);
+    if (hit) drifted.push(`${name} — ${hit}`);
+  }
+  return { owned, drifted };
+}
+
+const all = extract();
+const { owned, drifted } = checkAgainstS2(all);
+const mine = ORDER.filter((k) => !owned.includes(k));
+const text = render(all, mine);
 const outPath = join(ROOT, OUT);
+
+if (drifted.length) {
+  console.error(`seed drift against ${S2_FIXTURE} (S2 owns these ${owned.length} keys):`);
+  for (const line of drifted) console.error(`  ${line}`);
+  console.error('S2\'s fixture.js is the authority. Re-run S2\'s compiler or fix this extractor; do not edit either by hand.');
+  process.exit(1);
+}
 
 if (process.argv.includes('--check')) {
   let onDisk = null;
-  try { onDisk = readFileSync(outPath, 'utf8'); } catch (e) { onDisk = null; }
+  try { onDisk = readFileSync(outPath, 'utf8'); } catch { onDisk = null; }
   if (onDisk !== text) {
     console.error(`${OUT} is stale${onDisk === null ? ' (missing)' : ''} — run: npm run v2:fixture`);
     process.exit(1);
   }
-  console.log(`${OUT} is up to date`);
+  console.log(`${OUT} is up to date; ${owned.length} S2-owned seeds match ${S2_FIXTURE}`);
 } else {
   writeFileSync(outPath, text);
-  console.log(`wrote ${OUT}`);
+  console.log(`wrote ${OUT} (${mine.length} seeds); ${owned.length} S2-owned seeds match ${S2_FIXTURE}`);
 }
