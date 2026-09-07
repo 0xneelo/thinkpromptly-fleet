@@ -250,3 +250,10 @@ with DECK-84. Names released: Julius (S2 complete after S2.2), Tankred (L7 accep
 `fd-weave-gate.sh` on the german-box (`~/weave-gate/weave-fd-v2/result.txt`): HEAD 444fc6d, `npm test` 460 pass,
 pixel gate fixture mode allPass 36/36 max 0.0329 %, no fails. The eight-slice weave is proven on the gate machine.
 L2 review: ACCEPT; follow-up L2.1 to Renate (setBadge must retain a count set before the data layer is ready).
+
+## 2026-09-08 · L5 review: accept + L5.1
+
+Scope clean, `orgchart.js` untouched, formats verbatim, gate 36/36 + live 50/50 real, 109/109 unit tests. Follow-up
+L5.1 to Dietlind: gate the 1 s ticker on `orgOpen()` and wire `stop()/start()` (HIGH: perpetual app re-render +
+Live API pill overwrite after one visit); scope select options that yield an empty kids grid (MEDIUM). I-L5-05
+(`expires: none` replaces the old `expired 20703d ago` quirk) accepted.
