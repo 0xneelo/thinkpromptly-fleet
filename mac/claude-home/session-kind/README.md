@@ -5,7 +5,9 @@ researcher** (researches a topic 1-on-1 with the operator, reports findings to t
 orchestrator, never builds), a **design implementation orchestrator** (`🎨 DESIGN <N>`,
 diffs a Claude Design handoff against the current implementation, mints german-box workers
 for the build, hands finished branches to the live orchestrator for train weaving — never
-edits source itself), or a **CLI worker** (executes builds), then shows that in the
+edits source itself), a **goalkeeper** (`🥅 GOALKEEPER <N>`, the auditor seat — one for all
+projects, holds the operator's directions and audits the fleet for drift against them, never
+builds and never talks to a seat), or a **CLI worker** (executes builds), then shows that in the
 statusline and enforces it with a PreToolUse hook.
 
 ## Marker scheme
@@ -13,10 +15,11 @@ statusline and enforces it with a PreToolUse hook.
 `~/.claude/session-kind/marks/<key>`, where `<key>` = first 12 hex chars of `shasum` (SHA-1) of the
 session's absolute cwd, with no trailing newline in the hashed input. That derivation means an
 in-session agent can stamp itself without knowing its own session id. File contents = one badge
-line, e.g. `🎛 ORCHESTRATOR 2`, `🔬 RESEARCHER 3`, `🎨 DESIGN 4`, `🧭 COORDINATOR 5` (the desktop kinds carry a
+line, e.g. `🎛 ORCHESTRATOR 2`, `🔬 RESEARCHER 3`, `🎨 DESIGN 4`, `🧭 COORDINATOR 5`, `🥅 GOALKEEPER 6` (the desktop kinds carry a
 session number claimed from `number.py` — ONE shared pool, so a number is unambiguous across
-all desktop kinds; guard matches the `🎛 ORCHESTRATOR`, `🔬 RESEARCHER`, `🎨 DESIGN` and `🧭 COORDINATOR` prefixes;
-a coordinator may still write under `coordinator/`) or
+all desktop kinds; guard matches the `🎛 ORCHESTRATOR`, `🔬 RESEARCHER`, `🎨 DESIGN`, `🧭 COORDINATOR` and `🥅 GOALKEEPER` prefixes;
+a coordinator may still write under `coordinator/`; a goalkeeper may write only under
+`~/.claude/goalkeeper/` and the scratchpad, may not message any seat, and no seat may message it) or
 `🔨 WORKER · Greta`. `CLAUDE_CONFIG_DIR` overrides `~/.claude`.
 
 ## Commands
@@ -25,6 +28,7 @@ a coordinator may still write under `coordinator/`) or
     sh ~/.claude/session-kind/mark.sh --researcher "topic"    # same, badge 🔬 RESEARCHER <N> (same pool)
     sh ~/.claude/session-kind/mark.sh --design "topic"        # same, badge 🎨 DESIGN <N> (same pool)
     sh ~/.claude/session-kind/mark.sh --coordinator "topic"   # same, badge 🧭 COORDINATOR <N> (coordinator portal)
+    sh ~/.claude/session-kind/mark.sh --goalkeeper "topic"    # same, badge 🥅 GOALKEEPER <N> (one for all projects)
     sh ~/.claude/session-kind/mark.sh --worker Greta          # stamp a worker (warns on reused worktree)
     sh ~/.claude/session-kind/mark.sh --show | --clear        # this cwd's badge
     sh ~/.claude/session-kind/mark.sh --list | --reap         # all badges (age, [DEAD CWD]) / drop dead ones
@@ -34,9 +38,11 @@ a coordinator may still write under `coordinator/`) or
     python3 ~/.claude/session-kind/number.py reap [--days N]  # close claims whose cwd is gone / idle
 
 Use the one-shot stamps; a hand-assembled badge is refused unless it has a valid shape, and
-an explicit `🎛 ORCHESTRATOR <N>`, `🔬 RESEARCHER <N>`, `🎨 DESIGN <N>` or `🧭 COORDINATOR <N>` is checked against the registry
+an explicit `🎛 ORCHESTRATOR <N>`, `🔬 RESEARCHER <N>`, `🎨 DESIGN <N>`, `🧭 COORDINATOR <N>` or `🥅 GOALKEEPER <N>` is checked against the registry
 (`number.py verify`) so it cannot duplicate a number another live directory holds. `claim` is idempotent per directory —
-re-running it hands back the number that directory already holds.
+re-running it hands back the number that directory already holds. `--goalkeeper` additionally
+refuses to stamp while a live `🥅` seat sits in a different directory (exit 4) — there is ONE
+goalkeeper for all projects; re-stamping the same directory is still idempotent.
 
 `number.py` mirrors `workers/name.py` (sqlite registry, BEGIN IMMEDIATE serialises parallel
 claims, unclosed claims rotate back after 7 idle days). Truth lives in `numbers.db`; never
@@ -104,6 +110,12 @@ the marker's existence, so `--clear` is the way to retire one.
 Either `mark.sh --clear` in that cwd (guard is inert without an orchestrator or researcher
 marker), or delete the `hooks.PreToolUse` entry pointing at `guard.js` from
 `~/.claude/settings.json`. A session with no marker, or a worker badge, is completely
-unaffected either way. In researcher sessions the guard additionally denies the
-`introduce-goal` skill — minting workers is the orchestrator's exit hatch; a researcher
+unaffected either way. In researcher, coordinator and goalkeeper sessions the guard additionally
+denies the `introduce-goal` skill — minting workers is the orchestrator's exit hatch; a researcher
 reports findings to the live orchestrator instead.
+
+The goalkeeper is isolated in both directions: the `🥅` seat may not message any seat
+(`SendMessage`, `send_message`) and may not reach one over the fleet bus, the deck API or the
+session registry, and it may write only under `~/.claude/goalkeeper/` and the scratchpad — every
+other repo is read-only evidence. Symmetrically, every other stamped session may not message or
+reach a `🥅` seat, and may not write under `~/.claude/goalkeeper/`.

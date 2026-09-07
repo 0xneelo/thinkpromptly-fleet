@@ -9,6 +9,8 @@ that against both registries and the session transcripts.
   census.py            table + summary of every session directory and its real state
   census.py --reap     close/drop registry entries with NO live process behind them
   census.py --quiet    summary line only
+  census.py --live-badge-prefix "🥅"
+                       `badge<TAB>cwd` for LIVE sessions with that badge prefix, nothing else
 
 Statuses:
   LIVE          a driver process is alive in that directory
@@ -203,6 +205,12 @@ def main():
     ap.add_argument("--reap", action="store_true", help="clear entries with no live process")
     ap.add_argument("--quiet", action="store_true", help="summary line only")
     ap.add_argument("--idle", type=int, default=10, help="minutes before LIVE·WAITING")
+    ap.add_argument(
+        "--live-badge-prefix",
+        metavar="PREFIX",
+        help="print `badge<TAB>cwd` for live sessions whose badge starts with PREFIX, "
+             "and nothing else (machine-readable liveness query for mark.sh)",
+    )
     args = ap.parse_args()
 
     procs = drivers()
@@ -237,17 +245,29 @@ def main():
         rows.append((status, d, badge, n, pids, act))
 
     live = [r for r in rows if r[0].startswith("LIVE") or r[0] == "UNSTAMPED"]
+
+    if args.live_badge_prefix:
+        for status, d, badge, n, pids, act in live:
+            if (badge or "").startswith(args.live_badge_prefix):
+                print("{}\t{}".format(badge, d))
+        return
+
     orch = sum(1 for r in live if (r[2] or "").startswith("🎛"))
     res = sum(1 for r in live if (r[2] or "").startswith("🔬"))
     des = sum(1 for r in live if (r[2] or "").startswith("🎨"))
+    coord = sum(1 for r in live if (r[2] or "").startswith("🧭"))
+    gk = sum(1 for r in live if (r[2] or "").startswith("🥅"))
     work = sum(1 for r in live if (r[2] or "").startswith("🔨"))
     print(
-        "open sessions: {}  ({} orchestrator, {} researcher, {} design, {} worker, {} unstamped)  |  "
+        "open sessions: {}  ({} orchestrator, {} researcher, {} design, {} coordinator, "
+        "{} goalkeeper, {} worker, {} unstamped)  |  "
         "{} ghost registry entr{}".format(
             len(live),
             orch,
             res,
             des,
+            coord,
+            gk,
             work,
             sum(1 for r in live if not r[2]),
             sum(1 for r in rows if r[0] == "GHOST"),

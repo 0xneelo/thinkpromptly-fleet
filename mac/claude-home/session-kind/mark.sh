@@ -1,5 +1,5 @@
 #!/bin/sh
-# Stamp the current cwd as an orchestrator / researcher / worker session.
+# Stamp the current cwd as an orchestrator / researcher / goalkeeper / worker session.
 #
 #   mark.sh --orchestrator ["topic"]  claim a number (idempotent per dir) AND stamp
 #                                     `🎛 ORCHESTRATOR <N>`; prints the badge. USE THIS —
@@ -12,6 +12,11 @@
 #   mark.sh --coordinator ["topic"]   claim a number (same pool) AND stamp
 #                                     `🧭 COORDINATOR <N>` (coordinator portal);
 #                                     prints the badge.
+#   mark.sh --goalkeeper ["topic"]    claim a number (same pool) AND stamp
+#                                     `🥅 GOALKEEPER <N>` (the auditor seat); prints the
+#                                     badge. REFUSED while another 🥅 seat is live in a
+#                                     different directory — there is ONE goalkeeper for all
+#                                     projects.
 #   mark.sh --worker <Name>           stamp `🔨 WORKER · <Name>`; warns loudly (stderr) if
 #                                     this directory still carries another agent's badge,
 #                                     which is the reused-worktree case that used to leave
@@ -50,6 +55,7 @@ valid_badge() {
     "🔬 RESEARCHER"|"🔬 RESEARCHER "[0-9]*) return 0 ;;
     "🎨 DESIGN"|"🎨 DESIGN "[0-9]*) return 0 ;;
     "🧭 COORDINATOR"|"🧭 COORDINATOR "[0-9]*) return 0 ;;
+    "🥅 GOALKEEPER"|"🥅 GOALKEEPER "[0-9]*) return 0 ;;
     "🔨 WORKER · "?*) return 0 ;;
     *) return 1 ;;
   esac
@@ -67,13 +73,34 @@ case "$1" in
   --clear) rm -f "$FILE" "$FILE.cwd" "$FILE.meta" 2>/dev/null ;;
   --show)  [ -f "$FILE" ] && cat "$FILE" 2>/dev/null ;;
 
-  --orchestrator|--researcher|--design|--coordinator)
+  --orchestrator|--researcher|--design|--coordinator|--goalkeeper)
     case "$1" in
       --orchestrator) PREFIX="🎛 ORCHESTRATOR" ;;
       --researcher)   PREFIX="🔬 RESEARCHER" ;;
       --design)       PREFIX="🎨 DESIGN" ;;
       --coordinator)  PREFIX="🧭 COORDINATOR" ;;
+      --goalkeeper)   PREFIX="🥅 GOALKEEPER" ;;
     esac
+    # ONE goalkeeper for all projects: refuse a second 🥅 seat in another directory.
+    # Re-stamping THIS directory stays idempotent. The check is bounded at 10s and fails
+    # OPEN — a census that errors, is missing, or HANGS (it shells out to ps/lsof) leaves
+    # OTHER empty and the stamp proceeds. A broken census must never wedge a stamp.
+    # macOS ships no timeout(1); coreutils' gtimeout is the fallback, and with neither the
+    # call is simply unbounded (the old behaviour) rather than skipped.
+    if [ "$1" = "--goalkeeper" ]; then
+      if command -v timeout >/dev/null 2>&1; then GKTMO="timeout 10"
+      elif command -v gtimeout >/dev/null 2>&1; then GKTMO="gtimeout 10"
+      else GKTMO=""; fi
+      OTHER=$($GKTMO python3 "$DIR/census.py" --live-badge-prefix "🥅" 2>/dev/null \
+              | awk -F'\t' -v me="$PWD" 'NF>=2 && $2 != me { print $1 " in " $2 }')
+      if [ -n "$OTHER" ]; then
+        echo "mark.sh: a 🥅 GOALKEEPER seat is already live:" >&2
+        printf '  %s\n' "$OTHER" >&2
+        echo "mark.sh: there is ONE goalkeeper for all projects (PLAN.md v2 §3.1)." >&2
+        echo "mark.sh: close that seat first (mark.sh --clear in its directory), or work in it." >&2
+        exit 4
+      fi
+    fi
     if [ -n "$2" ]; then
       N=$(python3 "$DIR/number.py" claim --topic "$2") || exit 1
     else
@@ -138,14 +165,15 @@ case "$1" in
   *)
     if ! valid_badge "$1"; then
       echo "mark.sh: refusing badge '$1'" >&2
-      echo "mark.sh: expected '🎛 ORCHESTRATOR <N>', '🔬 RESEARCHER <N>', '🎨 DESIGN <N>', '🧭 COORDINATOR <N>' or '🔨 WORKER · <Name>' (no paths)." >&2
-      echo "mark.sh: prefer 'mark.sh --orchestrator/--researcher/--design/--coordinator \"<topic>\"' / '--worker <Name>'." >&2
+      echo "mark.sh: expected '🎛 ORCHESTRATOR <N>', '🔬 RESEARCHER <N>', '🎨 DESIGN <N>', '🧭 COORDINATOR <N>', '🥅 GOALKEEPER <N>' or '🔨 WORKER · <Name>' (no paths)." >&2
+      echo "mark.sh: prefer 'mark.sh --orchestrator/--researcher/--design/--coordinator/--goalkeeper \"<topic>\"' / '--worker <Name>'." >&2
       exit 2
     fi
     N=$(printf '%s' "$1" | sed -n 's/^🎛 ORCHESTRATOR \([0-9][0-9]*\)$/\1/p')
     [ -n "$N" ] || N=$(printf '%s' "$1" | sed -n 's/^🔬 RESEARCHER \([0-9][0-9]*\)$/\1/p')
     [ -n "$N" ] || N=$(printf '%s' "$1" | sed -n 's/^🎨 DESIGN \([0-9][0-9]*\)$/\1/p')
     [ -n "$N" ] || N=$(printf '%s' "$1" | sed -n 's/^🧭 COORDINATOR \([0-9][0-9]*\)$/\1/p')
+    [ -n "$N" ] || N=$(printf '%s' "$1" | sed -n 's/^🥅 GOALKEEPER \([0-9][0-9]*\)$/\1/p')
     if [ -n "$N" ]; then
       python3 "$DIR/number.py" verify "$N" || exit 3
     fi
