@@ -1,0 +1,436 @@
+{
+  "schemaVersion": 1,
+  "mode": "live",
+  "slice": "l7",
+  "capturedAt": "2026-09-07T01:05:27.657Z",
+  "clock": {
+    "fixedNow": 1788745984000,
+    "iso": "2026-09-07T01:53:04.000Z",
+    "note": "page.clock.install so every countdown is deterministic"
+  },
+  "source": "public/ served on loopback, /api/* stubbed from docs/design/fleetdeck-v2/fixtures/api/ plus hand-written error, empty, offline and non-ED25519 variants",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "total": 60,
+  "passed": 60,
+  "failed": 0,
+  "allPass": true,
+  "results": [
+    {
+      "id": "L7-01",
+      "action": "read the Mint card TTL chips",
+      "expectation": "chips are 1h / 4h / 8h",
+      "pass": true,
+      "detail": "expected \"1h,4h,8h\", got \"1h,4h,8h\""
+    },
+    {
+      "id": "L7-02",
+      "action": "read the principal chips",
+      "expectation": "chips are root and vibe",
+      "pass": true,
+      "detail": "expected \"root,vibe\", got \"root,vibe\""
+    },
+    {
+      "id": "L7-03",
+      "action": "read the root chip title",
+      "expectation": "title is verbatim from BEHAVIOUR §2",
+      "pass": true,
+      "detail": "expected \"VPS boxes: think · onboarding · ivy\", got \"VPS boxes: think · onboarding · ivy\""
+    },
+    {
+      "id": "L7-04",
+      "action": "read the vibe chip title",
+      "expectation": "title is verbatim from BEHAVIOUR §2",
+      "pass": true,
+      "detail": "expected \"german-box\", got \"german-box\""
+    },
+    {
+      "id": "L7-05",
+      "action": "read the principal chips aria state",
+      "expectation": "both principals selected by default",
+      "pass": true,
+      "detail": "expected \"true,true\", got \"true,true\""
+    },
+    {
+      "id": "L7-06",
+      "action": "read the Mint card hint",
+      "expectation": "1Password approval text verbatim",
+      "pass": true,
+      "detail": "expected \"Minting pops a 1Password approval on the Mac — click Allow there.\", got \"Minting pops a 1Password approval on the Mac — click Allow there.\""
+    },
+    {
+      "id": "L7-07",
+      "action": "read the GitHub train pill",
+      "expectation": "an open train reads ACTIVE",
+      "pass": true,
+      "detail": "expected \"ACTIVE\", got \"ACTIVE\""
+    },
+    {
+      "id": "L7-08",
+      "action": "read the train countdown",
+      "expectation": "over an hour formats as h:mm",
+      "pass": true,
+      "detail": "expected \"1:05\", got \"1:05\""
+    },
+    {
+      "id": "L7-09",
+      "action": "look for End train",
+      "expectation": "End train is shown while a train is live",
+      "pass": true
+    },
+    {
+      "id": "L7-10",
+      "action": "read the train hint",
+      "expectation": "hint and curl command verbatim",
+      "pass": true,
+      "detail": "Starting a train pops one Touch ID on the Mac. While active, agents self-serve 1h tokens: curl -s localhost:3131/api/ghtoken"
+    },
+    {
+      "id": "L7-11",
+      "action": "count the certificate rows",
+      "expectation": "1 active row + its copy line + 2 expired rows",
+      "pass": true,
+      "detail": "expected 4, got 4"
+    },
+    {
+      "id": "L7-12",
+      "action": "read the active cert pill",
+      "expectation": "the live cert reads ACTIVE",
+      "pass": true,
+      "detail": "expected \"ACTIVE\", got \"ACTIVE\""
+    },
+    {
+      "id": "L7-13",
+      "action": "read the active cert key id",
+      "expectation": "the row is keyed by keyId",
+      "pass": true,
+      "detail": "expected \"deployer-20260906-215834\", got \"deployer-20260906-215834\""
+    },
+    {
+      "id": "L7-14",
+      "action": "read the active cert principals",
+      "expectation": "principals joined, then · until <validTo>",
+      "pass": true,
+      "detail": "expected \"root, vibe · until 2026-09-07T05:58:34\", got \"root, vibe · until 2026-09-07T05:58:34\""
+    },
+    {
+      "id": "L7-15",
+      "action": "read the active cert countdown",
+      "expectation": "the cert countdown matches its expiry",
+      "pass": true,
+      "detail": "expected \"1:05\", got \"1:05\""
+    },
+    {
+      "id": "L7-16",
+      "action": "read the active cert button",
+      "expectation": "a live cert offers Kill now",
+      "pass": true,
+      "detail": "expected \"Kill now\", got \"Kill now\""
+    },
+    {
+      "id": "L7-17",
+      "action": "read the copy line",
+      "expectation": "exact ssh flags for the live cert dir",
+      "pass": true,
+      "detail": "expected \"-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-215834/deployer -o CertificateFile=/Users/misterislez/.ssh/deploy-certs/20260906-215834/deployer-cert.pub\", got \"-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-215834/deployer -o CertificateFile=/Users/misterislez/.ssh/deploy-certs/20260906-215834/deployer-cert.pub\""
+    },
+    {
+      "id": "L7-18",
+      "action": "read the expired cert pill",
+      "expectation": "a lapsed cert reads EXPIRED",
+      "pass": true,
+      "detail": "expected \"EXPIRED\", got \"EXPIRED\""
+    },
+    {
+      "id": "L7-19",
+      "action": "read the expired cert button",
+      "expectation": "an expired cert offers Delete",
+      "pass": true,
+      "detail": "expected \"Delete\", got \"Delete\""
+    },
+    {
+      "id": "L7-20",
+      "action": "count the key rows",
+      "expectation": "every key from /api/sshkeys is listed",
+      "pass": true,
+      "detail": "expected 9, got 9"
+    },
+    {
+      "id": "L7-21",
+      "action": "read the first key name",
+      "expectation": "the name column is the real key name",
+      "pass": true,
+      "detail": "expected \"deploy-ca\", got \"deploy-ca\""
+    },
+    {
+      "id": "L7-22",
+      "action": "read the first key fingerprint",
+      "expectation": "the fingerprint column is the real fingerprint",
+      "pass": true,
+      "detail": "expected \"SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0\", got \"SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0\""
+    },
+    {
+      "id": "L7-23",
+      "action": "render the screen in light theme",
+      "expectation": "the live screen renders in both themes",
+      "pass": true,
+      "detail": "expected \"ACTIVE\", got \"ACTIVE\""
+    },
+    {
+      "id": "L7-24",
+      "action": "load with no train open",
+      "expectation": "the pill reads INACTIVE",
+      "pass": true,
+      "detail": "expected \"INACTIVE\", got \"INACTIVE\""
+    },
+    {
+      "id": "L7-25",
+      "action": "look for End train with no train",
+      "expectation": "End train is hidden unless a train is live",
+      "pass": true
+    },
+    {
+      "id": "L7-26",
+      "action": "load with the broker unreachable",
+      "expectation": "a dead broker is not collapsed into INACTIVE",
+      "pass": true,
+      "detail": "expected \"BROKER DOWN\", got \"BROKER DOWN\""
+    },
+    {
+      "id": "L7-27",
+      "action": "read the broker error line",
+      "expectation": "the broker's own message is surfaced verbatim",
+      "pass": true,
+      "detail": "expected \"train broker unreachable at 127.0.0.1:3132 — is the com.fleetdeck.train launch agent loaded?\", got \"train broker unreachable at 127.0.0.1:3132 — is the com.fleetdeck.train launch agent loaded?\""
+    },
+    {
+      "id": "L7-28",
+      "action": "load with a silent dead broker",
+      "expectation": "the default broker text is used",
+      "pass": true,
+      "detail": "expected \"the train broker is not answering\", got \"the train broker is not answering\""
+    },
+    {
+      "id": "L7-29",
+      "action": "load a deck with no certs",
+      "expectation": "the empty text is verbatim",
+      "pass": true,
+      "detail": "expected \"no certs yet — mint one above\", got \"no certs yet — mint one above\""
+    },
+    {
+      "id": "L7-30",
+      "action": "load with the deck unreachable",
+      "expectation": "the certificates area is replaced by one line",
+      "pass": true,
+      "detail": "expected \"cannot reach fleetdeck\", got \"cannot reach fleetdeck\""
+    },
+    {
+      "id": "L7-31",
+      "action": "deselect both principals and press Mint",
+      "expectation": "the guard text is verbatim",
+      "pass": true,
+      "detail": "expected \"pick at least one principal\", got \"pick at least one principal\""
+    },
+    {
+      "id": "L7-32",
+      "action": "deselect both principals and press Mint",
+      "expectation": "no mint request is sent",
+      "pass": true
+    },
+    {
+      "id": "L7-33",
+      "action": "pick 4h and press Mint",
+      "expectation": "the POST body is today's {ttl, principals}",
+      "pass": true,
+      "detail": "expected \"{\\\"ttl\\\":\\\"4h\\\",\\\"principals\\\":\\\"root,vibe\\\"}\", got \"{\\\"ttl\\\":\\\"4h\\\",\\\"principals\\\":\\\"root,vibe\\\"}\""
+    },
+    {
+      "id": "L7-34",
+      "action": "mint against a failing minter",
+      "expectation": "the server's error text is shown",
+      "pass": true,
+      "detail": "expected \"mint failed (exit 1)\", got \"mint failed (exit 1)\""
+    },
+    {
+      "id": "L7-35",
+      "action": "mint against an origin-refused deck",
+      "expectation": "a body that will not parse becomes HTTP 403",
+      "pass": true,
+      "detail": "expected \"HTTP 403\", got \"HTTP 403\""
+    },
+    {
+      "id": "L7-36",
+      "action": "press Kill now on a live cert",
+      "expectation": "the confirm text is verbatim",
+      "pass": true,
+      "detail": "expected \"Kill this cert now? Agents using it lose access immediately.\", got \"Kill this cert now? Agents using it lose access immediately.\""
+    },
+    {
+      "id": "L7-37",
+      "action": "accept the Kill now confirm",
+      "expectation": "the cert dir is posted to the delete route",
+      "pass": true,
+      "detail": "expected \"{\\\"dir\\\":\\\"/Users/misterislez/.ssh/deploy-certs/20260906-215834\\\"}\", got \"{\\\"dir\\\":\\\"/Users/misterislez/.ssh/deploy-certs/20260906-215834\\\"}\""
+    },
+    {
+      "id": "L7-38",
+      "action": "dismiss the Kill now confirm",
+      "expectation": "nothing is deleted",
+      "pass": true
+    },
+    {
+      "id": "L7-39",
+      "action": "press Delete on an expired cert",
+      "expectation": "an expired cert deletes without a confirm",
+      "pass": true
+    },
+    {
+      "id": "L7-40",
+      "action": "press Delete on an expired cert",
+      "expectation": "that cert dir is posted",
+      "pass": true,
+      "detail": "expected \"{\\\"dir\\\":\\\"/Users/misterislez/.ssh/deploy-certs/20260906-153509\\\"}\", got \"{\\\"dir\\\":\\\"/Users/misterislez/.ssh/deploy-certs/20260906-153509\\\"}\""
+    },
+    {
+      "id": "L7-41",
+      "action": "press Copy",
+      "expectation": "the label becomes Copied",
+      "pass": true,
+      "detail": "expected \"Copied\", got \"Copied\""
+    },
+    {
+      "id": "L7-42",
+      "action": "press Copy",
+      "expectation": "the exact ssh flags reach the clipboard",
+      "pass": true,
+      "detail": "expected \"-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-215834/deployer -o CertificateFile=/Users/misterislez/.ssh/deploy-certs/20260906-215834/deployer-cert.pub\", got \"-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-215834/deployer -o CertificateFile=/Users/misterislez/.ssh/deploy-certs/20260906-215834/deployer-cert.pub\""
+    },
+    {
+      "id": "L7-43",
+      "action": "wait 1.5 s after Copy",
+      "expectation": "the label reverts to Copy",
+      "pass": true,
+      "detail": "expected \"Copy\", got \"Copy\""
+    },
+    {
+      "id": "L7-44",
+      "action": "press the 4h start chip",
+      "expectation": "the chosen TTL is posted to the train route",
+      "pass": true,
+      "detail": "expected \"{\\\"ttl\\\":\\\"4h\\\"}\", got \"{\\\"ttl\\\":\\\"4h\\\"}\""
+    },
+    {
+      "id": "L7-45",
+      "action": "press a start chip",
+      "expectation": "the chip reads Touch ID… while the mint is in flight",
+      "pass": true,
+      "detail": "1h"
+    },
+    {
+      "id": "L7-46",
+      "action": "start a train the broker refuses",
+      "expectation": "the broker's validation text is shown",
+      "pass": true,
+      "detail": "expected \"ttl must be 1h, 4h or 8h\", got \"ttl must be 1h, 4h or 8h\""
+    },
+    {
+      "id": "L7-47",
+      "action": "press End train",
+      "expectation": "today's empty body is posted to the end route",
+      "pass": true,
+      "detail": "expected \"{}\", got \"{}\""
+    },
+    {
+      "id": "L7-48",
+      "action": "end a train against a broken deck",
+      "expectation": "a non-JSON failure becomes HTTP 500",
+      "pass": true,
+      "detail": "expected \"HTTP 500\", got \"HTTP 500\""
+    },
+    {
+      "id": "L7-49",
+      "action": "read the countdown before ticking",
+      "expectation": "the countdown starts at 1:05",
+      "pass": true,
+      "detail": "expected \"1:05\", got \"1:05\""
+    },
+    {
+      "id": "L7-50",
+      "action": "advance the clock one minute",
+      "expectation": "the countdown ticks down locally",
+      "pass": true,
+      "detail": "expected \"1:04\", got \"1:04\""
+    },
+    {
+      "id": "L7-51",
+      "action": "advance the clock past 30 s",
+      "expectation": "the screen re-polls /api/sshkeys",
+      "pass": true,
+      "detail": "before 2, after 3"
+    },
+    {
+      "id": "L7-52",
+      "action": "read the live cert before expiry",
+      "expectation": "it is ACTIVE with a Kill now button",
+      "pass": true,
+      "detail": "expected \"Kill now\", got \"Kill now\""
+    },
+    {
+      "id": "L7-53",
+      "action": "advance past the cert expiry",
+      "expectation": "the badge flips to EXPIRED",
+      "pass": true,
+      "detail": "expected \"EXPIRED\", got \"EXPIRED\""
+    },
+    {
+      "id": "L7-54",
+      "action": "advance past the cert expiry",
+      "expectation": "the button becomes Delete",
+      "pass": true,
+      "detail": "expected \"Delete\", got \"Delete\""
+    },
+    {
+      "id": "L7-55",
+      "action": "load a train under an hour out",
+      "expectation": "under an hour formats as zero-padded mm:ss",
+      "pass": true,
+      "detail": "05:09"
+    },
+    {
+      "id": "L7-56",
+      "action": "load keys that are not all ED25519",
+      "expectation": "the Type column shows the real algorithm",
+      "pass": true,
+      "detail": "expected \"RSA\", got \"RSA\""
+    },
+    {
+      "id": "L7-57",
+      "action": "load an ECDSA key",
+      "expectation": "the Type column is per row, not hard-coded",
+      "pass": true,
+      "detail": "expected \"ECDSA\", got \"ECDSA\""
+    },
+    {
+      "id": "L7-58",
+      "action": "load an ED25519 key",
+      "expectation": "ED25519 still reads ED25519",
+      "pass": true,
+      "detail": "expected \"ED25519\", got \"ED25519\""
+    },
+    {
+      "id": "L7-59",
+      "action": "load a key with no type",
+      "expectation": "a missing type falls back to '?'",
+      "pass": true,
+      "detail": "expected \"?\", got \"?\""
+    },
+    {
+      "id": "L7-60",
+      "action": "watch the console across every scenario",
+      "expectation": "the screen logs no errors of its own",
+      "pass": true
+    }
+  ]
+}
