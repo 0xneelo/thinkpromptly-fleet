@@ -373,3 +373,10 @@ ranges. Not a port/compile defect — logic.js is byte-identical and behaves exa
 
 Gate note: the pixel gate runs with `fd-app-video=false` and reduced motion, so it can never see scroll
 scrub defects. A scroll probe (canvas hash at three positions) belongs in the verify set for landing slices.
+
+**Reassignment (same night):** the L11.3 bus message (id c59bfd35) was marked delivered but never appeared in
+Alrun's pane (full scrollback grep empty; session 22 min into one test turn). Operator re-ran the one-liner
+and saw no change — nothing new had been pushed. Minted **Hadwig** (`backend-developer`) on `agent-v2-l12`
+from `origin/weave/fd-v2` for the Range fix (pack `docs/goals/fd-v2-l12/`); Alrun told to ship L11.2 only.
+Lesson: a bus "delivered" is not a read — verify the text in the pane, and never queue a priority rider
+behind a long turn; mint a parallel worker when the slice is independent.
