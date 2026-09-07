@@ -1393,3 +1393,153 @@ just below the fold at 1440×900. Live data has as many spine cards as there are
 head — the crafted topology has five — which pushes the kids grid off the first screen. Nothing in
 L5 can fix that inside the mock's markup; the design seat may want a denser seat card or a
 horizontal seat row.
+
+---
+
+## L7 — SSH keys + GitHub train (Tankred, `agent-v2-l7`, 2026-09-07)
+
+Ledger row D14. Spec: `docs/goals/fd-v2-l7/BEHAVIOUR.md`. Owned files:
+`public/v2/screens/keys.js` and this screen's section in `public/v2/logic.js`.
+
+### I-L7-01 — The principal chips stay `root` / `vibe`, because `hosts.json` has no user field
+
+**Serves:** `BEHAVIOUR.md` §2 and §7, open item **O9** (`diff.md:78`).
+
+Ruling O9 says the principal chips should be sourced from `hosts.json` users. `hosts.json` carries
+no user field — there is nothing to read. The chips therefore stay the two-entry constant today's
+`public/keys.js:3` defines, with today's titles verbatim (`root` → `VPS boxes: think · onboarding ·
+ivy`, `vibe` → `german-box`). Sourcing them for real needs a server change, which this slice's
+§Scope puts out of bounds. Filed as **DECK-86** so O9 is closed deliberately rather than forgotten.
+
+Data-only decision; no screenshot.
+
+### I-L7-02 — The screen loads `public/v2/data.js` itself, because the shell does not
+
+**Serves:** every live behaviour in `BEHAVIOUR.md` §1.
+
+`public/v2/index.html:35-47` loads `runtime.js`, `fixture.js`, `logic.js`, `app.js` and the nine
+`screens/*.js` files — but **not** `public/v2/data.js` and not `router.js`. `FD.data`, which L1
+built and which every live screen needs, is simply absent at runtime. The shell is out of this
+slice's scope (`README.md:47`), so shipping a screen that cannot load was the alternative.
+
+`screens/keys.js` therefore appends a `<script src="/v2/data.js">` when `FD.data` is missing, and
+boots when it loads. The check is `if (FD.data) boot()` first, so once the shell loads the data
+layer at the L11 cut-over this loader never fires. Filed as **DECK-84** — it affects L2–L10 alike,
+not just this slice.
+
+Data-only decision; no screenshot.
+
+### I-L7-03 — Live mode restores both principals; fixture mode keeps the mock's single chip
+
+**Serves:** `BEHAVIOUR.md` §2 ("both selected by default"), §Acceptance "fixture mode stays
+pixel-identical".
+
+Today both principals are selected by default — one cert serves the `vps-deploy` and `gb-deploy`
+aliases (`public/keys.js:11`). The mock seeds `prin: { root: true, vibe: false }`, and its baseline
+screenshot shows exactly one chip lit. Changing the seed would move the pixel gate.
+
+So the seed stays, and `screens/keys.js` restores today's default once, on its first live render,
+through `logic.setState`. Fixture mode never registers the screen module, so the mock's single-chip
+seed renders untouched and the gate stays at 36/36.
+
+Screenshot: `improvised/l7-principals-live.png`.
+
+### I-L7-04 — Errors, the empty state and the load failure are cloned from the mock's hint line
+
+**Serves:** `BEHAVIOUR.md` §2, §3, §4, §6. The mock designs no error, empty or offline state for
+this screen at all.
+
+Today's page has three notice slots (`#mint-error`, `#train-error`, and the `#certs` area replaced
+wholesale by `cannot reach fleetdeck`). The mock has none. Rather than type new markup, each notice
+is a **clone of the mock's own hint `<p>`** from the Mint card, with its text replaced and its
+colour set to the mock's `t.bad` token (`t.ink45` for the muted `no certs yet — mint one above`).
+Type scale, margin and font therefore come from the mock, and the notice sits at the foot of the
+card whose action produced it. Delete failures land in the Mint card's line because today's
+`certCard` reuses `errEl` for them (`public/keys.js:66`).
+
+Screenshot: `improvised/l7-broker-down.png`.
+
+### I-L7-05 — The Type column shows the real algorithm, replacing the mock's literal `ED25519`
+
+**Serves:** `BEHAVIOUR.md` §1 ("`type` is the real algorithm, never hard-coded") and §5.
+
+`template.dc.html:558` renders the Type cell as the literal string `ED25519`, not `{{ k.type }}`,
+and L1's `toKeys` drops `type` from `keyRows` for the same reason (`data.js:357-366`,
+`improvised.md` I-L1-05). The template is out of scope, so the real algorithm is written into the
+Type cell after each render, read from the raw `/api/sshkeys` `keys[]` response. A missing type
+falls back to `'?'`, as today (`public/keys.js:104`). A deck whose keys are all ED25519 looks
+identical to the mock; an RSA or ECDSA key now tells the truth.
+
+Screenshot: `improvised/l7-key-types.png`.
+
+### I-L7-06 — `BROKER DOWN` uses the mock's own amber pill; the freshly minted cert flashes with its green tint
+
+**Serves:** `BEHAVIOUR.md` §3 (three train states) and §2 (`flashDir`).
+
+The mock designs two pill tones for this screen, green `Active` and dim `Expired`. It has no third
+state, yet collapsing a dead broker into `INACTIVE` sends the operator to the Touch ID sensor for a
+train that cannot start (`public/keys.js:113-118` says so explicitly). The amber pill is built by
+the mock's own `chipTone('warn')` helper — the same tone the app already uses elsewhere — so the
+state is new but the token is not.
+
+Today's `flash` class on a newly minted cert has no mock counterpart either; it is rendered as a
+1.2 s tint of the mock's `t.goodBg` token on the new row. It is applied from a **deadline**, not set
+once and cleared on a timer: the certificate rows are rebuilt on every paint, and a mint triggers
+several in quick succession (the optimistic paint, the `FD.setData` flush, the reload), so a
+one-shot tint landed on a row the very next repaint replaced. See the note under I-L7-08.
+
+Screenshot: `improvised/l7-broker-down.png`.
+
+### I-L7-07 — The unbound cards are painted from clones of the mock's own rows
+
+**Serves:** all of `BEHAVIOUR.md` §3 and §4; the "no hand-typed markup" rule (`README.md:51`).
+
+The compiled template binds five names for this screen — `A_isKeys`, `A_ttlChips`, `A_prinChips`,
+`A_keyRows`, `A_copyCmd`. The GitHub train card and the Certificates card carry **no** bindings:
+their pill, countdown, TTL chips, End train button, cert rows, copy line and Kill now / Delete
+buttons are all literal markup (`template.dc.html:518-548`). `FD.setData` cannot reach them and the
+template may not be edited.
+
+`screens/keys.js` therefore captures the mock's active-cert row, copy line and expired-cert row
+**once, before anything is rewritten**, and clones them per real certificate. No markup is typed by
+hand anywhere in the slice; the only additions to the mock's nodes are `data-*` hooks
+(`data-l7-notice`, `data-l7-busy`). The mock's expired row carries the separator border, so it is
+applied to every row but the first, and a list of any length reads like the mock's two-row card.
+
+Repainting is driven by the seam described in the file header: `logic.js` calls
+`FD.screens.keys.sync()` during `renderVals()`, and the repaint is scheduled in a microtask, so it
+lands immediately after the reconciler has restored the template's static nodes — in the same task,
+before the browser paints, so there is no flicker.
+
+Screenshot: `improvised/l7-certificates.png`.
+
+### I-L7-08 — The Certificates card is marked `data-dc-raw`, and clones are restyled every paint
+
+**Serves:** `BEHAVIOUR.md` §4; DESIGN-35's S2.2 broadcast (F3, `runtime.js:288-292`).
+
+Two decisions, both consequences of I-L7-07.
+
+**The card owns its own children.** S2.2 added `data-dc-raw`: the reconciler neither inserts nor
+removes inside an element carrying it. The Certificates card's children are this screen's from the
+first paint onward, so it now carries the attribute — set from JavaScript in `capture()`, because
+the template is out of scope and `runtime.js:292` reads the live attribute rather than a compiled
+one. The reconciler already no-ops while a child set is unchanged, so this changes no behaviour
+today; it means a future change to that set cannot start deleting painted rows. Fixture mode never
+reaches it, because the module does not register there.
+
+**Clones carry the palette they were captured in.** A prototype cloned in dark mode keeps dark
+colours forever, so a theme flip inside a live session would leave the copy line's background, the
+principals line, the countdown and the buttons on the old palette while the rest of the app moved.
+Every theme-dependent property on a cloned node is therefore re-derived from that render's tokens
+on each paint, rather than trusted from the clone. Proven by `verify/l7` L7-61 and L7-62, which
+flip the theme *after* the cards are painted and assert the computed colours actually changed —
+they fail against the previous implementation.
+
+**Transient state lives in the module, never on a node.** The rows are rebuilt from scratch on every
+paint, so a `disabled` flag or a busy label written straight onto a button is lost the moment
+anything repaints, and the handler's captured node goes stale. The cert dir being deleted, the train
+TTL being started, whether an End train is in flight, and the flash deadline are therefore all module
+state that each paint reads — which is also what DESIGN-35's rule 1 asks for. An earlier version held
+them in the DOM behind a `data-l7-busy` attribute; that hook is gone.
+
+Screenshot: `improvised/l7-certificates.png` (dark) and `improvised/l7-screen-light.png` (light).
