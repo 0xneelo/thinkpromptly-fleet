@@ -1765,3 +1765,39 @@ slice's screen, which the cross-slice contract forbids. It goes, and its README 
 What replaces it: the design gate captures that screen in both themes as `desktop-sessions-*`, and
 `verify/l11/live.json` proves the screen's route and a clean console. The screen's own behavioural
 coverage belongs to the slice that owns it.
+
+### I-L11-05 — the URL is authoritative only when it says something
+
+**Serves:** DECK-84, DECK-79, ledger row D20. Authorized by DESIGN-35 on 2026-09-07,
+which granted L11 the shell's script tags and the root view/screen seed in `logic.js`.
+
+Two halves had never been joined: `public/v2/index.html` loaded the runtime, the logic, the
+compiled app and the nine screens, but not `data.js` or `router.js` — so `FD.data` was
+undefined on a plain page load, and four slices had each shipped a private `<script>`
+injector to work around it. Meanwhile `logic.js` seeded its view from `props.startView` and
+never asked the router anything.
+
+**The seed reads the raw URL, not `FD.router.route()`.** `route()` substitutes its own
+defaults — `'app'` for the view, `'windows'` for the screen — so it cannot distinguish *"no
+view was asked for"* from *"app was asked for"*. That distinction is the whole of fixture
+parity: `/v2/?fixture=1` names no view and no screen, and must therefore keep rendering the
+mock's own `startView` and the app's own `'bus'` default. Had the seed used `route()`, every
+fixture capture would have opened on the app view showing Windows, and the pixel gate would
+have failed 36 screens for a reason that has nothing to do with design. So `fdAsked()`
+returns the asked-for value **or null**, and null means "the props still decide".
+
+**The path is consulted after the query, because `/app` carries no query.** The server only
+redirects to add `?view=` where the router's default would be wrong (I-L11-01), so `/app` is
+served at 200 with a bare URL. The client mirrors the server's own table — `/` land, `/app`
+app, `/deck` deck — and deliberately omits `/v2/`, which names no view and must stay the
+mock's business.
+
+**Script order contradicts the ruling, with reason.** DESIGN-35 said to add the tags after
+`app.js`. They are before it: `app.js:3409` calls `D.mount()` at parse time, so the root is
+constructed — and reads the URL — while `app.js` is still executing. Loaded afterwards,
+`router.js` arrives too late to be read. Measured both ways: after `app.js`, `live.json`
+stays 20/22; before it, 22/22. `orgchart.js` joined them, since the org screen needs it and
+was injecting it for the same reason.
+
+Back and forward are handled by subscribing to `FD.router.onChange` on mount and releasing
+it on unmount, under the same rule: a history entry that names nothing changes nothing.

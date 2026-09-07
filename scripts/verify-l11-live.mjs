@@ -133,6 +133,32 @@ try {
       errors.length === 0, [...new Set(errors)].join('; '));
     await page.close();
   }
+
+  // --- every screen, once, against a real server's own API ------------------
+  // No stubbing here: this is the deck talking to server.js on an empty fleet, which
+  // is what an operator sees on a cold box. The bar is that each screen renders and
+  // logs nothing to console.error -- empty data is a legitimate answer, a throw is not.
+  const SCREENS = ['windows', 'org', 'registry', 'bus', 'keys', 'accounts', 'machines', 'desktop'];
+  const page = await context.newPage({ colorScheme: 'dark' });
+  const seen = [];
+  page.on('pageerror', error => seen.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') seen.push(message.text()); });
+  for (const screen of SCREENS) {
+    const before = seen.length;
+    await page.goto(`${server.url}/app#${screen}`, { waitUntil: 'domcontentloaded' });
+    let rendered = true, why = null;
+    try {
+      await page.locator('[data-fd-view="app"]').waitFor({ state: 'visible', timeout: 30000 });
+      await page.evaluate(() => document.fonts.ready);
+      await page.waitForTimeout(400);
+    } catch (error) { rendered = false; why = error.message.split('\n')[0]; }
+    await page.screenshot({ path: join(OUT, `live-${screen}.png`), animations: 'disabled', caret: 'hide' });
+    record(`S-${screen}`, `GET /app#${screen} against the real API`,
+      `the ${screen} screen renders and logs no console error`,
+      rendered && seen.length === before,
+      why || [...new Set(seen.slice(before))].join('; '));
+  }
+  await page.close();
 } finally {
   await browser.close();
   server.stop();
