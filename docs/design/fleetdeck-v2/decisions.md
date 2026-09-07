@@ -329,3 +329,9 @@ tests 501/501 on the box. Weave candidate `52069d1` = nine slices + riders + L11
 `v2-shell` tests red on the weave (L2.1's setBadge retention vs L11's new data-layer load order) and a leftover
 data.js loader in `keys.js` (L7.1 vs L11 both-sides hunk). Sent to Alrun as L11.1. Operator asked when main is
 deployed: answer — I never push main; the one-liner follows the next green candidate, est. 2–3 h (L6.1 + L11.1).
+
+## 2026-09-08 · box gate green on candidate `52069d1`; Mac-side cut-over chores done
+
+Box: pixel gate allPass 36/36 max 0.0329 %; tests 540 pass / 4 fail (the `v2-shell` setBadge quartet, merge-caused,
+L11.1). Design seat updated the Mac-side references listed in `docs/goals/fd-v2-l11/MAC-REFS.md` (three skills now
+point at `localhost:3131/app#keys` / `/app`) and the `fleetdeck-app` memory (routes, v2 layout, gate-on-box rule).
