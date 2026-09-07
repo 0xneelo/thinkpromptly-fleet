@@ -2,7 +2,8 @@
 
 **Worker:** Alrun · `fullstack-developer` · tag `agent-alrun` · branch `agent-v2-l11`
 **Issue:** DECK-65 · **Filed blockers:** DECK-79, DECK-100
-**Phase 1 complete 2026-09-07.** Phase 2 (the weave merge and the final gate) is still open.
+**Phase 1 complete 2026-09-07.** Phase 2 in progress: the first (partial) weave is merged and
+green; the final gate waits on the rest of it.
 
 ---
 
@@ -157,14 +158,43 @@ No Fable audit: `hard-crux` was not run for this slice. The work is mechanical (
 deletions, a settle loop) rather than a hard separable problem, and the gates measure it
 directly.
 
-## Phase 2 — still to do
+## Phase 2 — first weave merged, and the weave is not finished
 
-1. `git fetch origin weave/fd-v2 && git merge --no-edit origin/weave/fd-v2`, keeping both
-   sides on any `logic.js` conflict.
-2. Re-run the fixture-mode gate (36/36) and the live proof; **DECK-79 must close for
-   `live.json` to reach 22/22** — if the weave does not carry the shell fix, that stays red
-   and is escalated, not worked around.
-3. Fix only what the merge broke; push again.
+`origin/weave/fd-v2` appeared at `3f21496` and was merged. **It is partial**: it carries
+L1, L9 and L10 only — L2 through L8 are not in it. `public/v2/screens/{windows,org,registry,
+bus,keys,accounts,shell}.js` are still one-line stubs.
+
+After the merge, re-run against the merged tree:
+
+| Proof | Result |
+|---|---|
+| `verify/l11/report.json` — fixture-mode pixel gate | **36/36**, max 0.033 % |
+| `verify/l11/live.json` | **20/22** — unchanged; DECK-79 is not in this weave |
+| `npm test` | **378/378** |
+
+**One conflict, one break, both handled.**
+
+`improvised.md` conflicted as an append against an append — L9 and L10's sections against
+L11's. Nothing was dropped: all four slice sections are in the file, in slice order.
+
+`test/v2-desktop.test.js:341` then failed, and it is exactly what the merge broke: L1.2 came
+from the base, L10 came from the weave, and the two had never met. The assertion was L10's
+own tripwire, asserting the *pre*-L1.2 behaviour (`'0 turns'`) while the test's own name says
+`"Turns unknown"` — designed to fire the moment L1.2 landed, which is what the DESIGN-35
+broadcast meant by "L10: remove any TODO shims you added for these". Its two neighbouring
+assertions, which check L10's screen override, still pass, because that override is
+idempotent by its own design (`public/v2/screens/desktop.js:201-206`). The tripwire now
+asserts `'Turns unknown'`, so the test name, the assertion and the shipped behaviour agree.
+Left alone for Clodwig: the override at `desktop.js:214` is now redundant with L1.2 and
+could be deleted, but it is not broken and it is not L11's file.
+
+### Still to do
+
+1. Wait for the rest of the weave (L2-L8) and merge again.
+2. **DECK-79 must close for `live.json` to reach 22/22.** The shell fix is L2's, and L2 is
+   not in this weave. If the completed weave still does not carry it, that is escalated
+   rather than worked around.
+3. Re-run both gates, fix only what the merge breaks, push again.
 
 ---
 

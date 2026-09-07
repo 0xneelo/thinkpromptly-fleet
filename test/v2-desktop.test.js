@@ -338,7 +338,10 @@ test('a null completedTurns reads "Turns unknown", not "0 turns"', async () => {
     session({ id: 'local_null', completedTurns: null }),
     session({ id: 'local_zero', completedTurns: 0 }),
   ] })]);
-  assert.equal(data.toDesktop(body)[1].rows[0].turns, '0 turns', 'toDesktop still renders a null as 0 turns');
+  // L1.2 landed the fallback in the adapter, so this no longer tests a gap L10 fills:
+  // toDesktop and the screen's own override now agree, which is what makes the override
+  // idempotent (public/v2/screens/desktop.js:201-206).
+  assert.equal(data.toDesktop(body)[1].rows[0].turns, 'Turns unknown', 'toDesktop renders a null as Turns unknown');
   const { groups } = await loaded(body);
   assert.equal(byId(groups, 'local_null').turns, 'Turns unknown');
   assert.equal(byId(groups, 'local_zero').turns, '0 turns');
