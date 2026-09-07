@@ -50,6 +50,13 @@ const STEPS = [
   ['bus-select-mode',      p => p.locator('button[title="Pick several sessions for a broadcast"]').click()],    // :401 selecting
   ['bus-select-mode-off',  p => p.locator('button[title="Pick several sessions for a broadcast"]').click()],
   ['bus-compose',          p => p.locator('[data-screen-label="Message bus"] textarea').first().fill('parity probe')],
+  // Five real keystrokes, one at a time -- not fill(). setDraft re-renders per character.
+  ['bus-compose-clear',    p => p.locator('[data-screen-label="Message bus"] textarea').first().fill('')],
+  ['bus-keystrokes',       async p => {
+    const ta = p.locator('[data-screen-label="Message bus"] textarea').first();
+    await ta.click();
+    await p.keyboard.type('abcde', { delay: 15 });
+  }, probeComposer],
   ['windows-open',         p => p.locator('aside nav button[title="Windows"]').click()],
   ['term-fullscreen',      p => p.locator('[data-screen-label="Windows"] button[title="Fullscreen"]').first().click()], // :231 termOpen
   ['term-menu',            p => p.locator('button[title="Switch session"]').first().click()],                  // :784 termMenu
@@ -151,6 +158,26 @@ function firstDiff(a, b) {
   return n;
 }
 
+// Focus and caret are DOM state that a normalized-DOM dump cannot see: the markup is
+// identical whether or not the textarea kept focus and whether the caret sits at 0 or 5.
+// logic.js's setDraft calls setState on EVERY keystroke, so each character re-renders the
+// composer. If the reconciler replaced the node instead of reusing it, focus and caret
+// would be lost and typing would be unusable -- silently, with DOM parity still green.
+// This is the seam the nine L2-L10 slices will hit hardest, so it is probed explicitly.
+async function probeComposer(page) {
+  return page.evaluate(() => {
+    const el = document.activeElement;
+    const ta = document.querySelector('[data-screen-label="Message bus"] textarea');
+    return {
+      focusedTag: el ? el.tagName : null,
+      focusIsComposer: !!ta && el === ta,
+      selectionStart: ta && typeof ta.selectionStart === 'number' ? ta.selectionStart : null,
+      selectionEnd: ta && typeof ta.selectionEnd === 'number' ? ta.selectionEnd : null,
+      value: ta ? ta.value : null,
+    };
+  });
+}
+
 async function snapshot(page, side) {
   await page.waitForTimeout(120);
   const html = await page.evaluate(() => document.querySelector('#dc-root')?.outerHTML ?? null);
@@ -175,7 +202,7 @@ let identicalCount = 0;
     firstDiffOffset: identical ? null : firstDiff(a, b) });
 }
 
-for (const [name, action] of STEPS) {
+for (const [name, action, probe] of STEPS) {
   const status = {};
   for (const [side, ctx] of [['a', A], ['b', B]]) {
     try { await action(ctx.page, ctx.url); status[side] = 'ok'; }
@@ -185,8 +212,21 @@ for (const [name, action] of STEPS) {
   try { a = await snapshot(A.page, 'A'); b = await snapshot(B.page, 'B'); }
   catch (err) { dumpError = String(err.message).slice(0, 200); }
   const identical = !dumpError && a === b;
-  if (identical) identicalCount++;
+  let probeA = null, probeB = null, probeMatch = null, probeOk = null;
+  if (probe && !dumpError) {
+    probeA = await probe(A.page);
+    probeB = await probe(B.page);
+    probeMatch = JSON.stringify(probeA) === JSON.stringify(probeB);
+    // Both sides must agree AND the composer must actually have kept focus with the
+    // caret after all five characters. Agreeing that focus was lost is not a pass.
+    probeOk = probeMatch && probeA.focusIsComposer === true
+      && probeA.selectionStart === 5 && probeA.selectionEnd === 5 && probeA.value === 'abcde';
+  }
   const row = { step: name, sideA: status.a, sideB: status.b, sameOutcome: status.a === status.b, identical };
+  if (probe) {
+    row.probeA = probeA; row.probeB = probeB; row.probeMatch = probeMatch; row.probeOk = probeOk;
+    if (!probeOk) row.identical = false;
+  }
   if (dumpError) row.dumpError = dumpError;
   else {
     row.aLength = a.length; row.bLength = b.length;
@@ -199,8 +239,12 @@ for (const [name, action] of STEPS) {
       row.bContext = b.slice(Math.max(0, off - 100), off + 100);
     }
   }
+  if (row.identical) identicalCount++;
   results.push(row);
-  console.log(`${identical ? 'SAME' : 'DIFF'} ${name}${identical ? '' : `  (A ${row.aLength ?? '?'} / B ${row.bLength ?? '?'}${row.firstDiffOffset != null ? `, first divergence at ${row.firstDiffOffset}` : ''})`}`);
+  if (probe) {
+    console.log(`  probe ${name}: focusIsComposer=${probeA && probeA.focusIsComposer} caret=${probeA && probeA.selectionStart}/${probeA && probeA.selectionEnd} value=${JSON.stringify(probeA && probeA.value)} bothSidesAgree=${probeMatch}`);
+  }
+  console.log(`${row.identical ? 'SAME' : 'DIFF'} ${name}${identical ? '' : `  (A ${row.aLength ?? '?'} / B ${row.bLength ?? '?'}${row.firstDiffOffset != null ? `, first divergence at ${row.firstDiffOffset}` : ''})`}`);
   if (!row.sameOutcome) console.log(`  NOTE step outcome differed: A=${status.a} B=${status.b}`);
 }
 
@@ -213,7 +257,10 @@ const outcomeMismatches = results.filter(r => r.sameOutcome === false).map(r => 
 // run passed 34/34 while the five deck steps were silently no-ops. So executing
 // every step is part of the verdict, not just agreeing about the result.
 const failedSteps = results.filter(r => (r.sideA && r.sideA !== 'ok') || (r.sideB && r.sideB !== 'ok')).map(r => r.step);
-const allIdentical = identicalCount === total && failedSteps.length === 0;
+const probeFailures = results.filter(r => r.probeOk === false).map(r => r.step);
+// A probe failure already forces row.identical false, so it cannot reach total --
+// but state it explicitly so the verdict reads as what it is.
+const allIdentical = identicalCount === total && failedSteps.length === 0 && probeFailures.length === 0;
 const report = {
   schemaVersion: 1, slice: 'S2', mode: opts.selfTest ? 'self-test' : 'interaction-parity',
   generatedAt: new Date().toISOString(),
@@ -221,12 +268,13 @@ const report = {
   determinism: { dumpScope: '#dc-root', setTimeout: 'frozen', setInterval: 'frozen',
     requestAnimationFrame: 'frozen', animations: 'suppressed', media: 'blocked' },
   volatileMask: [],
-  steps: total, identicalCount, allIdentical, outcomeMismatches, failedSteps, results,
+  steps: total, identicalCount, allIdentical, outcomeMismatches, failedSteps, probeFailures, results,
 };
 mkdirSync(dirname(opts.out), { recursive: true });
 writeFileSync(opts.out, JSON.stringify(report, null, 2) + '\n');
 console.log(`\n${identicalCount}/${total} steps identical; mask entries ${report.volatileMask.length}`);
 if (outcomeMismatches.length) console.log(`step-outcome mismatches: ${outcomeMismatches.join(', ')}`);
 if (failedSteps.length) console.log(`steps that did not execute cleanly: ${failedSteps.join(', ')}`);
+if (probeFailures.length) console.log(`focus/caret probe failures: ${probeFailures.join(', ')}`);
 console.log(`Report: ${opts.out}; allIdentical=${allIdentical}`);
 process.exit(allIdentical ? 0 : 1);
