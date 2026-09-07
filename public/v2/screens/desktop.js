@@ -198,13 +198,12 @@
     // Mock keys, with BEHAVIOUR.md §3's fallbacks baked in — the template prints
     // r.branch and r.model straight, so an empty value has to be the label already.
     //
-    // TODO(L1.2, DESIGN-35 2026-09-07): Juergen is moving 'Turns unknown' / 'No
-    // branch' / 'Model unknown' into FD.data.toDesktop. These three lines are then
-    // redundant for NON-archived rows — but not removable: they are computed from
-    // the raw session, and archived rows never reach toDesktop (it drops them), so
-    // this is the only place they get their fallbacks. Recomputing the same string
-    // from the same source is idempotent, so landing L1.2 changes nothing here;
-    // re-check this comment when it merges.
+    // L1.2 has landed: FD.data.toDesktop now emits 'No branch' / 'Model unknown' /
+    // 'Turns unknown' itself, so for NON-archived rows these three recompute the same
+    // strings from the same source and are simply redundant. They stay because they
+    // are not redundant for archived rows: toDesktop drops those, so this is the only
+    // place they get any fallback at all. `title` is load-bearing for every row —
+    // the adapter passes s.title through raw, with no 'Untitled session' fallback.
     out.title = s.title || 'Untitled session';
     out.path = s.cwd || '';
     out.branch = s.branch || 'No branch';
