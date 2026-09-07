@@ -253,3 +253,151 @@ and legacy redirects in **L11**. L1 implements the pack: the two are not in conf
 different phases — `?view=` is how the shell selects a view while v2 lives beside the old UI at
 `/v2/`, and L11 maps the final `/` and `/app` routes onto it. Recorded so L11 does not read the query
 scheme as a contradiction of the ruling.
+
+---
+
+## L10 — Desktop sessions (Clodwig, `agent-v2-l10`, 2026-09-07)
+
+Ledger row D17. The mock's Desktop sessions screen is `mock/Fleetdeck Final.dc.html` → compiled to
+`public/v2/template.dc.html` L669-734. Every entry below exists because that markup cannot express
+something `BEHAVIOUR.md` requires, and the template is not L10's file to edit.
+
+**One rule governs all of them:** the improvisation is applied imperatively from
+`public/v2/screens/desktop.js`, in **live mode only**. In fixture mode (`?fixture=1`) the screen file
+returns before it wires anything, so the compiled logic renders `FD.fixture` exactly as the mock does
+and the pixel gate stays at 36/36 — verified, `verify/l10/report.json`, desktop-sessions 0.000000 % in
+both themes. Hooks placed on mock markup are `data-fd-l10="…"` attributes only; no class is ever
+grafted on, and no markup is hand-typed into the template.
+
+### I-L10-01 — The four filter selects are inert in the mock, so they are wired from the screen file
+
+**Serves:** `README.md` §Scope 1, `BEHAVIOUR.md` §2, ledger D17.
+
+`template.dc.html:673-676` holds four `<select>` elements whose `<option>`s are hard-coded to the
+mock's own seed people and machines (`All accounts / Aylin Yeter / Daniel Tabor`,
+`All machines / MacBook Pro / german-box`, `Any live status / Live only / Offline only`,
+`All sessions / Active / Archived`) and which carry **no `onChange` binding at all** — only
+`style="{{ A_selectStyle }}"`. Nothing in `renderVals()` can reach them: adding keys to logic.js would
+have nothing to read them.
+
+**Decision.** `desktop.js` tags the four selects `data-fd-l10="filter-account|filter-machine|filter-live|filter-archived"`,
+rebuilds their options from the live payload, and attaches one `change` listener each. Filter state
+lives in the screen file, and the screen file **pre-filters the array it pushes through
+`FD.setData('dsData', …)`**; logic.js keeps only the search filter it already had. The five controls
+therefore AND-combine exactly as `sessions.js:84-92` does today.
+
+**Why pre-filter rather than filter in logic.js.** The selects cannot reach logic.js in the first
+place, so their state has to live in the screen file; putting the *predicate* there too keeps one
+owner for one behaviour instead of splitting it across two files that different slices own.
+
+The option texts are today's verbatim: `All accounts`, `All machines`,
+`Any live status / Live / Offline / Unknown`, `All sessions / Not archived / Archived`. Account
+options are labelled `<group label> · <accountUuid first 8>` and sorted by that label; machine options
+follow `machines[]` order unsorted, as `sessions.js:80-81` does. A selection whose option has
+disappeared from a later collection keeps a synthetic option reading exactly
+`Previously selected (unavailable)`, so the filter stays visible instead of silently resetting.
+
+### I-L10-02 — `Archived` and `Cached` chips are appended; the mock's status cell has one pill slot
+
+**Serves:** `BEHAVIOUR.md` §3 state chips.
+
+The status cell is `<span style="display:flex;"><span style="{{ r.pillStyle }}">…{{ r.status }}</span></span>`
+(`template.dc.html:709`) — exactly one pill. Today's app shows up to three: the live chip, plus
+`Archived`, plus `Cached` when the row is stale.
+
+**Decision.** The live chip stays the template's own (its text now comes from `liveState`, so it reads
+`Live` / `Live unknown` / `Offline` — that part is a logic.js change, not an improvisation). The
+screen file appends the extra chips into the same cell, cloning the live pill's computed style so they
+match the mock's pill tokens in both themes rather than hard-coding colours.
+
+### I-L10-03 — `Show` expands the row's own details and scrolls to it
+
+**Serves:** `README.md` §Scope 3 ("expand + scroll, or a transcript reader — pick, document").
+
+Today's app has no Show action; the mock has an eye button (`template.dc.html:712`) pointing at
+nothing. The pack offers two shapes.
+
+**Decision: expand + scroll.** Show ensures the row's details panel is open (it *expands*, it never
+collapses — that is what distinguishes it from clicking the row, which toggles) and scrolls it into
+view with `block: 'nearest'`.
+
+**Why not the transcript reader.** A reader panel is new surface the mock never drew, so its whole
+appearance would be invented, and it would duplicate Copy conversation's transcript fetch for a
+screen whose job is *finding* a conversation and reaching the session. Expand + scroll reuses the
+mock's own `<sc-if value="{{ r.open }}">` panel, so nothing visual is invented at all.
+
+### I-L10-04 — The copy label cycle needs a label; the mock's copy buttons are icon-only
+
+**Serves:** `BEHAVIOUR.md` §3 copy conversation.
+
+Today the button *is* the label: `Copy conversation → Copying… → Copied | Copy failed | No transcript`,
+reverting after 1500 ms (`sessions.js:204-220`). The mock replaced it with two icon buttons
+(`template.dc.html:714-715`) that have no text node to cycle.
+
+**Decision.** The cycling text appears in a small pill injected next to the button, in the mock's
+neutral chip tokens, and is mirrored into the button's `title` for screen readers and hover. The pill
+is removed when the cycle ends, so the resting state is the mock's own. The four strings and the
+1500 ms timer are verbatim; `No transcript` is used only when the copy did not succeed *and* the
+transcript request answered 404, exactly as today.
+
+### I-L10-05 — The count line is rebuilt; the mock hard-codes "collected 4m ago"
+
+**Serves:** `BEHAVIOUR.md` §2 count and last-collection line.
+
+`template.dc.html:677` reads `{{ A_dsCount }} sessions · {{ A_dsLive }} live · collected 4m ago`. The
+separator text and the collection age are **literals in the template**, so no value logic.js can
+supply produces today's two strings.
+
+**Decision.** The screen file rewrites that span's text to `<shown> of <total> sessions · <live> live`
+and appends a second span, in the same muted style, reading `Last collection: <age>` or
+`No completed collection`. On a first-load failure the first span reads exactly `Sessions unavailable`.
+
+### I-L10-06 — Machine notes, empty states and the error banner have no markup at all
+
+**Serves:** `BEHAVIOUR.md` §5.
+
+The mock draws no equivalent of `#sessions-errors` or the empty-state block. All nine texts are
+required verbatim.
+
+**Decision.** One panel is injected directly under the filter row, built by cloning the computed
+style of a live group card so the mock's panel tokens (radius, border, backdrop blur, panel
+background) come out right in both themes without being re-typed. It carries the per-machine notes —
+one per machine whose `state !== 'ok'` or which is stale, `label + ': ' + text`, with `no_report`,
+`not_found`, `unavailable`, `partial` and the `Cached metadata. Refresh to collect the latest
+sessions.` fallback — the refresh-failure note, and the empty state.
+
+### I-L10-07 — A Refresh control, because the mock only drew Reset
+
+**Serves:** `BEHAVIOUR.md` §5 (`#sessions-refresh` → `load(true)`).
+
+The filter row ends with a Reset button (`template.dc.html:678`) and nothing else; the 300 s TTL means
+a user who wants fresh data has no way to ask for it.
+
+**Decision.** A `Refresh` button is inserted immediately before Reset, cloning Reset's own computed
+style so it is visually indistinguishable from a button the mock drew. While a forced collection is in
+flight it reads `Collecting…` and is disabled — today's exact pair.
+
+### I-L10-08 — "Live now" pinned first is the mock's invention, and it is kept
+
+**Serves:** `README.md` §Scope 2, ledger D17. Data-only; no screenshot.
+
+Today's app has **no** "Live now" group (`BEHAVIOUR.md` §1 says so explicitly). The mock introduces
+one, pinned above the per-person groups, holding every live row with a `<person> · <machine>` locator.
+
+**Decision.** Keep it, and let `logic.js` keep building it from the rows' `live` flags, which is what
+the compiled mock already does. `FD.data.toDesktop` *also* prepends a `Live now` head group of its
+own; the screen file drops that one before pushing, or the screen would render two.
+
+### I-L10-09 — Message opens the bus thread; the page composer is not ported
+
+**Serves:** ruling O8 (`diff.md:77`), `BEHAVIOUR.md` §4. Behavioural; no screenshot of its own.
+
+`BEHAVIOUR.md` §4 describes a page-level composer (`#session-composer`, `#composer-*`) that POSTs
+`{source:'desktop-sessions-page', target, text}` to `/api/messages`. Ruling O8 replaces it: "yes,
+deep-link into the bus thread".
+
+**Decision.** Message calls `FD.screens.bus.open(messageTarget)`, guarded, and L10 ports **no**
+composer, no `POST /api/messages`, and none of the composer's six strings. They are recorded as
+`n.a. — superseded by O8` in `REPORT.md`'s behaviour checklist rather than silently dropped. Until L6
+lands the guarded call returns false and the click falls back to `FD.router.navigate('bus')`, also
+guarded, so the row still goes somewhere sensible.
