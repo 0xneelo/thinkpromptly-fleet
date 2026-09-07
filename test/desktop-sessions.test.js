@@ -305,6 +305,21 @@ test('GET /api/desktop-sessions/transcript renders on the owning machine, local 
   assert.equal((await server.tailGet(query(mac.id))).status, 404);
 });
 
+test('byTitle takes the freshest row and refuses a title two sessions share', async (t) => {
+  const f = storeFixture(t);
+  const other = '55555555-5555-4555-8555-555555555555';
+  f.reply(output([row({ id: 'local_one', title: 'Shared' }), row({ id: 'local_two', title: 'Only mine', cliSessionId: other })]));
+  await f.store.collect(true);
+  assert.equal(f.store.byTitle('Only mine').row.cliSessionId, other);
+  assert.equal(f.store.byTitle('no such title'), null);
+  assert.equal(f.store.byTitle(''), null);
+  // Two tabs answering to one name resolve to nothing rather than to a coin flip.
+  f.reply(output([row({ id: 'local_one', title: 'Shared' }), row({ id: 'local_two', title: 'Shared', cliSessionId: other })]));
+  f.advance(2000);
+  await f.store.collect(true);
+  assert.equal(f.store.byTitle('Shared'), null);
+});
+
 test('GET /api/desktop-sessions/transcript takes seat=<thread id> and serves per-turn JSON', async (t) => {
   const f = await routeFixture(t, [mac]);
   const home = transcriptFixture(f.dir);
@@ -353,6 +368,13 @@ test('GET /api/desktop-sessions/transcript takes seat=<thread id> and serves per
   const unstored = await seat('unstored seat');
   assert.equal(unstored.status, 200);
   assert.equal(unstored.body.turns[0].text, 'Fix the bug');
+  // The seat the operator is looking at has gone offline: it is out of the live registry,
+  // but the collector stored its title and its transcript is still on its machine.
+  fs.rmSync(path.join(f.dir, 'registry', process.pid + '.json'));
+  assert.equal((await seat('current')).status, 404, 'the live name goes with the registry entry');
+  const offline = await seat('A session');
+  assert.equal(offline.status, 200, 'the stored title still reaches the transcript');
+  assert.deepEqual(offline.body.turns, json.body.turns);
   fs.rmSync(path.join(home, '.claude'), { recursive: true });
   const gone = await seat('id:' + CLI);
   assert.equal(gone.status, 404);

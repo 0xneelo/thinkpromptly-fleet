@@ -1682,7 +1682,9 @@ function desktopSeat(seat) {
     const live = desktopSessions().filter((s) => s.name === seat);
     if (live.length === 1) id = live[0].sessionId;
   }
-  if (!id) return null;
+  // A seat that has gone offline has left the live registry, but the collector's stored
+  // rows still carry its title and its transcript is still on the machine that ran it.
+  if (!id) return seat.startsWith('id:') ? null : desktopSessionStore.byTitle(seat);
   const local = desktopSessionStore.machines().find((m) => m.route === 'local') || { id: 'local', route: 'local' };
   return desktopSessionStore.byCli(id) || { row: { cliSessionId: id }, machine: local };
 }
@@ -2910,6 +2912,9 @@ const server = http.createServer(async (req, res) => {
       // the Desktop screen's. `format=json` adds the per-turn split the bus merges into a thread.
       const asJson = q.get('format') === 'json';
       const seat = str(q.get('seat'), 300);
+      // A name resolves against the collector's rows, so the store has to be warm. TTL-gated,
+      // so this is a no-op on every request but the first after a restart.
+      if (seat !== null) await desktopSessionStore.collect(false);
       const found = seat !== null
         ? desktopSeat(seat)
         : {
