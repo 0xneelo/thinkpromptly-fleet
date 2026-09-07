@@ -126,3 +126,14 @@ launches from `origin/weave/fd-v2` once the last of them is green.
 launch.json, gate hardening S0.1, tests, green on `/app` in fixture mode; phase 2 = merge `origin/weave/fd-v2`
 when the design seat announces it, final full gate + live smoke. Preview worktree moved to `agent-v2-base`
 (http://localhost:4174/v2/index.html); it follows `weave/fd-v2` from the first accepted slice on.
+
+## 2026-09-08 · S2 independent review (parallel, after acceptance) → S2.1
+
+Reviewer verdict "not ready for fan-out" — on evidence hygiene, not on the shim: the final commit deleted two cited
+proof files (`logic-roundtrip.txt`, `t3-substitutions.txt`), so `npm run v2:check` would exit 1 at HEAD; the compiler's
+proof output labels a pre-T3 hash as `logic.js sha256`; `.claude/launch.json` + `.gitignore` edited out of scope;
+composer keystroke focus/caret across re-renders unmeasured. The parity (36/36), interaction (34/34), pixel (36/36)
+and no-engine artifacts are genuine. **Design-seat rulings:** runtime.js at 361 lines is accepted (300 was a
+guideline); the missing hunter pass is replaced by an oracle audit run by the seat. Follow-up **S2.1** sent to Julius
+(regenerate proofs, green `v2:check`, hash label, keystroke interaction step, arrayKids fix, scope cleanup). The nine
+slices keep building on `agent-v2-base`; S2.1 will be merged into the base and broadcast when it lands.
