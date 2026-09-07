@@ -254,11 +254,35 @@ const GK_SEGMENT_ANY = /(?:^|[\s'"=:;&|(){}/])\.{0,2}\/?goalkeeper(?:\/|(?![A-Za
 // comparing against that path is both sufficient and exact.
 const GK_CD_PREFIX = /(?:^|[\s;&|(){])(?:cd|pushd)\s+['"]?\.{0,2}\/?goalkeeper(?:\/|['"]?(?:\s|$|[;&|)}]))/i;
 
+// A `cd`/`pushd` whose TARGET is the config dir. `cd $HOME && cd .claude` puts
+// the shell in the config dir without the two ever appearing as one string —
+// $HOME is substituted away, and a bare relative `.claude` is not the config dir
+// by itself. Only these exact target shapes count, which is what keeps the
+// worktree path safe: `cd .claude/worktrees/x` has target `.claude/worktrees/x`,
+// neither equal to nor ending in `/.claude`.
+const CD_TARGET_G = /(?:^|[\s;&|(){])(?:cd|pushd)\s+(?:(['"])([^'"]*)\1|([^\s;&|(){}]+))/gi;
+
+function cdTargetsConfigDir(s, cfg) {
+  const re = new RegExp(CD_TARGET_G.source, 'gi');
+  const c = String(cfg || '').replace(/\/+$/, '');
+  const real = realDeep(path.resolve(cfg)).replace(/\/+$/, '');
+  let m = re.exec(s);
+  while (m) {
+    const raw = (m[2] !== undefined ? m[2] : m[3]) || '';
+    const t = raw.replace(/\/+$/, '');
+    if (t === '.claude' || t === './.claude' || /\/\.claude$/.test(t)) return true;
+    if (t && (t === c || t === real)) return true;
+    m = re.exec(s);
+  }
+  return false;
+}
+
 function mentionsConfigDir(s, cfg) {
   const c = String(cfg || '');
   if (c && s.toLowerCase().indexOf(c.toLowerCase()) !== -1) return true;
   const real = realDeep(path.resolve(cfg));
-  return Boolean(real) && s.toLowerCase().indexOf(real.toLowerCase()) !== -1;
+  if (real && s.toLowerCase().indexOf(real.toLowerCase()) !== -1) return true;
+  return cdTargetsConfigDir(s, cfg);
 }
 
 // Is this session already standing inside the config dir? A stamped
