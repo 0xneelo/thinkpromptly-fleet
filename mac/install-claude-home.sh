@@ -6,8 +6,10 @@
 #
 # Idempotent: a file already identical to the vendored copy is skipped, and no
 # .bak is made for it. A file that differs is backed up to <file>.bak-<STAMP>
-# (only if that backup does not already exist — the first install of the day
-# keeps the pre-install original) and then replaced.
+# — today's date — and then replaced. If that backup already exists, because
+# this is the second install of the day, the copy goes to
+# <file>.bak-<STAMP>-<HHMMSS> instead: a backup is never skipped, so there is
+# always a copy of the state immediately before the run that replaced it.
 #
 # NEVER touched, by design:
 #   - ~/.claude/session-kind/marks/   (live session badges; keyed by directory)
@@ -22,7 +24,7 @@
 #   cp ~/.claude/session-kind/guard.js.bak-<STAMP> ~/.claude/session-kind/guard.js
 set -eu
 
-STAMP="2026-09-07"
+STAMP="$(date +%Y-%m-%d)"
 SRC=$(cd "$(dirname "$0")/claude-home" && pwd)
 DEST="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 DRY=0
@@ -34,6 +36,16 @@ backed=0
 
 say() { printf '%s\n' "$*"; }
 act() { [ "$DRY" -eq 1 ] && printf 'DRY  %s\n' "$*" || printf '     %s\n' "$*"; }
+
+# The backup path to use for $1. Prefers <file>.bak-<stamp>; when that already
+# exists — a second install on the same day — it falls back to
+# <file>.bak-<stamp>-<HHMMSS> rather than SKIPPING the backup, so the copy on
+# disk is always the state immediately before this run.
+backup_path() {
+  b="$1.bak-$STAMP"
+  [ -e "$b" ] && b="$1.bak-$STAMP-$(date +%H%M%S)"
+  printf '%s\n' "$b"
+}
 
 # install_file <relative path under claude-home>
 install_file() {
@@ -53,14 +65,10 @@ install_file() {
   fi
 
   if [ -f "$dst" ]; then
-    bak="$dst.bak-$STAMP"
-    if [ -e "$bak" ]; then
-      act "backup exists, kept: $bak"
-    else
-      act "backup: $rel -> $rel.bak-$STAMP"
-      [ "$DRY" -eq 0 ] && cp -p "$dst" "$bak"
-      backed=$((backed + 1))
-    fi
+    bak=$(backup_path "$dst")
+    act "backup: $rel -> $(basename "$bak")"
+    [ "$DRY" -eq 0 ] && cp -p "$dst" "$bak"
+    backed=$((backed + 1))
     act "replace: $dst"
   else
     act "create:  $dst"
@@ -137,14 +145,10 @@ else
   if [ "$n" != "1" ]; then
     say "!!   found $n copies of the old matcher, expected 1 — not touching it."
   else
-    bak="$SETTINGS.bak-$STAMP"
-    if [ -e "$bak" ]; then
-      act "backup exists, kept: $bak"
-    else
-      act "backup: settings.json -> settings.json.bak-$STAMP"
-      [ "$DRY" -eq 0 ] && cp -p "$SETTINGS" "$bak"
-      backed=$((backed + 1))
-    fi
+    bak=$(backup_path "$SETTINGS")
+    act "backup: settings.json -> $(basename "$bak")"
+    [ "$DRY" -eq 0 ] && cp -p "$SETTINGS" "$bak"
+    backed=$((backed + 1))
     act "patch matcher -> $NEW_MATCHER"
     if [ "$DRY" -eq 0 ]; then
       tmp="$SETTINGS.tmp.$$"
@@ -176,14 +180,10 @@ elif grep -qF "$ISO_MARK" "$LO"; then
   say "     isolation line already present"
   skipped=$((skipped + 1))
 else
-  bak="$LO.bak-$STAMP"
-  if [ -e "$bak" ]; then
-    act "backup exists, kept: $bak"
-  else
-    act "backup: local-orchestrator/SKILL.md -> SKILL.md.bak-$STAMP"
-    [ "$DRY" -eq 0 ] && cp -p "$LO" "$bak"
-    backed=$((backed + 1))
-  fi
+  bak=$(backup_path "$LO")
+  act "backup: local-orchestrator/SKILL.md -> $(basename "$bak")"
+  [ "$DRY" -eq 0 ] && cp -p "$LO" "$bak"
+  backed=$((backed + 1))
   act "append isolation line"
   if [ "$DRY" -eq 0 ]; then
     printf '\n%s\n' "$ISO_LINE" >>"$LO"
