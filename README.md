@@ -4,7 +4,26 @@ Browser deck for Claude-code worker fleets running in tmux on remote ssh hosts.
 Lists every tmux session on each host in `hosts.json`, one click attaches a live
 terminal tile, "Connect all" opens a tile per session.
 
-    npm install && npm start   # http://localhost:3131
+    npm install && npm start   # http://localhost:3131/app
+
+## The UI
+
+One page serves three views. The view travels on the query string, the screen on the hash.
+
+| URL | What it shows |
+|---|---|
+| `/` | Landing page |
+| `/app` | The deck |
+| `/deck` | Investor deck, five slides |
+
+The deck has eight screens: `windows`, `org`, `registry`, `bus`, `keys`, `accounts`,
+`machines`, `desktop`. `/app#registry` opens one directly. The old per-page URLs
+(`/index.html`, `/keys.html`, `/accounts.html`, `/machines.html`, `/sessions.html`)
+answer with a 302 to the screen that replaced them, so an old bookmark still lands in
+the right place. `/v2/` serves the same shell, which is what the design gate captures.
+
+Add `?fixture=1` to any of those URLs to render the design fixture instead of live
+data. Fixture mode calls no API, so it is safe to point the design gate at it.
 
 **Tests.** The suite is `node:test`, no framework. It needs the dependencies installed **in the
 worktree you run it from**: `node_modules/` is gitignored, so a fresh clone and every fresh
@@ -45,10 +64,14 @@ if any screen exceeds **0.5%** mismatched pixels or cannot be verified.
 Both sides receive the same pre-load storage (`fd-landing-dark=1/0`,
 `fd-app-video=false`), theme color scheme and reduced-motion setting. Injected
 CSS disables animations, transitions and carets, and hides video/canvas pixels.
-The harness waits for the rendered screen, fonts, images, network idle and native
-landing reveals. Fresh browser contexts isolate each capture. Hidden media
-requests are blocked identically on both sides; fonts, scripts and images must
-still load. The screen map and route descriptions are exported from
+The harness waits for the rendered screen, fonts, images, native landing reveals,
+and a bounded quiet period: no fetch or XHR for 300 ms, and it gives up after 5 s so
+one hung request costs a single screen rather than the run. WebSocket and EventSource
+connections are not counted, so a live connection can never hold the gate open.
+Focus rings and scrollbars are hidden on both sides, and a click is followed by a
+blur, so reaching a screen by a different number of clicks cannot change its
+pixels. Fresh browser contexts isolate each capture. Hidden media requests are
+blocked identically on both sides; fonts, scripts and images must still load. The screen map and route descriptions are exported from
 `scripts/design-diff.mjs` for later slices.
 
 For the deterministic self-test, serve the mock on a separate scratch port and
@@ -63,9 +86,12 @@ npm run design:diff -- --app 'http://127.0.0.1:4173/Fleetdeck%20Final.dc.html' -
 S0 requires every self-test comparison to be **≤0.05%**, and two consecutive
 baseline runs to agree within **0.05%**. Keep the capture reports as evidence.
 Run captures in the same Chromium and OS/font environment as the committed
-baselines. The source mock loads its React/Babel runtime and Inter font over the
-network. The gate does not start the application. Supply only mock or fixture app
-URLs you serve yourself; never point it at the operator's live deck.
+baselines. The source mock loads its React/Babel runtime and Inter font from a CDN.
+Where this repository vendors a copy of one of those assets, both sides are served
+that identical local file instead; the Inter stylesheet and font are vendored, the
+React/Babel runtime is not, so it still comes over the network. The gate does not
+start the application. Supply only mock or fixture app URLs you serve yourself;
+never point it at the operator's live deck.
 
 **Message bus.** Fleetdeck persists messages in `fleet.db`, serializes delivery per target,
 and supports the current Claude Desktop session plus local or configured remote tmux sessions. Build the
@@ -114,7 +140,7 @@ the remote command string may hold no quotes or redirects):
 
 Missing script or failed ssh is not an error: rows keep their stored `msg_at`, new ones show `—`.
 
-**Accounts view.** `/accounts.html` (API path stays `/api/credits`) shows plan usage per
+**Accounts view.** `/app#accounts` (API path stays `/api/credits`) shows plan usage per
 team account, most constrained first — 5-hour, 7-day and paid extra-usage credits for each
 Claude account, plus the Codex/ChatGPT weekly window, with a header summary of how many
 accounts are at or over a limit and what has been spent. Three sources feed it, best first:
@@ -156,7 +182,7 @@ A machine outside the fleet pushes instead of being polled — on a cron:
 A desktop-app sample only refreshes while that account is actually being used, so the view
 shows each sample's age; an org sampled days ago is stale data, not idle usage.
 
-**Machines view.** `/machines.html` lists every machine in `machines.json` and, per machine,
+**Machines view.** `/app#machines` lists every machine in `machines.json` and, per machine,
 which account each of the four AI clients is signed in as: Claude CLI, Codex CLI, Claude
 desktop, Codex desktop. Each cell names the person (via `credits-accounts.json`), the
 address, and how the identity was proved — `token-proved` when the machine asked its own
@@ -164,7 +190,7 @@ token who it belongs to, `config only` when it could only read a config file, `l
 when the fact comes from the Claude desktop app's own history. A WSL box reports both sides,
 tagged `WSL` and `Windows`.
 
-**Desktop sessions.** `/sessions.html` merges Claude Desktop Code tabs across accounts and
+**Desktop sessions.** `/app#desktop` merges Claude Desktop Code tabs across accounts and
 machines, with account, machine, live-status, archive, and text filters. Each row's
 Session details panel has a Copy conversation button: the row's metadata as `Label: value`
 lines, then the transcript that `GET /api/desktop-sessions/transcript` renders from the
@@ -193,13 +219,9 @@ target, resolved again at delivery; they never fall back to the frontmost chat.
 Fixture overrides: `FLEET_DESKTOP_SESSIONS_SH`, `FLEET_DESKTOP_SESSIONS_TTL_SECS`, and
 `FLEET_DESKTOP_WINDOWS_USERS`, alongside the existing Machines and isolated database
 knobs. All API collection timestamps are Unix milliseconds; session timestamps are ISO UTC.
-`npm test` covers the collector, cache, route, and message-ID join. Optional browser
-acceptance uses an external Playwright install and only a fixture HTTP server:
-
-    PLAYWRIGHT_MODULE=/path/to/playwright node scripts/verify-desktop-sessions-ui.js
-
-Set `CHROMIUM_PATH` if the browser is installed separately, and `DESKTOP_SCREENSHOT_DIR`
-to retain dark, light, and mobile screenshots. This script never starts the live deck.
+`npm test` covers the collector, cache, route, and message-ID join. The browser
+acceptance script that drove the old `/sessions.html` page went with that page at the
+cut-over; the screen's rendering is now covered by the design gate.
 
 **Nothing is installed on a polled machine.** `box/fleet-logins.sh` is piped over
 `ssh <host> [wsl] sh -s`, so the master copy in this repo is the only copy. A machine with no

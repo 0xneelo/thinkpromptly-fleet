@@ -33,13 +33,13 @@ Read the `Valid:` and `Principals:` lines. Expired or wrong principal → `Permi
 
 ## You cannot mint
 
-Minting requires the operator's 1Password approval — no agent can do it. If no valid cert exists for your target, stop and ask the operator: "mint me a 1h/4h/8h cert for `<principals>`" (they use the fleetdeck SSH-keys page at `localhost:3131/keys.html` or `~/remote-system/deploy-keys/mint-deploy-cert.sh`).
+Minting requires the operator's 1Password approval — no agent can do it. If no valid cert exists for your target, stop and ask the operator: "mint me a 1h/4h/8h cert for `<principals>`" (they use the fleetdeck SSH-keys page at `localhost:3131/app#keys` or `~/remote-system/deploy-keys/mint-deploy-cert.sh`).
 
 Never: `ssh-add`, touching the 1Password agent socket, generating or uploading your own SSH keys, copying cert files off this machine.
 
 ## GitHub push (1-hour App tokens — self-serve while a train runs)
 
-The App's PEM lives only in 1Password. The operator starts a **GitHub train** on the fleetdeck keys page (`localhost:3131/keys.html`) — one Touch ID — and for the train's window (1h/4h/8h) the deck brokers fresh 1-hour tokens to any local process. Get one yourself:
+The App's PEM lives only in 1Password. The operator starts a **GitHub train** on the fleetdeck keys page (`localhost:3131/app#keys`) — one Touch ID — and for the train's window (1h/4h/8h) the deck brokers fresh 1-hour tokens to any local process. Get one yourself:
 
 ```bash
 eval "$(/Users/misterislez/remote-system/deploy-keys/mint-github-token.sh --broker --askpass)"

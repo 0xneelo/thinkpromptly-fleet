@@ -305,12 +305,9 @@ test('toOrg agrees with FleetOrgChart.buildTree directly', () => {
   assert.deepStrictEqual(out.unattached, direct.unattached);
 });
 
-test('public/v2/orgchart.js is a byte-identical copy of public/orgchart.js', () => {
-  assert.deepStrictEqual(
-    fs.readFileSync(path.join(ROOT, 'public/v2/orgchart.js')),
-    fs.readFileSync(path.join(ROOT, 'public/orgchart.js'))
-  );
-});
+// The byte-identity test against public/orgchart.js retired with the old UI in L11:
+// public/v2/orgchart.js is now the only copy, so there is nothing left to drift from.
+// The test above still proves toOrg agrees with the chart builder it ships with.
 
 test('toThreads matches the mock bus shapes', () => {
   const out = data.toThreads(api('messages'), NOW);
@@ -903,7 +900,8 @@ test('a directory URL serves its index.html', async () => {
     assert.strictEqual(viaDir.text, viaFile.text, 'both serve the same shell');
     if (!preexisting) assert.ok(viaDir.text.includes('v2 shell'));
     // The root special case still works, and a directory with no index still 404s.
-    assert.strictEqual((await srv.get('/')).status, 200);
+    // L11 turned / into the landing route, so the root answers a redirect, not a file.
+    assert.strictEqual((await srv.get('/')).status, 302);
     assert.strictEqual((await srv.get('/screenshots/')).status, 404);
   } finally {
     await srv.stop();

@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "fleetdeck",
-      "url": "http://localhost:3131"
+      "url": "http://localhost:3131/app"
     },
     {
       "name": "mock",

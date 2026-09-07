@@ -161,7 +161,6 @@
   // routes server.js already serves (server.js:2367-2370). I-L3-01.
   // ==========================================================================
   var assetsPromise = null;
-  var dataPromise = null;
 
   function loadScript(src) {
     return new Promise(function (resolve, reject) {
@@ -193,10 +192,12 @@
     return assetsPromise;
   }
 
+  // The shell loads data.js (index.html); loadScript stays for the xterm assets above,
+  // which really are fetched on demand.
   function ensureData() {
-    if (FD.data) return Promise.resolve();
-    if (!dataPromise) dataPromise = loadScript('/v2/data.js');
-    return dataPromise;
+    return FD.data
+      ? Promise.resolve()
+      : Promise.reject(new Error('FD.data is not loaded'));
   }
 
   // xterm theme, derived from the mock's terminal tokens rather than the old

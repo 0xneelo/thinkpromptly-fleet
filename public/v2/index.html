@@ -35,6 +35,12 @@ input:focus,select:focus,textarea:focus{outline:none;}
 <script src="/v2/runtime.js"></script>
 <script src="/v2/fixture.js"></script>
 <script src="/v2/logic.js"></script>
+<!-- Before app.js, not after: app.js mounts the root at parse time (app.js:3409),
+     and the root seeds its view and screen from the URL through FD.router as it is
+     constructed. Loaded after app.js these would arrive too late to be read. -->
+<script src="/v2/data.js"></script>
+<script src="/v2/router.js"></script>
+<script src="/v2/orgchart.js"></script>
 <script src="/v2/app.js"></script>
 <script src="/v2/screens/shell.js"></script>
 <script src="/v2/screens/windows.js"></script>

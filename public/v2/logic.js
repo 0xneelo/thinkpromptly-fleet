@@ -417,7 +417,7 @@ class AppLogic extends Sub {
     const dark = this.isDark();
     const useColor = this.props.statusColors ?? true;
     const compact = (this.props.density ?? 'comfortable') === 'compact';
-    const screen = this.state.screen ?? this.props.screen ?? 'bus';
+    const screen = this.state.screen ?? fdAsked('screen') ?? this.props.screen ?? 'bus';
     const mono = "ui-monospace,'SF Mono',Menlo,monospace";
     const t = dark ? {
       bgAll: '#0a0a0a', overlay: 'rgba(0,0,0,0.4)', videoOpacity: 0.55,
@@ -1459,8 +1459,36 @@ class DeckLogic extends Sub {
     els.forEach((el) => { el.style.animation = el.dataset.fdAnim; });
   }
 }
+// DECK-79 / DECK-84: the URL decides the view and the screen when it names one, and
+// props decide otherwise. Both helpers read the RAW parameter rather than
+// FD.router.route(), because route() substitutes its own defaults ('app', 'windows')
+// and so cannot tell "nothing was asked for" from "app was asked for". That distinction
+// is what keeps fixture mode identical to the mock: with no ?view= and no #screen, the
+// mock's own startView and 'bus' default still win.
+function fdAsked(what) {
+  try {
+    const router = (typeof FD === 'object' && FD && FD.router) || null;
+    if (!router) return null;
+    const here = typeof location === 'object' ? location : null;
+    if (!here) return null;
+    if (what === 'view') {
+      const asked = new URLSearchParams(here.search || '').get('view');
+      if (router.VIEWS.includes(asked)) return asked;
+      // The path names a view too, and /app carries no query at all: the server only
+      // redirects to add ?view= where the router's own default would be wrong
+      // (server.js PAGE_VIEWS). This mirrors that table, so all three routes work
+      // whether or not the query survived. /v2/ is deliberately absent -- it names no
+      // view, so fixture mode there still renders the mock's own startView.
+      const byPath = { '/': 'land', '/app': 'app', '/deck': 'deck' }[here.pathname];
+      return byPath || null;
+    }
+    const asked = String(here.hash || '').replace(/^#/, '');
+    return router.SCREENS.includes(asked) ? asked : null;
+  } catch (e) { return null; }
+}
+
 class Component extends DCLogic {
-  state = { view: this.props.startView === 'app' ? 'app' : this.props.startView === 'deck' ? 'deck' : 'land' };
+  state = { view: fdAsked('view') || (this.props.startView === 'app' ? 'app' : this.props.startView === 'deck' ? 'deck' : 'land') };
   _sub(k) {
     if (!this._subs) this._subs = { land: new LandLogic(this, 'land'), app: new AppLogic(this, 'app'), deck: new DeckLogic(this, 'deck') };
     return this._subs[k];
@@ -1499,6 +1527,25 @@ class Component extends DCLogic {
     this._last = this.state.view;
     this.applyView();
     this._mount(this.state.view);
+    // Back and forward have to move the deck, not just the address bar. Only a URL
+    // that names a view or a screen changes anything, so a hash-less history entry
+    // leaves the current one alone -- the same rule the seed above uses.
+    try {
+      if (FD && FD.router && typeof FD.router.onChange === 'function') {
+        this._offRoute = FD.router.onChange(() => {
+          const view = fdAsked('view');
+          if (view && view !== this.state.view) this.setState({ view: view });
+          const screen = fdAsked('screen');
+          if (screen) {
+            const app = this._sub('app');
+            if (app.state.screen !== screen) app.setState({ screen: screen });
+          }
+        });
+      }
+    } catch (e) {}
+  }
+  componentWillUnmount() {
+    if (this._offRoute) { this._offRoute(); this._offRoute = null; }
   }
   componentDidUpdate(...a) {
     this.applyView();

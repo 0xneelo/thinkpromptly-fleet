@@ -135,21 +135,15 @@
     })
     .catch(function (e) { console.error('[l2] shell could not start', e); });
 
-  /* public/v2/index.html is generated from the mock's <helmet> and lists the
-   * runtime, the logic, the compiled render and the nine screen files — not
-   * data.js, which arrived a slice later. The shell loads it once, on the shared
-   * promise, so any other screen can await the same load (I-L2-01). */
+  /* public/v2/index.html now lists data.js, router.js and orgchart.js alongside the
+   * runtime, the logic, the compiled render and the nine screen files (DECK-84), so
+   * there is nothing left to load here. Kept as a promise because start() chains on
+   * it, and it still rejects when FD.data is absent rather than failing later and
+   * further away (was I-L2-01). */
   function loadDataLayer() {
-    if (FD.data) return Promise.resolve();
-    if (FD.__dataLoading) return FD.__dataLoading;
-    FD.__dataLoading = new Promise(function (done, fail) {
-      var s = document.createElement('script');
-      s.src = '/v2/data.js';
-      s.onload = function () { FD.data ? done() : fail(new Error('data.js loaded but FD.data is absent')); };
-      s.onerror = function () { fail(new Error('data.js failed to load')); };
-      document.head.appendChild(s);
-    });
-    return FD.__dataLoading;
+    return FD.data
+      ? Promise.resolve()
+      : Promise.reject(new Error('data.js is not loaded'));
   }
 
   /* ---- theme (BEHAVIOUR §5, ledger D06) ---------------------------------- */

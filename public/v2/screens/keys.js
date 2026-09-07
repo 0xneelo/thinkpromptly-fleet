@@ -89,9 +89,11 @@
 
   // Fixture mode renders the mock verbatim. Register nothing, start no timers,
   // load no script, touch no DOM — this is what keeps the pixel gate at 36/36.
+  // touch no DOM — this is what keeps the pixel gate at 36/36.
+  // No document means Node, where only the exports above are wanted.
   //
   // The fixture test is inlined rather than delegated to FD.data.isFixture()
-  // because it has to answer BEFORE data.js is fetched below; it mirrors
+  // so it answers without depending on FD.data at all; it mirrors
   // data.js:563-567 exactly. Getting this wrong would put a network request on
   // the pixel-gate page, so it is deliberately the first thing decided.
   //
@@ -107,13 +109,10 @@
     return typeof search === 'string' && /[?&]fixture=1(&|$)/.test(search);
   }
 
-  // The shell (public/v2/index.html) loads runtime, fixture, logic, app and the
-  // screen files, but NOT public/v2/data.js — so FD.data, which L1 built and
-  // every live screen needs, is simply absent. index.html is out of this
-  // slice's scope, so this screen fetches the data layer itself rather than
-  // shipping a screen that cannot load. See improvised.md I-L7-02 and DECK-84:
-  // the shell should load it for everyone at the L11 cut-over, and this loader
-  // then becomes a no-op because FD.data is already there.
+  // The shell (public/v2/index.html) loads public/v2/data.js before the screen
+  // files, so FD.data — which L1 built and every live screen needs — is already
+  // there when this file runs (DECK-84 cut-over). The FD.data guard at the foot
+  // of the file stays: without it, a page missing the data layer would throw.
   // ---- module state -------------------------------------------------------
   var state = { certs: [], keys: [] };
   var train = { active: false, expiresAt: null };

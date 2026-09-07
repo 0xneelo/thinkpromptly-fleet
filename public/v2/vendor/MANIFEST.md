@@ -2,6 +2,15 @@
 
 Recorded 2026-09-07. Paths are relative to public/v2/. SHA256 and sizes cover every runtime, font, media and license file; this manifest excludes itself. No media was transcoded.
 
+## Removed at cut-over (L11)
+
+`react.production.min.js`, `react-dom.production.min.js`, `babel.min.js` and
+`dc-runtime.js` are deleted. S2 compiled the template to plain JavaScript, so
+nothing in `public/` loads them any more, and `public/v2/pass1/` went with them.
+Their rows and hashes stay below as the record of what was vendored and from
+where. `inter.css` and `fonts/` remain: they are what the page and the design
+gate actually load.
+
 | File | Version | Bytes | SHA256 | License / provenance |
 |---|---|---:|---|---|
 | `media/chatgpt-logo.png` | 1280px PNG from exact design URL | 53129 | `ef8d1611f1a992421c64ddd93e688113c41175e9d5da8957b88711eb9e5261ff` | Public domain (PD-shape); Wikimedia Commons file page also notes trademarks |

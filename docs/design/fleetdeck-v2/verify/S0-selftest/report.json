@@ -3,8 +3,8 @@
   "mode": "verify",
   "slice": "S0-selftest",
   "status": "complete",
-  "capturedAt": "2026-09-06T23:20:38.188Z",
-  "source": "http://127.0.0.1:4175/Fleetdeck%20Final.dc.html",
+  "capturedAt": "2026-09-07T00:50:06.316Z",
+  "source": "built-in mock server",
   "viewport": {
     "width": 1440,
     "height": 900
@@ -24,7 +24,7 @@
   },
   "determinism": {
     "initScriptSha256": "97b7b8f3f5f39dce5cbbd7135eea0be350c134ddc01f84a72fbe5f835223cff3",
-    "cssSha256": "283736555bc008f4624633618dc91de07516d74c172ef4b81ff6263c874f9fc0",
+    "cssSha256": "f7a38fabf630b9d97939846d2d45f3f5ad457a9bcef62ad77ffed4e2a19d5e05",
     "reducedMotion": "reduce",
     "locale": "en-US",
     "timezoneId": "UTC",
@@ -399,6 +399,5 @@
     }
   ],
   "allPass": true,
-  "maxMismatchPct": 0.03294753086419753,
-  "signedBy": "Gisbert"
+  "maxMismatchPct": 0.03294753086419753
 }

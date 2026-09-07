@@ -19,7 +19,10 @@ const HOLDER_TIP =
 const SOURCE = readFileSync(SHELL, 'utf8');
 
 function load({ store = {}, search = '' } = {}) {
-  const sandbox = { console };
+  // The shell reports a failed start through console.error, which is the only
+  // observable a live boot leaves now that the shell no longer injects a script.
+  const errors = [];
+  const sandbox = { console: { log: () => {}, warn: () => {}, error: (...a) => errors.push(a.map(String).join(' ')) } };
   sandbox.window = sandbox;
   sandbox.localStorage = {
     getItem: (k) => (k in store ? store[k] : null),
@@ -36,7 +39,7 @@ function load({ store = {}, search = '' } = {}) {
   vm.createContext(sandbox);
   vm.runInContext(SOURCE, sandbox, { filename: 'shell.js' });
   assert.ok(sandbox.FD && sandbox.FD.shell, 'shell.js publishes FD.shell');
-  return { shell: sandbox.FD.shell, FD: sandbox.FD, appended };
+  return { shell: sandbox.FD.shell, FD: sandbox.FD, appended, errors };
 }
 
 
@@ -135,16 +138,29 @@ test('fixture mode stops the slice before it loads or fetches anything', () => {
   }
 });
 
-test('and the same check lets a live boot through — so it is not simply always true', () => {
-  const { FD, appended } = load({ store: {}, search: '' });
-  assert.ok(FD.__dataLoading, 'a live boot starts the data layer');
-  assert.strictEqual(appended.length, 1, 'exactly one <script> appended');
-  assert.strictEqual(appended[0].src, '/v2/data.js');
+// The shell stopped injecting data.js when the page began loading it itself
+// (DECK-84), so "a script was appended" is no longer an observable. The rule under
+// test has not changed -- fixture mode must not start the slice and a live boot must
+// -- only its evidence: a live boot now reaches the start path, which reports the
+// absent data layer. The rejection settles in a microtask, hence the flush.
+const started = async (opts) => {
+  const { errors } = load(opts);
+  await new Promise((done) => setImmediate(done));
+  return errors.some((e) => e.includes('shell could not start'));
+};
+
+test('and the same check lets a live boot through — so it is not simply always true', async () => {
+  assert.ok(await started({ store: {}, search: '' }), 'a live boot starts the slice');
 });
 
-test('a fixture-shaped query that is not the flag does not count as fixture mode', () => {
-  const { FD } = load({ search: '?fixture=0' });
-  assert.ok(FD.__dataLoading, '?fixture=0 is a live boot');
+test('a fixture-shaped query that is not the flag does not count as fixture mode', async () => {
+  assert.ok(await started({ search: '?fixture=0' }), '?fixture=0 is a live boot');
+});
+
+test('fixture mode really does stop before the start path, not just before the network', async () => {
+  for (const opts of [{ store: { 'fd-fixture': '1' } }, { search: '?fixture=1' }]) {
+    assert.strictEqual(await started(opts), false, 'no start attempt: ' + JSON.stringify(opts));
+  }
 });
 
 test('the empty-state copy still matches L3 word for word', () => {

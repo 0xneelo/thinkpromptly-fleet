@@ -223,7 +223,7 @@
   }
 
   // --- fixture mode ------------------------------------------------------------
-  // Mirrors FD.data.isFixture() so this file can decide before data.js is present.
+  // Mirrors FD.data.isFixture() so this file can still decide when FD.data is absent.
   function isFixture() {
     if (FD.data && typeof FD.data.isFixture === 'function') return FD.data.isFixture();
     try { if (root.localStorage.getItem('fd-fixture') === '1') return true; } catch (e) { /* no storage */ }
@@ -231,25 +231,12 @@
     return typeof search === 'string' && /[?&]fixture=1(&|$)/.test(search);
   }
 
-  // public/v2/index.html loads runtime, fixture, logic, app and the screens, but not
-  // data.js — the shell owns that list, so this slice fetches its dependency instead of
-  // editing it. REPORT.md §Cross-slice dependencies.
+  // public/v2/index.html loads /v2/data.js before the screens, so FD.data is already
+  // there. This stays a promise so its callers below are unchanged, and it still
+  // rejects when FD.data is missing: the load path turns that into the screen's
+  // 'cannot reach fleetdeck' card rather than throwing mid-render.
   function ensureData() {
-    if (FD.data) return Promise.resolve(FD.data);
-    if (!root.document) return Promise.reject(new Error('no document'));
-    if (!ensureData._p) {
-      // A rejection is NOT memoized: one transient failure must not leave the screen
-      // stuck on 'cannot reach fleetdeck' for the rest of the session — the next 60 s
-      // poll retries the script as well as the fetch.
-      ensureData._p = new Promise(function (resolve, reject) {
-        var s = root.document.createElement('script');
-        s.src = '/v2/data.js';
-        s.onload = function () { FD.data ? resolve(FD.data) : reject(new Error('data.js loaded without FD.data')); };
-        s.onerror = function () { reject(new Error('cannot load /v2/data.js')); };
-        root.document.head.appendChild(s);
-      }).catch(function (e) { ensureData._p = null; throw e; });
-    }
-    return ensureData._p;
+    return FD.data ? Promise.resolve(FD.data) : Promise.reject(new Error('FD.data is not loaded'));
   }
 
   // --- state, loading and the 60 s poll ----------------------------------------

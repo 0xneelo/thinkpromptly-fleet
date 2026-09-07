@@ -288,19 +288,14 @@
   }
 
   // ------------------------------------------------------------------ loading
-  // data.js is not in the shell's script list, so the screen brings it in itself
-  // the first time it needs live rows. Flagged for L2 in REPORT.md.
+  // The shell loads data.js (index.html), so this only has to hand it over. It stays
+  // a promise because every caller chains on it, and it still rejects when FD.data is
+  // absent so a missing data layer reaches the screen's error path instead of throwing
+  // inside a fulfilled handler.
   function ensureData() {
-    if (FD.data) return Promise.resolve(FD.data);
-    if (ensureData._p) return ensureData._p;
-    ensureData._p = new Promise(function (resolve, reject) {
-      var s = doc.createElement('script');
-      s.src = '/v2/data.js';
-      s.onload = function () { FD.data ? resolve(FD.data) : reject(new Error('FD.data did not load')); };
-      s.onerror = function () { reject(new Error('cannot load /v2/data.js')); };
-      doc.head.appendChild(s);
-    });
-    return ensureData._p;
+    return FD.data
+      ? Promise.resolve(FD.data)
+      : Promise.reject(new Error('FD.data is not loaded'));
   }
 
   // BEHAVIOUR §7: reload after every edit save/escape, every row action (ok or
