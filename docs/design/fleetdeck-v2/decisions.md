@@ -335,3 +335,19 @@ deployed: answer — I never push main; the one-liner follows the next green can
 Box: pixel gate allPass 36/36 max 0.0329 %; tests 540 pass / 4 fail (the `v2-shell` setBadge quartet, merge-caused,
 L11.1). Design seat updated the Mac-side references listed in `docs/goals/fd-v2-l11/MAC-REFS.md` (three skills now
 point at `localhost:3131/app#keys` / `/app`) and the `fleetdeck-app` memory (routes, v2 layout, gate-on-box rule).
+
+## 2026-09-08 · DEPLOYED — main fast-forwarded to `weave/fd-v2` @ `79cd53a`, `./up.sh` run by the operator
+
+Final box gate on `79cd53a`: tests 551/551, pixel gate 36/36 max 0.0329 %. Routes verified live: `/` → 302
+`?view=land`, `/app` 200, `/deck` 302, legacy `.html` → `/app#…`. Mac-side skill references updated.
+
+**Live defects found by the operator in the first minutes, both post-deploy riders:**
+- **L6.2 (priority, Gerhild):** every deep link into the bus is dead — `FD.screens.bus.open()` returns `false` for
+  all targets because `host` is never set: `bus.attach(h)` runs only in `AppLogic.componentDidMount`, which fires while
+  `app.js` executes, before `screens/bus.js` has loaded (verified on the live page: no `FD.host`, `open()` false even
+  with the bus screen open, threads still paint via the bus's own `start2()`). Fix: attach idempotently from
+  `componentDidUpdate` and/or on module load with a runtime-exposed host; keep `pendingOpen`. The workers' live proofs
+  passed because their harness loaded the screen scripts before the first mount.
+- **L11.2 (Alrun):** nav clicks switch the screen but never write the hash; reload/back/bookmark land wrong.
+Ledger D08 P2 ✅ (L6.1 `2f72f00`) recorded here since the earlier docs commit was declined. Next: merge both riders
+into `weave/fd-v2`, box gate, second one-liner `cd ~/remote-system && git merge --ff-only weave/fd-v2 && ./up.sh`.
