@@ -380,3 +380,17 @@ and saw no change — nothing new had been pushed. Minted **Hadwig** (`backend-d
 from `origin/weave/fd-v2` for the Range fix (pack `docs/goals/fd-v2-l12/`); Alrun told to ship L11.2 only.
 Lesson: a bus "delivered" is not a read — verify the text in the pane, and never queue a priority rider
 behind a long turn; mint a parallel worker when the slice is independent.
+
+## 2026-09-07 03:43 — candidate `e646554` = deployed `79cd53a` + L6.2 + L11.2
+
+- **L6.2 accepted** (Gerhild, `eb3c015`): `AppLogic._busAttach()` publishes the host on `FD.screens.busHost` and
+  retries `bus.attach` on every render; `bus.open()` takes every target. `test/v2-bus.test.js` +142 lines,
+  live proof `verify/l6/live.json`. Closes the dead "Message session" deep links.
+- **L11.2 accepted** (Alrun, `2b7254b`): a screen switch writes `location.hash`, so reload and Back follow.
+  `scripts/verify-l11-live.mjs` + `verify/l11/live.json`.
+- Merge clean (both touch `logic.js`, disjoint hunks). `npm test` 560/560. Box gate on `e646554`:
+  **allPass, 36/36, max 0.0329 %**. Pushed to `origin/weave/fd-v2`.
+- Still open: **L12** (Hadwig, Range support → landing scroll scrub). Server-only, so it cannot move the pixel
+  gate (the gate renders `public/` through a static python server); it gets `npm test` + the headless scroll
+  probe, not a re-gate.
+- Handover line unchanged: `cd ~/remote-system && git merge --ff-only weave/fd-v2 && ./up.sh`.
