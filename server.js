@@ -2392,10 +2392,62 @@ function redirect(res, location) {
   res.end('found');
 }
 
-function sendFile(res, file) {
-  fs.readFile(file, (err, buf) => {
-    if (err) return send(res, 404, 'text/plain', 'not found');
-    send(res, 200, MIME[path.extname(file)] || 'application/octet-stream', buf);
+// A Range request is how a browser seeks a video. Without an answer to one, Chrome
+// reports video.seekable as [0,0], every seek snaps back to 0, and the landing hero
+// never scrubs. Returns {start, end} inclusive, the string 'unsatisfiable' for a 416,
+// or null to serve a normal 200 — which RFC 9110 §14.2 allows for any range we would
+// rather not honour, including a multi-range or a unit that is not bytes.
+function parseByteRange(header, size) {
+  if (!header) return null;
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header).trim());
+  if (!m) return null;
+  const [, rawStart, rawEnd] = m;
+  if (rawStart === '' && rawEnd === '') return null;
+  let start, end;
+  if (rawStart === '') {
+    // bytes=-N is the last N bytes; N=0 asks for nothing, which is unsatisfiable.
+    const n = Number(rawEnd);
+    if (!n) return 'unsatisfiable';
+    start = Math.max(0, size - n);
+    end = size - 1;
+  } else {
+    start = Number(rawStart);
+    end = rawEnd === '' ? size - 1 : Math.min(Number(rawEnd), size - 1);
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size)
+    return 'unsatisfiable';
+  return { start, end };
+}
+
+function sendFile(res, file, req) {
+  // stat rather than readFile: a range answer needs the size up front, and a 10 MB
+  // hero video should not be buffered whole to serve 64 KB of it.
+  fs.stat(file, (err, st) => {
+    if (err || !st.isFile()) return send(res, 404, 'text/plain', 'not found');
+    const type = MIME[path.extname(file)] || 'application/octet-stream';
+    const range = parseByteRange(req && req.headers && req.headers.range, st.size);
+    if (range === 'unsatisfiable') {
+      res.writeHead(416, {
+        'content-type': type,
+        'accept-ranges': 'bytes',
+        'content-range': 'bytes */' + st.size,
+      });
+      return res.end();
+    }
+    const start = range ? range.start : 0;
+    const end = range ? range.end : st.size - 1;
+    const head = {
+      'content-type': type,
+      'accept-ranges': 'bytes',
+      'content-length': st.size === 0 ? 0 : end - start + 1,
+    };
+    if (range) head['content-range'] = 'bytes ' + start + '-' + end + '/' + st.size;
+    res.writeHead(range ? 206 : 200, head);
+    if (st.size === 0) return res.end();
+    const stream = fs.createReadStream(file, { start, end });
+    stream.on('error', () => res.destroy());
+    res.on('close', () => stream.destroy());
+    stream.pipe(res);
   });
 }
 
@@ -2877,13 +2929,13 @@ const server = http.createServer(async (req, res) => {
           url.searchParams.set('view', want);
           return redirect(res, p + '?' + url.searchParams.toString());
         }
-        return sendFile(res, path.join(__dirname, ...V2_SHELL));
+        return sendFile(res, path.join(__dirname, ...V2_SHELL), req);
       }
     }
   } catch (e) {
     return send(res, 500, 'text/plain', String(e.message));
   }
-  if (VENDOR[p]) return sendFile(res, require.resolve(VENDOR[p]));
+  if (VENDOR[p]) return sendFile(res, require.resolve(VENDOR[p]), req);
   // A directory URL serves its index.html, so /v2/ resolves like / does.
   const rel = p === '/' ? 'index.html'
     : p.endsWith('/') ? p.replace(/^\/+/, '') + 'index.html'
@@ -2891,7 +2943,7 @@ const server = http.createServer(async (req, res) => {
   const file = path.join(__dirname, 'public', rel);
   if (!file.startsWith(path.join(__dirname, 'public') + path.sep))
     return send(res, 403, 'text/plain', 'forbidden');
-  sendFile(res, file);
+  sendFile(res, file, req);
 });
 
 // node-pty 1.1.0 leaks one extra pty master per spawn on macOS: pty_posix_spawn
