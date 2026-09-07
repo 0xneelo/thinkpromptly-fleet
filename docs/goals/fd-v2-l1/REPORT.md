@@ -22,7 +22,8 @@
 | `server.js` | one ternary arm so a directory URL serves its `index.html` |
 | `docs/design/fleetdeck-v2/improvised.md` | 12 entries (I-L1-01 … I-L1-12) |
 
-Commits: `a918cc5` (server fix) · `ff76a68` (extractor + fixture) · `9e5c0d1` (data layer, router, tests).
+Commits: `a918cc5` (server fix) · `ff76a68` (extractor + fixture) · `9e5c0d1` (data layer, router,
+tests) · `55ec8b8` (report) · `b2f6f72` (`termLinesFor`) · `32cf21d` (reviewer findings).
 
 ## The design decision that shaped the slice
 
@@ -103,7 +104,7 @@ I-L1-01/I-L1-02; happy to take the other shape if the design seat rules differen
 
 ## Acceptance (README §Acceptance)
 
-- [x] `public/v2/data.js`, `router.js`, `fixture.js`, `orgchart.js` present; `npm test` green including `test/v2-data.test.js` — 285/285.
+- [x] `public/v2/data.js`, `router.js`, `fixture.js`, `orgchart.js` present; `npm test` green including `test/v2-data.test.js` — 294/294.
 - [x] Fixture mode returns arrays deep-equal + key-order-equal to the mock's seed arrays; `npm run v2:fixture` idempotent. Read as the layer-1 projection — layers 2 and 3 are theme-dependent and non-serializable, so nothing on disk can equal them theme-independently (I-L1-01).
 - [x] Every adapter output validated against the mock shapes — shape table above, one row per array.
 - [x] `/v2/` resolves — 200 via `node server.js` on a scratch port; the change is quoted in commit `a918cc5`. The shell itself is S2's `public/v2/index.html`, so the test supplies a stand-in when that file is absent and uses the real one when present.
