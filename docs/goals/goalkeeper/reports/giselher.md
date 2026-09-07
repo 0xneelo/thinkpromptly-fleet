@@ -369,3 +369,122 @@ trusted), **`G-18`** (a live plaintext broker token was found on disk from anoth
 `--askpass`; removed, but that caller is still leaking), and the test README's *Known limits*.
 
 Lane GK-M is complete. The weave is the orchestrator's.
+
+---
+
+# GK-M.4 — the jail becomes conservative, tampering becomes evidence
+
+Final review of `b44d562`: items 1–5 CLOSED, suites green, every named PoC behaving — and
+adversarial probing still found three more ways around the Bash write-jail, plus one destructive
+read. Brief: `lane-giselher-fixes-3.md`, items 1–3, with the PLAN §9 addendum binding.
+
+That is four rounds, each closing the forms the last one missed. The lesson the brief draws, and
+I agree with, is that the approach was wrong rather than the patches: **static analysis of shell
+text is never complete.** So this round gives up precision for a rule with no seams, and moves the
+guarantee to detection.
+
+## Commits
+
+| Item | Commit | What |
+|---|---|---|
+| 3 | `293bd41` | `SKILL.md` — what protects the records, and what does not |
+| 1 | `d1d824e` | the Bash jail becomes conservative |
+| 2 | `2f5327c` | tampering with the seat's records becomes evidence |
+| — | this commit | report, ledger, `ACK GKM4` |
+
+## Tests
+
+```
+node --test mac/claude-home/session-kind/test/guard.test.js      # 188 pass  (was 152)
+sh   mac/claude-home/session-kind/test/mark.test.sh              # 33 pass   (2 skipped, no timeout(1))
+python3 -m unittest discover -s mac/claude-home/skills/goalkeeper/tests   # 62 pass (was 52)
+```
+
+39 GK-M.4 probe shapes green, and every earlier probe suite still passes.
+
+## Item 1 — the rule now has no seams
+
+The three bypasses, all reproduced before the change:
+
+- `cd "$HOME/.claude" && cd goalkeeper && echo pwned > evil.md` — the `$` "unknowable" test ran
+  *before* anything expanded `$HOME`, and the second, relative `cd` then resolved against the
+  session cwd.
+- `(cd <jail> && …)`, `{ cd <jail>; …; }`, `bash -c '…'` — the `cd` regex required the whole
+  segment to be exactly `cd <dir>`.
+- `mv <jail>/thread.md /tmp/stolen.md` — allowed by the destination-only rule, though `mv`
+  **destroys its source**.
+
+The `cd` tracker and the destination analysis are gone. For a non-goalkeeper stamped kind: a
+command that names the goalkeeper directory is allowed only if it is a pure read; anything else
+naming it is denied; a command that does not name it is never touched.
+
+**This reverses a GK-M.3 change of mine.** `cp <jail>/audits/2026-09-07.md /tmp/copy.md` was made
+ALLOW two rounds ago because refusing an orchestrator reading the seat's evidence was a false
+positive. It is DENY again — `cp`/`mv` naming the jail are refused in every argument position,
+which is the only way to close `mv` out without resuming the analysis four rounds have shown to be
+unfinishable. Evidence still leaves by `cat`, `head`, `sed -n` or `git show`. Logged as `G-22`.
+
+**One deviation from the brief's literal text, taken deliberately.** Its NAMES list includes a
+bare `goalkeeper/` segment; that also matches this repo's own `docs/goals/goalkeeper/` — the goal
+pack, every lane brief, every lane report. Under the literal reading no worker could
+`git add docs/goals/goalkeeper/…` or write its own report; the rule would stop the fleet rather
+than the seat. PLAN §9 (G-5) already settled that directory stays writable and the addendum words
+the rule as "names the goalkeeper **directory**", so that is what NAMES tests. Asserted explicitly
+in the suite. Logged as `G-23`.
+
+## Item 2 — detection is the guarantee
+
+Every CLI commit is authored `goalkeeper@local`; `sweep` keeps the resulting SHA and the paths it
+wrote in `sweep-state.json` (gitignored in the data repo), then checks three things before its own
+writes: uncommitted changes, commits by another author, and mtimes newer than the last commit that
+the seat did not write. Plus `no_baseline` when the state file is missing, and `check_failed` when
+a check cannot run — **silence must never read as cleanliness.** Findings land in `sweep.json` as
+`tamper[]`; `audit` opens with a ⚠ TAMPER block and the verbatim sentence marking the thread and
+audits since the last clean SHA unverified. A clean run adds nothing.
+
+Verified end to end on a fixture: baseline sweep → clean sweep reporting zero → a foreign commit
+by `someone@else` plus an uncommitted edit → a sweep reporting exactly those two → an audit opening
+with the block. The live `~/.claude/goalkeeper` was checked untouched before and after.
+
+Seven places the brief's prose and its own concrete spec disagreed are resolved toward the spec and
+listed in `2f5327c`. The one worth repeating: `written` had to be excluded from the *uncommitted*
+check too, not just the mtime check, or two clean runs in a row were impossible — at the cost, now
+documented, that a foreign edit to `sweep.json` or `sweep-state.json` between runs is invisible.
+Those are seat output, not records.
+
+## The limit, stated rather than papered over
+
+A glob (`cd ~/.claude/goal*eeper`) or a variable holding the path never spells the directory, so
+the guard allows it; a process that bypasses Claude Code tooling is not seen at all. That is not a
+fifth round's defect — it is why item 2 exists. `SKILL.md` now says so to the seat, and tells it
+what to do when a TAMPER block appears: report it, name the unverified entries, let the operator
+confirm. Never reason around it, never repair the records itself. Also in the test README's
+*Known limits*.
+
+## Installer re-run
+
+```
+changed 3   unchanged 14   backups made 3   stamp 2026-09-07
+```
+
+| Live file | Backup |
+|---|---|
+| `~/.claude/session-kind/guard.js` | `guard.js.bak-2026-09-07-233658` |
+| `~/.claude/skills/goalkeeper/goalkeeper.py` | `goalkeeper.py.bak-2026-09-07-233658` |
+| `~/.claude/skills/goalkeeper/SKILL.md` | `SKILL.md.bak-2026-09-07-233658` |
+
+Vendored tree is byte-identical to live for `guard.js`, `mark.sh`, `census.py`, `goalkeeper.py`,
+`SKILL.md` and `anchor-check.md`. Verified against the **live** guard afterwards: all three
+bypasses deny, pure reads allow, and this worker still writes its lane report, stages its pack and
+pushes.
+
+**Rollback:** `cp ~/.claude/session-kind/guard.js.bak-2026-09-07-233658 ~/.claude/session-kind/guard.js`
+
+## Still open for the operator
+
+`G-13` (gate — the broker's GitHub App is not on `0xneelo/lowcap-connector`, so lowcapsxyz evidence
+stays STALE), `G-18` (a live plaintext broker token from another `--askpass` caller), `G-22` (the
+`cp`-out reversal, for confirmation), `G-23` (the NAMES narrowing), `G-24` and the test README's
+*Known limits*.
+
+Lane GK-M is complete. The weave is the orchestrator's.
