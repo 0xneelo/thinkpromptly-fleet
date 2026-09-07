@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice": "l6",
   "mode": "live",
-  "capturedAt": "2026-09-07T01:42:49.501Z",
+  "capturedAt": "2026-09-07T02:40:22.503Z",
   "api": "docs/design/fleetdeck-v2/fixtures/api/ + hand-written error/empty/offline variants",
   "consoleErrors": [],
   "stubbedHttpNoise": [
@@ -10,8 +10,8 @@
     "Failed to load resource: the server responded with a status of 409 (Conflict)",
     "Failed to load resource: the server responded with a status of 403 (Forbidden)"
   ],
-  "total": 47,
-  "passed": 47,
+  "total": 50,
+  "passed": 50,
   "allPass": true,
   "results": [
     {
@@ -54,7 +54,7 @@
       "action": "read a thread",
       "expectation": "messages oldest-first, so the newest sits at the bottom of the body",
       "pass": true,
-      "detail": "m=[174,174,173,173,170,169,165,162,151,151,145,145]"
+      "detail": "m=[230,229,229,228,225,225,221,217,207,206,200,200]"
     },
     {
       "id": "L6-07",
@@ -138,7 +138,7 @@
       "action": "click Retry",
       "expectation": "POST /api/messages/retry {id}",
       "pass": true,
-      "detail": "{\"id\":\"x1788745264280\"}"
+      "detail": "{\"id\":\"x1788748600223\"}"
     },
     {
       "id": "L6-19",
@@ -187,7 +187,7 @@
       "action": "open a thread with unread messages",
       "expectation": "fd-bus-seen records an ISO stamp under that thread id",
       "pass": true,
-      "detail": "{\"LC-wendelgard-clean-pure-voting\":\"2026-09-07T01:41:08.881Z\"}"
+      "detail": "{\"LC-wendelgard-clean-pure-voting\":\"2026-09-07T02:36:47.224Z\"}"
     },
     {
       "id": "L6-26",
@@ -264,14 +264,14 @@
       "action": "click Show session on a tmux thread",
       "expectation": "FD.screens.windows.openMax(host, session) is called (L3 hook, guarded)",
       "pass": true,
-      "detail": "[[\"german-box\",\"LC-wendelgard-clean-pure-voting\"]]"
+      "detail": "L3 present=true calls=[[\"german-box\",\"LC-wendelgard-clean-pure-voting\"]] mockFallback=false"
     },
     {
       "id": "L6-37",
       "action": "click Show session on a Claude Desktop thread",
       "expectation": "it is a no-op — desktop threads have no tmux terminal",
       "pass": true,
-      "detail": "1->1 fullscreen=false"
+      "detail": "openMax 1->1 bus=true"
     },
     {
       "id": "L6-38",
@@ -285,7 +285,7 @@
       "action": "click Copy thread",
       "expectation": "the whole thread lands on the clipboard as plain text",
       "pass": true,
-      "detail": "[2h ago] claude-desktop: O45-REPOINT: your pack's return address was WRONG - fle"
+      "detail": "[3h ago] claude-desktop: O45-REPOINT: your pack's return address was WRONG - fle"
     },
     {
       "id": "L6-40",
@@ -293,6 +293,27 @@
       "expectation": "agent replies go full width instead of a bubble",
       "pass": true,
       "detail": "13px -> 15px"
+    },
+    {
+      "id": "L6-48",
+      "action": "select a thread, then navigate to Accounts",
+      "expectation": "the bus screen is no longer showing but the thread stays selected",
+      "pass": true,
+      "detail": "bus=false accounts=true"
+    },
+    {
+      "id": "L6-49",
+      "action": "an inbound row arrives on that selected thread",
+      "expectation": "the reply toast still fires — this is the case D08 exists for",
+      "pass": true,
+      "detail": "LC-wendelgard-clean-pure-voting | ACK. Picking this up on the next turn."
+    },
+    {
+      "id": "L6-50",
+      "action": "click Open thread on that toast",
+      "expectation": "it returns to the bus screen with that thread selected and the reply shown",
+      "pass": true,
+      "detail": "visible=true name=LC-wendelgard-clean-pure-voting toast=0 :: elgard-clean-pure-voting ACK. Picking this up on the next turn. 1m ago"
     },
     {
       "id": "L6-41",

@@ -673,9 +673,9 @@ class AppLogic extends Sub {
       };
     };
     const match = (x) => !busQ || (x.name + ' ' + (x.host || '')).toLowerCase().includes(busQ);
-    const pinnedItems = [...busGroups.filter(isPinned), ...busSessions.filter(isPinned)].filter(match);
-    const recentItems = [...busGroups.filter((g) => !isPinned(g)), ...busSessions.filter((s) => !isPinned(s))].filter(match)
-      .sort((a, b) => { const la = lastOf(a.id), lb = lastOf(b.id); return (la ? la.m : 1e9) - (lb ? lb.m : 1e9); });
+    const pinnedItems = busSafe('pinnedItems', [], () => [...busGroups.filter(isPinned), ...busSessions.filter(isPinned)].filter(match));
+    const recentItems = busSafe('recentItems', [], () => [...busGroups.filter((g) => !isPinned(g)), ...busSessions.filter((s) => !isPinned(s))].filter(match)
+      .sort((a, b) => { const la = lastOf(a.id), lb = lastOf(b.id); return (la ? la.m : 1e9) - (lb ? lb.m : 1e9); }));
     const railGroups = busSafe('railGroups', [], () => [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length));
     const actGroup = busGroups.find((g) => g.id === active);
     const actS = sById(active) || busSessions[0] || { id: '', name: '', host: '', live: false };

@@ -55,6 +55,7 @@
   var booted = false;      // has one poll ever landed
   var provisional = {};    // targets opened by hook before the server knows them
   var errs = {};           // message key -> receipt error string we own
+  var sentIds = {};        // client send key -> [server message id], for pruning
 
   // ---------------------------------------------------------------------------
   // Storage. Never throws: private mode and Node both leave the defaults.
@@ -300,6 +301,16 @@
     return host.state.busActive || FD.fixture.busActiveDefault || null;
   }
 
+  // The thread the user can actually SEE arriving. A selected thread is only
+  // visible while the bus screen itself is on-screen -- once they navigate to
+  // Accounts, a reply on that same thread still needs the toast. Reading
+  // busActive alone suppressed exactly the case D08 exists for. This mirrors
+  // the mock's own rule in arrive(): viewing = screen is bus AND busActive is
+  // this session (logic.js).
+  function visibleThread() {
+    return busOpen() ? activeId() : null;
+  }
+
   function busOpen() {
     if (!host) return false;
     var root = host.host;
@@ -335,11 +346,11 @@
     var now = Date.now();
     var previous = known;
     var built = build(messagesRes, sessionsRes, now);
-    var open = activeId();
+    var visible = visibleThread();
 
-    // A new inbound row for a thread other than the open one raises the reply
-    // toast (D08). Only rows the previous poll had not seen count, so the first
-    // poll after a reload never fires one.
+    // A new inbound row raises the reply toast (D08) unless the user is looking
+    // straight at that thread. Only rows the previous poll had not seen count,
+    // so the first poll after a reload never fires one.
     var toast = null;
     if (booted) {
       for (var i = built.list.length - 1; i >= 0; i--) {
@@ -347,7 +358,7 @@
         var id = threadIdOf(m);
         if (!id || !inboundOf(m)) continue;
         if (previous[id] && previous[id][m.id]) continue;
-        if (id === open) continue;
+        if (id === visible) continue;
         var row = matchRow(built.rows, id);
         toast = { sid: id, from: row ? row.name : id, text: m.text };
       }
@@ -366,22 +377,32 @@
       var ex = s.extraMsgs || {};
       var pruned = {};
       var changed = false;
+      var confirmed = {};
       Object.keys(ex).forEach(function (tid) {
         var server = built.threads[tid] || [];
         pruned[tid] = ex[tid].filter(function (msg) {
-          var dup = server.some(function (sm) { return sm.dir === 'out' && sm.text === msg.text && sm.from === msg.from; });
-          if (dup) changed = true;
+          // Prefer the id POST /api/messages handed back for this send; fall
+          // back to source + text, which is the only correlation available for
+          // a message whose POST has not answered yet.
+          var dup = (msg.srvIds || []).some(function (id) { return serverKnows(built.fresh, id); })
+            || server.some(function (sm) { return sm.dir === 'out' && sm.text === msg.text && sm.from === msg.from; });
+          if (dup) { changed = true; confirmed[msg.k] = true; }
           return !dup;
         });
       });
       if (changed) next.extraMsgs = pruned;
-      // A status the server now reports wins over our optimistic override.
+      // A status the server now reports wins over our optimistic override. The
+      // override is keyed by the CLIENT key ('x<ts>', or 'x<ts>:<target>' for a
+      // broadcast leg), which never equals a server id -- so an override is
+      // dropped when the send it belongs to has been confirmed, and only a key
+      // that IS a server id (a retry) is matched against the response directly.
+      // Without this, state.stOv grew for the life of the session.
       var stOv = s.stOv || {};
       var keptSt = {};
       var stChanged = false;
       Object.keys(stOv).forEach(function (k) {
         var mid = k.split(':')[0];
-        if (serverKnows(built.fresh, mid)) { stChanged = true; return; }
+        if (confirmed[mid] || serverKnows(built.fresh, mid)) { stChanged = true; delete errs[k]; delete sentIds[mid]; return; }
         keptSt[k] = stOv[k];
       });
       if (stChanged) next.stOv = keptSt;
@@ -475,6 +496,30 @@
     }
   }
 
+  // Record the id POST /api/messages returned for one send, on the optimistic
+  // message it belongs to. A broadcast is N POSTs behind ONE optimistic message
+  // whose leg keys are '<key>:<target>', so the ids accumulate on that message.
+  function noteServerId(key, id) {
+    var base = String(key).split(':')[0];
+    sentIds[base] = (sentIds[base] || []).concat([id]);
+    if (!host) return;
+    host.setState(function (s) {
+      var ex = s.extraMsgs || {};
+      var next = {};
+      var changed = false;
+      Object.keys(ex).forEach(function (tid) {
+        next[tid] = ex[tid].map(function (m) {
+          if (m.k !== base) return m;
+          var ids = (m.srvIds || []);
+          if (ids.indexOf(id) >= 0) return m;
+          changed = true;
+          return Object.assign({}, m, { srvIds: ids.concat([id]) });
+        });
+      });
+      return changed ? { extraMsgs: next } : {};
+    });
+  }
+
   // {ok:false,error} bodies are displayed verbatim (BEHAVIOUR section 6).
   function errText(e) {
     if (!e) return 'unknown error';
@@ -512,10 +557,16 @@
     var target = targets[req.sid];
     if (!target) {
       setReceipt(req.sid, req.key, 'failed', 'Delivery failed: unknown target');
+      // Refresh like every other exit from deliver(): the rail may simply be
+      // stale, and the next poll is what learns the target.
+      refresh();
       return true;
     }
     FD.data.sendMessage({ source: req.source, target: target, text: req.text })
       .then(function (res) {
+        // Record the id the server gave this send so the optimistic copy and
+        // its status override can be pruned by identity, not by text.
+        if (res && res.id) noteServerId(req.key, res.id);
         if (res && res.ok) setReceipt(req.sid, req.key, 'delivered', null);
         else setReceipt(req.sid, req.key, 'failed', 'Delivery failed: ' + ((res && res.error) || 'unknown error'));
       })
