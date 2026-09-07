@@ -111,8 +111,8 @@
    "asked": "2026-09-07",
    "status": "active",
    "health": "moving",
-   "progress": "pack landed (1e8b084 on origin); GK-D Luitpold live on the box as a Claude worker (Codex account at usage limit until Sep 12); GK-M Giselher booted on the Mac, held at the Claude CLI login screen",
-   "next": "operator: tmux attach -t LC-giselher, login option 1, shift+tab (auto mode); then Giselher runs",
+   "progress": "GK-D done (a06d903, review WEAVE); GK-M Giselher running on the Mac in auto mode since 2026-09-07 ~03:20Z",
+   "next": "orchestrator: review Giselher's milestones as they push, then weave both lanes as weave/goalkeeper-v1 for one ff-merge + ./up.sh; operator: decide P11 (drop 'current' as a bus target)",
    "tasks": [
     {
      "ref": "P2",
@@ -141,6 +141,10 @@
     {
      "at": "2026-09-07",
      "note": "re-scoped to the 2026-09-07 rulings 2-6 after Fable audit C1: auditor only, no seat nudging (ORCHESTRATOR 34)"
+    },
+    {
+     "at": "2026-09-07",
+     "note": "health → moving"
     },
     {
      "at": "2026-09-07",
