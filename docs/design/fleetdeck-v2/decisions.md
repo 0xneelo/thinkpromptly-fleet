@@ -306,3 +306,11 @@ L7.1 to Tankred: gate the 30 s poll + 1 s tick on the keys screen being active (
 polling the deck forever) and re-apply `data-dc-raw` on every capture (the sc-if teardown drops it after the first
 visit). Same class as L5.1's ticker → L9 and L10 asked to confirm their polls are screen-gated. Box test flakes on
 `dba2c6a` were `test/lease.test.js` and `test/notify.test.js` (pre-existing, port/timing under concurrency).
+
+## 2026-09-08 · L6 review: HOLD on the toast → L6.1 priority
+
+Contract, parity, gates (36/36, 47/47), tests 332/332 all check out; one HIGH defect: `activeId()` suppresses the
+reply toast for the selected thread even when the bus screen is not on-screen, so the primary D08 case never fires.
+Per the ruling L6 stays in the weave; L6.1 (priority) sent to Gerhild with three smaller items (unbounded `stOv`
+growth, unknown-target path without refresh, unguarded rail builders). Ledger D08 P2 back to 🔨 until L6.1 lands;
+D13 stays ✅.
