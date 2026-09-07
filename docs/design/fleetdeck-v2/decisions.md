@@ -298,3 +298,11 @@ DECK-87 = DECK-84 (L11).
 487 pass / 2 fail (Mac: 489/489) — the failures are in the pre-existing non-v2 suites that the workers documented as
 port-collision flakes under concurrent runs (ten worker worktrees run the suite on the same box); named below once
 read. Nine slices proven together on the gate machine; L11 phase 2 is the last step before the weave is final.
+
+## 2026-09-08 · L7 review: accept + L7.1; timer-gating sweep
+
+Parity traced line by line incl. 403/503 unwrapping; POST bodies asserted in the harness; tests 320/320. Follow-up
+L7.1 to Tankred: gate the 30 s poll + 1 s tick on the keys screen being active (today they run from module load,
+polling the deck forever) and re-apply `data-dc-raw` on every capture (the sc-if teardown drops it after the first
+visit). Same class as L5.1's ticker → L9 and L10 asked to confirm their polls are screen-gated. Box test flakes on
+`dba2c6a` were `test/lease.test.js` and `test/notify.test.js` (pre-existing, port/timing under concurrency).
