@@ -13,7 +13,11 @@ the running deck at the operator's next `./up.sh` (already tracked as P5).
 | Branch | `agent-goalkeeper-deck` |
 | `88d7593` | skill isolation lines + pending entries P6–P10 |
 | `978b7e0` | the choke point, the bus change, `test/goalkeeper-refusal.test.js`, P11 |
-| `PUSHED_SHA` | this report |
+| `f9f30de` | this report |
+
+All four are on `origin/agent-goalkeeper-deck`; `git ls-remote origin agent-goalkeeper-deck`
+confirmed `f9f30def0a1ed4f496cbda5f784e422d41994b1a` after the push. One further commit follows
+this line, filling that SHA in.
 
 ## Tests
 
