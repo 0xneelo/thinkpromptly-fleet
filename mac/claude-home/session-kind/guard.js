@@ -108,17 +108,51 @@ function norm(p, cwd) {
   }
 }
 
-// The goalkeeper's own repo. Compared against the RESOLVED path, never the raw
-// string, so no spelling of it can point somewhere else.
-function underGoalkeeper(p, cfg, cwd) {
+// Lexical resolution is not enough: a symlink INSIDE the jail can point out of
+// it, and one outside can point in. `ln -s /elsewhere ~/.claude/goalkeeper/x.js`
+// then writing that path is a jailbreak that `path.resolve` cannot see. So walk
+// up to the deepest ancestor that actually exists, realpath THAT, and re-attach
+// the rest — the target itself may not exist yet, since a Write creates it.
+function realDeep(p, depth) {
+  const d = depth || 0;
+  if (d > 32) return p;                       // symlink loop; give up lexically
+  try {
+    return fs.realpathSync(p);                // exists and resolves
+  } catch (e) { /* not resolvable as a whole — keep going */ }
+  // A DANGLING symlink is the case that matters most: realpath throws, but a
+  // Write still follows it and lands on the target. Resolve the link by hand.
+  try {
+    if (fs.lstatSync(p).isSymbolicLink()) {
+      return realDeep(path.resolve(path.dirname(p), fs.readlinkSync(p)), d + 1);
+    }
+  } catch (e) { /* not a symlink, or gone */ }
+  const parent = path.dirname(p);
+  if (!parent || parent === p) return p;      // reached the root
+  return path.join(realDeep(parent, d + 1), path.basename(p));
+}
+
+// Lexical resolve, then symlink resolve. Every path comparison below uses this.
+function resolved(p, cwd) {
   const n = norm(p, cwd);
+  return n ? realDeep(n) : '';
+}
+
+// The goalkeeper's own repo, realpathed too — ~/.claude itself may be a symlink.
+function goalkeeperDir(cfg) {
+  return realDeep(path.resolve(cfg, 'goalkeeper'));
+}
+
+// The goalkeeper's own repo. Compared against the RESOLVED path, never the raw
+// string, so no spelling of it — and no symlink through it — can point elsewhere.
+function underGoalkeeper(p, cfg, cwd) {
+  const n = resolved(p, cwd);
   if (!n) return false;
-  const gk = path.resolve(cfg, 'goalkeeper');
+  const gk = goalkeeperDir(cfg);
   return n === gk || n.startsWith(gk + path.sep);
 }
 
 function isScratch(p, cwd) {
-  const n = norm(p, cwd);
+  const n = resolved(p, cwd);
   if (!n) return false;
   return n.includes('/scratchpad/')
     || n.startsWith('/private/tmp/claude-')

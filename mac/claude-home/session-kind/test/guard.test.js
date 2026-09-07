@@ -326,3 +326,76 @@ test('adversarial: a non-string command neither throws nor denies', () => {
   expectAllow(ORCH, { tool_name: 'mcp__shell__exec', tool_input: { command: {} } });
   expectAllow(GK, { tool_name: 'mcp__shell__exec', tool_input: { command: 42 } });
 });
+
+// ------------------------------------------- 9. adversarial — symlinks cannot cross the jail wall
+// Lexical resolution alone is not enough: `ln -s /elsewhere <cfg>/goalkeeper/x.js` string-matches
+// the jail and then lands outside it. Every path below is a REAL symlink on disk, so these fixtures
+// exercise realDeep() — including the dangling-link case that plain realpathSync throws on.
+// Note: on macOS os.tmpdir() is itself under a symlink (/var/folders -> /private/var/folders),
+// which is why the guard realpaths the jail as well; an in-jail write must still be allowed.
+const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'gk-out-'));
+after(() => fs.rmSync(OUT, { recursive: true, force: true }));
+
+fs.mkdirSync(path.join(GK_HOME, 'audits'), { recursive: true });
+fs.writeFileSync(path.join(GK_HOME, 'thread.md'), '# thread\n');
+fs.mkdirSync(path.join(OUT, 'realsub'));
+fs.mkdirSync(path.join(OUT, 'plain'));
+fs.writeFileSync(path.join(OUT, 'live.js'), '// live\n');
+
+// inside the jail, pointing out (evil.js is never created — the link dangles)
+fs.symlinkSync(path.join(OUT, 'evil.js'), path.join(GK_HOME, 'x.js'));
+fs.symlinkSync(path.join(OUT, 'live.js'), path.join(GK_HOME, 'live.js'));
+fs.symlinkSync(path.join(OUT, 'realsub'), path.join(GK_HOME, 'sub'));
+// inside the jail, pointing back inside it
+fs.symlinkSync(path.join(GK_HOME, 'audits'), path.join(GK_HOME, 'alias'));
+// outside, pointing in
+fs.symlinkSync(GK_HOME, path.join(OUT, 'link-in'));
+fs.symlinkSync(path.join(OUT, 'plain'), path.join(OUT, 'plain-link'));
+// a loop: neither end resolves
+fs.symlinkSync(path.join(OUT, 'loop-b'), path.join(OUT, 'loop-a'));
+fs.symlinkSync(path.join(OUT, 'loop-a'), path.join(OUT, 'loop-b'));
+
+const ESCAPE = /a goalkeeper writes only inside its own repo/;
+
+test('adversarial: goalkeeper cannot follow a DANGLING symlink out of its jail', () => {
+  // realpathSync throws on a dangling link, so this is the case a naive fix misses — but a Write
+  // still follows it and creates the file outside. realDeep() resolves the link by hand.
+  assert.match(denyAt(GK_HOME, write(GK_HOME + '/x.js')), ESCAPE);
+});
+
+test('adversarial: goalkeeper cannot follow a live symlink out of its jail', () => {
+  assert.match(denyAt(GK_HOME, write(GK_HOME + '/live.js')), ESCAPE);
+  assert.match(denyAt(GK_HOME, edit(GK_HOME + '/live.js')), ESCAPE);
+});
+
+test('adversarial: goalkeeper cannot write a new file under a symlinked dir leaving the jail', () => {
+  assert.match(denyAt(GK_HOME, write(GK_HOME + '/sub/new.md')), ESCAPE);
+});
+
+test('adversarial: a symlink that stays inside the jail is still allowed (no over-blocking)', () => {
+  allowAt(GK_HOME, write(GK_HOME + '/alias/x.md'));
+});
+
+test('adversarial: ordinary in-jail writes survive the symlink fix', () => {
+  allowAt(GK_HOME, write(GK_HOME + '/thread.md'));            // exists
+  allowAt(GK_HOME, write(GK_HOME + '/audits/2026-09-08.md')); // does not exist yet
+  allowAt(GK_HOME, write('thread.md'));                       // relative to cwd
+});
+
+test('adversarial: other kinds cannot write INTO the jail through a symlink pointing at it', () => {
+  const into = /belongs to the 🥅 seat alone/;
+  assert.match(expectDeny(ORCH, write(OUT + '/link-in/thread.md')), into);
+  assert.match(expectDeny(ORCH, write(OUT + '/link-in/audits/x.md')), into);
+});
+
+test('adversarial: symlinks outside the jail are untouched for other kinds', () => {
+  expectAllow(ORCH, write(OUT + '/plain/x.md'));
+  expectAllow(ORCH, write(OUT + '/plain-link/x.md'));
+});
+
+test('adversarial: a symlink loop terminates instead of hanging', () => {
+  // realDeep()'s depth-32 cap is what bounds the a -> b -> a ping-pong. Either verdict is fine;
+  // what matters is that the guard returns and exits 0 (runRaw asserts the status).
+  decideAt(GK_HOME, write(OUT + '/loop-a'));
+  decideAt(CWD[ORCH], write(OUT + '/loop-a'));
+});
