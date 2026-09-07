@@ -1411,6 +1411,10 @@ no user field — there is nothing to read. The chips therefore stay the two-ent
 ivy`, `vibe` → `german-box`). Sourcing them for real needs a server change, which this slice's
 §Scope puts out of bounds. Filed as **DECK-86** so O9 is closed deliberately rather than forgotten.
 
+**Ruled by DESIGN-35, 2026-09-07:** `hosts.json` has no user field, so the chips stay the two
+constants `root` / `vibe` with today's titles. O9 is closed as an accepted improvisation, no code
+change. DECK-86 closed.
+
 Data-only decision; no screenshot.
 
 ### I-L7-02 — The screen loads `public/v2/data.js` itself, because the shell does not
