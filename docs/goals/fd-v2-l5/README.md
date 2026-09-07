@@ -35,11 +35,22 @@ Make the **Org chart on live seats + sessions** screen work on live data exactly
 
 ## Acceptance (definition of done)
 
-- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
-- [ ] `verify/l5/report.json` allPass 36/36 (fixture mode); `verify/l5/live.json` all pass; live screenshots filed.
-- [ ] `improvised.md` entries + screenshots for every improvisation.
-- [ ] Hooks provided are defined; hooks used are guarded.
-- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Dietlind**; registry row `done`.
+- [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
+      Six items are **partial** and four are **n.a.**, each with its reason in the checklist; one
+      deliberate divergence (I-L5-05, an absent expiry reads `none`).
+- [x] `verify/l5/report.json` allPass **36/36** (fixture mode), org chart **0.000000 %** in both
+      themes — and proven sensitive by `verify/l5-negative-control/`, where only the two org rows
+      fail. `verify/l5/live.json` **50/50**, allPass, zero unexpected console errors.
+      `verify/l5/live-{dark,light}.png` filed.
+- [x] `improvised.md` entries + screenshots: **12 entries** (I-L5-01..12), **4 screenshots** under
+      `docs/design/fleetdeck-v2/improvised/`.
+- [x] Hooks provided are defined (**none** — L5 exposes no cross-slice hook); hooks used are guarded
+      (`FD.shell.setLiveApi`, `FD.screens.bus.open`, both no-ops until L2/L6 land).
+- [~] `npm test`: **264 pass / 1 fail**. The one failure is `test/v2-data.test.js`, red on
+      `origin/agent-v2-base` before L5 and unchanged by it (generated `fixture.js` uses `window`
+      under Node — DECK-90). L5's own `test/v2-org.test.js` is **35/35**. Branch pushed;
+      `REPORT.md` signed **Dietlind**. Registry row: the deck answers `unauthorized` from this box
+      for every POST (XYZ-2137), so no row could be written.
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 
