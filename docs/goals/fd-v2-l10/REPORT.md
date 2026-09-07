@@ -164,16 +164,16 @@ All three gates green on base `a6542ba` (S2.2 + L1.1), commit `186edf7`.
 | Gate | Result |
 |---|---|
 | **Pixel, fixture mode** — `npm run design:diff -- --app <static>/v2/index.html?fixture=1 --slice l10` | **allPass true, 36/36**, maxMismatchPct **0.0329 %** (S2's own figure — the delta is pre-existing registry-dark noise). **`desktop-sessions` 0.000000 % dark and light.** → `verify/l10/report.json` + 36 PNGs |
-| **Live mode, API stubbed** — `node verify/l10-harness/live.mjs` | **35/35, allPass true, zero console errors.** → `verify/l10/live.json`, `live-dark.png`, `live-light.png` |
-| **Unit** — `node --test test/v2-desktop.test.js` | **9/9** |
-| **Suite** — `npm test` | **312/312, zero failures**, with the machine quiet. |
+| **Live mode, API stubbed** — `node verify/l10-harness/live.mjs` | **36/36, allPass true, zero console errors.** → `verify/l10/live.json`, `live-dark.png`, `live-light.png` |
+| **Unit** — `node --test test/v2-desktop.test.js` | **10/10** |
+| **Suite** — `npm test` | **313/313, zero failures**, with the machine quiet. |
 
-The 35 live checks cover every automatable `BEHAVIOUR.md` item: rows and their fallbacks, the six age
+The 36 live checks cover every automatable `BEHAVIOUR.md` item: rows and their fallbacks, the six age
 strings, all three status chips plus Archived and Cached, the details panel, Show / Message / Copy
 context / Copy conversation, transcript 404 and 502, all five filters, Reset, the vanished-selection
 guard, the count and last-collection line, every per-machine note, all three empty/error states,
 `refresh=1`, the query-less plain load, the theme re-sync regression guard, the two verbatim disabled
-action texts, the keyed-reorder guard, and zero console errors.
+action texts, the keyed-reorder guard, the poll's screen gate, and zero console errors.
 
 
 ### On `npm test` and machine load
@@ -292,6 +292,33 @@ elapsed figure is recorded in the check's `detail` so drift stays visible).
 
 No bug was found — `chips()` and `copyLabel()` both re-derive from data keyed by session id, and they
 hold under a real node-reusing reorder. DECK-78's disclosed mitigation is now evidence, not argument.
+
+### 5 · The poll's screen gate now has a permanent guard
+
+The 30 s poll was already gated on **both** `document.hidden` (BEHAVIOUR §5) and the Desktop screen
+being the active one — `screenRoot()` at `desktop.js:429` finds a node the template renders only inside
+`<sc-if value="{{ A_isDesktop }}">`, `apply()` calls `polling(!!el)` at `:436`, and `polling()` at
+`:917-925` starts the handle on enter and `stop()`s and nulls it on leave. Correct, but untested: no
+existing check ever left the screen.
+
+Now guarded twice.
+
+**Live**, `poll-stops-off-screen`: shrinks only `setInterval(fn, 30000)` to 300 ms (the 1500 ms copy
+label is a `setTimeout` and is untouched), counts requests whose pathname is exactly
+`/api/desktop-sessions`, and asserts three things — it ticks while the screen is up, adds **exactly
+zero** over 3 s off screen (ten shrunken intervals), and resumes on return. Waits on element state
+(`detached` / `visible`) and on the counter, not on sleeps, except the absence window itself. Three
+runs: `3 → 3 → 3 (delta 0) → 6 (delta 3)`, twice, and `3 → 4 → 4 (delta 0) → 7 (delta 3)`.
+
+**Unit**, `the poll stops when the Desktop screen is left and restarts when it comes back`: spies
+`FD.data.poll` and toggles the screen root. It pins the cadence at `30000` and the options at
+`{ whileVisible: true }` — so the two gates cannot be quietly collapsed into one — asserts a re-render
+on the same screen does not start a second poll, that leaving calls `stop()`, that nothing starts while
+the root is absent, and that returning produces a **second handle**, which is the only way to observe
+from outside that `pollHandle` was released rather than merely stopped.
+
+Both were checked for non-vacuity by mutation, against throwaway copies: `polling(!!el)` → `polling(true)`
+fails the unit test, and dropping `{ whileVisible: true }` fails it too, while the other nine stay green.
 
 ## Registry row — could not be written (401)
 

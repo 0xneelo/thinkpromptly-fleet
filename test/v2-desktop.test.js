@@ -90,7 +90,10 @@ function node(tag, attrs = {}) {
 
 const SELECTS = ['account', 'machine', 'live', 'archived'];
 
-function boot(body) {
+// opts.present lets a test take the screen root away and hand it back, the way a
+// screen switch does in the browser; opts.poll swaps the FD.data.poll stub.
+function boot(body, opts = {}) {
+  const present = opts.present || (() => true);
   const screen = node('div', { 'data-screen-label': 'Desktop sessions' });
   const bar = screen.appendChild(node('div', { 'data-dc-tpl': '650' }));
   const selects = SELECTS.map(() => bar.appendChild(node('select')));
@@ -102,7 +105,7 @@ function boot(body) {
     setTimeout,
     clearTimeout,
     document: {
-      querySelector: (sel) => (sel === '[data-screen-label="Desktop sessions"]' ? screen : null),
+      querySelector: (sel) => (sel === '[data-screen-label="Desktop sessions"]' && present() ? screen : null),
       createElement: (tag) => node(tag),
       getElementById: () => null,
       hidden: false,
@@ -115,7 +118,7 @@ function boot(body) {
         desktopSessions: () => Promise.resolve(body),
         transcript: () => Promise.resolve('TRANSCRIPT'),
         // Without a poll handle the screen would reload on every apply().
-        poll: () => ({ stop: () => {} }),
+        poll: opts.poll || (() => ({ stop: () => {} })),
       },
       setData: (name, value) => pushed.push([name, value]),
     },
@@ -143,8 +146,8 @@ async function until(condition, what) {
 
 // Boots, waits for the first load to reach FD.setData, and hands back the pushed
 // groups plus the handles a test may want.
-async function loaded(body) {
-  const ctx = boot(body);
+async function loaded(body, opts) {
+  const ctx = boot(body, opts);
   await until(() => ctx.pushed.length, 'the first FD.setData(\'dsData\', …)');
   assert.deepEqual(ctx.errors, [], 'the screen logged an error while loading');
   assert.equal(ctx.pushed[0][0], 'dsData');
@@ -419,5 +422,58 @@ test('the four filters AND together, and "" means no filter', async () => {
   ctx.select('account', '');
   ctx.select('live', '');
   assert.deepEqual(ids(ctx.select('archived', '')), [['a-live', 'a-unknown', 'a-archived'], ['d-offline']]);
+  assert.deepEqual(ctx.errors, []);
+});
+
+// ---------------------------------------------------------------------------
+// The 30 s poll is gated on the SCREEN, not only on document.hidden. The screen root
+// exists solely while Desktop sessions is the active screen (desktop.js:429), apply()
+// hands that presence to polling() (desktop.js:436), and polling() starts or stops the
+// handle (desktop.js:917). Here the fake document is made to stop returning the root,
+// which is a screen switch as far as the file can tell, and a select 'change' — the
+// same push() → scheduleApply() path the filter tests use — makes apply() run. There
+// is no MutationObserver in this vm context, so that listener is the trigger; in the
+// browser the observer on #dc-root does the same job.
+// ---------------------------------------------------------------------------
+
+test('the poll stops when the Desktop screen is left and restarts when it comes back', async () => {
+  const handles = [];
+  let onScreen = true;
+  const ctx = await loaded(payload([group({ sessions: [session({ id: 'local_poll' })] })]), {
+    present: () => onScreen,
+    poll: (fn, ms, options) => {
+      const handle = { ms, options, stopped: false, stop: () => { handle.stopped = true; } };
+      handles.push(handle);
+      return handle;
+    },
+  });
+  const render = async () => { ctx.selects[0].fire('change'); await turn(); };
+
+  assert.equal(handles.length, 1, 'the screen did not start a poll while its root was present');
+  assert.equal(handles[0].ms, 30000, 'the poll cadence is 30 s (BEHAVIOUR.md §1)');
+  // The two gates are separate and must stay so: whileVisible is document.hidden,
+  // the screen root is the screen. Collapsing them would let one cover for the other.
+  assert.deepEqual(handles[0].options, { whileVisible: true });
+
+  await render();
+  assert.equal(handles.length, 1, 'a re-render on the same screen started a SECOND poll');
+  assert.equal(handles[0].stopped, false);
+
+  onScreen = false; // the screen root goes away, as it does on a screen switch
+  await render();
+  assert.equal(handles[0].stopped, true, 'REGRESSION desktop.js polling(): leaving the screen did not stop the poll');
+  assert.equal(handles.length, 1);
+
+  await render();
+  assert.equal(handles.length, 1, 'the screen started a poll while its root was absent');
+
+  onScreen = true; // back on the screen
+  await render();
+  // A second handle can only exist if pollHandle was nulled on the way out — that is
+  // how "the handle was released", not merely stopped, is observable from here.
+  assert.equal(handles.length, 2, 'REGRESSION desktop.js polling(): the poll did not resume on returning to the screen');
+  assert.equal(handles[1].ms, 30000);
+  assert.deepEqual(handles[1].options, { whileVisible: true });
+  assert.equal(handles[1].stopped, false, 'the restarted poll was stopped again');
   assert.deepEqual(ctx.errors, []);
 });

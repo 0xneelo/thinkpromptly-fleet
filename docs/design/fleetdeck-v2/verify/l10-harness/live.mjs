@@ -105,7 +105,7 @@ function seed(dark) {
   `;
 }
 
-async function openScreen(browser, label, { stub = {}, route, dark = true } = {}) {
+async function openScreen(browser, label, { stub = {}, route, dark = true, init } = {}) {
   const context = await browser.newContext({
     viewport: VIEWPORT,
     colorScheme: dark ? 'dark' : 'light',
@@ -117,6 +117,9 @@ async function openScreen(browser, label, { stub = {}, route, dark = true } = {}
   });
   context.setDefaultTimeout(15000);
   await context.addInitScript(seed(dark));
+  // Registered on the context, so it is evaluated before ANY page script — the only
+  // place a check can get between the runtime and a global it uses (see poll-gate).
+  if (init) await context.addInitScript(init);
   const page = await context.newPage();
   watch(page, label);
   const requests = [];
@@ -806,6 +809,70 @@ async function mainStates(browser) {
             `REGRESSION public/v2/screens/desktop.js copyLabel(): the copy label did not follow its session across the ` +
             `reorder (read ${elapsed}ms into the 1500ms revert window)`);
           return `rows moved ${ORDER_BEFORE.slice(2).join(' ')} → ${ORDER_AFTER.slice(2).join(' ')}; chips and the copy label re-read ${elapsed}ms into the 1500ms revert window`;
+        });
+    } finally {
+      await context.close();
+    }
+  }
+
+  {
+    // The 30 s poll is gated on the SCREEN, not only on document.hidden: the screen
+    // root exists solely while Desktop sessions is the active screen (desktop.js:429),
+    // apply() feeds that presence to polling() (desktop.js:436), and polling() starts
+    // or stops the handle (desktop.js:917). Leaving the screen must stop it dead;
+    // coming back must start it again. Nothing else in this suite ever leaves the
+    // screen, so this check runs on its own context and closes it.
+    //
+    // 30 s a tick would make this take minutes, so ONLY the poll's own interval is
+    // shrunk to 300 ms, before any page script runs — same code path (data.js:658
+    // still owns the timer), faster clock. Matching on the delay leaves every other
+    // timer alone, and the 1500 ms copy-label revert is a setTimeout, so it is
+    // untouched either way.
+    const FAST_POLL = `(function () {
+      var real = setInterval;
+      window.setInterval = function (fn, ms) { return real(fn, ms === 30000 ? 300 : ms); };
+    })();`;
+    const body = materialise(await states(), Date.now());
+    const { context, page, requests } = await openScreen(browser, 'poll-gate', { stub: { sessions: body }, init: FAST_POLL });
+    try {
+      await check('poll-stops-off-screen',
+        'shrink the 30 s poll to 300 ms, let it tick on the Desktop screen, switch to Message bus for 3 s (10 shrunken intervals), then switch back',
+        'the poll ticks while the screen is up, adds exactly ZERO requests while it is off, and resumes on return', async () => {
+          // Exactly /api/desktop-sessions: the transcript sub-path shares the prefix.
+          const loads = () => requests.filter((r) => r.split('?')[0] === '/api/desktop-sessions').length;
+          // Waits on the counter, never on a bare sleep — except where absence is the
+          // assertion, which can only be waited out.
+          const untilLoads = async (min, ms) => {
+            const started = Date.now();
+            while (loads() < min) {
+              if (Date.now() - started > ms) throw new Error(`only ${loads()} /api/desktop-sessions request(s) in ${ms}ms, wanted ${min} — is the 300ms interval shrink still matching 30000?`);
+              await page.waitForTimeout(50);
+            }
+          };
+
+          await untilLoads(3, 5000); // the first load plus two poll ticks
+          const onScreen = loads();
+
+          await page.click('aside button[title="Message bus"]');
+          await page.locator(SCREEN).waitFor({ state: 'detached' });
+          const atLeave = loads();
+
+          await page.waitForTimeout(3000); // 10 shrunken intervals with the screen gone
+          const offScreen = loads();
+          assert.equal(offScreen - atLeave, 0,
+            'REGRESSION public/v2/screens/desktop.js polling(): the poll kept running after the Desktop screen was left — ' +
+            `${offScreen - atLeave} request(s) in 3000ms off screen (10 poll intervals). The screen gate is separate from ` +
+            'the whileVisible/document.hidden gate; a hidden-only gate does not stop a screen switch.');
+
+          await page.click('aside button[title="Desktop sessions"]');
+          await page.locator(SCREEN).waitFor({ state: 'visible' });
+          // Three more: the load polling() does on re-entry, plus two ticks of the
+          // restarted interval — one alone would not prove the handle came back.
+          await untilLoads(offScreen + 3, 5000);
+          const back = loads();
+          assert.ok(back - offScreen >= 3,
+            `REGRESSION public/v2/screens/desktop.js polling(): the poll did not resume on returning to the screen (${back - offScreen} request(s))`);
+          return `requests at /api/desktop-sessions: ${onScreen} on screen → ${atLeave} at leave → ${offScreen} after 3000ms off screen (delta ${offScreen - atLeave}) → ${back} back on screen (delta ${back - offScreen})`;
         });
     } finally {
       await context.close();

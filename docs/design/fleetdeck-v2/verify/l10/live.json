@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "slice": "l10",
-  "capturedAt": "2026-09-07T01:36:56.351Z",
+  "capturedAt": "2026-09-07T02:18:17.149Z",
   "base": "http://127.0.0.1:4178",
   "results": [
     {
@@ -210,7 +210,14 @@
       "action": "record each session's extra chips, start a Copy on the cached row, then serve a payload whose activity stamps reorder the rows and click Refresh",
       "expectation": "the rows genuinely move, and Archived / Cached / the transient copy label are all on the same session ids as before — nothing left behind on a reused row",
       "pass": true,
-      "detail": "rows moved local_unknown-1 local_stale-1 local_archived-1 local_bare-1 local_offline-1 → local_unknown-1 local_archived-1 local_stale-1 local_bare-1 local_offline-1; chips and the copy label re-read 386ms into the 1500ms revert window"
+      "detail": "rows moved local_unknown-1 local_stale-1 local_archived-1 local_bare-1 local_offline-1 → local_unknown-1 local_archived-1 local_stale-1 local_bare-1 local_offline-1; chips and the copy label re-read 389ms into the 1500ms revert window"
+    },
+    {
+      "id": "poll-stops-off-screen",
+      "action": "shrink the 30 s poll to 300 ms, let it tick on the Desktop screen, switch to Message bus for 3 s (10 shrunken intervals), then switch back",
+      "expectation": "the poll ticks while the screen is up, adds exactly ZERO requests while it is off, and resumes on return",
+      "pass": true,
+      "detail": "requests at /api/desktop-sessions: 3 on screen → 3 at leave → 3 after 3000ms off screen (delta 0) → 6 back on screen (delta 3)"
     },
     {
       "id": "console-clean",
@@ -220,7 +227,7 @@
       "detail": "filtered 6 browser resource error(s) for deliberately stubbed 4xx/5xx: [transcript-404] Failed to load resource: the server responded with a status of 404 (Not Found) | [transcript-502] Failed to load resource: the server responded with a status of 502 (Bad Gateway) | [first-load-500] Failed to load resource: the server responded with a status of 500 (Internal Server Error) | [first-load-500] [fd-v2 l10] desktop sessions load failed Error: HTTP 500 /api/desktop-sessions\n    at httpError (http://127.0.0.1:4178/v2/data.js:39:17)\n    at async request (http://127.0.0.1:4178/v2/data.js:47:25) | [refresh-500] Failed to load resource: the server responded with a status of 500 (Internal Server Error) | [refresh-500] [fd-v2 l10] desktop sessions load failed Error: HTTP 500 /api/desktop-sessions?refresh=1\n    at httpError (http://127.0.0.1:4178/v2/data.js:39:17)\n    at async request (http://127.0.0.1:4178/v2/data.js:47:25)"
     }
   ],
-  "total": 35,
-  "passed": 35,
+  "total": 36,
+  "passed": 36,
   "allPass": true
 }
