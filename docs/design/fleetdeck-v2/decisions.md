@@ -276,3 +276,10 @@ in `live.json` 36/36, fixture mode inert, hooks guarded, 8 improvisations with s
 Ruprecht: scope the busy guard per row (bulk op must not block unrelated row actions — behaviour deviation), add the
 missing `test/v2-registry.test.js`, move `tools/v2-live-check.mjs` under `verify/l4/`, stop propagation on Enter in
 the cell editor.
+
+## 2026-09-08 · L6 accepted — all nine logic slices in
+
+`origin/agent-v2-l6` @ `b4fd310` (Gerhild): fixture gate 36/36 max 0.033 %, live 47/47, both base fixes merged, scope
+clean, I-L6-01..12 with screenshots, threads/receipts/poll/toast per BEHAVIOUR. Ledger D13, D08 P2 ✅ — every ledger
+row is now ✅ for P1 and P2 except the cut-over rows D18–D20 (L11). Weave updated with L6 + riders (L10.1 `de8c3e4`,
+L4 `0ce3a52`, L7 `e3edadc`), box gate re-launched, phase 2 GO sent to Alrun. Gerhild's name released.
