@@ -220,14 +220,20 @@ const GK_DOT_CLAUDE = /\.claude\/goalkeeper(?![A-Za-z0-9_-])/i;
 // A `goalkeeper` PATH SEGMENT: bounded left by a separator, and on the right
 // either a `/` or the end of the token. `goalkeeper-mac` is not a match.
 const GK_SEGMENT_ANY = /(?:^|[\s'"=:;&|(){}/])\.{0,2}\/?goalkeeper(?:\/|(?![A-Za-z0-9_-]))/i;
-// The config dir named as a path segment, for the default `~/.claude` spelling.
-const CONFIG_SEGMENT = /(?:^|[\s'"=:;&|(){}/])\.claude(?:\/|(?![A-Za-z0-9_-]))/i;
+// NOTE: there is deliberately no bare `.claude` segment test here. A repo's own
+// `.claude/` is not the config dir, and EVERY worktree in this fleet lives at
+// `<repo>/.claude/worktrees/<name>` — so a segment test made
+// `cd <worktree> && git add docs/goals/goalkeeper/x` a denial for every worker
+// and the orchestrator alike. The config dir is an absolute path; `~`, `$HOME`
+// and `$CLAUDE_CONFIG_DIR` are already expanded to it before this runs, so
+// comparing against that path is both sufficient and exact.
 const GK_CD_PREFIX = /(?:^|[\s;&|(){])(?:cd|pushd)\s+['"]?\.{0,2}\/?goalkeeper(?:\/|['"]?(?:\s|$|[;&|)}]))/i;
 
 function mentionsConfigDir(s, cfg) {
-  if (CONFIG_SEGMENT.test(s)) return true;
   const c = String(cfg || '');
-  return Boolean(c) && s.toLowerCase().indexOf(c.toLowerCase()) !== -1;
+  if (c && s.toLowerCase().indexOf(c.toLowerCase()) !== -1) return true;
+  const real = realDeep(path.resolve(cfg));
+  return Boolean(real) && s.toLowerCase().indexOf(real.toLowerCase()) !== -1;
 }
 
 // Is this session already standing inside the config dir? A stamped
