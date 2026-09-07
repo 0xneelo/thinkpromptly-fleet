@@ -105,6 +105,31 @@ const TEXT_EMITTER = /^(?:echo|printf|say|tmux\s+display-message|git\s+commit\b[
 // point of the quotes there is that a shell reads them.
 const EXECUTOR = /^(?:(?:bash|sh|zsh)\s+-c|eval|xargs|tmux\s+send-keys|ssh|scp|python[0-9.]*|node\s+-e|perl|ruby|osascript|env\b)/i;
 
+// Is `token` present in `body` without an escaping backslash in front of it?
+// An even number of preceding backslashes means the token itself is unescaped.
+function hasUnescaped(body, token) {
+  let i = body.indexOf(token);
+  while (i !== -1) {
+    let slashes = 0;
+    let j = i - 1;
+    while (j >= 0 && body.charAt(j) === '\\') { slashes += 1; j -= 1; }
+    if (slashes % 2 === 0) return true;
+    i = body.indexOf(token, i + 1);
+  }
+  return false;
+}
+
+// A double-quoted literal is only prose while it is inert. `$(…)`, `${…}` and
+// backticks are evaluated by the shell BEFORE the wrapping program ever sees the
+// text, so `echo "$(rm -rf <jail>)"` deletes the jail no matter how harmless
+// `echo` is. Such a literal is command text and must never be blanked.
+// Single quotes substitute nothing, so they are always safe to blank.
+function literalExecutes(lit) {
+  if (lit.charAt(0) !== '"') return false;
+  const body = lit.slice(1, lit.length - 1);
+  return hasUnescaped(body, '$(') || hasUnescaped(body, '${') || hasUnescaped(body, '`');
+}
+
 // Blank the quoted literals of a text emitter, keeping everything outside them —
 // a redirect sits outside the quotes, so `echo "x" > <jail>/f` is still a write.
 //
@@ -168,7 +193,7 @@ function stripTextLiterals(cmd) {
   const out = [];
   for (let k = 0; k < pieces.length; k += 1) {
     const p = pieces[k];
-    if (!p.lit || p.target) { out.push(p.text); continue; }
+    if (!p.lit || p.target || literalExecutes(p.text)) { out.push(p.text); continue; }
     const head = (heads[p.seg] || '').replace(/^\s+/, '');
     if (EXECUTOR.test(head) || !TEXT_EMITTER.test(head)) { out.push(p.text); continue; }
     out.push(p.text.charAt(0) === "'" ? "''" : '""');
