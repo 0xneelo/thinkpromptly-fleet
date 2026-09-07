@@ -170,3 +170,9 @@ assignment, `isPureData` ternary) — parity 36/36, interactions 36/36 (two new 
 foreign node, throwing `renderVals`), pixel 36/36 max 0.033 %, no engine. `agent-v2-l1` @ `3e1c06a` (L1.1 fixture
 split) merged with it into `agent-v2-base`; pushed; ten workers told to merge; preview follows. Still open: L1.2
 (adapter fixes) from Juergen.
+
+## 2026-09-08 · L1.2 landed; base final before the weave
+
+`agent-v2-l1` @ `79a8cd8` (desktop-row fallbacks, `trendPts` numbers) merged → `agent-v2-base` moved; pushed; ten
+workers told to merge (L8/L10 to drop their interim shims). L1 accepted in full; Juergen's name released after his
+registry row shows done. No further base moves planned; the next integration point is `weave/fd-v2`.
