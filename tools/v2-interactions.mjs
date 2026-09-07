@@ -92,6 +92,19 @@ function parseArgs(argv) {
 
 // Identical to v2-parity.mjs's freeze. Both sides get it, so a frozen timer is not
 // a difference — it is a shared, declared condition of the comparison.
+// The freeze is the reason the volatile mask can be empty, so it is asserted rather
+// than trusted -- v2-parity.mjs does the same. Without the init script these counters
+// come back non-zero; with it they are all 0 and the suppression style is present.
+async function assertFrozen(page, where) {
+  const state = await page.evaluate(() => ({
+    setTimeout: setTimeout(() => {}, 0),
+    setInterval: setInterval(() => {}, 0),
+    requestAnimationFrame: requestAnimationFrame(() => {}),
+  }));
+  const live = ['setTimeout', 'setInterval', 'requestAnimationFrame'].filter(k => state[k] !== 0);
+  if (live.length) throw new Error(`Determinism freeze did not land on ${where} (live: ${live.join(', ')})`);
+}
+
 async function openSide(browser, url, theme) {
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, colorScheme: theme,
@@ -112,12 +125,30 @@ async function openSide(browser, url, theme) {
     };
     if (document.head) kill(); else document.addEventListener('DOMContentLoaded', kill);
   }, theme);
-  await context.route(/\.(?:mp4|webm|m3u8|ts)(?:$|[?#])/i, r => r.abort());
+  // Match v2-parity.mjs's isMedia exactly: resourceType OR extension. Extension alone
+  // would let a blob:, query-stringed or unbound-template media URL through, and a real
+  // async fetch outside the frozen-timer model is precisely the nondeterminism the empty
+  // volatile mask assumes cannot happen. The 'video-toggle' step exercises this surface.
+  await context.route('**/*', route => {
+    const r = route.request();
+    const media = r.resourceType() === 'media' || /\.(?:mp4|webm|m3u8|ts)(?:$|[?#])/i.test(r.url());
+    return media ? route.abort() : route.continue();
+  });
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.locator('[data-screen-label="Landing"]').waitFor({ state: 'visible' });
+  await assertFrozen(page, url);
   return { context, page, url };
+}
+
+// Both strings indexed as UTF-16 code units. The previous spread-based version indexed
+// A by code point and B by code unit, so a surrogate pair before the divergence pushed
+// the reported offset out of step. Diagnostics only -- the verdict is a plain a === b.
+function firstDiff(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) if (a[i] !== b[i]) return i;
+  return n;
 }
 
 async function snapshot(page, side) {
@@ -141,7 +172,7 @@ let identicalCount = 0;
   if (identical) identicalCount++;
   results.push({ step: 'initial-load', identical, aLength: a.length, bLength: b.length,
     aSha256: createHash('sha256').update(a).digest('hex'), bSha256: createHash('sha256').update(b).digest('hex'),
-    firstDiffOffset: identical ? null : [...a].findIndex((c, i) => c !== b[i]) });
+    firstDiffOffset: identical ? null : firstDiff(a, b) });
 }
 
 for (const [name, action] of STEPS) {
@@ -162,7 +193,7 @@ for (const [name, action] of STEPS) {
     row.aSha256 = createHash('sha256').update(a).digest('hex');
     row.bSha256 = createHash('sha256').update(b).digest('hex');
     if (!identical) {
-      const off = [...a].findIndex((c, i) => c !== b[i]);
+      const off = firstDiff(a, b);
       row.firstDiffOffset = off;
       row.aContext = a.slice(Math.max(0, off - 100), off + 100);
       row.bContext = b.slice(Math.max(0, off - 100), off + 100);

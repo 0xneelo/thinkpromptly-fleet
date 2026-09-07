@@ -30,7 +30,12 @@ import { createHash } from 'node:crypto';
 import { SCREEN_MAP } from '../scripts/design-diff.mjs';
 
 const MEDIA_RE = /\.(?:mp4|webm|m3u8|ts)(?:$|[?#])/i;
-const ENGINE_RE = /(?:^|\/)(?:react|react-dom)(?:\.[\w.]+)?\.js|babel|dc-runtime/i;
+// Deliberately broad. The anchored form only matched a bundle whose filename STARTS
+// with react/react-dom, so a renamed or content-hashed vendor bundle (vendor-react.abc.js)
+// would have slipped through and reported "no engine" while an engine was loading. Over-
+// matching here costs nothing: the compiled build must load NO react/babel/dc-runtime at
+// all, so any hit is a genuine failure.
+const ENGINE_RE = /react|babel|dc-runtime/i;
 const THEMES = ['dark', 'light'];
 
 function parseArgs(argv) {
