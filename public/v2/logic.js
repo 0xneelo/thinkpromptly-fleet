@@ -272,7 +272,12 @@ class AppLogic extends Sub {
   // fixture mode and whenever the slice is absent. See improvised.md I-L9-01 / I-L9-02.
   _fdAfterRender() {
     const m = FD.screens && FD.screens.machines;
-    if (m && typeof m.afterRender === 'function') m.afterRender();
+    if (!m) return;
+    // L9: the 60 s poll only runs while this screen is on. logic.js owns the active-screen
+    // flag, so it passes it rather than letting the screen sniff the DOM for it.
+    const screen = this.state.screen ?? this.props.screen ?? 'bus';
+    if (typeof m.sync === 'function') m.sync(screen === 'machines');
+    if (typeof m.afterRender === 'function') m.afterRender();
   }
   componentDidMount() {
     this._fdAfterRender();

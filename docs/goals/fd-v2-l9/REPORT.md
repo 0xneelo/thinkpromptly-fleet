@@ -79,7 +79,7 @@ below was copied from that file, not retyped.
 |---|---|---|
 | Refresh forces (`load(true)`) | done | attached to the mock's unbound header Refresh button (I-L9-02) |
 | Refresh disabled while loading | done | `setBusy()` |
-| `setInterval(load, 60000)`, never forces | done | `FD.data.poll(load, 60000)`; `POLL_MS === 60000` is asserted |
+| `setInterval(load, 60000)`, never forces | done | `FD.data.poll(load, 60000)`; `POLL_MS === 60000` is asserted. **Gated on the active screen** (review round, 2026-09-07): `logic.js:275` passes `screen === 'machines'` to `FD.screens.machines.sync()`, which starts the poll on enter and stops it on leave. Today's page has no equivalent because it *is* the screen — its interval dies with the page — so entering is that page load and leaving is that unload. Four unit cases cover it. |
 | Fetch error → `cannot reach fleetdeck` | done | replaces the list, as today (I-L9-06) |
 | No `localStorage` | done | this screen adds none |
 | Old ids/classes | **n.a.** | the mock's markup replaces them; hooks are `data-dc-tpl` ids only |

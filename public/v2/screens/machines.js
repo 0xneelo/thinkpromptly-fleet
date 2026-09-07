@@ -319,15 +319,17 @@
       });
   }
 
+  // Entering the screen loads at once and starts the poll; leaving stops it. That is the
+  // SPA's equivalent of today's page, where load() runs on script load and the interval
+  // dies with the page (BEHAVIOUR.md §3). logic.js passes the flag.
+  function sync(active) {
+    if (isFixture()) return;
+    if (active) start(); else stop();
+  }
+
   function start() {
     if (state.started || isFixture()) return Promise.resolve();
     state.started = true;
-    // Publish the empty list SYNCHRONOUSLY, before the first fetch. logic.js falls back
-    // to the mock's seed while this key is absent, so without it a live page paints
-    // fabricated machines and logins ('Reiner Garrecht', 'neelo@vibe.trading') until the
-    // round trip lands. An empty list until the first load returns is exactly what
-    // today's screen shows — machines.js renders nothing before load() resolves.
-    publish();
     var first = load(false);
     // The poll never forces a collect: the deck's own TTL decides when the ssh fan-out reruns.
     ensureData().then(function (data) {
@@ -338,6 +340,8 @@
 
   function stop() {
     if (state.poll) { state.poll.stop(); state.poll = null; }
+    // Cleared so re-entering the screen loads fresh rather than showing the age the rows
+    // had when it was last left.
     state.started = false;
   }
 
@@ -415,6 +419,7 @@
   FD.screens.machines = {
     // Internal wiring, not a cross-slice hook: this slice publishes none.
     afterRender: afterRender,
+    sync: sync,
     load: load,
     start: start,
     stop: stop,
@@ -422,13 +427,15 @@
     _: { ago: ago, sampleAge: sampleAge, until: until, freshness: freshness, section: section,
       colsOf: colsOf, statusOf: statusOf, kindOf: kindOf, sessionChip: sessionChip,
       toCards: toCards, errorCard: errorCard, windowNames: windowNames, validate: validate,
+      state: state,
       CLIENTS: CLIENTS, PROOF: PROOF, STATE: STATE, TIER: TIER, WIN_LABEL: WIN_LABEL,
       WIN_ORDER: WIN_ORDER, POLL_MS: POLL_MS, FETCH_ERROR: FETCH_ERROR },
   };
 
-  if (root.document) {
-    if (root.document.readyState === 'loading') root.document.addEventListener('DOMContentLoaded', start);
-    else start();
-  }
+  // Claim the data seam at load, before any render: logic.js falls back to the mock's seed
+  // while `machinesLive` is absent, so without this a live page paints fabricated machines
+  // and logins ('Reiner Garrecht', 'neelo@vibe.trading') on the first frame the screen is
+  // shown. Publishing an empty list costs no request — the poll still waits for sync(true).
+  if (root.document && !isFixture()) publish();
   if (typeof module === 'object' && module.exports) module.exports = FD.screens.machines;
 })(typeof globalThis === 'object' ? globalThis : this);
