@@ -6,7 +6,7 @@
     "start": "node server.js",
     "build:claude-bridge": "sh scripts/build-claude-bridge.sh",
     "postinstall": "chmod +x node_modules/node-pty/prebuilds/*/spawn-helper || true",
-    "pretest": "node scripts/check-deps.js",
+    "pretest": "node scripts/check-deps.js && node tools/extract-fixture.mjs --check",
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "design:diff": "node scripts/design-diff.mjs",
     "v2:compile": "node tools/dc-compile.mjs",
