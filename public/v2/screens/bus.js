@@ -24,6 +24,8 @@
   // BEHAVIOUR section 7. Both keys are new in v2 -- today's bus stores nothing.
   var SEEN_KEY = 'fd-bus-seen';
   var PINNED_KEY = 'fd-bus-pinned';
+  // L12: the rail's filter/group/sort preferences (improvised.md I-L12-01, I-L12-04).
+  var FILTERS_KEY = 'fd-bus-filters';
   // BEHAVIOUR section 7: 15 s while the bus screen is open, 60 s on the app shell.
   var POLL_OPEN_MS = 15000;
   var POLL_SHELL_MS = 60000;
@@ -76,6 +78,7 @@
   }
   function loadPrefs() {
     seen = readJson(SEEN_KEY, {});
+    filters = sanitiseFilters(readJson(FILTERS_KEY, null));
     var list = readJson(PINNED_KEY, []);
     pinned = {};
     if (Array.isArray(list)) list.forEach(function (id) { pinned[id] = true; });
@@ -83,6 +86,30 @@
   function savePinned() {
     writeStore(PINNED_KEY, JSON.stringify(Object.keys(pinned).filter(function (id) { return pinned[id]; })));
   }
+
+  // ---------------------------------------------------------------------------
+  // L12 filters. One stored object, sanitised on every read: an unknown value
+  // becomes the default rather than a grouping the rail has no bucket for.
+  // ---------------------------------------------------------------------------
+  var FILTER_DEFAULTS = { status: 'all', env: 'all', group: 'recent', sort: 'activity', empty: false };
+  var FILTER_VALUES = {
+    status: ['all', 'live', 'offline'],
+    env: ['all', 'desktop', 'box'],
+    group: ['recent', 'host', 'env', 'status', 'grp', 'none'],
+    sort: ['activity', 'name', 'status'],
+  };
+
+  function sanitiseFilters(raw) {
+    var src = raw && typeof raw === 'object' ? raw : {};
+    var out = {};
+    Object.keys(FILTER_VALUES).forEach(function (k) {
+      out[k] = FILTER_VALUES[k].indexOf(src[k]) >= 0 ? src[k] : FILTER_DEFAULTS[k];
+    });
+    out.empty = !!src.empty;
+    return out;
+  }
+
+  var filters = sanitiseFilters(null);
 
   // ---------------------------------------------------------------------------
   // Thread identity. L1's toThreads keys a thread by the OTHER party: the target
@@ -151,8 +178,13 @@
     // 3. Every live fleet tmux session, merged client-side exactly as today's
     //    app.js:920-925 does. Liveness is keyed by host AND name.
     var liveSet = {};
+    var groupOf = {};
     live.forEach(function (s) {
-      if (!s || !s.name || !s.live) return;
+      if (!s || !s.name) return;
+      // The registry's own lane name, keyed like liveness, for "Group by · Group"
+      // (I-L12-03). Recorded for dead sessions too: the rail still shows them.
+      if (typeof s.group === 'string' && s.group) groupOf[s.host + ' ' + s.name] = s.group;
+      if (!s.live) return;
       liveSet[s.host + ' ' + s.name] = true;
       noteTarget(s.name, { type: TMUX, host: s.host, session: s.name }, TMUX);
     });
@@ -197,6 +229,8 @@
       // Extra key, absent from every fixture row, so the branches that read it
       // are provably inert in fixture mode.
       row.kind = kind;
+      var grp = groupOf[hostName + ' ' + id];
+      if (grp) row.group = grp;
       return row;
     });
 
@@ -233,6 +267,7 @@
     var out = { id: str(r.id), name: str(r.name) || str(r.id), host: str(r.host), live: !!r.live };
     if (r.pinned) out.pinned = true;
     if (r.kind) out.kind = str(r.kind);
+    if (typeof r.group === 'string' && r.group) out.group = r.group;
     return out.id ? out : null;
   }
 
@@ -543,11 +578,13 @@
     if (!bus.live) return;
     if (pendingOpen) { var p = pendingOpen; pendingOpen = null; bus.open(p); }
     start();
+    startFilterUi();
   };
 
   bus.detach = function (h) {
     if (host === h) host = null;
     stop();
+    stopFilterUi();
   };
 
   // BEHAVIOUR section 2: POST /api/messages {source, target, text}; ok ->
@@ -621,6 +658,104 @@
   };
 
   // ---------------------------------------------------------------------------
+  // L12 shaping. Pure: logic.js hands in the rail objects it is about to render
+  // plus the two things only it knows (the pin overrides and each thread's age),
+  // and gets back the label/items buckets the compiled template already draws.
+  // Filters apply to sessions only -- a broadcast group is a thing the user made
+  // and is never filtered away.
+  // ---------------------------------------------------------------------------
+  function passesFilters(x, f) {
+    if (f.status === 'live' && !x.live) return false;
+    if (f.status === 'offline' && x.live) return false;
+    if (f.env === 'desktop' && x.kind !== DESKTOP) return false;
+    if (f.env === 'box' && x.kind === DESKTOP) return false;
+    return true;
+  }
+
+  function comparatorFor(sort, lastM) {
+    // `m` is minutes-ago, so ascending is most-recent-first and a row with no
+    // thread at all sorts last.
+    var age = function (x) { var m = lastM(x.id); return m === null || m === undefined ? Infinity : m; };
+    var byAge = function (a, b) { var va = age(a), vb = age(b); return va === vb ? 0 : (va < vb ? -1 : 1); };
+    if (sort === 'name') return function (a, b) { return str(a.name).localeCompare(str(b.name)); };
+    if (sort === 'status') return function (a, b) { return (b.live ? 1 : 0) - (a.live ? 1 : 0) || byAge(a, b); };
+    return byAge;
+  }
+
+  bus.filters = function () { return Object.assign({}, filters); };
+
+  bus.isFilterDirty = function () {
+    return Object.keys(FILTER_DEFAULTS).some(function (k) { return filters[k] !== FILTER_DEFAULTS[k]; });
+  };
+
+  bus.setFilters = function (patch) {
+    filters = sanitiseFilters(Object.assign({}, filters, patch || {}));
+    writeStore(FILTERS_KEY, JSON.stringify(filters));
+    if (host) {
+      if (typeof host.forceUpdate === 'function') host.forceUpdate();
+      else host.setState({});
+    } else if (bus.live) {
+      // The shell mounts before this file loads (index.html script order), so
+      // attach() may never have run. Re-pushing the rows is then the only
+      // re-render we can ask for -- and it is the data the rail shapes.
+      FD.setData('busSessions', validRows(rows));
+    }
+    applyFilterUi();
+    return bus.filters();
+  };
+
+  bus.shape = function (items, ctx) {
+    ctx = ctx || {};
+    var f = sanitiseFilters(ctx.filters || filters);
+    var isPinned = typeof ctx.isPinned === 'function' ? ctx.isPinned : function (x) { return !!x.pinned; };
+    var lastM = typeof ctx.lastM === 'function' ? ctx.lastM : function () { return null; };
+    var notPinned = function (x) { return !isPinned(x); };
+    var cmp = comparatorFor(f.sort, lastM);
+    var list = (Array.isArray(items) ? items : []).filter(function (x) { return x && (x.members || passesFilters(x, f)); });
+    // Every bucket but the recent grouping's own Pinned/Recent split floats its
+    // pins to the top; Array#sort is stable, so equal rows keep their order.
+    var bucket = function (arr) { return arr.filter(isPinned).sort(cmp).concat(arr.filter(notPinned).sort(cmp)); };
+    // An empty bucket is only worth keeping where the labels are a fixed set --
+    // "Live / Offline" reads as a scale, "german-box" with nothing under it does not.
+    var keep = function (out, fixed) {
+      return f.empty && fixed ? out : out.filter(function (g) { return g.items.length; });
+    };
+
+    if (f.group === 'recent') {
+      return keep([
+        { label: 'Pinned', items: list.filter(isPinned).sort(cmp) },
+        { label: 'Recent', items: list.filter(notPinned).sort(cmp) },
+      ], true);
+    }
+
+    var groups = list.filter(function (x) { return x.members; });
+    var sessions = list.filter(function (x) { return !x.members; });
+    var out = groups.length ? [{ label: 'Broadcasts', items: bucket(groups) }] : [];
+    if (f.group === 'none') return out.concat(keep([{ label: 'Sessions', items: bucket(sessions) }], false));
+
+    var order = null;
+    var labelOf;
+    if (f.group === 'host') labelOf = function (x) { return x.kind === DESKTOP ? 'Claude Desktop' : (x.host || 'Unknown host'); };
+    else if (f.group === 'env') { labelOf = function (x) { return x.kind === DESKTOP ? 'Claude Desktop' : 'Box sessions'; }; order = ['Claude Desktop', 'Box sessions']; }
+    else if (f.group === 'status') { labelOf = function (x) { return x.live ? 'Live' : 'Offline'; }; order = ['Live', 'Offline']; }
+    else labelOf = function (x) { return x.group || 'No group'; };
+
+    var by = {};
+    sessions.forEach(function (x) {
+      var l = labelOf(x);
+      if (!by[l]) by[l] = [];
+      by[l].push(x);
+    });
+    var labels = order || Object.keys(by).sort(function (a, b) {
+      // 'No group' collects the ungrouped, so it sits after the named lanes.
+      if (a === 'No group') return 1;
+      if (b === 'No group') return -1;
+      return a.localeCompare(b);
+    });
+    return out.concat(keep(labels.map(function (l) { return { label: l, items: bucket(by[l] || []) }; }), !!order));
+  };
+
+  // ---------------------------------------------------------------------------
   // The hook this slice PROVIDES. BEHAVIOUR section 5 / ruling O8:
   // setBusTarget() becomes a deep link that selects (or creates) the thread for
   // {type, host?, session} and navigates to the bus screen.
@@ -687,6 +822,255 @@
   };
 
   // ---------------------------------------------------------------------------
+  // L12 filter menu. Live only, and injected rather than templated: the compiled
+  // template is frozen, so the button is built next to Select and re-applied from
+  // a MutationObserver every time the runtime re-renders the rail (I-L12-02).
+  // Every node is found before it is made, and the observer is disconnected while
+  // we write so our own DOM never re-triggers us.
+  // ---------------------------------------------------------------------------
+  var observer = null;
+  var applying = false;
+  var menuOpen = false;
+  var menuSection = null;   // which accordion section is expanded, or null
+  var menuSig = null;       // the state the menu's children were built from
+  var winBound = false;
+
+  var SECTIONS = [
+    { key: 'status', title: 'Status', opts: [['all', 'All'], ['live', 'Live'], ['offline', 'Offline']] },
+    { key: 'env', title: 'Environment', opts: [['all', 'All'], ['desktop', 'Claude Desktop'], ['box', 'Box']] },
+    null,
+    { key: 'group', title: 'Group by', opts: [['recent', 'Pinned & recent'], ['host', 'Host'], ['env', 'Environment'], ['status', 'Status'], ['grp', 'Group'], ['none', 'None']] },
+    { key: 'sort', title: 'Sort by', opts: [['activity', 'Last activity'], ['name', 'Name'], ['status', 'Live first']] },
+  ];
+
+  var ROW_CSS = 'display:flex;align-items:center;gap:8px;width:100%;padding:7px 9px;border-radius:7px;border:0;background:transparent;color:inherit;font:inherit;font-size:12px;cursor:pointer;text-align:left;';
+  var SLIDERS_SVG = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">'
+    + '<path d="M4 7h16"></path><path d="M4 17h16"></path>'
+    + '<circle cx="9" cy="7" r="2"></circle><circle cx="15" cy="17" r="2"></circle></svg>';
+
+  // Mirrors screens/desktop.js restyle(): the theme toggle rewrites the source's
+  // inline style, so it is re-read on every apply rather than copied once.
+  function restyle(node, css, extra) {
+    if (css === null || css === undefined) return;
+    var want = css + extra;
+    if (node.__fdBusSrc === want && node.style.cssText === node.__fdBusOut) return;
+    node.style.cssText = want;
+    node.__fdBusSrc = want;
+    node.__fdBusOut = node.style.cssText;
+  }
+
+  function railBar() {
+    var input = document.querySelector('input[placeholder="Find a session"]');
+    return input && input.parentNode ? input : null;
+  }
+
+  function isDarkNow(input) {
+    if (host && typeof host.isDark === 'function') { try { return !!host.isDark(); } catch (e) {} }
+    // Fallback: light ink means a dark surface behind it.
+    var m = /(\d+)\D+(\d+)\D+(\d+)/.exec(global.getComputedStyle(input).color || '');
+    return m ? (0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3]) > 140 : true;
+  }
+
+  function menuRow(menu, label, right, opts) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.style.cssText = ROW_CSS + (opts.indent ? 'padding-left:22px;' : '');
+    var name = document.createElement('span');
+    name.style.cssText = 'flex:1;min-width:0;';
+    name.textContent = label;
+    b.appendChild(name);
+    if (right) {
+      var v = document.createElement('span');
+      v.style.cssText = 'opacity:.55;';
+      v.textContent = right;
+      b.appendChild(v);
+    }
+    if (opts.chev) {
+      var c = document.createElement('span');
+      c.style.cssText = 'opacity:.55;';
+      c.textContent = '›';
+      b.appendChild(c);
+    }
+    b.addEventListener('click', opts.onClick);
+    menu.appendChild(b);
+  }
+
+  function divider(menu, line) {
+    var d = document.createElement('div');
+    d.style.cssText = 'height:1px;margin:4px 2px;background:' + line + ';';
+    menu.appendChild(d);
+  }
+
+  function labelOfValue(section) {
+    var value = filters[section.key];
+    for (var i = 0; i < section.opts.length; i++) if (section.opts[i][0] === value) return section.opts[i][1];
+    return '';
+  }
+
+  function buildMenu(menu, line) {
+    menu.textContent = '';
+    SECTIONS.forEach(function (sec) {
+      if (!sec) { divider(menu, line); return; }
+      menuRow(menu, sec.title, labelOfValue(sec), {
+        chev: true,
+        onClick: function (e) {
+          e.stopPropagation();
+          menuSection = menuSection === sec.key ? null : sec.key;
+          applyFilterUi();
+        },
+      });
+      if (menuSection !== sec.key) return;
+      sec.opts.forEach(function (o) {
+        menuRow(menu, o[1], filters[sec.key] === o[0] ? '✓' : '', {
+          indent: true,
+          onClick: function (e) {
+            e.stopPropagation();
+            var patch = {};
+            patch[sec.key] = o[0];
+            bus.setFilters(patch);
+          },
+        });
+      });
+    });
+    divider(menu, line);
+    menuRow(menu, 'Show empty groups', filters.empty ? '✓' : '', {
+      onClick: function (e) { e.stopPropagation(); bus.setFilters({ empty: !filters.empty }); },
+    });
+    divider(menu, line);
+    // The menu stays open: clearing is something the user watches happen.
+    menuRow(menu, 'Clear filters', '', {
+      onClick: function (e) { e.stopPropagation(); bus.setFilters(FILTER_DEFAULTS); },
+    });
+  }
+
+  function drawFilterUi() {
+    var input = railBar();
+    if (!input) return;
+    var bar = input.parentNode;
+    var select = bar.querySelector('button[title="Pick several sessions for a broadcast"]');
+
+    var wrap = bar.querySelector('span[data-fd-bus="filter-wrap"]');
+    if (!wrap) {
+      wrap = document.createElement('span');
+      wrap.setAttribute('data-fd-bus', 'filter-wrap');
+    }
+    wrap.style.cssText = 'position:relative;display:inline-flex;flex-shrink:0;';
+    if (bar.lastChild !== wrap) bar.appendChild(wrap);
+
+    var btn = wrap.querySelector('button[data-fd-bus="filter"]');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.setAttribute('data-fd-bus', 'filter');
+      btn.title = 'Filter sessions';
+      btn.setAttribute('aria-label', 'Filter sessions');
+      btn.innerHTML = SLIDERS_SVG;
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        menuOpen = !menuOpen;
+        applyFilterUi();
+      });
+      wrap.appendChild(btn);
+    }
+    restyle(btn, select ? select.style.cssText : null, 'padding:6px 8px;position:relative;');
+    btn.setAttribute('aria-expanded', menuOpen ? 'true' : 'false');
+
+    var dot = btn.querySelector('span[data-fd-bus="filter-dot"]');
+    if (bus.isFilterDirty()) {
+      if (!dot) {
+        dot = document.createElement('span');
+        dot.setAttribute('data-fd-bus', 'filter-dot');
+        dot.style.cssText = 'position:absolute;top:4px;right:4px;width:5px;height:5px;border-radius:50%;background:currentColor;';
+        btn.appendChild(dot);
+      }
+    } else if (dot) btn.removeChild(dot);
+
+    if (!document.querySelector('style[data-fd-bus="filter-style"]')) {
+      var st = document.createElement('style');
+      st.setAttribute('data-fd-bus', 'filter-style');
+      st.textContent = '[data-fd-bus="filter-menu"] button:hover{background:rgba(128,128,128,0.16)}';
+      document.head.appendChild(st);
+    }
+
+    var menu = wrap.querySelector('div[data-fd-bus="filter-menu"]');
+    if (!menuOpen) {
+      if (menu) wrap.removeChild(menu);
+      menuSig = null;
+      return;
+    }
+    // Theme colours are read from the search input on EVERY apply: the light/dark
+    // toggle rewrites its inline style, and a menu that cached them goes invisible.
+    var cs = global.getComputedStyle(input);
+    var line = cs.borderColor;
+    var dark = isDarkNow(input);
+    if (!menu) {
+      menu = document.createElement('div');
+      menu.setAttribute('data-fd-bus', 'filter-menu');
+      wrap.appendChild(menu);
+      menuSig = null;
+    }
+    var css = 'position:absolute;top:calc(100% + 8px);right:0;z-index:5;width:240px;border-radius:10px;border:1px solid ' + line
+      + ';background:' + (dark ? 'rgba(18,18,18,0.94)' : 'rgba(255,255,255,0.96)')
+      + ';backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);'
+      + 'padding:6px;display:flex;flex-direction:column;gap:1px;box-shadow:0 10px 30px rgba(0,0,0,0.3);font-size:12px;color:' + cs.color + ';';
+    if (menu.style.cssText !== css) menu.style.cssText = css;
+    var sig = JSON.stringify([filters, menuOpen, menuSection, dark]);
+    if (sig === menuSig) return;
+    menuSig = sig;
+    buildMenu(menu, line);
+  }
+
+  function applyFilterUi() {
+    if (!bus.live || typeof document === 'undefined' || applying) return;
+    applying = true;
+    if (observer) observer.disconnect();
+    // The rail matters more than its menu, and the live gate asserts a clean
+    // console: a throw here is swallowed rather than logged or rethrown.
+    try { drawFilterUi(); } catch (e) { /* nothing to draw */ }
+    applying = false;
+    observeHost();
+  }
+
+  function observeHost() {
+    if (!observer) return;
+    observer.observe((host && host.rootEl) || document, { childList: true, subtree: true });
+  }
+
+  function bindWindow() {
+    if (winBound) return;
+    winBound = true;
+    global.addEventListener('keydown', function (e) {
+      if (!menuOpen || e.key !== 'Escape') return;
+      menuOpen = false;
+      applyFilterUi();
+    });
+    global.addEventListener('mousedown', function (e) {
+      if (!menuOpen) return;
+      var wrap = document.querySelector('span[data-fd-bus="filter-wrap"]');
+      if (wrap && wrap.contains(e.target)) return;
+      menuOpen = false;
+      applyFilterUi();
+    });
+  }
+
+  function startFilterUi() {
+    if (!bus.live || typeof document === 'undefined' || typeof MutationObserver !== 'function') return;
+    bindWindow();
+    if (!observer) observer = new MutationObserver(function () { if (!applying) applyFilterUi(); });
+    observeHost();
+    applyFilterUi();
+  }
+
+  function stopFilterUi() {
+    if (observer) observer.disconnect();
+    observer = null;
+    menuOpen = false;
+    menuSection = null;
+    menuSig = null;
+  }
+
+  // ---------------------------------------------------------------------------
   // Boot. Fixture mode stops here, before the first FD.setData.
   // ---------------------------------------------------------------------------
   bus.refresh = refresh;
@@ -750,6 +1134,10 @@
       if (pendingOpen) { var p = pendingOpen; pendingOpen = null; bus.open(p); }
       start();
     }
+    // Not inside the host branch: the shell mounts before this file loads, so
+    // attach() may never run, and the menu still has to appear. The observer
+    // picks the rail up whenever the runtime draws it.
+    startFilterUi();
   }
 
   boot();

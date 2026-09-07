@@ -687,7 +687,16 @@ class AppLogic extends Sub {
     const pinnedItems = busSafe('pinnedItems', [], () => [...busGroups.filter(isPinned), ...busSessions.filter(isPinned)].filter(match));
     const recentItems = busSafe('recentItems', [], () => [...busGroups.filter((g) => !isPinned(g)), ...busSessions.filter((s) => !isPinned(s))].filter(match)
       .sort((a, b) => { const la = lastOf(a.id), lb = lastOf(b.id); return (la ? la.m : 1e9) - (lb ? lb.m : 1e9); }));
-    const railGroups = busSafe('railGroups', [], () => [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length));
+    // L12 seam: live mode shapes the rail in screens/bus.js (filters, grouping,
+    // sort); fixture mode keeps the mock's own Pinned/Recent split verbatim.
+    const railGroups = busSafe('railGroups', [], () => {
+      if (busLive && busLive.shape) {
+        const lastM = (id) => { const l = lastOf(id); return l ? l.m : null; };
+        return busLive.shape([...busGroups, ...busSessions].filter(match), { isPinned, lastM })
+          .map((g) => ({ label: g.label, items: g.items.map((x) => mkRow(x, !!x.members)) }));
+      }
+      return [{ label: 'Pinned', items: pinnedItems.map((x) => mkRow(x, !!x.members)) }, { label: 'Recent', items: recentItems.map((x) => mkRow(x, !!x.members)) }].filter((g) => g.items.length);
+    });
     const actGroup = busGroups.find((g) => g.id === active);
     const actS = sById(active) || busSessions[0] || { id: '', name: '', host: '', live: false };
     const thOffline = !actGroup && !actS.live;

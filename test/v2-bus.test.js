@@ -558,3 +558,149 @@ test('delivering to an unknown target still refreshes, in case the rail is stale
   assert.ok(after > before, 'a poll was kicked off: ' + before + ' -> ' + after);
   assert.strictEqual(bus._state().errs.x9, 'Delivery failed: unknown target');
 });
+
+// ---------------------------------------------------------------------------
+// L12 — the rail's filter / group / sort menu. shape() is the pure half:
+// logic.js hands it the rail objects plus isPinned and lastM, and renders the
+// buckets it returns. See improvised.md I-L12-01 .. I-L12-04.
+// ---------------------------------------------------------------------------
+
+// Four sessions and one broadcast group, with the ages logic.js would supply.
+const SHAPE_ITEMS = [
+  { id: 'g1', name: 'train-84', members: ['a', 'b'] },
+  { id: 'a', name: 'alpha', host: 'german-box', live: true, kind: 'tmux', group: 'fd-v2' },
+  { id: 'b', name: 'bravo', host: 'onboarding-box', live: false, kind: 'tmux' },
+  { id: 'c', name: 'charlie', host: '', live: true, kind: 'claude-desktop' },
+  { id: 'd', name: 'delta', host: 'german-box', live: false, kind: 'tmux', group: 'fd-v2', pinned: true },
+];
+const AGES = { a: 30, b: 5, c: 12, g1: 1 }; // d has no thread at all
+const CTX = { isPinned: (x) => !!x.pinned, lastM: (id) => (id in AGES ? AGES[id] : null) };
+const labels = (out) => out.map((g) => g.label);
+const ids = (out, label) => out.find((g) => g.label === label).items.map((x) => x.id);
+
+test('shape() defaults to the Pinned / Recent split, most recent first', async () => {
+  const { bus } = await boot();
+  const out = bus.shape(SHAPE_ITEMS, CTX);
+  assert.deepStrictEqual(labels(out), ['Pinned', 'Recent']);
+  assert.deepStrictEqual(ids(out, 'Pinned'), ['d']);
+  // g1 1m, b 5m, c 12m, a 30m — and a row with no thread would come last.
+  assert.deepStrictEqual(ids(out, 'Recent'), ['g1', 'b', 'c', 'a']);
+});
+
+test('shape() sorts the Pinned bucket too, not only Recent', async () => {
+  const { bus } = await boot();
+  const pins = [
+    { id: 'a', name: 'alpha', live: true, kind: 'tmux', pinned: true },
+    { id: 'b', name: 'bravo', live: true, kind: 'tmux', pinned: true },
+  ];
+  const out = bus.shape(pins, CTX);
+  assert.deepStrictEqual(ids(out, 'Pinned'), ['b', 'a'], 'b is 5m old, a is 30m');
+});
+
+test('the status and env filters apply to sessions only, never to a group', async () => {
+  const { bus } = await boot();
+  const live = bus.shape(SHAPE_ITEMS, Object.assign({ filters: { status: 'live' } }, CTX));
+  assert.deepStrictEqual(ids(live, 'Recent'), ['g1', 'c', 'a']);
+  const off = bus.shape(SHAPE_ITEMS, Object.assign({ filters: { status: 'offline' } }, CTX));
+  assert.deepStrictEqual(ids(off, 'Pinned'), ['d']);
+  assert.deepStrictEqual(ids(off, 'Recent'), ['g1', 'b']);
+  const desk = bus.shape(SHAPE_ITEMS, Object.assign({ filters: { env: 'desktop' } }, CTX));
+  assert.deepStrictEqual(ids(desk, 'Recent'), ['g1', 'c']);
+  const box = bus.shape(SHAPE_ITEMS, Object.assign({ filters: { env: 'box' } }, CTX));
+  assert.deepStrictEqual(ids(box, 'Recent'), ['g1', 'b', 'a']);
+});
+
+test('every grouping labels and fills its own buckets, behind one Broadcasts bucket', async () => {
+  const { bus } = await boot();
+  const shape = (group) => bus.shape(SHAPE_ITEMS, Object.assign({ filters: { group } }, CTX));
+
+  const byHost = shape('host');
+  assert.deepStrictEqual(labels(byHost), ['Broadcasts', 'Claude Desktop', 'german-box', 'onboarding-box']);
+  assert.deepStrictEqual(ids(byHost, 'Broadcasts'), ['g1']);
+  assert.deepStrictEqual(ids(byHost, 'german-box'), ['d', 'a'], 'the pin floats to the top of its bucket');
+
+  const byEnv = shape('env');
+  assert.deepStrictEqual(labels(byEnv), ['Broadcasts', 'Claude Desktop', 'Box sessions']);
+  assert.deepStrictEqual(ids(byEnv, 'Box sessions'), ['d', 'b', 'a']);
+
+  const byStatus = shape('status');
+  assert.deepStrictEqual(labels(byStatus), ['Broadcasts', 'Live', 'Offline']);
+  assert.deepStrictEqual(ids(byStatus, 'Live'), ['c', 'a']);
+  assert.deepStrictEqual(ids(byStatus, 'Offline'), ['d', 'b']);
+
+  const byGrp = shape('grp');
+  assert.deepStrictEqual(labels(byGrp), ['Broadcasts', 'fd-v2', 'No group'], 'No group sorts last');
+  assert.deepStrictEqual(ids(byGrp, 'fd-v2'), ['d', 'a']);
+  assert.deepStrictEqual(ids(byGrp, 'No group'), ['b', 'c']);
+
+  const flat = shape('none');
+  assert.deepStrictEqual(labels(flat), ['Broadcasts', 'Sessions']);
+  assert.deepStrictEqual(ids(flat, 'Sessions'), ['d', 'b', 'c', 'a']);
+
+  // No broadcast group in, no Broadcasts bucket out.
+  const onlySessions = bus.shape(SHAPE_ITEMS.filter((x) => !x.members), Object.assign({ filters: { group: 'none' } }, CTX));
+  assert.deepStrictEqual(labels(onlySessions), ['Sessions']);
+});
+
+test('sort by name and by live-first', async () => {
+  const { bus } = await boot();
+  const byName = bus.shape(SHAPE_ITEMS, Object.assign({ filters: { group: 'none', sort: 'name' } }, CTX));
+  assert.deepStrictEqual(ids(byName, 'Sessions'), ['d', 'a', 'b', 'c']);
+  const byStatus = bus.shape(SHAPE_ITEMS, Object.assign({ filters: { group: 'none', sort: 'status' } }, CTX));
+  // pinned first, then live rows newest-first, then the offline one.
+  assert.deepStrictEqual(ids(byStatus, 'Sessions'), ['d', 'c', 'a', 'b']);
+});
+
+test('show-empty-groups keeps the fixed buckets and only those', async () => {
+  const { bus } = await boot();
+  const none = [{ id: 'c', name: 'charlie', host: '', live: true, kind: 'claude-desktop' }];
+  const f = (extra) => Object.assign({ filters: Object.assign({ empty: true }, extra) }, CTX);
+  assert.deepStrictEqual(labels(bus.shape(none, f({}))), ['Pinned', 'Recent']);
+  assert.deepStrictEqual(labels(bus.shape(none, f({ group: 'status' }))), ['Live', 'Offline']);
+  assert.deepStrictEqual(labels(bus.shape(none, f({ group: 'env' }))), ['Claude Desktop', 'Box sessions']);
+  // host / grp / none have no fixed label set, so there is no empty bucket to keep.
+  assert.deepStrictEqual(labels(bus.shape(none, f({ group: 'host' }))), ['Claude Desktop']);
+  assert.deepStrictEqual(labels(bus.shape([], f({ group: 'grp' }))), []);
+  assert.deepStrictEqual(labels(bus.shape([], f({ group: 'none' }))), []);
+  // and without it the empty fixed buckets are dropped
+  assert.deepStrictEqual(labels(bus.shape(none, Object.assign({ filters: { group: 'status' } }, CTX))), ['Live']);
+});
+
+test('filters() defaults on empty and on malformed storage', async () => {
+  const DEFAULTS = { status: 'all', env: 'all', group: 'recent', sort: 'activity', empty: false };
+  const fresh = await boot();
+  assert.deepStrictEqual(fresh.bus.filters(), DEFAULTS);
+  assert.strictEqual(fresh.bus.isFilterDirty(), false);
+  const bad = await boot({ storage: { 'fd-bus-filters': 'not json' } });
+  assert.deepStrictEqual(bad.bus.filters(), DEFAULTS);
+  const partial = await boot({ storage: { 'fd-bus-filters': JSON.stringify({ status: 'nope', group: 'host', empty: 1 }) } });
+  assert.deepStrictEqual(partial.bus.filters(), Object.assign({}, DEFAULTS, { group: 'host', empty: true }));
+  assert.strictEqual(partial.bus.isFilterDirty(), true);
+});
+
+test('setFilters sanitises, persists to fd-bus-filters and re-renders the host', async () => {
+  const { bus, store } = await boot();
+  let renders = 0;
+  const host = fakeHost();
+  host.forceUpdate = () => { renders++; };
+  bus.attach(host);
+  bus.setFilters({ group: 'host', sort: 'name' });
+  assert.strictEqual(renders, 1, 'the rail is re-rendered, not left stale');
+  bus.setFilters({ group: 'nonsense', status: 'live' });
+  assert.deepStrictEqual(bus.filters(), { status: 'live', env: 'all', group: 'recent', sort: 'name', empty: false });
+  assert.deepStrictEqual(JSON.parse(store.getItem('fd-bus-filters')), bus.filters());
+  // and shape() reads the stored filters when the caller names none
+  const out = bus.shape(SHAPE_ITEMS, { isPinned: CTX.isPinned, lastM: CTX.lastM });
+  assert.deepStrictEqual(ids(out, 'Recent'), ['a', 'c', 'g1'], 'live only, by name');
+});
+
+test('a rail row carries the registry group, and only when there is one', async () => {
+  const { FD } = await boot();
+  const withGroup = SESSIONS.sessions.find((s) => s.group && s.live);
+  const row = FD.fixture.busSessions.find((r) => r.id === withGroup.name);
+  assert.strictEqual(row.group, withGroup.group, withGroup.name + ' keeps its lane');
+  const without = SESSIONS.sessions.find((s) => !s.group && s.live);
+  const plain = FD.fixture.busSessions.find((r) => r.id === without.name);
+  assert.ok(plain, 'the ungrouped session is on the rail');
+  assert.strictEqual('group' in plain, false, 'no empty group key reaches the render');
+});
