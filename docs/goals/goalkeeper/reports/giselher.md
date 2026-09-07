@@ -602,3 +602,108 @@ stays STALE), `G-18` (a live plaintext broker token from another `--askpass` cal
 README's *Known limits*.
 
 Lane GK-M is complete. The weave is the orchestrator's.
+
+---
+
+# GK-M.6 — two narrow closes, then the guard is declared done
+
+Review of `a5e8c21`: rules 1–5 and item 6 CLOSED, 24/24 probes matching, suites green, and the
+rule-3 correction confirmed right and kept. Two findings from probing beyond the list, then WEAVE.
+Brief: `lane-giselher-fixes-5.md`, items 1–2 plus a binding **stop rule**.
+
+## Commits
+
+| Item | Commit | What |
+|---|---|---|
+| 1 | `956183c` | a literal that executes is not prose |
+| 2 | `b487a0b` | a `cd` whose target IS the config dir counts as naming it |
+| — | `44c4268` | the GK-M.6 groups, and the Accepted limits the guard stops at |
+| — | this commit | report, ledger, `ACK GKM6` |
+
+## Tests
+
+```
+node --test mac/claude-home/session-kind/test/guard.test.js      # 261 pass  (was 236)
+sh   mac/claude-home/session-kind/test/mark.test.sh              # 33 pass   (2 skipped, no timeout(1))
+python3 -m unittest discover -s mac/claude-home/skills/goalkeeper/tests   # 62 pass
+```
+
+23 GK-M.6 probe shapes green, and every probe suite from GK-M.2 on still passes.
+
+## Item 1 — the literal that executes
+
+GK-M.5 item 6 taught the guard that a quoted argument of a text emitter is text. That holds only
+while the text is inert. A **double-quoted** literal carrying a command substitution is evaluated
+by the shell before the wrapping program ever sees it, so the harmlessness of `echo` buys nothing.
+Seven forms were allowed, including the substitution reaching the jail through `git commit -m`,
+`printf` and the fleet-message bridge, a backtick pair, and a `${X:-<jail>/…}` default.
+
+Such a literal is now command text and is never blanked. The escape test counts preceding
+backslashes, so an escaped `$(` in prose stays prose; single quotes substitute nothing and stay
+strippable, so `git commit -m 'cost $(5)'` is still allowed.
+
+## Item 2 — the relative hop
+
+The GK-M.5 rule-3 correction compares against the config dir's absolute path, because a repo's own
+`.claude/` is not it. That left `cd $HOME && cd .claude && rm -rf goalkeeper`: the two halves never
+appear as one string. `mentionsConfigDir` is now also true when a `cd`/`pushd` **target** is
+`.claude`, `./.claude`, ends in `/.claude`, or equals the config dir — quoted or bare, trailing
+slash ignored. Only those shapes, so `cd .claude/worktrees/x` is untouched and the GK-M.5 worktree
+fix is asserted alongside every new deny.
+
+## The stop rule, and a correction it produced
+
+`test/README.md`'s "Known limits" is now **Accepted limits — the guard stops here**, carrying the
+rule that anything found beyond items 1–2 is recorded rather than fixed, with the sentence *"caught
+by `goalkeeper.py sweep` tamper detection, not by the guard"* on each entry it is true of. A new
+test group pins those limits as **current behaviour, not guarantees**, and each is named so nobody
+mistakes one for the other.
+
+Checking them rather than assuming corrected something I had written myself. The README claimed
+`D=~/.claude/goalkeeper; cd "$D"` evades the guard. **It does not** — `~` expands before the scan,
+so that line names the directory and is denied. The real evasion is a path assembled from parts
+that never spell it: `C=.claude; G=goalkeeper; cd "$HOME/$C/$G"`. Both are now pinned, so the limit
+cannot later be read wider than it is. The glob form (`cd ~/.claude/goal*eeper`) is allowed today
+and is pinned as such.
+
+One entry deliberately keeps its own wording: the `census.py` GHOST limit is about liveness
+observation, and the tamper-detection sentence would be false there.
+
+Six rounds each found one more shell form. That is the evidence *for* the PLAN §9 addendum's
+position, not against it: the guard prevents accidents, detection is the guarantee.
+
+## Installer re-run
+
+```
+changed 1   unchanged 16   backups made 1   stamp 2026-09-08
+```
+
+| Live file | Backup |
+|---|---|
+| `~/.claude/session-kind/guard.js` | `guard.js.bak-2026-09-08-002751` |
+
+Vendored `guard.js` is byte-identical to live. Verified against the **live** guard afterwards: the
+substitution form and the relative hop deny; single-quoted prose, a worktree `cd`, a pure read of
+the jail, this worker's own lane-report write and ledger append all allow.
+
+**Rollback:** `cp ~/.claude/session-kind/guard.js.bak-2026-09-08-002751 ~/.claude/session-kind/guard.js`
+
+## Not pushed — the GitHub train is shut
+
+The broker has returned **503 since about 21:15Z** and no operator is at the keys page. Confirmed
+from this Mac: `curl http://localhost:3131/api/ghtoken` → HTTP 503. Per the operator's instruction
+the round is committed **locally** and one push attempt was made without retry.
+
+**Local HEAD: recorded in the commit below; `origin/agent-giselher/goalkeeper-mac` is still at
+`a5e8c21`.** The orchestrator merges the local branch on this Mac; the push happens when the train
+reopens. Gate filed as `G-31`: start a GitHub train and re-mint the `root,vibe` deploy cert at
+`http://localhost:3131/keys.html`.
+
+## Still open for the operator
+
+`G-31` (this round's gate), `G-13` (the broker's GitHub App is not on `0xneelo/lowcap-connector`,
+so lowcapsxyz evidence stays STALE), `G-18` (a live plaintext broker token from another `--askpass`
+caller), `G-22` and `G-23` (the GK-M.4 reversal and the NAMES narrowing, for confirmation), and the
+test README's *Accepted limits*.
+
+Lane GK-M is complete, and the guard is closed by rule. The weave is the orchestrator's.
