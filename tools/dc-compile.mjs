@@ -89,7 +89,12 @@ function isPureData(lit) {
     const c = lit[i];
     if (c === "'" || c === '"' || c === "`") {
       const q = c;
-      for (i++; i < lit.length; i++) { if (lit[i] === "\\") { i++; continue; } if (lit[i] === q) break; }
+      let body = "";
+      for (i++; i < lit.length; i++) { if (lit[i] === "\\") { i++; continue; } if (lit[i] === q) break; body += lit[i]; }
+      // A template literal with any ${...} may close over a logic-local. fixture.js is a
+      // classic script loaded BEFORE logic.js, so a wrong "pure" here ships an
+      // unresolvable identifier and the page throws at load. Refuse to guess.
+      if (q === "`" && body.includes("${")) return false;
       bare += '""';
       continue;
     }

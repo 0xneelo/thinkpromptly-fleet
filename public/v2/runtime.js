@@ -243,14 +243,27 @@
     return n;
   }
 
-  /* Text interpolation, dc-runtime walkText L569-609: undefined/null/boolean render
-   * nothing, everything else (incl. 0 and "") gets a span.sc-interp. */
+  /* walkText L603-605: an Array (there are no React elements in this build) is inserted
+   * DIRECTLY, unwrapped — no sc-interp span. Nested arrays recurse, as React flattens. */
+  function arrayKids(key, v, out) {
+    for (var j = 0, c; j < v.length; j++) {
+      c = v[j];
+      if (c == null || typeof c === "boolean") continue;
+      if (Array.isArray(c)) arrayKids(key + "." + j, c, out); else out.push(t(key + "." + j, String(c)));
+    }
+  }
+
+  /* Text interpolation, dc-runtime walkText L569-609, in the vendor's order: undefined
+   * renders nothing, Arrays go in unwrapped, null/boolean render nothing, and everything
+   * else (incl. 0 and "") gets a span.sc-interp. */
   function I(key, vals, parts) {
     var out = [];
     for (var i = 0; i < parts.length; i++) {
       if (!(i & 1)) { if (parts[i]) out.push(t(key + "$" + i, parts[i])); continue; }
       var v = resolve(vals, parts[i]);
-      if (v === void 0 || v === null || typeof v === "boolean") continue;
+      if (v === void 0) continue;
+      if (Array.isArray(v)) { arrayKids(key + "$" + i, v, out); continue; }
+      if (v === null || typeof v === "boolean") continue;
       out.push(h("span", { key: key + "$" + i, className: "sc-interp" }, t(key + "$" + i + "t", String(v))));
     }
     return out;
