@@ -2,7 +2,7 @@
 
 **Worker:** Kunhild · `frontend-developer` · tag `agent-kunhild` · session `cli-worker`
 **Project / sub-project:** `remote-system` / `fleetdeck-v2`
-**Branch:** `agent-v2-l8` off `origin/agent-v2-base` (re-merged after the S2 runtime fix)
+**Branch:** `agent-v2-l8` off `origin/agent-v2-base` (re-merged three times: the S2 runtime fix, S2.2 + L1.1, then L1.2)
 **Main issue:** DECK-55 · **Ledger row:** D15
 **Date:** 2026-09-07
 
@@ -13,30 +13,29 @@
 | Pixel gate, fixture mode | `verify/l8/report.json` allPass 36/36 | **36/36, allPass true**, max mismatch 0.0329 %; the `accounts` screen itself **0.000000 %** in both themes |
 | Live-mode proof, API stubbed | `verify/l8/live.json` all pass | **60/60, allPass true**, zero console errors, zero page errors |
 | Unit tests | pure logic covered | `test/v2-accounts.test.js` — **15/15** |
-| Full suite | `npm test` green | **245 tests, 244 pass, 1 fail** — the one failure is inherited from the base, see below |
+| Full suite | `npm test` green | **318/318, exit 0** — green on `agent-v2-base` @ L1.2 + S2.2 |
 
 Artefacts: `docs/design/fleetdeck-v2/verify/l8/` (36 PNG pairs + `report.json`, `live.json`,
 `live-dark.png`, `live-light.png`), harness in `verify/l8-live/`, five screenshots in
 `docs/design/fleetdeck-v2/improvised/`.
 
-### `npm test` — not fully green, and not because of L8
+### `npm test` — green, after two inherited problems cleared
 
-`test/v2-data.test.js` fails at load on `agent-v2-l8`:
+The suite is **318 tests, 318 pass, exit 0** on the final base.
 
-```
-ReferenceError: window is not defined
-    at public/v2/fixture.js:4
-    at test/v2-data.test.js:17
-```
+It was not green earlier, for two reasons, neither of them L8's:
 
-`fixture.js` is generated with a `window.FD = ...` preamble, so `require()`ing it in Node throws and
-that file's tests never run. **It fails identically on a pristine detached worktree of
-`origin/agent-v2-base`**, and `public/v2/fixture.js`, `data.js`, `router.js` and `test/v2-data.test.js`
-are byte-identical between this branch and the base — L8 touches none of them. Filed as **DECK-94**
-with the proof. Everything else passes, the 15 L8 tests included.
-
-Reported rather than worked around: the acceptance asks for a green suite and the suite is not green,
-so the box is ticked for "the slice's own tests" and the inherited failure is named.
+1. **`test/v2-data.test.js` could not require the generated `fixture.js` in Node**
+   (`ReferenceError: window is not defined`). Proven pre-existing: `npm test` on a pristine detached
+   worktree of the then-current `origin/agent-v2-base` was **297/298, exit 1**, and the four files that
+   test touches were byte-identical to base. Filed as **DECK-94**; **fixed upstream by L1.1**, which
+   added `public/v2/fixture-extract.js` and reworked the test. Resolved by merging the new base.
+2. **`EADDRINUSE` port races.** Several sibling worker sessions run this same suite concurrently on
+   this box, and `reaper.test.js`, `train-broker.test.js` and `ssh-alias.test.js` bind fixed and
+   ephemeral ports. Runs scored 301/318, 317/318 and 303/318 with every failure an `EADDRINUSE`, while
+   each affected file passed in isolation (`notify.test.js` 19/19, `ssh-alias.test.js` 4/4). A run in a
+   quiet window is clean: **318/318**. Nothing in this class touches a file L8 changes — the only test
+   file this branch adds or edits is `test/v2-accounts.test.js`.
 
 ## Files owned and touched
 
@@ -80,8 +79,9 @@ In fixture mode `screens/accounts.js` returns before doing anything (`FD.data.is
 `FD.data.toAccounts(credits)` supplies the base row; L8 overlays the fields whose text the adapter
 does not reproduce verbatim (filed as **DECK-88**, `data.js` is not this slice's file). L8 reads
 `history[]` from the response rather than `toAccounts().trendPts`, because the sparkline's x axis is
-time-scaled and needs each sample's `t` — so the L1.2 change of `trendPts` to `number[]` does not
-affect this slice either way.
+time-scaled and needs each sample's `t`. L1.2 has since landed and made `toAccounts().trendPts` a
+`number[]`; L8 never read that field and carried no shim for it, so there was nothing to remove and
+nothing to change — verified green against the L1.2 base.
 
 ## Behaviour checklist — every `BEHAVIOUR.md` item
 
@@ -209,8 +209,7 @@ claimed.
 - **DECK-87** (`operator:decision`) — the shell never loads `data.js`; `screens/accounts.js` loads it
   itself as a workaround. When `index.html` is fixed, delete `withData()` here.
 - **DECK-88** (`needs:general`) — `toAccounts()` diverges from today's Accounts texts in six places.
-- **DECK-94** (`needs:general`) — `npm test` is red on the base: `v2-data.test.js` cannot require the
-  generated `fixture.js` in Node.
+- **DECK-94** (`needs:general`) — **resolved upstream by L1.1** and closed; kept here for the record.
 - If the design seat wants the sparkline's area fill and tooltip back, or the summary counts bound
   properly, both need a template change (S2/L2), not this slice.
 

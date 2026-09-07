@@ -39,7 +39,7 @@ Make the **Accounts (credits) cards** screen work on live data exactly like toda
 - [x] `verify/l8/report.json` allPass 36/36 (fixture mode); `verify/l8/live.json` all pass (60/60); live screenshots filed.
 - [x] `improvised.md` entries + screenshots for every improvisation (I-L8-01 … I-L8-08).
 - [x] Hooks provided are defined; hooks used are guarded. (Provided: none — the namespace is defined anyway. Used: none.)
-- [x] `npm test`: 244/245 — the one failure is inherited from `agent-v2-base` and proven pre-existing (DECK-94); branch pushed; `REPORT.md` signed **Kunhild**; registry row `done` attempted — the endpoint answers HTTP 401 from this box (XYZ-2137).
+- [x] `npm test` **green — 318/318, exit 0**; branch pushed; `REPORT.md` signed **Kunhild**; registry row `done` attempted — the endpoint answers HTTP 401 from this box (XYZ-2137).
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

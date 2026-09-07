@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice": "l8",
   "mode": "live",
-  "capturedAt": "2026-09-07T01:04:42.436Z",
+  "capturedAt": "2026-09-07T01:17:23.148Z",
   "source": "docs/design/fleetdeck-v2/fixtures/api/credits.json + verify/l8/fixtures/*.json",
   "viewport": {
     "width": 1440,
