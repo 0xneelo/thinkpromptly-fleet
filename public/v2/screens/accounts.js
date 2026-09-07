@@ -526,31 +526,15 @@
     sync();
   }
 
-  // The shell's index.html loads runtime, fixture, logic, app and the screen files —
-  // not public/v2/data.js, so FD.data is absent on a plain page load. index.html is
-  // S2's file and no slice may edit it, so the screen fetches its own data layer. The
-  // id is shared, so nine slices asking for it still load it exactly once.
-  function withData(cb) {
-    if (data()) return cb();
-    let tag = document.getElementById('fd-data-js');
-    if (!tag) {
-      tag = document.createElement('script');
-      tag.id = 'fd-data-js';
-      tag.src = '/v2/data.js';
-      document.head.appendChild(tag);
-    }
-    tag.addEventListener('load', cb, { once: true });
-    tag.addEventListener('error', cb, { once: true });
-  }
-
+  // The shell's index.html loads public/v2/data.js before the screen files, so
+  // FD.data is already there when start() runs. data() can still answer null under
+  // a bare harness that loads only this file, hence the guard below.
   function start() {
-    withData(() => {
-      const api = data();
-      // Fixture mode renders FD.fixture as-is: never call setData there.
-      if (!api || api.isFixture()) return;
-      watch();
-      load(false);
-    });
+    const api = data();
+    // Fixture mode renders FD.fixture as-is: never call setData there.
+    if (!api || api.isFixture()) return;
+    watch();
+    load(false);
   }
 
   const screen = Object.assign({ slice: 'l8', start, load, paint, state }, pure);
