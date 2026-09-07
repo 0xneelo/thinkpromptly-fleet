@@ -107,7 +107,7 @@
   // screen files, but NOT public/v2/data.js — so FD.data, which L1 built and
   // every live screen needs, is simply absent. index.html is out of this
   // slice's scope, so this screen fetches the data layer itself rather than
-  // shipping a screen that cannot load. See improvised.md I-L7-02 and DECK-45:
+  // shipping a screen that cannot load. See improvised.md I-L7-02 and DECK-84:
   // the shell should load it for everyone at the L11 cut-over, and this loader
   // then becomes a no-op because FD.data is already there.
   // ---- module state -------------------------------------------------------
@@ -220,10 +220,18 @@
   }
 
   // ---- paint --------------------------------------------------------------
+  // Never throws: it runs from a microtask the shared render schedules, and an
+  // unhandled rejection there is exactly the cross-screen blast radius the
+  // DESIGN-35 audit warns about. A failed paint leaves the mock's own cards up.
   function paint() {
+    try { repaint(); } catch (e) { console.error('L7 keys paint failed', e); }
+  }
+
+  function repaint() {
     var root = screenEl();
     if (!root || !ctx || !capture(root)) return;
     var cards = kids(root);
+    if (cards.length < 4) return;
     ticks = [];
     paintMint(cards[0]);
     paintTrain(cards[1]);
@@ -376,6 +384,11 @@
     setTimeout(function () { row.style.background = 'transparent'; }, 1200);
   }
 
+  // Incoming rows are guarded before anything renders them: the deck can answer
+  // with a null, an object, or a list with holes in it.
+  function rows(v) { return Array.isArray(v) ? v.filter(Boolean) : []; }
+  function str(v) { return v == null ? '' : String(v); }
+
   // ---- talking to the API -------------------------------------------------
   function post(call) {
     return call().then(function (r) {
@@ -391,14 +404,19 @@
     ]).then(function (r) {
       var s = r[0], tr = r[1];
       if (!s || typeof s !== 'object' || (!s.certs && !s.keys)) return fail();
-      state = { certs: s.certs || [], keys: s.keys || [] };
+      state = { certs: rows(s.certs), keys: rows(s.keys) };
       // The deck answers /api/ghtrain as JSON today, but a proxy that hands back
       // a plain-text 503 would otherwise lose the broker's own sentence. Keep it.
       train = tr && typeof tr === 'object' ? tr
         : { ok: false, error: typeof tr === 'string' ? tr.trim() : '' };
       loadError = '';
-      // The one identifier this screen owns in the mock's seed data.
-      FD.setData('keyRows', FD.data.toKeys(s, train).keyRows);
+      // The one identifier this screen owns in the mock's seed data. Every field
+      // is coerced to the string the template expects: one undefined row here
+      // renders as 'undefined' across the table, and a non-array would throw
+      // inside the shared renderVals and blank every screen (DESIGN-35 rule 2).
+      FD.setData('keyRows', rows(FD.data.toKeys(s, train).keyRows).map(function (k) {
+        return { name: str(k.name), fp: str(k.fp), comment: str(k.comment) };
+      }));
       paint();
     }, fail);
   }

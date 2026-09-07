@@ -672,15 +672,22 @@ class AppLogic extends Sub {
     // where that file returns before registering and the mock renders verbatim.
     // Every style handed over is built by the mock's own pill()/dot()/selChip()
     // helpers, so the painted cards carry the mock's tokens and nothing new.
-    if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({
-      t, dark, isKeys: screen === 'keys', ttl, prin, logic: this,
-      pills: {
-        good: chipTone('good'), goodDot: dot(t.good),
-        dim: { ...chipTone('neutral'), color: t.ink45 }, dimDot: dot(t.ink35),
-        warn: chipTone('warn'), warnDot: dot(t.warn),
-      },
-      chipBtn: selChip(false), chipBtnSel: selChip(true),
-    });
+    //
+    // Wrapped because renderVals() is shared: one throw anywhere in it blanks
+    // EVERY screen, not just this one (DESIGN-35 oracle audit, rule 2). The keys
+    // screen degrading to the mock's static cards is a bad day; taking the whole
+    // app down with it is not acceptable.
+    try {
+      if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({
+        t, dark, isKeys: screen === 'keys', ttl, prin, logic: this,
+        pills: {
+          good: chipTone('good'), goodDot: dot(t.good),
+          dim: { ...chipTone('neutral'), color: t.ink45 }, dimDot: dot(t.ink35),
+          warn: chipTone('warn'), warnDot: dot(t.warn),
+        },
+        chipBtn: selChip(false), chipBtnSel: selChip(true),
+      });
+    } catch (e) { console.error('L7 keys sync failed', e); }
     // Org chart scope
     const orgSort = this.state.orgSort || 'machine';
     const orgScopeData = FD.fixture.orgScopeData;
