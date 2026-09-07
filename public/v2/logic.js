@@ -1033,6 +1033,64 @@ class AppLogic extends Sub {
       console.error(e);
       mCards = this._mLastCards || [];
     }
+    // ---- accounts (fd-v2 L8) -------------------------------------------------
+    // This screen builds its own bars rather than calling the shared bar(): today's
+    // Accounts page turns a bar red over 90 %, a step the mock's bar() does not have
+    // (BEHAVIOUR.md 3), and bar() is also the Machines screen's helper.
+    // The improvised chrome in screens/accounts.js paints in the mock's tokens, so the
+    // ones it uses are published here and follow the theme toggle.
+    FD.screens = FD.screens || {};
+    FD.screens.accounts = FD.screens.accounts || {};
+    FD.screens.accounts.tokens = {
+      ink: t.ink, ink75: t.ink75, ink60: t.ink60, ink45: t.ink45, ink35: t.ink35,
+      warn: t.warn, warnBg: t.warnBg, bad: t.bad, good: t.good, line: t.line,
+      panel: t.panel, panelShadow: t.panelShadow, track: t.track, hoverBg: t.hoverBg,
+      cardPad: compact ? '14px 16px' : '18px 20px',
+    };
+    const accTone = (lvl) => (lvl === 'red' ? t.bad : lvl === 'amber' ? t.warn : t.good);
+    const accBar = (b) => ({
+      label: b.label,
+      resets: b.resets || '',
+      fillStyle: { display: 'block', height: '100%', width: (b.pct == null ? 0 : Math.max(0, Math.min(100, b.pct))) + '%', borderRadius: '2px', background: b.pct == null ? t.ink35 : accTone(b.level) },
+      right: b.right,
+      // Only the fill carries the level colour: the mock's bar() and today's .pct rule
+      // both render the percentage itself in neutral ink.
+      rightStyle: { fontSize: '11px', textAlign: 'right', whiteSpace: 'nowrap', color: b.pct == null ? t.ink35 : t.ink75 },
+    });
+    // A rate limit says nothing about the account, so it must not read like a fault —
+    // today's page renders it as plain muted text, not as the boxed notice that an
+    // expired token or a failed read gets.
+    const accBannerStyle = (tone) => tone === 'notice'
+      ? { borderRadius: '8px', border: '1px solid ' + t.warn, background: t.warnBg, color: t.warn, padding: '9px 14px', fontSize: '12.5px' }
+      : { fontSize: '12.5px', color: t.ink60 };
+    const accView = (a) => ({
+      prov: a.prov, name: a.name, email: a.email, id: a.id, plan: a.plan, live: a.live,
+      right: a.right, seen: a.seen, atLimit: a.atLimit, noData: a.noData, noWindows: a.noWindows,
+      // The mock's pill is a neutral chip with a coloured dot: green when a source
+      // reported and the read was clean, amber when it reported anything else.
+      provStyle: chipTone('neutral'),
+      provDotStyle: dot(a.pillTone === 'green' ? t.good : a.pillTone === 'amber' ? t.warn : t.ink35),
+      planStyle: chipTone('neutral'),
+      banner: a.banner, bannerStyle: accBannerStyle(a.bannerTone),
+      // The mock's one free text line per card. screens/accounts.js joins every note
+      // today's page shows into it and recolours the <p> to match the strongest tone.
+      staleNote: a.note,
+      bars: (a.bars || []).map(accBar),
+      trendPts: a.trendPts, trendColor: accTone(a.trendLevel), trendPct: a.trendPct,
+    });
+    // One throw anywhere in renderVals blanks every screen, so this block is fenced:
+    // a row the API shapes unexpectedly costs the Accounts screen its last update, not
+    // the whole app (DESIGN-35 binding, 2026-09-08, point 2).
+    const accStore = FD.screens.accounts;
+    let accRows = null;
+    try {
+      const live = FD.fixture.accountsLive;
+      if (live) accStore.lastGood = accRows = live.map(accView);
+    } catch (e) {
+      console.error(e);
+      accRows = accStore.lastGood || null;
+    }
+    const accLive = !!accRows;
     return {
       dark, notDark: !dark, ...t, four: 4,
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
@@ -1203,8 +1261,11 @@ class AppLogic extends Sub {
       prinChips: ['root', 'vibe'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: FD.fixture.keyRows,
-      // accounts
-      accounts: [
+      // accounts (fd-v2 L8) — the mock's seed, or the live rows that
+      // screens/accounts.js feeds in through FD.setData('accountsLive', ...).
+      // S2 could not substitute this seed into fixture.js (the mock literal calls
+      // bar()/spark()/chipTone() on it), so L8 reads its own key here instead.
+      accounts: (accRows || [
         { prov: 'codex', name: 'Daniel Tabor (personal · ChatGPT)', email: 'admin@deus.finance', id: '', plan: 'pro', live: 'live', right: 'just now · DESKTOP-LJMEJQN',
           provStyle: chipTone('neutral'), provDotStyle: dot(t.good), planStyle: chipTone('neutral'),
           bars: [bar('weekly', 80, 'resets in 129h 2m')], trendPts: '', seen: 'rfc1918-internal · live, DESKTOP-LJMEJQN · live, ubuntu-8gb-nbg1-1 · live' },
@@ -1233,8 +1294,12 @@ class AppLogic extends Sub {
           bars: [bar('5 hour', null), bar('7 day', null)],
           trendPts: spark([1,2,3,3.5,3,4,4.5,4,3.5,4,3,4.5,5,4.5,2,4,4.5,5,4.5,7]), trendColor: t.warn, trendPct: '88%',
           seen: 'rfc1918-internal · live, rfc1918-internal · desktop snapshot, DESKTOP-LJMEJQN' },
-      ].map((a, i) => {
-        const open = !!(this.state.aOpen || {})[i];
+      ]).map((a, i) => {
+        // Untouched rows keep the mock's default (collapsed). On live data a row at or
+        // over a limit — or one carrying a banner — opens by itself, so a wall and a
+        // fault are never hidden behind a chevron. improvised.md I-L8-02.
+        const aOpen = this.state.aOpen || {};
+        const open = i in aOpen ? !!aOpen[i] : (accLive ? !!(a.atLimit || a.banner || a.noData || a.noWindows) : false);
         const primary = a.bars.find((b) => b.label === '5 hour') || a.bars[0];
         return {
           ...a, open,
