@@ -1,14 +1,14 @@
 # fd-v2-l11 — launch record
 
-Worker **Alrun** (`fullstack-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l11`, worktree `~/projects/remote-system/.claude/worktrees/v2-l11`, branch `agent-v2-l11`, base `origin/weave/fd-v2`.
-Launch condition: the last of L2–L10 pushed green and `weave/fd-v2` assembled + pushed.
+Worker **Alrun** (`fullstack-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l11`, worktree `~/projects/remote-system/.claude/worktrees/v2-l11`, branch `agent-v2-l11`, base `origin/agent-v2-base` (phase 1), merge `origin/weave/fd-v2` in phase 2.
+Launch condition: operator ruling 2026-09-08 "launch all now" — phase 1 immediately, phase 2 after the weave.
 
 ```bash
 ssh german-box "wsl tee /home/vibe/launch/launch-alrun.txt" < docs/goals/fd-v2-l11/LAUNCH-PROMPT.txt > /dev/null
 ```
 
 ```bash
-ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Alrun v2-l11 origin/weave/fd-v2
+ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Alrun v2-l11 origin/agent-v2-base
 ```
 
 ```bash

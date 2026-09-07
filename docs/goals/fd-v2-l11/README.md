@@ -4,7 +4,7 @@
 |---|---|
 | Project / sub-project | `remote-system` / `fleetdeck-v2` |
 | Worker | **Alrun** · `fullstack-developer` · tag `agent-alrun` · Claude, high · `/goal` |
-| Branch | `agent-v2-l11` off `origin/weave/fd-v2`; first action none — `weave/fd-v2` already contains S2 + L1 + L2–L10 |
+| Branch | `agent-v2-l11` off `origin/agent-v2-base` (phase 1 now); phase 2 merges `origin/weave/fd-v2` when announced |
 | Ledger rows | D18, D19, D20 + closes every P2 row (`docs/design/fleetdeck-v2/diff.md`) |
 | Owned file | `public/v2/screens/(whole app).js` + this screen's methods in `logic.js` |
 | Data identifiers | (none) |
