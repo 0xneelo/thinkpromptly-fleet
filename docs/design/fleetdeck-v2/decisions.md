@@ -257,3 +257,14 @@ Scope clean, `orgchart.js` untouched, formats verbatim, gate 36/36 + live 50/50 
 L5.1 to Dietlind: gate the 1 s ticker on `orgOpen()` and wire `stop()/start()` (HIGH: perpetual app re-render +
 Live API pill overwrite after one visit); scope select options that yield an empty kids grid (MEDIUM). I-L5-05
 (`expires: none` replaces the old `expired 20703d ago` quirk) accepted.
+
+## 2026-09-08 · L3 review: accept + L3.1; reviewer incident
+
+L3 engine parity verified line by line against `app.js:1007-1250` / `server.js:2878-2947`; gate 36/36 (Windows and
+full screen at 0 %), live 37/37, tests 310/310. Follow-up L3.1 to Gottlieb: real ✕ click in the live proof; the
+"server half covered" claim in `live.json` is false → add a real `/term` integration test or drop it; fix the
+`data-l3-key` wording; remove the document-level "Connect all" text binding (L2's shell owns the button; hook stays).
+Incident: the reviewer subagent ran `rm -rf <path>/../<same dir>` which resolved to this design seat's own worktree
+and deleted it; it recreated the worktree from git at the branch tip. Verified afterwards: worktree at `56f43ef`
+(= origin), all docs present, nothing lost (everything was committed). Memory note written so reviewer prompts forbid
+`..`-relative removals and confine scratch worktrees to `/private/tmp/claude-501/`.
