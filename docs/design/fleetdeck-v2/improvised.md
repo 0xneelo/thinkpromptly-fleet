@@ -253,3 +253,126 @@ and legacy redirects in **L11**. L1 implements the pack: the two are not in conf
 different phases — `?view=` is how the shell selects a view while v2 lives beside the old UI at
 `/v2/`, and L11 maps the final `/` and `/app` routes onto it. Recorded so L11 does not read the query
 scheme as a contradiction of the ruling.
+
+---
+
+## L4 — Registry on live rows (Ruprecht, `agent-v2-l4`, 2026-09-07)
+
+Ledger row **D12**, spec `docs/goals/fd-v2-l4/BEHAVIOUR.md`, main issue DECK-43.
+Screenshots: `docs/design/fleetdeck-v2/improvised/l4/`.
+
+Everything below shares one cause. The compiled template gives the Registry **six** live
+handlers — `A_setQ`, `A_resetFilters`, `A_clearSel`, `A_toggleAll`, `A_goBus` and the per-row
+`r.toggle`. The three filter selects, the bulk Kill / Tag kill / Hide buttons, the row `Show`
+button and the row `⋯` button compile with no `onClick` at all, and `template.dc.html` is not
+this slice's to edit. On top of that the oracle audit of the shim (DESIGN-35, 2026-09-08) made
+it binding that **no foreign DOM may be mounted inside a compiled node** — `syncChildren()`
+owns those children and drops anything it did not render.
+
+So the rule this slice follows is: a compiled node may receive an **attribute, a property or a
+listener, never a child**; anything the mock has no slot for is drawn in `#fd-l4-layer`, our own
+element outside `#dc-root`, anchored to the rectangle of the compiled node it belongs to. None
+of it exists in fixture mode — `?fixture=1` installs no listener and creates no node, which is
+why the pixel gate still reads 36/36 (`verify/l4/report.json`).
+
+### I-L4-01 — The mock's status and last-msg menus are covered, not extended
+
+**Serves:** BEHAVIOUR §2, ledger D12. **Screenshots:** `01-filter-row.png`, `02-status-kill-requested.png`.
+
+The mock offers `any status · active · done · hidden` (`mock/Fleetdeck Final.dc.html:351`) but the
+server accepts five states — `kill-requested` and `killed` have no option — and its age menu offers
+`any · 1h · 1d` where `AGE` has six keys. `<option>`s are children of a compiled `<select>`, so the
+missing ones cannot be appended.
+
+**Decision:** the compiled status and last-msg selects get `data-l4-hidden="1"`
+(`visibility:hidden`, so their boxes still hold the row's layout) and our own selects, carrying the
+full menus, are drawn over their exact rectangles with their exact inline style. The live/gone select
+is complete, so it is wired in place — an `<option>`'s `value` is a property, not a child.
+
+**Why not a "more filters" popover:** it would hide two of today's five filters behind a click and
+change the mock's filter row, for no gain — the covering select is pixel-identical to the one it
+covers and is measured against it in the live gate.
+
+### I-L4-02 — The active-age filter sits beside the last-msg one
+
+**Serves:** BEHAVIOUR §2 ("improvise a place in the filter row consistent with the mock's select
+style"). **Screenshot:** `01-filter-row.png` (right-most select, `active: any`).
+
+Today's app has both `f-msg` and `f-active`; the mock's filter row has only the last-msg one. Ours
+is drawn 10px to the right of it, same style, same height, same six ages, reading `active: any`
+so the two age menus can be told apart. It exists only in live mode, so it cannot move a pixel of
+the fixture-mode gate.
+
+### I-L4-03 — Bulk Tag kill and Hide are new; bulk Forget appears when gone rows are ticked
+
+**Serves:** BEHAVIOUR §4. **Screenshot:** `03-bulk-bar.png`.
+
+The mock's bulk bar is `N selected · Kill · Tag kill · Hide · Clear`; today's app has
+`Kill · Forget`. Two gaps in opposite directions:
+
+- **Tag kill / Hide in bulk** did not exist. They run the row action's write sequentially over the
+  ticked rows — `POST /api/registry {status}` — with the same progress toast as bulk Kill, and with
+  **no confirm**: the per-row Tag kill and Hide have none (BEHAVIOUR §5) and no bulk confirm string
+  exists to quote. Kill and Forget keep their confirms verbatim.
+- **Forget** has no button in the mock. Ours appears beside Hide only while gone rows are ticked and
+  reads `Forget <n> gone`, exactly as today. It is drawn in the layer, anchored to the Hide button.
+
+`Kill` keeps the mock's own label and gains its count through a `::after` rule off
+`data-l4-count="<n> live"` — the button's text is a compiled child, so `Kill <n> live` cannot be
+written into it. The same rule paints the ` ▲` / ` ▼` sort marker off `data-l4-dir` (BEHAVIOUR §3),
+and `data-l4-age` paints the amber-past-an-hour / red-past-a-day tone (BEHAVIOUR §6) that one
+shared `cellStyle` bound to four columns could not otherwise express.
+
+### I-L4-04 — The `⋯` menu carries every row action the mock dropped
+
+**Serves:** ruling O3, BEHAVIOUR §1 and §5. **Screenshot:** `04-row-menu.png`.
+
+The mock's row actions are `Show · Message · ⋯`, and its `⋯` has the title
+`Kill · Tag kill · Hide`. The menu is drawn in the layer, in the panel idiom the mock uses for its
+own overlays (12px radius, 1px line, 28px glass blur, the same shadow as the reply toast), anchored
+under the actions cell and flipped above it near the viewport edge. It holds: **Details**, the four
+edits **label / group / task / note**, then **Kill**, **Tag kill** (or **Untag**), **Hide** (or
+**Unhide**), and **Forget** on gone rows only. Titles and toasts are BEHAVIOUR §5's, verbatim.
+
+### I-L4-05 — The Details tab becomes a panel anchored under its row
+
+**Serves:** ruling O3. **Screenshot:** `05-details-panel.png`.
+
+Today's Details tab shows host, label, role/worker and note; the mock has one table and no room for
+them. Ruling O3 asks for an expandable row. A real expanded row would mean inserting a sibling into
+the `sc-for` list — foreign DOM inside a compiled node, and the audit forbids it — so the panel is
+drawn in the layer, anchored to the row's bottom edge at the row's width. It reads as an expansion
+and it overlays rather than displaces the rows below. `Label` and `Note` are click-to-edit there.
+
+### I-L4-06 — A Linear task opens from the cell; editing it is a menu item
+
+**Serves:** BEHAVIOUR §1 (`taskView`). **Screenshot:** `06-cell-editor.png`.
+
+Today the Task cell renders an `<a>` to `https://linear.app/synchronicity/issue/<task>` plus a `✎`
+button. The mock's Task cell is a `<span>` with an underline and `cursor:pointer` and there is no
+anchor to bind. So: clicking a task that matches `TASK_RE` opens that issue in a new tab
+(`noopener`, as today), clicking a `—` opens the editor, and **Edit task** in the `⋯` menu is the
+`✎`. Group keeps plain click-to-edit, since it never renders a link.
+
+The editor itself is an input in the layer, positioned over the compiled cell, whose own text is
+made transparent by `data-l4-editing` while it is open — the input cannot be placed inside the cell.
+
+### I-L4-07 — Toasts follow the mock's reply toast
+
+**Serves:** BEHAVIOUR §7. **Screenshot:** `07-toast.png`.
+
+The mock has one toast, the bus reply (`template.dc.html:769`), and it belongs to L6. The registry
+needs its own stack: pending never auto-dismisses, ok goes at 3 s, err at 6 s, a click dismisses.
+Ours reuses that toast's geometry and glass exactly — 340px, 24px from the bottom right, 12px
+radius, the same blur and shadow — stacked upwards, with a status dot in `good` / `warn` / `bad`.
+
+### I-L4-08 — What is deliberately not carried over
+
+- **The Overview / Details tabs.** One table now (ledger D12); `fleetTab` is still read so an old
+  value cannot break anything, and the persisted `fleetSort` keeps using its `overview` slot.
+- **Sorting by host, label, role and note.** Those columns left the table, so their headers are gone;
+  the accessors still exist and the persisted key is honoured if an older `fleetSort` names one.
+- **The status tone map.** BEHAVIOUR §6 asks for `hidden` = dim, but the mock's own `stTone`
+  (`logic.js`, registry block) already collapses everything that is not `active` or `kill-requested`
+  onto the neutral chip with an `ink35` dot, and changing it would move the fixture-mode gate. Kept
+  as the mock has it: `active` good, `kill-requested` warn, `done` / `killed` / `hidden` neutral.

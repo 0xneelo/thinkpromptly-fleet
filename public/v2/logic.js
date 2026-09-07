@@ -379,31 +379,42 @@ class AppLogic extends Sub {
     const regScreen = (FD.screens && FD.screens.registry) || null;
     if (regScreen && regScreen.setTokens) regScreen.setTokens(t, this);
     if (screen === 'registry' && regScreen && regScreen.start) regScreen.start();
-    const l4 = FD.fixture.l4 || null;
-    const regData = l4 ? l4.rows : FD.fixture.regData;
-    const q = l4 ? String(l4.q || '').toLowerCase() : (this.state.q || '').toLowerCase();
-    const filtered = l4 ? regData : regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
+    // One throw anywhere in renderVals blanks every screen, so this block never
+    // leaves one: it keeps the last values it rendered and logs once (oracle
+    // audit of the shim, 2026-09-08).
     const sel = this.state.sel || {};
-    const regSel = (r) => (l4 ? !!r.sel : !!sel[r.id]);
-    const selCount = l4 ? l4.selLive + l4.selGone : filtered.filter((r) => sel[r.id]).length;
-    const stTone = (st) => st === 'active' ? 'good' : st === 'kill-requested' ? 'warn' : 'dim';
-    const regRows = filtered.map((r) => {
-      const tone = stTone(r.st);
-      const dim = r.gone;
-      return {
-        s: r.s, g: r.g, t: r.tk, st: r.st, active: r.active, msg: r.msg, seen: r.seen, sel: regSel(r),
-        toggle: () => {
-          if (l4) return regScreen.toggleRow(r.id);
-          const s2 = { ...(this.state.sel || {}) }; s2[r.id] = !s2[r.id]; this.setState({ sel: s2 });
-        },
-        checkStyle: check(regSel(r)),
-        nameStyle: { ...goneName, color: dim ? t.ink45 : t.ink },
-        cellStyle: { fontSize: '12.5px', color: dim ? t.ink35 : t.ink60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-        taskStyle: r.tk === '—' ? { fontSize: '12.5px', color: t.ink35 } : { fontSize: '12.5px', color: dim ? t.ink45 : t.ink, textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationColor: t.ink35, whiteSpace: 'nowrap', cursor: 'pointer' },
-        pillStyle: chipTone(tone === 'dim' ? 'neutral' : tone),
-        stDotStyle: dot(tone === 'good' ? t.good : tone === 'warn' ? t.warn : t.ink35),
-      };
-    });
+    let l4 = null, filtered = [], selCount = 0, regRows = [];
+    try {
+      l4 = FD.fixture.l4 || null;
+      const regData = (l4 ? l4.rows : FD.fixture.regData) || [];
+      const q = l4 ? String(l4.q || '').toLowerCase() : (this.state.q || '').toLowerCase();
+      filtered = l4 ? regData : regData.filter((r) => !q || (r.s + ' ' + r.g + ' ' + r.tk).toLowerCase().includes(q));
+      const regSel = (r) => (l4 ? !!r.sel : !!sel[r.id]);
+      selCount = l4 ? l4.selLive + l4.selGone : filtered.filter((r) => sel[r.id]).length;
+      const stTone = (st) => st === 'active' ? 'good' : st === 'kill-requested' ? 'warn' : 'dim';
+      regRows = filtered.map((r) => {
+        const tone = stTone(r.st);
+        const dim = r.gone;
+        return {
+          s: r.s, g: r.g, t: r.tk, st: r.st, active: r.active, msg: r.msg, seen: r.seen, sel: regSel(r),
+          toggle: () => {
+            if (l4) return regScreen.toggleRow(r.id);
+            const s2 = { ...(this.state.sel || {}) }; s2[r.id] = !s2[r.id]; this.setState({ sel: s2 });
+          },
+          checkStyle: check(regSel(r)),
+          nameStyle: { ...goneName, color: dim ? t.ink45 : t.ink },
+          cellStyle: { fontSize: '12.5px', color: dim ? t.ink35 : t.ink60, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
+          taskStyle: r.tk === '—' ? { fontSize: '12.5px', color: t.ink35 } : { fontSize: '12.5px', color: dim ? t.ink45 : t.ink, textDecoration: 'underline', textUnderlineOffset: '3px', textDecorationColor: t.ink35, whiteSpace: 'nowrap', cursor: 'pointer' },
+          pillStyle: chipTone(tone === 'dim' ? 'neutral' : tone),
+          stDotStyle: dot(tone === 'good' ? t.good : tone === 'warn' ? t.warn : t.ink35),
+        };
+      });
+      this.__l4Last = { l4, filtered, selCount, regRows };
+    } catch (err) {
+      if (!this.__l4Failed) { this.__l4Failed = true; console.error('registry render failed', err); }
+      const last = this.__l4Last;
+      if (last) { l4 = last.l4; filtered = last.filtered; selCount = last.selCount; regRows = last.regRows; }
+    }
     // Sessions sidebar
     const gbSessions = ['FD-deck11-boardroot', 'FD-deck25-gate', 'FD-deck26-launcher', 'FD-deck27-notifycron', 'FD-desktop-sessions-p…', 'FD-gb-home', 'FD-gk-l1-ledger', 'FD-gk-l2-sessionkind', 'FD-gk-l3-skill', 'FD-gk-l4-sweep', 'FD-gk-l5-hooks', 'FD-gk-l6-goalspage', 'FD-rhoda-machines'];
     // Org cards

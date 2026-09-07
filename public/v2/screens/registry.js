@@ -19,11 +19,27 @@
 // A_clearSel, A_toggleAll, A_goBus and per-row r.toggle). The filter selects, the
 // bulk Kill/Tag kill/Hide buttons, row "Show" and the row "⋯" button compile with
 // no onClick at all, and template.dc.html is not ours to edit. Everything behind
-// those controls is therefore attached here by progressive enhancement: one
-// delegated listener on the document, plus a decoration pass that stamps its own
-// data-l4-* hooks onto the mock's elements and re-applies itself after a render.
-// No markup is hand-typed into the template, and in fixture mode not one of these
-// listeners is installed.
+// them is attached here by progressive enhancement, under three rules the oracle
+// audit of the shim made binding (DESIGN-35, 2026-09-08):
+//
+//   1. Never mount foreign DOM inside a compiled node. syncChildren() owns those
+//      children and drops anything it did not render. So every improvised control
+//      — the extra filters, the bulk Forget, the ⋯ menu, the details panel, the
+//      cell editor, the toasts — lives in #fd-l4-layer, our own element outside
+//      #dc-root, anchored to a compiled node's rectangle. What a compiled node
+//      gets from us is an attribute, a property or a listener: never a child.
+//      Text the mock cannot show (the sort arrow, the bulk counts) is painted by
+//      a ::after rule in our own stylesheet, off a data-l4-* attribute.
+//   2. Validate before FD.setData, and never let this screen throw inside
+//      renderVals — one throw there blanks every screen, so rows are checked here
+//      and the seam in logic.js keeps the last good values.
+//   3. sc-for rows are positional, never stable identities. No per-row state is
+//      kept in the DOM: a click resolves its row by the row element's index among
+//      its siblings, recomputed at click time, and the selection is keyed by
+//      host\0name in this module.
+//
+// In fixture mode not one of these listeners is installed and not one node is
+// created.
 (function (global) {
   'use strict';
 
@@ -172,6 +188,12 @@
       row.name = s.name;
       row.live = !!s.live;
       row.label = s.label || '';
+      // The adapter renames these to g/tk and em-dashes an empty one, so the raw
+      // values are carried too: an editor opened on the em-dash must start empty,
+      // and one opened on a real group must start with that group — without this
+      // a blur with no typing would POST '' and wipe it.
+      row.group = s.group || '';
+      row.task = s.task || '';
       row.role = s.role || '';
       row.worker = s.worker || '';
       row.note = s.note || '';
@@ -214,8 +236,31 @@
 
   // Hands the whole registry payload to the renderer. logic.js reads
   // FD.fixture.l4 fresh inside renderVals(), so the seam stays live.
+  // Audit rule 2: the renderer must never meet a row that is missing a field it
+  // binds. A row that cannot be made safe is dropped rather than rendered, and the
+  // drop is counted so REPORT.md can say so.
+  var STRINGS = ['id', 's', 'g', 'tk', 'st', 'active', 'msg', 'seen', 'host', 'name'];
+  function validate(rows) {
+    var kept = [];
+    rows.forEach(function (row) {
+      if (!row || typeof row !== 'object') return;
+      for (var i = 0; i < STRINGS.length; i++) {
+        var k = STRINGS[i];
+        if (row[k] === null || row[k] === undefined) row[k] = '';
+        else if (typeof row[k] !== 'string') row[k] = String(row[k]);
+      }
+      if (!row.id) return;                       // nothing can address it
+      row.gone = !row.live;
+      row.sel = !!row.sel;
+      kept.push(row);
+    });
+    state.dropped = rows.length - kept.length;
+    return kept;
+  }
+
   function publish() {
     recompute();
+    state.view = validate(state.view);
     var live = 0, gone = 0;
     state.view.forEach(function (r) { if (r.sel) { if (r.live) live++; else gone++; } });
     FD.setData('l4', {
@@ -450,9 +495,166 @@
     }
   };
 
+
+  // ------------------------------------------------------------ overlay layer
+  // Audit rule 1: everything this screen draws lives in #fd-l4-layer, outside
+  // #dc-root, anchored to the rectangle of the compiled node it belongs to.
+  // Compiled nodes only ever receive an attribute, a property or a listener.
+  var layerEl = null;
+  var styleEl = null;
+  var anchored = [];   // [{ el, get: () => Element|null, place: (el, box) => void }]
+
+  function layer() {
+    if (layerEl && layerEl.isConnected) return layerEl;
+    layerEl = doc.createElement('div');
+    layerEl.id = 'fd-l4-layer';
+    layerEl.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0;z-index:60;';
+    doc.body.appendChild(layerEl);
+    return layerEl;
+  }
+
+  // The mock has no slot for a sort arrow or a count inside a bulk button, and we
+  // may not add a text node to a compiled element — so both are drawn by a ::after
+  // rule off an attribute. The sheet follows the theme because the tokens do.
+  function stylesheet() {
+    var t = state.t || {};
+    if (!styleEl || !styleEl.isConnected) {
+      styleEl = doc.createElement('style');
+      styleEl.id = 'fd-l4-style';
+      doc.head.appendChild(styleEl);
+    }
+    var css = [
+      '[data-l4-sort]{cursor:pointer}',
+      '[data-l4-dir="asc"]::after{content:" \\0025B2"}',
+      '[data-l4-dir="desc"]::after{content:" \\0025BC"}',
+      '[data-l4-count]::after{content:" " attr(data-l4-count)}',
+      '[data-l4-off="1"]{opacity:0.45;pointer-events:none}',
+      '[data-l4-editing="1"]{color:transparent!important}',
+      '[data-l4-hidden="1"]{visibility:hidden!important}',
+      '[data-l4-age="amber"]{color:' + (t.warn || 'inherit') + '!important}',
+      '[data-l4-age="red"]{color:' + (t.bad || 'inherit') + '!important}'
+    ].join('\n');
+    if (styleEl.textContent !== css) styleEl.textContent = css;
+  }
+
+  function anchor(el, get, place) {
+    anchored.push({ el: el, get: get, place: place });
+    position();
+  }
+
+  // An overlay whose anchor has left the table takes itself down with it: rows are
+  // positional, so a filter or a reload can dissolve the thing it was pointing at.
+  function position() {
+    anchored = anchored.filter(function (a) {
+      if (!a.el.isConnected) return false;
+      var target = a.get();
+      if (!target) { a.el.remove(); return false; }
+      a.place(a.el, target.getBoundingClientRect());
+      return true;
+    });
+  }
+
+  var over = function (el, box) {
+    el.style.left = box.left + 'px';
+    el.style.top = box.top + 'px';
+    el.style.width = box.width + 'px';
+    el.style.height = box.height + 'px';
+  };
+
+  // ------------------------------------------------------- compiled-node lookup
+  var container = function () { return doc.querySelector('[data-screen-label="Registry"]'); };
+
+  function tableInner() {
+    var root = container();
+    var panel = root && root.lastElementChild;
+    return (panel && panel.firstElementChild) || null;
+  }
+
+  // Audit rule 3: a row is found by its position, recomputed now — never by a
+  // stamp left in the DOM by an earlier render.
+  function rowIndex(id) {
+    for (var i = 0; i < state.view.length; i++) if (state.view[i].id === id) return i;
+    return -1;
+  }
+
+  function rowEl(id) {
+    var inner = tableInner();
+    var i = rowIndex(id);
+    return inner && i >= 0 ? inner.children[i + 1] || null : null;   // child 0 is the header
+  }
+
+  function cellEl(id, index) {
+    var el = rowEl(id);
+    return el ? el.children[index] || null : null;
+  }
+
+  function rowById(id) {
+    var i = rowIndex(id);
+    return i < 0 ? null : state.view[i];
+  }
+
+  function rowAt(el) {
+    var inner = tableInner();
+    if (!inner || !el) return null;
+    var i = Array.prototype.indexOf.call(inner.children, el) - 1;
+    return i >= 0 ? state.view[i] || null : null;
+  }
+
+  // -------------------------------------------------------------------- toasts
+  // BEHAVIOUR §7: pending never auto-dismisses, ok goes at 3 s, err at 6 s, a
+  // click dismisses. Styled from the mock's own reply toast (template.dc.html:769).
+  var toastHost = null;
+
+  function toastLayer() {
+    if (toastHost && toastHost.isConnected) return toastHost;
+    toastHost = doc.createElement('div');
+    toastHost.setAttribute('data-l4-toasts', '1');
+    toastHost.style.cssText = 'position:fixed;right:24px;bottom:24px;width:340px;' +
+      'display:flex;flex-direction:column-reverse;gap:8px;';
+    layer().appendChild(toastHost);
+    return toastHost;
+  }
+
+  function toast(msg, kind) {
+    var t = state.t || {};
+    var el = doc.createElement('div');
+    var dot = doc.createElement('span');
+    var text = doc.createElement('span');
+    var timer;
+    el.appendChild(dot);
+    el.appendChild(text);
+    el.style.cssText = 'border-radius:12px;border:1px solid ' + (t.line || 'rgba(255,255,255,0.13)') + ';' +
+      'background:' + (t.panel || 'rgba(20,20,20,0.92)') + ';backdrop-filter:blur(28px) saturate(150%);' +
+      '-webkit-backdrop-filter:blur(28px) saturate(150%);box-shadow:0 12px 40px rgba(0,0,0,0.3);' +
+      'padding:12px 14px;display:flex;align-items:center;gap:8px;cursor:pointer;pointer-events:auto;';
+    dot.style.cssText = 'width:6px;height:6px;border-radius:50%;flex-shrink:0;';
+    text.style.cssText = 'font-size:12.5px;line-height:1.5;color:' + (t.ink || '#fff') + ';overflow-wrap:anywhere;';
+    el.onclick = function () { el.remove(); };   // an error toast can be cleared before its 6 s are up
+    toastLayer().appendChild(el);
+    var set = function (message, k) {
+      text.textContent = message;
+      dot.style.background = k === 'err' ? (t.bad || '#e5484d') : k === 'ok' ? (t.good || '#30a46c') : (t.warn || '#f5a623');
+      clearTimeout(timer);
+      if (k !== 'pending') timer = setTimeout(function () { el.remove(); }, k === 'err' ? 6000 : 3000);
+    };
+    set(msg, kind);
+    return set;
+  }
+
   // -------------------------------------------------------------------- edits
   // BEHAVIOUR §1: click a cell → an input with the current value; blur or Enter
   // saves, Escape discards without a POST, and either way the list reloads.
+  // The input is ours and sits in the layer, over the compiled cell, whose own
+  // text is hidden by the [data-l4-editing] rule for as long as it is open.
+  var editorEl = null;
+
+  function closeEditor() {
+    if (editorEl) { editorEl.remove(); editorEl = null; }
+    var marked = doc.querySelector('[data-l4-editing="1"]');
+    if (marked) marked.removeAttribute('data-l4-editing');
+    state.editing = null;
+  }
+
   function saveEdit(row, field, value) {
     var body = { host: row.host, name: row.name };
     body[field] = value;
@@ -464,103 +666,123 @@
     });
   }
 
-  function openEditor(cell, row, field) {
-    if (!cell || cell.querySelector('input')) return;
+  function editorInput(value) {
     var t = state.t || {};
-    var original = Array.prototype.slice.call(cell.childNodes);
     var input = doc.createElement('input');
-    input.value = row[field] === '—' ? '' : (row[field] || '');
-    input.setAttribute('data-l4-edit', field);
-    input.style.cssText = 'width:100%;box-sizing:border-box;border-radius:6px;border:1px solid ' +
-      (t.line || 'rgba(255,255,255,0.13)') + ';background:' + (t.inputBg || 'rgba(255,255,255,0.05)') +
-      ';color:' + (t.ink || '#fff') + ';padding:3px 7px;font-size:12.5px;';
-    state.editing = { id: row.id, field: field };
-    cell.replaceChildren(input);
-    input.focus();
-    input.select();
+    input.value = value;
+    input.style.cssText = 'position:fixed;box-sizing:border-box;border-radius:6px;border:1px solid ' +
+      (t.ink45 || 'rgba(255,255,255,0.45)') + ';background:' + (t.inputBg || 'rgba(20,20,20,0.95)') +
+      ';color:' + (t.ink || '#fff') + ';padding:2px 7px;font-size:12.5px;pointer-events:auto;';
+    return input;
+  }
 
+  // `commit` receives the typed value; `discard` restores whatever was on screen.
+  function wireEditor(input, commit, discard) {
     var done = false;   // Enter blurs, so without this the save would fire twice
-    var restore = function () {
-      if (input.isConnected) cell.replaceChildren.apply(cell, original);
-      state.editing = null;
-    };
     input.addEventListener('blur', function () {
       if (done) return;
       done = true;
       var value = input.value;
-      restore();
-      saveEdit(row, field, value);
+      closeEditor();
+      commit(value);
     });
     input.addEventListener('keydown', function (e) {
       if (e.key === 'Enter') { input.blur(); return; }
       if (e.key === 'Escape') {
         done = true;
-        restore();
-        loadSessions();
+        closeEditor();
+        discard();
       }
+      e.stopPropagation();
     });
     input.addEventListener('click', function (e) { e.stopPropagation(); });
   }
 
-  // Finds the cell an editable field lives in: group and task are columns, label
-  // and note only exist in the improvised details row (ruling O3), so editing
-  // one of those opens the details row first.
-  function editField(row, field) {
-    var rowEl = doc.querySelector('[data-l4-row="' + cssEscape(row.id) + '"]');
-    if (!rowEl) return;
-    if (field === 'group' || field === 'task') {
-      openEditor(rowEl.children[field === 'group' ? 2 : 3], row, field);
-      return;
-    }
-    state.expanded[row.id] = true;
-    publish();
-    // The details row is written by the next decoration pass.
-    global.requestAnimationFrame(function () {
-      decorate();
-      var panel = doc.querySelector('[data-l4-details="' + cssEscape(row.id) + '"]');
-      var cell = panel && panel.querySelector('[data-l4-field="' + field + '"]');
-      if (cell) openEditor(cell, row, field);
-    });
-  }
+  // Group and Task are columns of the mock's own table; label and note only exist
+  // in the improvised details panel (ruling O3), which draws its own editor.
+  var COLUMN_OF = { group: 2, task: 3 };
 
-  function cssEscape(v) { return String(v).replace(/["\\]/g, '\\$&'); }
+  function openEditor(row, field) {
+    closeEditor();
+    var index = COLUMN_OF[field];
+    if (index === undefined) { editDetail(row, field); return; }
+    var cell = cellEl(row.id, index);
+    if (!cell) return;
+    var input = editorInput(row[field] || '');
+    cell.setAttribute('data-l4-editing', '1');
+    state.editing = { id: row.id, field: field };
+    editorEl = input;
+    layer().appendChild(input);
+    anchor(input, function () { return cellEl(row.id, index); }, function (el, box) {
+      el.style.left = box.left + 'px';
+      el.style.top = (box.top - 2) + 'px';
+      el.style.width = box.width + 'px';
+    });
+    input.focus();
+    input.select();
+    wireEditor(input, function (value) { saveEdit(row, field, value); }, function () { loadSessions(); });
+  }
 
   // ------------------------------------------------------------------ the menu
   // Improvised (I-L4-04): the mock's row actions are "Show · Message · ⋯" and its
   // ⋯ carries the title "Kill · Tag kill · Hide". Everything the old app showed as
   // a row button lives in this menu, plus the four inline edits (ruling O3).
+  var menuEl = null;
+
   function closeMenu() {
-    var open = doc.querySelector('[data-l4-extra="menu"]');
-    if (open) open.remove();
+    if (menuEl) { menuEl.remove(); menuEl = null; }
   }
 
-  function openMenu(button, row) {
+  function panelStyle(t) {
+    return 'position:fixed;border-radius:12px;border:1px solid ' + (t.line || 'rgba(255,255,255,0.13)') +
+      ';background:' + (t.panel || 'rgba(20,20,20,0.95)') + ';backdrop-filter:blur(28px) saturate(150%);' +
+      '-webkit-backdrop-filter:blur(28px) saturate(150%);box-shadow:0 12px 40px rgba(0,0,0,0.3);pointer-events:auto;';
+  }
+
+  function menuButton(t, item, busy) {
+    var b = doc.createElement('button');
+    b.type = 'button';
+    b.textContent = item.label;
+    b.setAttribute('data-l4-menu', item.id);
+    if (item.title) b.title = item.title;
+    if (busy) b.setAttribute('data-l4-off', '1');
+    b.style.cssText = 'text-align:left;border:none;background:transparent;color:' +
+      (t.ink75 || 'rgba(255,255,255,0.75)') + ';padding:6px 10px;font-size:12.5px;border-radius:8px;' +
+      'cursor:pointer;white-space:nowrap;width:100%;';
+    b.addEventListener('mouseenter', function () { b.style.background = t.hoverBg || 'rgba(255,255,255,0.07)'; });
+    b.addEventListener('mouseleave', function () { b.style.background = 'transparent'; });
+    b.addEventListener('click', function (e) {
+      e.stopPropagation();
+      closeMenu();
+      item.run();
+    });
+    return b;
+  }
+
+  function openMenu(row) {
     closeMenu();
     var t = state.t || {};
     var menu = doc.createElement('div');
     menu.setAttribute('data-l4-extra', 'menu');
     menu.setAttribute('role', 'menu');
-    menu.style.cssText = 'position:fixed;z-index:70;min-width:186px;border-radius:12px;border:1px solid ' +
-      (t.line || 'rgba(255,255,255,0.13)') + ';background:' + (t.panel || 'rgba(20,20,20,0.92)') +
-      ';backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);' +
-      'box-shadow:0 12px 40px rgba(0,0,0,0.3);padding:6px;display:flex;flex-direction:column;gap:2px;';
+    menu.style.cssText = panelStyle(t) + 'min-width:186px;padding:6px;display:flex;flex-direction:column;gap:2px;';
 
     var items = [
-      { label: row.expanded ? 'Hide details' : 'Details', run: function () { toggleExpanded(row); } },
+      { id: 'details', label: state.expanded[row.id] ? 'Hide details' : 'Details', run: function () { toggleDetails(row); } },
       { sep: true },
-      { label: 'Edit label', run: function () { editField(row, 'label'); } },
-      { label: 'Edit group', run: function () { editField(row, 'group'); } },
-      { label: 'Edit task', run: function () { editField(row, 'task'); } },
-      { label: 'Edit note', run: function () { editField(row, 'note'); } },
+      { id: 'edit-label', label: 'Edit label', run: function () { openEditor(row, 'label'); } },
+      { id: 'edit-group', label: 'Edit group', run: function () { openEditor(row, 'group'); } },
+      { id: 'edit-task', label: 'Edit task', run: function () { openEditor(row, 'task'); } },
+      { id: 'edit-note', label: 'Edit note', run: function () { openEditor(row, 'note'); } },
       { sep: true },
-      { label: 'Kill', run: function () { actions.kill(row); } },
-      { label: row.status === 'kill-requested' ? 'Untag' : 'Tag kill',
+      { id: 'kill', label: 'Kill', run: function () { actions.kill(row); } },
+      { id: 'tag', label: row.status === 'kill-requested' ? 'Untag' : 'Tag kill',
         title: row.status === 'kill-requested' ? 'Cancel the kill request' : 'Mark kill-requested — nothing is killed',
         run: function () { actions.tag(row); } },
-      { label: row.status === 'hidden' ? 'Unhide' : 'Hide', run: function () { actions.hide(row); } }
+      { id: 'hide', label: row.status === 'hidden' ? 'Unhide' : 'Hide', run: function () { actions.hide(row); } }
     ];
     // BEHAVIOUR §5: Forget is a gone-row action only.
-    if (!row.live) items.push({ label: 'Forget', title: 'Drop the registry row', run: function () { actions.forget(row); } });
+    if (!row.live) items.push({ id: 'forget', label: 'Forget', title: 'Drop the registry row', run: function () { actions.forget(row); } });
 
     items.forEach(function (item) {
       if (item.sep) {
@@ -569,229 +791,51 @@
         menu.appendChild(hr);
         return;
       }
-      var b = doc.createElement('button');
-      b.type = 'button';
-      b.textContent = item.label;
-      if (item.title) b.title = item.title;
-      b.disabled = !!row.busy;
-      b.style.cssText = 'text-align:left;border:none;background:transparent;color:' + (t.ink75 || 'rgba(255,255,255,0.75)') +
-        ';padding:6px 10px;font-size:12.5px;border-radius:8px;cursor:pointer;white-space:nowrap;';
-      b.addEventListener('mouseenter', function () { b.style.background = t.hoverBg || 'rgba(255,255,255,0.07)'; });
-      b.addEventListener('mouseleave', function () { b.style.background = 'transparent'; });
-      b.addEventListener('click', function (e) {
-        e.stopPropagation();
-        closeMenu();
-        item.run();
-      });
-      menu.appendChild(b);
+      menu.appendChild(menuButton(t, item, row.busy));
     });
 
-    doc.body.appendChild(menu);
-    var box = button.getBoundingClientRect();
-    var height = menu.offsetHeight;
-    var top = box.bottom + 6;
-    if (top + height > global.innerHeight - 8) top = Math.max(8, box.top - height - 6);
-    menu.style.top = top + 'px';
-    menu.style.left = Math.max(8, Math.min(box.right - menu.offsetWidth, global.innerWidth - menu.offsetWidth - 8)) + 'px';
-  }
-
-  function toggleExpanded(row) {
-    if (state.expanded[row.id]) delete state.expanded[row.id];
-    else state.expanded[row.id] = true;
-    publish();
-    global.requestAnimationFrame(decorate);
-  }
-
-  // --------------------------------------------------------------- decoration
-  // Everything below only ever runs in live mode. It stamps data-l4-* hooks onto
-  // the mock's own elements, adds the controls the mock has no slot for, and is
-  // idempotent so it can run again after every render.
-  var container = function () { return doc.querySelector('[data-screen-label="Registry"]'); };
-
-  function decorate() {
-    var root = container();
-    if (!root || !FD.fixture.l4) { closeMenu(); return; }
-    var t = state.t || {};
-    var filterRow = root.firstElementChild;
-    if (filterRow) decorateFilters(filterRow, t);
-    decorateBulk(root, t);
-    decorateTable(root, t);
-  }
-
-  function decorateFilters(filterRow, t) {
-    var selects = filterRow.querySelectorAll('select');
-    if (selects.length < 3) return;
-    var order = ['live', 'status', 'msg'];
-    // Improvised (I-L4-01): the mock's status menu stops at three of the five
-    // states the server accepts, and its age menu at two of the six the old
-    // filter had. The missing options are appended in the mock's own <option>
-    // style so no state becomes unreachable.
-    var OPTIONS = {
-      live: [['', 'live + gone'], ['live', 'live only'], ['gone', 'gone only']],
-      status: [['', 'any status']].concat(STATUSES.map(function (s) { return [s, s]; })),
-      msg: AGE_KEYS.map(function (k) { return [k, k ? 'older than ' + k : 'last msg: any']; }),
-      active: AGE_KEYS.map(function (k) { return [k, k ? 'older than ' + k : 'active: any']; })
-    };
-
-    order.forEach(function (name, i) { fillSelect(selects[i], name, OPTIONS[name]); });
-
-    // Improvised (I-L4-02): the mock's filter row has no active-age select, so
-    // one is added after the last-msg select, cloning its style verbatim.
-    var extra = filterRow.querySelector('[data-l4-filter="active"]');
-    if (!extra) {
-      extra = doc.createElement('select');
-      extra.setAttribute('data-l4-extra', 'filter');
-      extra.style.cssText = selects[2].style.cssText;
-      selects[2].parentNode.insertBefore(extra, selects[2].nextSibling);
-      fillSelect(extra, 'active', OPTIONS.active);
-    } else if (extra.style.cssText !== selects[2].style.cssText) {
-      extra.style.cssText = selects[2].style.cssText;   // follow the theme
-    }
-    extra.value = state.filter.active;
-  }
-
-  function fillSelect(select, name, options) {
-    if (!select) return;
-    if (select.getAttribute('data-l4-filter') !== name) {
-      select.setAttribute('data-l4-filter', name);
-      select.addEventListener('change', function () { registry.setFilter(name, select.value); });
-    }
-    if (select.options.length !== options.length) {
-      select.replaceChildren();
-      options.forEach(function (pair) {
-        var o = doc.createElement('option');
-        o.value = pair[0];
-        o.textContent = pair[1];
-        select.appendChild(o);
-      });
-    } else {
-      // The renderer rewrites option text on a theme flip; keep the values glued on.
-      for (var i = 0; i < options.length; i++) select.options[i].value = options[i][0];
-    }
-    if (select.value !== state.filter[name]) select.value = state.filter[name];
-  }
-
-  function decorateBulk(root, t) {
-    var bar = null;
-    Array.prototype.forEach.call(root.children, function (child) {
-      var first = child.firstElementChild;
-      if (first && first.tagName === 'SPAN' && /\bselected$/.test(first.textContent || '')) bar = child;
-    });
-    if (!bar) return;
-    var buttons = bar.querySelectorAll('button');
-    var names = ['kill', 'tag', 'hide'];
-    for (var i = 0; i < names.length && i < buttons.length; i++) buttons[i].setAttribute('data-l4-bulk', names[i]);
-
-    var payload = FD.fixture.l4 || {};
-    // BEHAVIOUR §4: Kill applies to live ticked rows, Forget to gone ones. The
-    // mock's bar has no Forget, so it appears only while gone rows are ticked
-    // (improvised, I-L4-03).
-    var forget = bar.querySelector('[data-l4-bulk="forget"]');
-    if (payload.selGone) {
-      if (!forget) {
-        forget = doc.createElement('button');
-        forget.setAttribute('data-l4-bulk', 'forget');
-        forget.setAttribute('data-l4-extra', 'bulk');
-        forget.type = 'button';
-        forget.style.cssText = buttons[0] ? buttons[0].style.cssText : '';
-        buttons[names.length - 1].parentNode.insertBefore(forget, buttons[names.length - 1].nextSibling);
-      }
-      forget.textContent = 'Forget ' + payload.selGone + ' gone';
-      if (buttons[0] && forget.style.cssText !== buttons[0].style.cssText) forget.style.cssText = buttons[0].style.cssText;
-    } else if (forget) {
-      forget.remove();
-    }
-    // BEHAVIOUR §4: Kill is disabled at 0 live, and its label counts the rows.
-    if (buttons[0]) {
-      buttons[0].textContent = 'Kill ' + payload.selLive + ' live';
-      buttons[0].disabled = !payload.selLive || state.bulkBusy;
-      buttons[0].style.opacity = buttons[0].disabled ? '0.45' : '';
-    }
-    for (var j = 1; j < names.length && j < buttons.length; j++) {
-      buttons[j].disabled = state.bulkBusy;
-      buttons[j].style.opacity = state.bulkBusy ? '0.45' : '';
-    }
-    void t;
-  }
-
-  function decorateTable(root, t) {
-    var panel = root.lastElementChild;
-    var inner = panel && panel.firstElementChild;
-    var head = inner && inner.firstElementChild;
-    if (!head) return;
-
-    // Header: the seven sortable columns, plus the ▲/▼ suffix BEHAVIOUR §3 asks
-    // for. The template's labels are static text, so the marker is appended here.
-    var labels = head.querySelectorAll('span');
-    HEAD_KEYS.forEach(function (k, i) {
-      var span = labels[i];
-      if (!span) return;
-      if (span.getAttribute('data-l4-sort') !== k) {
-        span.setAttribute('data-l4-sort', k);
-        span.style.cursor = 'pointer';
-        span.title = 'Sort by ' + span.textContent.replace(/ [▲▼]$/, '');
-      }
-      var base = span.textContent.replace(/ [▲▼]$/, '');
-      var want = base + (state.sort && state.sort.key === k ? (state.sort.dir === 'desc' ? ' ▼' : ' ▲') : '');
-      if (span.textContent !== want) span.textContent = want;
-    });
-
-    // Rows: the mock's own row divs, in the order the payload published them.
-    var rowEls = Array.prototype.filter.call(inner.children, function (el, i) {
-      return i > 0 && !el.hasAttribute('data-l4-extra');
-    });
-    rowEls.forEach(function (el, i) {
-      var row = state.view[i];
-      if (!row) return;
-      el.setAttribute('data-l4-row', row.id);
-      var acts = el.lastElementChild;
-      var buttons = acts ? acts.querySelectorAll('button') : [];
-      var names = ['show', 'message', 'menu'];
-      for (var b = 0; b < names.length && b < buttons.length; b++) {
-        buttons[b].setAttribute('data-l4-act', names[b]);
-        // BEHAVIOUR §5: the row's buttons stay disabled until the re-fetch lands.
-        buttons[b].disabled = !!row.busy;
-        buttons[b].style.opacity = row.busy ? '0.45' : '';
-      }
-      // Pane activity ages into amber past an hour and red past a day. One shared
-      // cellStyle is bound to four columns, so the tone is painted per cell here.
-      tone(el.children[5], row.activeTone, t);
-      tone(el.children[6], row.msgTone, t);
-      // Group and Task keep today's click-to-edit (BEHAVIOUR §1).
-      if (el.children[2]) el.children[2].style.cursor = 'text';
-      if (el.children[3] && row.tk === '—') el.children[3].style.cursor = 'text';
-      details(inner, el, row, t);
-    });
-    // Drop details panels whose row has left the table.
-    Array.prototype.slice.call(inner.querySelectorAll('[data-l4-details]')).forEach(function (panelEl) {
-      if (!state.expanded[panelEl.getAttribute('data-l4-details')]) panelEl.remove();
+    menuEl = menu;
+    layer().appendChild(menu);
+    anchor(menu, function () { return cellEl(row.id, 8); }, function (el, box) {
+      var height = el.offsetHeight;
+      var top = box.bottom + 6;
+      if (top + height > global.innerHeight - 8) top = Math.max(8, box.top - height - 6);
+      el.style.top = top + 'px';
+      el.style.left = Math.max(8, Math.min(box.right - el.offsetWidth, global.innerWidth - el.offsetWidth - 8)) + 'px';
     });
   }
 
-  function tone(cell, kind, t) {
-    if (!cell) return;
-    if (!kind) { cell.style.removeProperty('color'); return; }
-    cell.style.color = kind === 'red' ? (t.bad || '#e5484d') : (t.warn || '#f5a623');
-  }
+  // ---------------------------------------------------------- details panel
+  // Improvised (I-L4-05): ruling O3 puts the old Details tab's fields in an
+  // expandable row. It is drawn in the layer, anchored under its row, in the
+  // panel's own idiom, and carries the two editable fields that lost their column
+  // plus the read-only host and role/worker.
+  var detailEls = {};   // row id -> element
 
-  // Improvised (I-L4-05): ruling O3 puts the Details-tab fields in an expandable
-  // row. It is inserted directly under its row, in the panel's own idiom, and
-  // carries the two fields that have no column of their own plus the read-only
-  // host and role/worker.
-  function details(inner, rowEl, row, t) {
-    var existing = rowEl.nextElementSibling;
-    if (existing && existing.getAttribute('data-l4-details') !== row.id) existing = null;
-    if (!row.expanded) {
-      if (existing) existing.remove();
+  function closeDetails(id) {
+    if (id === undefined) {
+      Object.keys(detailEls).forEach(function (k) { detailEls[k].remove(); });
+      detailEls = {};
+      state.expanded = {};
       return;
     }
-    if (existing) return;
+    if (detailEls[id]) { detailEls[id].remove(); delete detailEls[id]; }
+    delete state.expanded[id];
+  }
+
+  function toggleDetails(row) {
+    if (state.expanded[row.id]) closeDetails(row.id);
+    else { state.expanded[row.id] = true; drawDetails(row); }
+  }
+
+  function drawDetails(row) {
+    if (detailEls[row.id]) detailEls[row.id].remove();
+    var t = state.t || {};
     var panel = doc.createElement('div');
     panel.setAttribute('data-l4-extra', 'details');
     panel.setAttribute('data-l4-details', row.id);
-    panel.style.cssText = 'display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:10px 16px 14px 64px;' +
-      'border-bottom:1px solid ' + (t.lineSoft || 'rgba(255,255,255,0.07)') + ';background:' +
-      (t.panelHead || 'rgba(255,255,255,0.05)') + ';';
+    panel.style.cssText = panelStyle(t) + 'display:grid;grid-template-columns:repeat(4,1fr);gap:12px;' +
+      'padding:12px 16px;box-sizing:border-box;';
     [
       ['Host', row.host, null],
       ['Label', row.label || '—', 'label'],
@@ -806,13 +850,266 @@
         (t.ink45 || 'rgba(255,255,255,0.45)') + ';margin-bottom:4px;';
       v.textContent = field[1];
       v.style.cssText = 'font-size:12.5px;color:' + (t.ink75 || 'rgba(255,255,255,0.75)') +
-        ';overflow-wrap:anywhere;' + (field[2] ? 'cursor:text;' : '');
-      if (field[2]) v.setAttribute('data-l4-field', field[2]);
+        ';overflow-wrap:anywhere;min-height:19px;' + (field[2] ? 'cursor:text;' : '');
+      if (field[2]) {
+        v.setAttribute('data-l4-field', field[2]);
+        v.addEventListener('click', function (e) { e.stopPropagation(); editDetail(row, field[2]); });
+      }
       cell.appendChild(k);
       cell.appendChild(v);
       panel.appendChild(cell);
     });
-    inner.insertBefore(panel, rowEl.nextSibling);
+    detailEls[row.id] = panel;
+    layer().appendChild(panel);
+    anchor(panel, function () { return rowEl(row.id); }, function (el, box) {
+      el.style.left = box.left + 'px';
+      el.style.top = box.bottom + 'px';
+      el.style.width = box.width + 'px';
+    });
+  }
+
+  // Label and note are drawn by us, so their editor replaces our own node.
+  function editDetail(row, field) {
+    if (!detailEls[row.id]) { state.expanded[row.id] = true; drawDetails(row); }
+    var cell = detailEls[row.id] && detailEls[row.id].querySelector('[data-l4-field="' + field + '"]');
+    if (!cell) return;
+    closeEditor();
+    var input = editorInput(row[field] || '');
+    input.style.position = 'static';
+    input.style.width = '100%';
+    var previous = cell.textContent;
+    cell.replaceChildren(input);
+    state.editing = { id: row.id, field: field };
+    input.focus();
+    input.select();
+    wireEditor(input, function (value) {
+      cell.textContent = value || '—';
+      saveEdit(row, field, value);
+    }, function () {
+      cell.textContent = previous;
+      loadSessions();
+    });
+  }
+
+  // --------------------------------------------------------------- decoration
+  // Runs after every render. Idempotent, live mode only: it gives compiled nodes
+  // attributes, properties and listeners, and draws the rest in the layer.
+  function decorate() {
+    var root = container();
+    if (!root || !FD.fixture.l4) { closeMenu(); closeEditor(); return; }
+    stylesheet();
+    decorateFilters(root);
+    decorateBulk(root);
+    decorateTable(root);
+    position();
+  }
+
+  // The mock's status menu stops at three of the five states the server accepts
+  // and its age menu at two of the six the old filter had (I-L4-01). Options are
+  // children of a compiled <select>, so the short menus are covered by our own,
+  // built from the full lists and drawn in the layer over their rectangles.
+  var OPTIONS = {
+    live: [['', 'live + gone'], ['live', 'live only'], ['gone', 'gone only']],
+    status: [['', 'any status']].concat(STATUSES.map(function (s) { return [s, s]; })),
+    msg: AGE_KEYS.map(function (k) { return [k, k ? 'older than ' + k : 'last msg: any']; }),
+    active: AGE_KEYS.map(function (k) { return [k, k ? 'older than ' + k : 'active: any']; })
+  };
+
+  function decorateFilters(root) {
+    var filterRow = root.firstElementChild;
+    var selects = filterRow ? filterRow.querySelectorAll('select') : [];
+    if (selects.length < 3) return;
+
+    // live + gone is the one menu the mock has in full, so it is wired in place:
+    // an <option>'s value is a property, not a child.
+    var liveSelect = selects[0];
+    if (liveSelect.getAttribute('data-l4-filter') !== 'live') {
+      liveSelect.setAttribute('data-l4-filter', 'live');
+      liveSelect.addEventListener('change', function () { registry.setFilter('live', liveSelect.value); });
+    }
+    for (var i = 0; i < OPTIONS.live.length && i < liveSelect.options.length; i++) {
+      liveSelect.options[i].value = OPTIONS.live[i][0];
+    }
+    if (liveSelect.value !== state.filter.live) liveSelect.value = state.filter.live;
+
+    cover(selects[1], 'status');
+    cover(selects[2], 'msg');
+    // I-L4-02: the mock's filter row has no active-age select at all, so ours is
+    // drawn just after the last-msg one, in the same style and the same size.
+    beside(selects[2], 'active');
+  }
+
+  var overlaySelects = {};
+
+  function makeSelect(name, model) {
+    var el = doc.createElement('select');
+    el.setAttribute('data-l4-filter', name);
+    el.setAttribute('data-l4-extra', 'filter');
+    OPTIONS[name].forEach(function (pair) {
+      var o = doc.createElement('option');
+      o.value = pair[0];
+      o.textContent = pair[1];
+      el.appendChild(o);
+    });
+    el.addEventListener('change', function () { registry.setFilter(name, el.value); });
+    el.style.cssText = model.style.cssText + ';position:fixed;box-sizing:border-box;pointer-events:auto;margin:0;';
+    layer().appendChild(el);
+    overlaySelects[name] = el;
+    return el;
+  }
+
+  function syncSelect(el, name, model) {
+    if (el.style.cssText.indexOf(model.style.cssText) !== 0) {
+      el.style.cssText = model.style.cssText + ';position:fixed;box-sizing:border-box;pointer-events:auto;margin:0;';
+    }
+    if (el.value !== state.filter[name]) el.value = state.filter[name];
+  }
+
+  function cover(model, name) {
+    // visibility, not display: the compiled select keeps its box, so the row's
+    // layout — and therefore ours — is exactly the mock's.
+    model.setAttribute('data-l4-hidden', '1');
+    var el = overlaySelects[name];
+    if (!el || !el.isConnected) el = makeSelect(name, model);
+    syncSelect(el, name, model);
+    if (!el.__anchored) {
+      el.__anchored = true;
+      anchor(el, function () { return model.isConnected ? model : liveModel(name); }, over);
+    }
+  }
+
+  function beside(model, name) {
+    var el = overlaySelects[name];
+    if (!el || !el.isConnected) el = makeSelect(name, model);
+    syncSelect(el, name, model);
+    if (!el.__anchored) {
+      el.__anchored = true;
+      anchor(el, function () { return model.isConnected ? model : liveModel('msg'); }, function (node, box) {
+        node.style.left = (box.right + 10) + 'px';
+        node.style.top = box.top + 'px';
+        node.style.width = box.width + 'px';
+        node.style.height = box.height + 'px';
+      });
+    }
+  }
+
+  // A render can replace the <select> we anchored to; find the current one.
+  function liveModel(name) {
+    var root = container();
+    var selects = root && root.firstElementChild ? root.firstElementChild.querySelectorAll('select') : [];
+    var index = name === 'status' ? 1 : 2;
+    return selects[index] || null;
+  }
+
+  function bulkBar(root) {
+    var found = null;
+    Array.prototype.forEach.call(root.children, function (child) {
+      var first = child.firstElementChild;
+      if (first && first.tagName === 'SPAN' && /\bselected$/.test(first.textContent || '')) found = child;
+    });
+    return found;
+  }
+
+  var forgetEl = null;
+
+  function decorateBulk(root) {
+    var bar = bulkBar(root);
+    if (!bar) {
+      if (forgetEl) { forgetEl.remove(); forgetEl = null; }
+      return;
+    }
+    var buttons = bar.querySelectorAll('button');
+    var names = ['kill', 'tag', 'hide'];
+    for (var i = 0; i < names.length && i < buttons.length; i++) buttons[i].setAttribute('data-l4-bulk', names[i]);
+
+    var payload = FD.fixture.l4 || {};
+    // BEHAVIOUR §4: "Kill <live> live", disabled at 0. The mock's button says only
+    // "Kill", and its text is a compiled child, so the count is a ::after.
+    if (buttons[0]) {
+      buttons[0].setAttribute('data-l4-count', payload.selLive + ' live');
+      flag(buttons[0], !payload.selLive || state.bulkBusy);
+    }
+    for (var j = 1; j < names.length && j < buttons.length; j++) flag(buttons[j], state.bulkBusy);
+
+    // BEHAVIOUR §4: Forget applies to the gone rows, and the mock's bar has no
+    // button for it — so ours appears beside Hide only while gone rows are ticked
+    // (I-L4-03).
+    if (payload.selGone && buttons[2]) {
+      if (!forgetEl || !forgetEl.isConnected) {
+        forgetEl = doc.createElement('button');
+        forgetEl.type = 'button';
+        forgetEl.setAttribute('data-l4-bulk', 'forget');
+        forgetEl.setAttribute('data-l4-extra', 'bulk');
+        layer().appendChild(forgetEl);
+        anchor(forgetEl, function () {
+          var bar2 = bulkBar(container());
+          return bar2 ? bar2.querySelectorAll('button')[2] || null : null;
+        }, function (node, box) {
+          node.style.left = (box.right + 10) + 'px';
+          node.style.top = box.top + 'px';
+          node.style.height = box.height + 'px';
+        });
+      }
+      forgetEl.textContent = 'Forget ' + payload.selGone + ' gone';
+      forgetEl.style.cssText = buttons[2].style.cssText + ';position:fixed;pointer-events:auto;margin:0;';
+      flag(forgetEl, state.bulkBusy);
+    } else if (forgetEl) {
+      forgetEl.remove();
+      forgetEl = null;
+    }
+  }
+
+  // disabled is a property and data-l4-off is an attribute: neither is a child.
+  function flag(button, off) {
+    button.disabled = !!off;
+    if (off) button.setAttribute('data-l4-off', '1');
+    else button.removeAttribute('data-l4-off');
+  }
+
+  function decorateTable(root) {
+    var inner = tableInner();
+    var head = inner && inner.firstElementChild;
+    if (!head) return;
+
+    // BEHAVIOUR §3: the ▲/▼ marker. The header labels are compiled text, so the
+    // arrow is a ::after off data-l4-dir.
+    var labels = head.querySelectorAll('span');
+    HEAD_KEYS.forEach(function (k, i) {
+      var span = labels[i];
+      if (!span) return;
+      if (span.getAttribute('data-l4-sort') !== k) {
+        span.setAttribute('data-l4-sort', k);
+        span.title = 'Sort by ' + span.textContent;
+      }
+      var dir = state.sort && state.sort.key === k ? state.sort.dir : null;
+      if (dir) span.setAttribute('data-l4-dir', dir);
+      else span.removeAttribute('data-l4-dir');
+    });
+
+    for (var i = 1; i < inner.children.length; i++) {
+      var el = inner.children[i];
+      var row = state.view[i - 1];
+      if (!row) break;
+      el.setAttribute('data-l4-row', row.id);
+      var acts = el.lastElementChild;
+      var buttons = acts ? acts.querySelectorAll('button') : [];
+      var names = ['show', 'message', 'menu'];
+      for (var b = 0; b < names.length && b < buttons.length; b++) {
+        buttons[b].setAttribute('data-l4-act', names[b]);
+        // BEHAVIOUR §5: a row's buttons stay disabled until its re-fetch lands.
+        flag(buttons[b], row.busy);
+      }
+      // Pane activity ages into amber past an hour and red past a day. One shared
+      // cellStyle is bound to four columns, so the tone is an attribute + a rule.
+      age(el.children[5], row.activeTone);
+      age(el.children[6], row.msgTone);
+    }
+  }
+
+  function age(cell, kind) {
+    if (!cell) return;
+    if (kind) cell.setAttribute('data-l4-age', kind);
+    else cell.removeAttribute('data-l4-age');
   }
 
   // ------------------------------------------------------------- interactions
@@ -821,12 +1118,8 @@
   function onClick(e) {
     var target = e.target;
     if (!target || !target.closest) return;
-    if (!target.closest('[data-l4-extra="menu"]')) closeMenu();
-    var root = container();
-    if (!root || !root.contains(target)) return;
-
-    var sortEl = target.closest('[data-l4-sort]');
-    if (sortEl) { registry.sortBy(sortEl.getAttribute('data-l4-sort')); return; }
+    var inLayer = layerEl && layerEl.contains(target);
+    if (!inLayer || !target.closest('[data-l4-extra="menu"]')) closeMenu();
 
     var bulkEl = target.closest('[data-l4-bulk]');
     if (bulkEl) {
@@ -836,17 +1129,16 @@
       return;
     }
 
-    var fieldEl = target.closest('[data-l4-field]');
-    if (fieldEl) {
-      var owner = fieldEl.closest('[data-l4-details]');
-      var detailRow = owner && rowById(owner.getAttribute('data-l4-details'));
-      if (detailRow) openEditor(fieldEl, detailRow, fieldEl.getAttribute('data-l4-field'));
-      return;
-    }
+    var root = container();
+    if (!root || !root.contains(target)) return;
 
-    var rowEl = target.closest('[data-l4-row]');
-    if (!rowEl) return;
-    var row = rowById(rowEl.getAttribute('data-l4-row'));
+    var sortEl = target.closest('[data-l4-sort]');
+    if (sortEl) { registry.sortBy(sortEl.getAttribute('data-l4-sort')); return; }
+
+    var rowNode = target.closest('[data-l4-row]');
+    if (!rowNode) return;
+    // Audit rule 3: the row is whatever now sits at this element's position.
+    var row = rowAt(rowNode);
     if (!row) return;
 
     var actEl = target.closest('[data-l4-act]');
@@ -855,38 +1147,33 @@
       var act = actEl.getAttribute('data-l4-act');
       if (act === 'show') actions.show(row);
       else if (act === 'message') actions.message(row);
-      else openMenu(actEl, row);
+      else openMenu(row);
       return;
     }
 
     // Click-to-edit on the two editable columns the mock kept (BEHAVIOUR §1).
     var cell = target.closest('[data-l4-row] > *');
-    if (!cell || cell.querySelector('input')) return;
-    var index = Array.prototype.indexOf.call(rowEl.children, cell);
-    if (index === 2) { openEditor(cell, row, 'group'); return; }
+    if (!cell) return;
+    var index = Array.prototype.indexOf.call(rowNode.children, cell);
+    if (index === 2) { openEditor(row, 'group'); return; }
     if (index === 3) {
-      // Improvised (I-L4-06): the template has no anchor to bind, so a task that
-      // matches TASK_RE opens its Linear issue in a new tab and only a blank one
-      // opens the editor. Editing a real task stays on the ⋯ menu.
-      if (TASK_RE.test(row.tk || '')) global.open(LINEAR_ISSUE + row.tk, '_blank', 'noopener');
-      else openEditor(cell, row, 'task');
+      // I-L4-06: the template has no anchor to bind, so a task that matches
+      // TASK_RE opens its Linear issue in a new tab and only a blank one opens
+      // the editor. Editing a real task stays on the ⋯ menu.
+      if (TASK_RE.test(row.task || '')) global.open(LINEAR_ISSUE + row.task, '_blank', 'noopener');
+      else openEditor(row, 'task');
     }
-  }
-
-  function rowById(id) {
-    for (var i = 0; i < state.view.length; i++) if (state.view[i].id === id) return state.view[i];
-    return null;
   }
 
   function onKeyDown(e) {
     if (e.key === 'Escape') closeMenu();
   }
 
-  var pending = false;
+  var queued = false;
   function scheduleDecorate() {
-    if (pending) return;
-    pending = true;
-    global.requestAnimationFrame(function () { pending = false; decorate(); });
+    if (queued) return;
+    queued = true;
+    global.requestAnimationFrame(function () { queued = false; decorate(); });
   }
 
   function observe() {
@@ -898,8 +1185,11 @@
   // ------------------------------------------------------------------- hooks
   registry.setFilter = function (name, value) {
     if (!state.filter || !(name in FILTER0)) return;
+    // Audit rule 3: the raw text the user typed is what is stored and what the
+    // search box is fed back; normalising happens only inside filterSessions.
     state.filter[name] = value;
     writeStore(K_FILTER, JSON.stringify(state.filter));
+    closeEditor();
     publish();
     scheduleDecorate();
   };
@@ -908,6 +1198,8 @@
     state.filter = {};
     for (var k in FILTER0) state.filter[k] = FILTER0[k];
     dropStore(K_FILTER);
+    closeEditor();
+    closeMenu();
     publish();
     scheduleDecorate();
   };
@@ -917,6 +1209,7 @@
     var same = state.sort && state.sort.key === key;
     state.sort = { key: key, dir: same && state.sort.dir === 'asc' ? 'desc' : 'asc' };
     saveSort();
+    closeEditor();
     publish();
     scheduleDecorate();
   };
@@ -960,7 +1253,8 @@
     readStore(K_TAB);   // still read, harmless with one table (BEHAVIOUR §8)
     doc.addEventListener('click', onClick, true);
     doc.addEventListener('keydown', onKeyDown);
-    global.addEventListener('resize', closeMenu);
+    global.addEventListener('resize', position);
+    doc.addEventListener('scroll', position, true);
     observe();
     publish();
     loadSessions();
@@ -1014,6 +1308,6 @@
     return false;
   };
 
-  // Exposed for the live gate (tools/v2-live-check.mjs) and for tests.
+  // Exposed for the live gate (tools/v2-live-check.mjs).
   registry._state = state;
 })(window);

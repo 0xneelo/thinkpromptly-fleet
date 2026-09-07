@@ -14,7 +14,14 @@ const API = path.join(ROOT, 'docs/design/fleetdeck-v2/fixtures/api');
 
 const data = require(path.join(ROOT, 'public/v2/data.js'));
 const router = require(path.join(ROOT, 'public/v2/router.js'));
-const mock = require(path.join(ROOT, 'public/v2/fixture.js'));
+// S2's compiled fixture.js is a browser script: it assigns window.FD.fixture and
+// exports nothing, so requiring it under plain Node threw ReferenceError: window
+// is not defined and this whole file stopped loading (introduced by the base
+// merge 66e81e0, which resolved fixture.js to S2's version — DECK-70). Give it a
+// window to write into, then read the seed arrays back off it.
+if (typeof global.window === 'undefined') global.window = global;
+require(path.join(ROOT, 'public/v2/fixture.js'));
+const mock = global.FD.fixture;
 
 const api = (name) => JSON.parse(fs.readFileSync(path.join(API, name + '.json'), 'utf8'));
 
