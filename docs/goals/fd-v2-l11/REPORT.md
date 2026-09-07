@@ -242,6 +242,48 @@ across 12 cases, so a single collision was taking all twelve down; its `before` 
 retries five times. The shared band in `test/http.js` is untouched and is fair game for its
 own issue.
 
+## L11.1 — the last integration pass (weave `52069d1`)
+
+The rider weave (L2.1 L3.1 L4.1 L5.1 L7.1 L8.1 L9 L10.1) merged with no conflicts and
+brought two items, both caused by the merge rather than by either side being wrong.
+
+**`keys.js` had its data.js loader back.** L7.1 edited the same region L11 had emptied, so
+the 3-way merge kept both. Deleted again; L7.1's start/stop gating is untouched. The guard
+`if (FD.data) boot();` stays, and the file already returns on fixture mode at its top, so
+the loader's own `isFixture` re-check was redundant. No injector remains in any screen.
+
+**Four badge tests went red, and the fix was in the shell, not the tests.** L2.1 made
+`setBadge` retain a count until `ready` and apply it on arrival; L11 had changed how the
+data layer arrives. `loadDataLayer()` had been reduced to "resolve if `FD.data`, else
+reject at once", which is right for the new load order and wrong for anything else: the
+shell could never recover if the data layer showed up a moment later. It now resolves
+immediately when `FD.data` is there — the ordinary path, since `index.html` loads `data.js`
+before the screens and classic scripts run in order, so `ready` means exactly "the data
+layer was present when the screen booted" — and otherwise re-checks for a bounded number
+of turns, through `setTimeout` where there is one so a request still in flight can land,
+and on microtasks where there is not.
+
+The four tests pass unweakened: their assertions are untouched, and the only harness line
+that changed was the one modelling the deleted injector. It asserted the shell had appended
+exactly one `<script>` and then fired its `onload`; it now asserts the shell appends
+**nothing**, which is a stricter claim than the one it replaced.
+
+**One bug found by instrumenting rather than reasoning.** The first version of that wait
+declared its bound with `var` next to the function instead of above the boot call that uses
+it. Function declarations hoist; `var` initialisers do not, so the bound read `undefined`,
+`--left` was `NaN`, `NaN <= 0` never became true, and the retry chain starved the event loop
+— the whole test file hung with no output at all rather than failing. Counting the
+iterations found it in one run where reading the code had not. The constant now sits with
+the module's other state, above the boot.
+
+Final numbers on `52069d1` merged:
+
+| Proof | Result |
+|---|---|
+| `verify/l11/report.json` — fixture-mode pixel gate | **36/36**, allPass true, max 0.033 % |
+| `verify/l11/live.json` — live mode | **30/30**, allPass true |
+| `npm test` | **544/544** |
+
 ## The one box that cannot be ticked
 
 **The registry row.** `POST /api/registry` to the deck answers **401 unauthorized** from this

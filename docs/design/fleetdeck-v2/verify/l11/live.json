@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "slice": "l11",
   "mode": "live-stubbed",
-  "capturedAt": "2026-09-07T02:05:32.219Z",
+  "capturedAt": "2026-09-07T02:42:01.303Z",
   "apiFixtures": "docs/design/fleetdeck-v2/fixtures/api/",
   "results": [
     {

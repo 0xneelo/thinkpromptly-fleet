@@ -104,6 +104,9 @@
   var EMPTY_COPY = 'There are no sessions yet, open a new session via an orchestrator first.';
   var HOLDER_TIP = 'Open Windows App → RDP to the box as Vibe → run: wsl -e sleep infinity → close (disconnect, never sign out)';
 
+  // Declared above the boot call below: loadDataLayer() runs before any `var` further
+  // down this file has been initialised, and an undefined bound makes its countdown NaN.
+  var DATA_WAIT_TURNS = 20;       // re-checks before the data layer is called absent
   var ready = false;              // data.js loaded and live mode confirmed
   var liveApiText = DEFAULT_LIVE_API;
   var badge = null;               // last count L6 reported, kept across the boot race
@@ -135,15 +138,30 @@
     })
     .catch(function (e) { console.error('[l2] shell could not start', e); });
 
-  /* public/v2/index.html now lists data.js, router.js and orgchart.js alongside the
-   * runtime, the logic, the compiled render and the nine screen files (DECK-84), so
-   * there is nothing left to load here. Kept as a promise because start() chains on
-   * it, and it still rejects when FD.data is absent rather than failing later and
-   * further away (was I-L2-01). */
+  /* public/v2/index.html lists data.js before the nine screen files (DECK-84), and
+   * classic scripts run in order, so FD.data is already there when this file runs and
+   * the ordinary path resolves without yielding at all. `ready` therefore means what
+   * it says: the data layer was present when the screen booted.
+   *
+   * A page that loads them out of order still boots. Rather than giving up on the
+   * first look, the shell re-checks on later turns -- through setTimeout where there
+   * is one, so a data.js still in flight has a chance to land, and on microtasks
+   * where there is not, which is the shape a test realm sees. It gives up after a
+   * bounded number of turns, so a data layer that is genuinely absent is reported
+   * instead of waited on forever. (Was I-L2-01, which injected the script itself.) */
   function loadDataLayer() {
-    return FD.data
-      ? Promise.resolve()
-      : Promise.reject(new Error('data.js is not loaded'));
+    if (FD.data) return Promise.resolve();
+    return new Promise(function (done, fail) {
+      var left = DATA_WAIT_TURNS;
+      var later = typeof global.setTimeout === 'function'
+        ? function (fn) { global.setTimeout(fn, 10); }
+        : function (fn) { Promise.resolve().then(fn); };
+      (function again() {
+        if (FD.data) return done();
+        if (--left <= 0) return fail(new Error('data.js is not loaded'));
+        later(again);
+      })();
+    });
   }
 
   /* ---- theme (BEHAVIOUR §5, ledger D06) ---------------------------------- */

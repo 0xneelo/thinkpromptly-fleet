@@ -586,12 +586,9 @@
     if (onScreen) start();
   }
 
-  // Last statement in the file, so every declaration above has already run.
+  // Last statement in the file, so every declaration above has already run. The shell
+  // loads data.js before the screens (index.html), so it is here; the guard stays
+  // because start() must never run without it, and this file bails on fixture mode
+  // at the top anyway.
   if (FD.data) boot();
-  else if (typeof document !== 'undefined') {
-    var tag = document.createElement('script');
-    tag.src = '/v2/data.js';
-    tag.onload = function () { if (FD.data && !FD.data.isFixture()) boot(); };
-    document.head.appendChild(tag);
-  }
 })(typeof globalThis === 'object' ? globalThis : this);
