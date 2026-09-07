@@ -82,7 +82,7 @@ async function startServer(env = {}, opts = {}) {
           res.on('end', () => {
             let json = null;
             try { json = JSON.parse(data); } catch { /* text body (403/404/405) */ }
-            resolve({ status: res.statusCode, body: json, text: data });
+            resolve({ status: res.statusCode, headers: res.headers, body: json, text: data });
           });
         }
       );
@@ -171,7 +171,7 @@ async function startBroker(env = {}, opts = {}) {
           res.on('end', () => {
             let json = null;
             try { json = JSON.parse(data); } catch { /* text body (403/404/405) */ }
-            resolve({ status: res.statusCode, body: json, text: data });
+            resolve({ status: res.statusCode, headers: res.headers, body: json, text: data });
           });
         }
       );

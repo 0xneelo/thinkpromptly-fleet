@@ -2370,6 +2370,28 @@ const VENDOR = {
   '/vendor/addon-web-links.js': '@xterm/addon-web-links/lib/addon-web-links.js',
 };
 
+// The v2 shell reads its view from the query string only (public/v2/router.js:28),
+// so each pretty path canonicalises itself into the query the router understands
+// rather than the router learning about paths. Absent/unknown view means the
+// router's own default, which is 'app' (public/v2/router.js:20) -- so /app needs
+// no redirect and / and /deck each need exactly one.
+const V2_SHELL = ['public', 'v2', 'index.html'];
+const ROUTER_DEFAULT_VIEW = 'app';
+const PAGE_VIEWS = { '/': 'land', '/app': 'app', '/deck': 'deck' };
+const V2_VIEWS = Object.values(PAGE_VIEWS);
+// The old multi-page UI is gone; its URLs keep working as one hop into the deck.
+const LEGACY_PAGES = {
+  '/index.html': 'windows',
+  '/keys.html': 'keys',
+  '/accounts.html': 'accounts',
+  '/machines.html': 'machines',
+  '/sessions.html': 'desktop',
+};
+function redirect(res, location) {
+  res.writeHead(302, { location, 'content-type': 'text/plain' });
+  res.end('found');
+}
+
 function sendFile(res, file) {
   fs.readFile(file, (err, buf) => {
     if (err) return send(res, 404, 'text/plain', 'not found');
@@ -2837,6 +2859,20 @@ const server = http.createServer(async (req, res) => {
       if (!TTL_MS[b.ttl]) return json(res, { ok: false, error: 'ttl must be 1h, 4h or 8h' }, 400);
       const r = await trainProxy('POST', '/api/ghtrain', b, req);
       return json(res, r.body, r.code);
+    }
+    // A legacy page URL keeps its meaning: one 302 to the screen that replaced it.
+    // The browser re-attaches nothing here -- the screen travels in the fragment.
+    if (LEGACY_PAGES[p]) return redirect(res, '/app#' + LEGACY_PAGES[p]);
+    if (Object.prototype.hasOwnProperty.call(PAGE_VIEWS, p)) {
+      const want = PAGE_VIEWS[p];
+      const asked = url.searchParams.get('view');
+      const shown = V2_VIEWS.includes(asked) ? asked : ROUTER_DEFAULT_VIEW;
+      if (shown !== want) {
+        // Every other query parameter survives, so /?fixture=1 stays fixture mode.
+        url.searchParams.set('view', want);
+        return redirect(res, p + '?' + url.searchParams.toString());
+      }
+      return sendFile(res, path.join(__dirname, ...V2_SHELL));
     }
   } catch (e) {
     return send(res, 500, 'text/plain', String(e.message));

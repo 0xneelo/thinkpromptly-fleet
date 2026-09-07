@@ -210,7 +210,8 @@ test('12 — an oversized broker reply is cut off, not buffered without bound', 
   // And the deck is still healthy afterwards — a rogue broker must not wedge it. A static
   // file is the cheapest proof: /api/sessions would ssh out to the fleet and stall this
   // suite for the poll timeout, which has nothing to do with what is under test here.
-  assert.equal((await s.get('/keys.html')).status, 200);
+  // /keys.html now answers 302, so this asks for a page that is still served whole.
+  assert.equal((await s.get('/board.html')).status, 200);
 });
 
 test('13 — a broker reply that is not JSON becomes an error, never a raw relay', async (t) => {

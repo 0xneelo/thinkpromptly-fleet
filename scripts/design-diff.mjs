@@ -10,7 +10,8 @@
  * records maxMismatchPct; the stricter reproducibility target is <=0.05 percent.
  * Both sides receive IDENTICAL storage initialization, reduced motion, CSS that
  * disables animation/transition/caret and hides video/canvas, and media blocking.
- * Native reveals, fonts, visible images and network idle settle before each shot.
+ * Native reveals, fonts, visible images and a bounded fetch/XHR quiet period
+ * settle before each shot; a vendored copy of a CDN asset is served in its place.
  * No global timer/time overrides, mock changes, application fixture changes or
  * screenshot masks. Live video is intentionally outside this visual contract.
  */
@@ -37,7 +38,26 @@ const REPEAT_LIMIT = 0.05;
 const TIMEOUT = 30_000;
 const CSS = `*{animation:none!important;transition:none!important;caret-color:transparent!important}
 *::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}
-html{scroll-behavior:auto!important}video,canvas{visibility:hidden!important}`;
+html{scroll-behavior:auto!important}video,canvas{visibility:hidden!important}
+*:focus,*:focus-visible{outline:none!important}
+*::-webkit-scrollbar{width:0!important;height:0!important}
+*{scrollbar-width:none!important}`;
+
+// A CDN can be unreachable, or can quietly serve different bytes on two runs.
+// Where a vendored copy of a remote asset exists, both sides get that identical
+// local file instead; where it does not, the request goes out as before.
+const CDN_MIRROR = Object.freeze([
+  { match: url => url.startsWith('https://fonts.googleapis.com/css2'), file: 'public/v2/vendor/inter.css', type: 'text/css' },
+  { match: url => url.endsWith('/v2/vendor/fonts/inter-latin-v20.woff2'), file: 'public/v2/vendor/fonts/inter-latin-v20.woff2', type: 'font/woff2' },
+  { match: url => url === 'https://unpkg.com/react@18.3.1/umd/react.production.min.js', file: 'public/v2/vendor/react.production.min.js', type: 'text/javascript' },
+  { match: url => url === 'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js', file: 'public/v2/vendor/react-dom.production.min.js', type: 'text/javascript' },
+  { match: url => url === 'https://unpkg.com/@babel/standalone@7.29.0/babel.min.js', file: 'public/v2/vendor/babel.min.js', type: 'text/javascript' },
+].map(Object.freeze));
+
+// How long the page must go without a fetch/XHR before a shot, and how long we
+// are willing to wait for that. A hung request costs one screen, not the run.
+const QUIET_MS = 300;
+const QUIET_CAP_MS = 5_000;
 
 // Reusable navigation table: screen label -> the same real clicks on both sides.
 export const SCREEN_MAP = Object.freeze([
@@ -135,15 +155,45 @@ function isMedia(request) {
   return request.resourceType() === 'media' || /\.(?:mp4|webm|m3u8|ts)(?:$|[?#])/i.test(request.url());
 }
 
+// networkidle waits on every connection, so one live WebSocket or EventSource
+// holds it open forever. This counts only fetch/XHR, and it is bounded.
+function trackRequests(page) {
+  const inFlight = new Set();
+  let lastActivity = Date.now();
+  const counted = request => ['fetch', 'xhr'].includes(request.resourceType());
+  const started = request => { if (counted(request)) { inFlight.add(request); lastActivity = Date.now(); } };
+  const ended = request => { if (inFlight.delete(request)) lastActivity = Date.now(); };
+  page.on('request', started);
+  page.on('requestfinished', ended);
+  page.on('requestfailed', ended);
+  return async function quiet() {
+    const deadline = Date.now() + QUIET_CAP_MS;
+    while (inFlight.size || Date.now() - lastActivity < QUIET_MS) {
+      if (Date.now() >= deadline) return false;
+      await new Promise(done => setTimeout(done, 25));
+    }
+    return true;
+  };
+}
+
+// A click leaves the button focused, and a focus ring is a real pixel difference
+// whenever the two sides were reached by a different number of clicks.
+const blur = page => page.evaluate(() => {
+  const el = document.activeElement;
+  if (el && typeof el.blur === 'function') el.blur();
+});
+
 async function reachScreen(page, screen) {
   await page.locator('[data-screen-label="Landing"]').waitFor({ state: 'visible' });
   if (screen.view === 'app') {
     await page.getByRole('link', { name: 'App', exact: true }).click();
+    await blur(page);
     await page.locator('[data-screen-label="Fleetdeck app"]').waitFor({ state: 'visible' });
-    if (screen.nav) await page.locator(`aside button[title="${screen.nav}"]`).click();
-    if (screen.fullscreen) await page.locator('[data-screen-label="Windows"]').getByRole('button', { name: 'Fullscreen', exact: true }).first().click();
+    if (screen.nav) { await page.locator(`aside button[title="${screen.nav}"]`).click(); await blur(page); }
+    if (screen.fullscreen) { await page.locator('[data-screen-label="Windows"]').getByRole('button', { name: 'Fullscreen', exact: true }).first().click(); await blur(page); }
   } else if (screen.view === 'deck') {
     await page.getByRole('link', { name: /^Deck\b/ }).click();
+    await blur(page);
     await page.locator('[data-screen-label="01 Title"]').waitFor({ state: 'visible' });
     for (let i = 0; i < screen.slide; i++) await page.keyboard.press('ArrowRight');
   }
@@ -163,9 +213,10 @@ async function reachScreen(page, screen) {
   }, screen.label);
 }
 
-async function settle(page) {
+async function settle(page, quiet) {
   await page.mouse.move(0, 0);
-  await page.waitForLoadState('networkidle');
+  await blur(page);
+  await quiet();
   await page.evaluate(() => document.fonts.ready);
   await page.waitForFunction(() => [...document.querySelectorAll('[data-reveal]')].every(el => {
     const r = el.getBoundingClientRect();
@@ -196,8 +247,16 @@ async function capture(browser, url, screen, theme) {
   try {
     context.setDefaultTimeout(TIMEOUT);
     await context.addInitScript(initPage, { theme, css: CSS });
-    await context.route('**/*', route => isMedia(route.request()) ? route.abort() : route.continue());
+    await context.route('**/*', async route => {
+      const request = route.request();
+      if (isMedia(request)) return route.abort();
+      const mirror = CDN_MIRROR.find(entry => entry.match(request.url()));
+      const body = mirror && await readFile(join(ROOT, mirror.file)).catch(() => null);
+      if (body) return route.fulfill({ status: 200, contentType: mirror.type, body });
+      return route.continue();
+    });
     const page = await context.newPage();
+    const quiet = trackRequests(page);
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     page.on('requestfailed', request => { if (!isMedia(request) && ['document', 'script', 'stylesheet', 'font', 'image'].includes(request.resourceType())) errors.push(`Load failed: ${request.url()} (${request.failure()?.errorText})`); });
@@ -205,7 +264,7 @@ async function capture(browser, url, screen, theme) {
     const response = await page.goto(url, { waitUntil: 'domcontentloaded' });
     if (!response?.ok()) throw new Error(`Document HTTP ${response?.status() ?? 'missing response'}`);
     await reachScreen(page, screen);
-    await settle(page);
+    await settle(page, quiet);
     const checkRuntime = async () => {
       const runtimeErrors = await page.locator('.sc-has-error, .sc-logic-error, .sc-placeholder-error').count();
       if (runtimeErrors) throw new Error(`Design runtime reported ${runtimeErrors} error marker(s)`);
@@ -254,7 +313,7 @@ export async function run(options) {
   let server, browser, staging, report;
   const baselineMode = !!options.baseline;
   const destination = baselineMode ? BASELINE : join(DESIGN, 'verify', options.slice);
-  const failureDirectory = baselineMode ? join(DESIGN, 'verify', 'S0-baseline-failed') : destination;
+  const failureDirectory = baselineMode ? join(DESIGN, 'verify', 'baseline-failed') : destination;
   try {
     report = { schemaVersion: 1, mode: baselineMode ? 'baseline' : 'verify', slice: options.slice ?? null, capturedAt: new Date().toISOString(), status: 'running', results: [], allPass: false };
     await mkdir(failureDirectory, { recursive: true });
@@ -306,7 +365,7 @@ export async function run(options) {
     if (previous) report.reproducibility = { thresholdPct: REPEAT_LIMIT, compared: measured.length, maxMismatchPct: report.maxMismatchPct, allPass: report.allPass };
     await writeReport(staging, report);
     if (baselineMode && !report.allPass) {
-      const failure = join(DESIGN, 'verify', 'S0-baseline-failed');
+      const failure = join(DESIGN, 'verify', 'baseline-failed');
       await mkdir(dirname(failure), { recursive: true });
       await publish(staging, failure); staging = null;
       console.error(`Baseline preserved. Failure report: ${relative(ROOT, join(failure, 'report.json'))}`);
