@@ -418,3 +418,18 @@ commit — a worker's measurement tool is not shipped code. Everything else merg
 scroll probe now belongs in the verify set).
 
 Handover line: `cd ~/remote-system && git merge --ff-only weave/fd-v2 && ./up.sh`.
+
+## 2026-09-07 04:00 — `9147462` LIVE; all three post-deploy defects closed and verified on the running deck
+
+The operator ff-merged and ran `./up.sh` while the gate was finishing (`main@{0}` = `9147462`). Verified
+against `http://localhost:3131` itself, not against a worker report:
+
+| Defect | Live evidence |
+|---|---|
+| Landing scroll scrub (L12) | `Range: bytes=0-99` → `206 … bytes 0-99/10321675`; probe `s0` vt 0 / `s1` vt 4.99 / `s2` vt 9.98, three distinct canvas hashes, `s3` back to `s0`'s hash |
+| Bus deep links (L6.2) | `FD.screens.busHost` attached; clicking the real "Message this session" icon on the 🎨 DESIGN 35 row lands on `#bus` with that thread selected and the composer live (`shots/msg-icon-after.png`) |
+| Hash on nav (L11.2) | Windows → `#windows`, Org chart → `#org`, Registry → `#registry`, Message bus → `#bus`; zero page errors |
+
+`npm test` 578/578 · box gate `9147462` allPass 36/36 max 0.0329 %. No open riders on the redesign.
+Registry `status:done` for FD-v2-l12 is fenced to the orchestrator seat (`seat_epoch required`); Hadwig posts
+her own from the box, as her pack instructs.
