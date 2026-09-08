@@ -508,7 +508,7 @@ input:focus,select:focus,textarea:focus{outline:none;}
                 <button onClick="{{ c.set }}" style="{{ c.style }}">{{ c.t }}</button>
               </sc-for>
               <span style="width:1px;height:22px;background:{{ A_line }};margin:0 4px;"></span>
-              <sc-for list="{{ A_prinChips }}" as="c" hint-placeholder-count="2">
+              <sc-for list="{{ A_prinChips }}" as="c" hint-placeholder-count="5">
                 <button onClick="{{ c.set }}" style="{{ c.style }}">{{ c.t }}</button>
               </sc-for>
               <button style="border-radius:9999px;border:none;background:{{ A_ctaBg }};color:{{ A_ctaFg }};padding:8px 22px;font-size:13px;font-weight:500;cursor:pointer;transition:background .3s;margin-left:6px;" style-hover="background:{{ A_ctaHover }};">Mint</button>
@@ -1222,7 +1222,7 @@ class LandLogic extends Sub {
   }
 }
 class AppLogic extends Sub {
-  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, ttl: '1h', prin: { root: true, vibe: false }, leftOpen: true, rightOpen: true, videoOn: null };
+  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, ttl: '1h', prin: { 'rog-strix': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
   isDark() {
     if (this.state.dark != null) return this.state.dark;
     try { const s = localStorage.getItem('fd-landing-dark'); if (s != null) return s === '1'; } catch (e) {}
@@ -1918,7 +1918,7 @@ class AppLogic extends Sub {
       ...busVals, ...termVals,
       // keys
       ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
-      prinChips: ['root', 'vibe', 'misterisley'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
+      prinChips: ['rog-strix', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: [
         { name: 'deploy-ca', fp: 'SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0', comment: 'misterislez@rfc1918-internal.by.netflash.com.cy' },

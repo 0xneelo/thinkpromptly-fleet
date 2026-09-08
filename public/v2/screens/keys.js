@@ -34,19 +34,39 @@
 
   // ---- constants, verbatim from today's keys.js ---------------------------
   var TTLS = ['1h', '4h', '8h'];
-  // root = the VPS boxes' login (think-box, onboarding-app-box, ivy-box),
-  // vibe = german-box login, misterisley = rog-strix's Windows login. A cert
-  // principal must match the login username, so a cert missing one silently
-  // drops that machine off the fleet — which is what happened to rog-strix
-  // from 2026-09-06 on, once mints moved from the CLI script to this screen.
-  // Ruling O9 wanted these from hosts.json, but hosts.json carries no user
-  // field — see improvised.md I-L7-01.
-  var PRINCIPALS = ['root', 'vibe', 'misterisley'];
-  var PRINCIPAL_TITLE = {
-    root: 'VPS boxes: think · onboarding · ivy',
-    vibe: 'german-box',
-    misterisley: 'rog-strix',
-  };
+  // The chips name boxes, not unix logins. A cert principal has to match the
+  // box's login username, and a cert missing one silently drops that box off
+  // the fleet — which is what happened to rog-strix from 2026-09-06 on, once
+  // mints moved from the CLI script to this screen and the screen only knew
+  // root and vibe. Naming the boxes is what the operator is actually choosing;
+  // this table is the part they should not have to carry in their head.
+  //
+  // promptly, onboarding and ivy all log in as root, so ONE principal reaches
+  // all three: picking any of them necessarily grants the other two, and their
+  // titles say so. Scoping a cert to one of them would mean giving each box its
+  // own principal in its CA trust line — a change on the boxes, not here.
+  // Ruling O9 wanted this from hosts.json, which carries no user field — see
+  // improvised.md I-L7-01. machines.json has the ssh aliases but no user either.
+  var SHARED_ROOT = ' · root login, so this also reaches ';
+  var BOXES = [
+    { id: 'rog-strix', user: 'misterisley', title: 'rog-strix (Windows) · logs in as misterisley' },
+    { id: 'german', user: 'vibe', title: 'german-box · logs in as vibe' },
+    { id: 'onboarding', user: 'root', title: 'onboarding-app-box' + SHARED_ROOT + 'promptly and ivy' },
+    { id: 'promptly', user: 'root', title: 'think-box' + SHARED_ROOT + 'onboarding and ivy' },
+    { id: 'ivy', user: 'root', title: 'ivy-box' + SHARED_ROOT + 'onboarding and promptly' },
+  ];
+  var BOX_IDS = BOXES.map(function (b) { return b.id; });
+
+  // What a set of chosen boxes actually mints: the logins behind them, deduped
+  // and in chip order. Three boxes collapsing to one `root` is the whole reason
+  // this is a function and not the chip list itself.
+  function principalsFor(chosen) {
+    var out = [];
+    BOXES.forEach(function (b) {
+      if (chosen[b.id] && out.indexOf(b.user) === -1) out.push(b.user);
+    });
+    return out;
+  }
   var KILL_CONFIRM = 'Kill this cert now? Agents using it lose access immediately.';
   var POLL_MS = 30000;
   var TICK_MS = 1000;
@@ -92,7 +112,7 @@
   // The pure half is exported for test/v2-keys.test.js, which runs in Node with
   // no DOM. Everything below the guard needs a document and never loads there.
   if (typeof module === 'object' && module.exports) {
-    module.exports = { left: left, pad: pad, sshOpts: sshOpts, unwrapError: unwrapError, httpBody: httpBody, TTLS: TTLS, PRINCIPALS: PRINCIPALS, PRINCIPAL_TITLE: PRINCIPAL_TITLE, KILL_CONFIRM: KILL_CONFIRM, POLL_MS: POLL_MS, TICK_MS: TICK_MS, COPIED_MS: COPIED_MS };
+    module.exports = { left: left, pad: pad, sshOpts: sshOpts, unwrapError: unwrapError, httpBody: httpBody, TTLS: TTLS, BOXES: BOXES, BOX_IDS: BOX_IDS, principalsFor: principalsFor, KILL_CONFIRM: KILL_CONFIRM, POLL_MS: POLL_MS, TICK_MS: TICK_MS, COPIED_MS: COPIED_MS };
   }
 
   // Fixture mode renders the mock verbatim. Register nothing, start no timers,
@@ -125,8 +145,8 @@
   var state = { certs: [], keys: [] };
   var train = { active: false, expiresAt: null };
   var ttl = '1h';
-  var principals = {};
-  PRINCIPALS.forEach(function (p) { principals[p] = true; });
+  var chosen = {};                  // box id -> selected, the chip state this screen reads
+  BOX_IDS.forEach(function (id) { chosen[id] = true; });
   var flashDir = null;   // the dir just minted — its card flashes once
   var mintError = '';
   var trainError = '';
@@ -158,21 +178,21 @@
       // The TTL and principal chips stay bound to logic.js — it owns their
       // state and their selected styling. This module only reads the choice.
       if (next.ttl) ttl = next.ttl;
-      // BEHAVIOUR §2: both principals are selected by default — one cert serves
-      // the vps-deploy and gb-deploy aliases. The mock seeds only root, and
-      // fixture mode has to keep that or its screenshot moves, so live mode
-      // restores today's default once, on the first render (improvised.md
-      // I-L7-03). setState re-renders and this runs again with both set.
+      // BEHAVIOUR §2: every box is selected by default — one cert serves the whole
+      // fleet, which is the only way rs-deploy and gb-deploy work off one mint.
+      // Live mode restores that default once, on the first render (improvised.md
+      // I-L7-03), so a mock seeding fewer chips cannot become the live default.
+      // setState re-renders and this runs again with them all set.
       if (!seeded && next.logic && next.prin) {
         seeded = true;
-        if (!PRINCIPALS.every(function (p) { return next.prin[p]; })) {
+        if (!BOX_IDS.every(function (id) { return next.prin[id]; })) {
           var all = {};
-          PRINCIPALS.forEach(function (p) { all[p] = true; });
+          BOX_IDS.forEach(function (id) { all[id] = true; });
           next.logic.setState({ prin: all });
           return;
         }
       }
-      if (next.prin) principals = next.prin;
+      if (next.prin) chosen = next.prin;
       // BEHAVIOUR §3/§6: the 30 s poll and the 1 s tick belong to this screen,
       // not to the app. Today's keys.js is a page that only exists while you
       // are on it; in a SPA that means starting on enter and stopping on leave,
@@ -294,11 +314,11 @@
     var row = kids(card)[1];
     if (!row) return;
     var btns = kids(row).filter(function (n) { return n.tagName === 'BUTTON'; });
-    var prinBtns = btns.slice(TTLS.length, TTLS.length + PRINCIPALS.length);
-    prinBtns.forEach(function (b, i) {
-      var p = PRINCIPALS[i];
-      b.title = PRINCIPAL_TITLE[p];
-      b.setAttribute('aria-pressed', String(!!principals[p]));
+    var boxBtns = btns.slice(TTLS.length, TTLS.length + BOXES.length);
+    boxBtns.forEach(function (b, i) {
+      var box = BOXES[i];
+      b.title = box.title;
+      b.setAttribute('aria-pressed', String(!!chosen[box.id]));
     });
     var mintBtn = btns[btns.length - 1];
     if (mintBtn) {
@@ -497,8 +517,8 @@
   // ---- actions ------------------------------------------------------------
   function mint() {
     mintError = '';
-    var picked = PRINCIPALS.filter(function (p) { return principals[p]; });
-    if (!picked.length) { mintError = 'pick at least one principal'; paint(); return; }
+    var picked = principalsFor(chosen);
+    if (!picked.length) { mintError = 'pick at least one box'; paint(); return; }
     minting = true;
     paint();
     post(function () { return FD.data.mintCert({ ttl: ttl, principals: picked.join(',') }); })

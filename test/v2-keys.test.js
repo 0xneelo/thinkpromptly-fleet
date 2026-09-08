@@ -129,18 +129,33 @@ test('a 503 from a dead broker reaches the UI as the broker\'s own message', () 
 // Constants — BEHAVIOUR.md §2-§4 pins these strings word for word.
 // ---------------------------------------------------------------------------
 
-test('the TTL and principal chip sets are the current app\'s', () => {
+test('the TTL and box chip sets are the current app\'s', () => {
   assert.deepStrictEqual(keys.TTLS, ['1h', '4h', '8h']);
-  // misterisley joined the set on 2026-09-08: a cert principal must match the login user,
-  // so without it rog-strix drops off the fleet on every mint made from this screen.
-  assert.deepStrictEqual(keys.PRINCIPALS, ['root', 'vibe', 'misterisley']);
+  // 2026-09-08: the chips became boxes rather than unix logins. rog-strix had been
+  // unreachable since 2026-09-06 because this screen only knew root and vibe, and a
+  // principal that does not match a box's login username does not open it.
+  assert.deepStrictEqual(keys.BOX_IDS, ['rog-strix', 'german', 'onboarding', 'promptly', 'ivy']);
 });
 
-test('the principal titles are verbatim, middle dots and all', () => {
-  assert.strictEqual(keys.PRINCIPAL_TITLE.root, 'VPS boxes: think · onboarding · ivy');
-  assert.strictEqual(keys.PRINCIPAL_TITLE.vibe, 'german-box');
-  assert.strictEqual(keys.PRINCIPAL_TITLE.misterisley, 'rog-strix');
-  assert.deepStrictEqual(Object.keys(keys.PRINCIPAL_TITLE), keys.PRINCIPALS, 'a title per principal');
+test('every box chip carries the login that actually opens it', () => {
+  assert.deepStrictEqual(
+    keys.BOXES.map((b) => b.user),
+    ['misterisley', 'vibe', 'root', 'root', 'root']
+  );
+  assert.ok(keys.BOXES.every((b) => b.title && b.title.length), 'a title per box');
+});
+
+test('principalsFor — the three root boxes collapse to one principal', () => {
+  // The cert says root once, whichever of the three is picked, because that is all a
+  // principal can say: one login name, matched by every box that logs in under it.
+  assert.deepStrictEqual(keys.principalsFor({ ivy: true }), ['root']);
+  assert.deepStrictEqual(keys.principalsFor({ ivy: true, promptly: true, onboarding: true }), ['root']);
+  // And picking ivy DOES open promptly — the chip titles say so, because the cert cannot
+  // tell the three apart. Scoping one of them means changing that box's CA trust line.
+  assert.deepStrictEqual(keys.principalsFor({ 'rog-strix': true, german: true, ivy: true }), [
+    'misterisley', 'vibe', 'root',
+  ]);
+  assert.deepStrictEqual(keys.principalsFor({}), []);
 });
 
 test('the kill confirmation is verbatim', () => {
@@ -166,7 +181,7 @@ test('requiring the screen in Node exports the pure half and starts no timer', (
   // polls before any screen is entered.
   assert.strictEqual(typeof document, 'undefined');
   assert.deepStrictEqual(Object.keys(keys).sort(), [
-    'COPIED_MS', 'KILL_CONFIRM', 'PRINCIPALS', 'PRINCIPAL_TITLE', 'POLL_MS', 'TICK_MS', 'TTLS',
+    'COPIED_MS', 'KILL_CONFIRM', 'BOXES', 'BOX_IDS', 'principalsFor', 'POLL_MS', 'TICK_MS', 'TTLS',
     'httpBody', 'left', 'pad', 'sshOpts', 'unwrapError',
   ].sort());
   // The registered surface is inert until a screen is entered. (The L7.1 test
