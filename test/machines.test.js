@@ -999,6 +999,28 @@ test('beats — a failed read neither pins a row nor erases a good one, at any r
   assert.equal(beats(failed, good), false);
 });
 
+test('creditsWrite — a live reading ages out too, on its own read time', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  // An oauth row carries no sample stamp — a live read has nothing but the moment it was
+  // taken. agedOut() used to skip exactly those rows, so a token read hours ago kept
+  // printing a five-hour window as a current figure. Observed on the deck 2026-09-08:
+  // aylianator's row was 3.6 h old and shown with no staleness marker at all.
+  m.creditsWrite([
+    {
+      kind: 'claude', id: 'aged@example.invalid', email: 'aged@example.invalid', org: ORG,
+      host: 'mac', source: 'oauth', state: 'ok', updated_at: now - 3 * 3600,
+      windows: { five_hour: { pct: 42, resets_at: 'x' }, seven_day: { pct: 7, resets_at: 'x' } },
+    },
+  ]);
+  const row = m.creditsRows().find((r) => r.email === 'aged@example.invalid');
+  // Three hours is past the five-hour window's own bound and well inside the weekly's.
+  assert.equal(row.windows.five_hour.pct, null);
+  assert.equal(row.windows.five_hour.stale, true);
+  assert.equal(row.windows.seven_day.pct, 7);
+  assert.equal(row.stale_windows, true);
+});
+
 test('beats — a sample past every window it carries cannot displace a failed read', (t) => {
   const { beats } = seams(t);
   // Rule 2 ("a reading that worked beats a failure") used to fire on state alone. So a desktop

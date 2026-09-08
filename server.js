@@ -1552,8 +1552,14 @@ function creditsWrite(rows) {
 }
 
 function agedOut(r, now) {
-  if (!r.sample_ts) return r;
-  const age = now - r.sample_ts;
+  // What the numbers describe, dated: a desktop row by the sample it read, a codex row by
+  // the rollout, an oauth row by nothing — a live read has no stamp but its own read time.
+  // Exempting a row because that field is absent is what let a three-hour-old oauth reading
+  // sit on the page as a current figure, its five-hour window an hour and a half past the
+  // span it describes, with nothing on screen saying so.
+  const t = dataTs(r) ?? r.updated_at;
+  if (!t) return r;
+  const age = now - t;
   const windows = {};
   let any = false;
   for (const [n, w] of Object.entries(r.windows || {})) {
@@ -3311,6 +3317,7 @@ module.exports = {
   reaperTick, reaperLoop, REAPER,
   // Test seams: the pure joins the Machines view renders from, no I/O of their own.
   machinesUsage, machinesSessions, clientUsage,
-  // Test seams: which candidate wins a credits row, and what that row ends up holding.
-  creditsWrite, beats,
+  // Test seams: which candidate wins a credits row, what that row ends up holding, and
+  // what a reader is finally shown once ageing has had its say.
+  creditsWrite, beats, creditsRows,
 };
