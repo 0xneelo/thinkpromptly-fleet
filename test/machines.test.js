@@ -48,25 +48,37 @@ function fakeHome() {
 }
 
 // Stands in for api.anthropic.com: whatever it answers is what the token's identity is.
-// One server, two paths — the collector asks the profile first and only then for usage, so
-// `usage` is [status, body] and defaults to a failure the identity assertions ignore.
-async function fakeProfile(status, body, usage) {
+// One server, three paths — the collector asks the profile first and only then for usage, so
+// `usage` is [status, body] and defaults to a failure the identity assertions ignore. `token`
+// is [status, body] for POST /token, and once it has minted one the profile answers only that
+// bearer: a refreshed token proves itself like any other. Every request is recorded.
+async function fakeProfile(status, body, usage, token) {
+  const calls = [];
   const srv = http.createServer((req, res) => {
-    const [s, b] = req.url.startsWith('/usage') ? usage || [500, {}] : [status, body];
-    res.writeHead(s, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(b));
+    let raw = '';
+    req.on('data', (c) => { raw += c; });
+    req.on('end', () => {
+      calls.push({ method: req.method, url: req.url, auth: req.headers.authorization || '', body: raw });
+      let [s, b] = req.url.startsWith('/usage') ? usage || [500, {}] : [status, body];
+      if (req.url.startsWith('/token')) [s, b] = token || [404, {}];
+      else if (token && token[0] === 200 && req.headers.authorization !== 'Bearer ' + token[1].access_token)
+        [s, b] = [401, { error: 'unauthorized' }];
+      res.writeHead(s, { 'content-type': 'application/json' });
+      res.end(JSON.stringify(b));
+    });
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + srv.address().port;
-  return { url: base + '/profile', usage: base + '/usage', close: () => new Promise((r) => srv.close(r)) };
+  return { url: base + '/profile', usage: base + '/usage', token: base + '/token', calls, close: () => new Promise((r) => srv.close(r)) };
 }
 
 // Async on purpose: execFileSync would block this process's event loop, and the fake
-// profile server the script is calling lives in it. Both URLs are always overridden, or a
-// test would reach the real api.anthropic.com with the dummy token.
-const collect = async (home, url, usageUrl) =>
+// profile server the script is calling lives in it. All three URLs are always overridden, or
+// a test would reach the real api.anthropic.com with the dummy token — and spend the dummy
+// refresh token at the real token endpoint.
+const collect = async (home, url, usageUrl, tokenUrl = url.replace(/\/profile$/, '/token')) =>
   (await promisify(execFile)('sh', [SCRIPT], {
-    env: { ...process.env, HOME: home, FLEET_PROFILE_URL: url, FLEET_USAGE_URL: usageUrl },
+    env: { ...process.env, HOME: home, FLEET_PROFILE_URL: url, FLEET_USAGE_URL: usageUrl, FLEET_TOKEN_URL: tokenUrl },
     encoding: 'utf8',
     timeout: 30000,
   })).stdout.trim();
@@ -118,6 +130,119 @@ test('fleet-logins.sh — a rejected token falls back to the config, labelled as
   assert.equal(claude.proof, 'config');
   assert.equal(claude.email, 'lafayette@infinite-holdings.llc');
   assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
+});
+
+const creds = (home) => JSON.parse(fs.readFileSync(path.join(home, '.claude', '.credentials.json'), 'utf8'));
+const CLI_CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e';
+const REFRESHED = { access_token: 'NEW-TOKEN', refresh_token: 'REFRESH-TOKEN-2', expires_in: 28800, refresh_token_expires_in: 2592000 };
+const IDENTITY = { account: { email: 'aylianator@gmail.com' }, organization: { uuid: ORG } };
+
+test('fleet-logins.sh — a refused token is refreshed the way the CLI does it, and stored', async (t) => {
+  const home = fakeHome();
+  // The store holds more than the oauth block, and the rest must ride along untouched.
+  const before = creds(home);
+  fs.writeFileSync(
+    path.join(home, '.claude', '.credentials.json'),
+    JSON.stringify({ ...before, mcpOAuth: { keep: 1 }, claudeAiOauth: { ...before.claudeAiOauth, scopes: ['user:inference', 'user:profile'] } })
+  );
+  const p = await fakeProfile(200, IDENTITY, [200, USAGE_BODY], [200, REFRESHED]);
+  t.after(() => p.close());
+  const out = await collect(home, p.url, p.usage, p.token);
+  const claude = pick(JSON.parse(out), 'claude_cli');
+
+  assert.equal(claude.state, 'ok');
+  assert.equal(claude.proof, 'profile');
+  assert.equal(claude.note, 'token refreshed');
+  assert.equal(claude.usage_state, 'ok');
+  const now = Math.floor(Date.now() / 1000);
+  assert.ok(Math.abs(claude.expires_at - (now + 28800)) < 60, "expires_at is the refreshed token's");
+
+  // The request is the CLI's own: its client id, the stored scopes, the stored refresh token.
+  const post = p.calls.find((c) => c.method === 'POST' && c.url === '/token');
+  assert.deepStrictEqual(JSON.parse(post.body), {
+    grant_type: 'refresh_token', refresh_token: 'r', client_id: CLI_CLIENT_ID, scope: 'user:inference user:profile',
+  });
+  // Refused, refreshed, then proved and spent — in that order, on the new bearer.
+  const seq = p.calls.map((c) => c.method + ' ' + c.url + (c.auth ? ' ' + c.auth.slice(7) : ''));
+  assert.deepStrictEqual(seq, ['GET /profile ' + TOKEN, 'POST /token', 'GET /profile NEW-TOKEN', 'GET /usage NEW-TOKEN']);
+
+  const after = creds(home);
+  assert.deepStrictEqual(after.mcpOAuth, { keep: 1 });
+  assert.equal(after.claudeAiOauth.accessToken, 'NEW-TOKEN');
+  assert.equal(after.claudeAiOauth.refreshToken, 'REFRESH-TOKEN-2');
+  assert.deepStrictEqual(after.claudeAiOauth.scopes, ['user:inference', 'user:profile']);
+  assert.ok(Math.abs(after.claudeAiOauth.expiresAt / 1000 - (now + 28800)) < 60);
+  assert.ok(Math.abs(after.claudeAiOauth.refreshTokenExpiresAt / 1000 - (now + 2592000)) < 60);
+  assert.equal(fs.statSync(path.join(home, '.claude', '.credentials.json')).mode & 0o777, 0o600);
+  // Locks released, secrets kept off the wire.
+  assert.ok(!fs.existsSync(path.join(home, '.claude', '.oauth_refresh.lock')));
+  assert.ok(!fs.existsSync(path.join(home, '.claude.lock')));
+  for (const secret of [TOKEN, 'NEW-TOKEN', 'REFRESH-TOKEN-2'])
+    assert.ok(!out.includes(secret), secret + ' leaked into the reported line');
+});
+
+test("fleet-logins.sh — a live session's refresh lock is respected, a stale one is not", async (t) => {
+  const home = fakeHome();
+  const lock = path.join(home, '.claude', '.oauth_refresh.lock');
+  fs.mkdirSync(lock);
+  const p = await fakeProfile(200, IDENTITY, [200, USAGE_BODY], [200, REFRESHED]);
+  t.after(() => p.close());
+  let claude = pick(JSON.parse(await collect(home, p.url, p.usage, p.token)), 'claude_cli');
+  assert.equal(claude.state, 'token_expired');
+  assert.equal(claude.note, 'not refreshed: another refresh holds the lock');
+  assert.ok(!p.calls.some((c) => c.method === 'POST'), "the token endpoint was called under someone else's lock");
+  assert.equal(creds(home).claudeAiOauth.accessToken, TOKEN);
+  assert.ok(fs.existsSync(lock), "someone else's fresh lock was removed");
+
+  // proper-lockfile keeps a held lock's mtime fresh, so one two minutes old was abandoned.
+  const old = new Date(Date.now() - 120000);
+  fs.utimesSync(lock, old, old);
+  claude = pick(JSON.parse(await collect(home, p.url, p.usage, p.token)), 'claude_cli');
+  assert.equal(claude.state, 'ok');
+  assert.equal(claude.note, 'token refreshed');
+  assert.equal(creds(home).claudeAiOauth.accessToken, 'NEW-TOKEN');
+  assert.ok(!fs.existsSync(lock));
+});
+
+test('fleet-logins.sh — a refresh the endpoint refuses leaves the store as it was', async (t) => {
+  const home = fakeHome();
+  const p = await fakeProfile(401, { error: 'unauthorized' }, undefined, [400, { error: 'invalid_grant' }]);
+  t.after(() => p.close());
+  let out = await collect(home, p.url, p.usage, p.token);
+  let claude = pick(JSON.parse(out), 'claude_cli');
+  assert.equal(claude.state, 'token_expired');
+  assert.equal(claude.proof, 'config');
+  assert.equal(claude.note, 'not refreshed: token endpoint answered 400');
+  assert.deepStrictEqual(creds(home).claudeAiOauth, { accessToken: TOKEN, refreshToken: 'r', expiresAt: 4102444800000 });
+  assert.ok(!out.includes(TOKEN));
+
+  // A refresh token past its own expiry is not spent at all.
+  const dead = { ...creds(home).claudeAiOauth, refreshTokenExpiresAt: 1000 };
+  fs.writeFileSync(path.join(home, '.claude', '.credentials.json'), JSON.stringify({ claudeAiOauth: dead }));
+  p.calls.length = 0;
+  out = await collect(home, p.url, p.usage, p.token);
+  claude = pick(JSON.parse(out), 'claude_cli');
+  assert.equal(claude.note, 'not refreshed: refresh token expired, sign in again');
+  assert.ok(!p.calls.some((c) => c.method === 'POST'));
+  assert.deepStrictEqual(creds(home).claudeAiOauth, dead);
+});
+
+test('fleet-logins.sh — a refreshed token that still will not prove itself is not called a success', async (t) => {
+  const home = fakeHome();
+  // The profile refuses every bearer, so the refresh happens but the new token is refused too.
+  const p = await fakeProfile(401, { error: 'unauthorized' }, undefined, [200, REFRESHED]);
+  t.after(() => p.close());
+  const out = await collect(home, p.url, p.usage, p.token);
+  const claude = pick(JSON.parse(out), 'claude_cli');
+
+  assert.equal(claude.state, 'token_expired');
+  assert.equal(claude.signed_in, false);
+  assert.equal(claude.note, 'refreshed but still refused (401)');
+  // The newly issued token still reached disk — the rotated refresh token is never stranded.
+  assert.equal(creds(home).claudeAiOauth.accessToken, 'NEW-TOKEN');
+  assert.equal(creds(home).claudeAiOauth.refreshToken, 'REFRESH-TOKEN-2');
+  for (const secret of [TOKEN, 'NEW-TOKEN', 'REFRESH-TOKEN-2'])
+    assert.ok(!out.includes(secret), secret + ' leaked into the reported line');
 });
 
 // The live reply's shape, plus a `spend` block that must not travel and an extra_usage the

@@ -253,6 +253,16 @@ machine that owns them, used only for that machine's own profile and usage calls
 printed, stored in `fleet.db`, logged, or sent to a browser — the request headers go through
 a 0600 temp file, so no token appears in `ps`. `~/.claude.json` can name a *different* account than
 the token in use, so the token's own answer wins and the config is shown as a fallback.
+A token the endpoint refuses on a machine whose credential is an on-disk `.credentials.json`
+(every box) is refreshed on the spot, the way the CLI itself does it on start-up — same token
+endpoint, client id, scopes and the same two lock directories, so it never races a live
+session — and the new credential is written back to that file atomically. A box login
+therefore stays signed in and keeps reporting instead of going stale between uses; the
+machines row says `token refreshed` when it happened and `not refreshed: …` why not. The
+Mac's login Keychain is **read, never written**: the operator runs Claude Code there, so
+their own sessions keep that token fresh, and a background writer must not race the CLI's own
+Keychain writes. A refresh token past its own expiry (30 days), or an expired Mac login, still
+needs a human `claude auth login` on that machine.
 
 **Quote-free rule.** `ssh german-box <cmd>` traverses zsh → Windows CMD → wsl → bash.
 Nested quotes get mangled and there is no reliable escaping, so every remote command

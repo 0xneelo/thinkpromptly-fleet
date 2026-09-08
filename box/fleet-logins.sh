@@ -8,6 +8,12 @@
 # token and the Codex tokens are read into python memory, used only for this machine's own
 # profile and usage calls, and never printed, stored, logged, or put in argv — the two
 # request headers go through a 0600 temp file, so no token appears in `ps`.
+# A Claude token the endpoint refuses on a machine whose credential is an on-disk file is
+# refreshed the way the CLI itself does it — same endpoint, client id, scopes and the same
+# two lock directories — and the new credential is written back to that file, so a box login
+# stays signed in instead of going stale between uses. The Mac's login Keychain is READ, never
+# written: the operator uses Claude Code there, so its own runs keep that token fresh, and a
+# background writer must not race the CLI's own Keychain writes.
 # A hang-up (the deck's ssh timeout) unwinds through `finally`, so that file never outlives
 # the call. On a non-200 the response body is dropped unread. Runs on mac, WSL and linux.
 
@@ -39,6 +45,12 @@ for _s in (signal.SIGHUP, signal.SIGTERM): signal.signal(_s, _bail)
 HOME = os.path.expanduser("~")
 PROFILE_URL = os.environ.get("FLEET_PROFILE_URL") or "https://api.anthropic.com/api/oauth/profile"
 USAGE_URL = os.environ.get("FLEET_USAGE_URL") or "https://api.anthropic.com/api/oauth/usage"
+TOKEN_URL = os.environ.get("FLEET_TOKEN_URL") or "https://api.anthropic.com/v1/oauth/token"
+# Claude Code's own OAuth client and default scopes (read out of claude 2.1.261). A refresh is
+# the request the CLI makes on start-up, so what comes back is a credential the CLI accepts.
+CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
+SCOPES = ["user:inference", "user:profile", "user:sessions:claude_code", "user:mcp_servers", "user:file_upload"]
+REFRESH_LOCK_STALE = 60   # the CLI's proper-lockfile `stale`: an older lock dir was abandoned
 # Shared Windows profiles are not people; scanning them would report the same login twice.
 WIN_SKIP = ("Public", "Default", "Default User", "All Users", "desktop.ini")
 
@@ -115,6 +127,136 @@ def oauth_get(url, token):
             except Exception:
                 pass
 
+# One POST to the token endpoint. The body goes through a 0600 temp file (`--data-binary @`),
+# so the refresh token is no more an argument than the access token is. Returns (status, body)
+# with the body parsed only on a 200 — a refusal's text is never quoted anywhere.
+def oauth_post(url, payload):
+    req = body = None
+    try:
+        fd, req = tempfile.mkstemp()
+        os.write(fd, json.dumps(payload).encode())
+        os.close(fd)
+        fd, body = tempfile.mkstemp()
+        os.close(fd)
+        r = subprocess.run(["curl", "-sS", "-m", "15", "-o", body, "-w", "%{http_code}",
+                            "-H", "Content-Type: application/json", "--data-binary", "@" + req, url],
+                           capture_output=True, text=True, timeout=25)
+        code = (r.stdout or "").strip()
+        if code == "200": return 200, jload(body)
+        return (int(code) if code.isdigit() else 0), None
+    except Exception:
+        return 0, None
+    finally:
+        for f in (req, body):
+            try:
+                if f: os.unlink(f)
+            except Exception:
+                pass
+
+# The CLI refreshes under two mkdir locks (proper-lockfile): `<config>/.oauth_refresh.lock`
+# and the legacy `<realpath config>.lock`, each stale after 60s. Taking the same two, in the
+# same order, is what keeps a refresh here from racing a live session's — whoever is second
+# sees the directory and backs off. Returns the held paths, or None when someone holds one.
+def refresh_lock(cdir):
+    held = []
+    for l in (os.path.join(cdir, ".oauth_refresh.lock"), os.path.realpath(cdir) + ".lock"):
+        try:
+            os.mkdir(l)
+        except FileExistsError:
+            try: age = time.time() - os.stat(l).st_mtime
+            except Exception: age = 0
+            if age < REFRESH_LOCK_STALE:
+                unlock(held)
+                return None
+            try:
+                os.rmdir(l)
+                os.mkdir(l)
+            except Exception:
+                unlock(held)
+                return None
+        except Exception:
+            unlock(held)
+            return None
+        held.append(l)
+    return held
+
+def unlock(held):
+    for l in held:
+        try: os.rmdir(l)
+        except Exception: pass
+
+def stored_token(d):
+    return ((d or {}).get("claudeAiOauth") or {}).get("accessToken") if isinstance(d, dict) else None
+
+# Both stores put the new claudeAiOauth into whatever else the store holds (mcpOAuth rides
+# along untouched), then read it back: a write that did not land is reported, never assumed.
+# Each returns None on success, or why not.
+def file_store(path):
+    def store(new):
+        d = jload(path)
+        if not isinstance(d, dict) or not isinstance(d.get("claudeAiOauth"), dict): return "unexpected credential shape"
+        d["claudeAiOauth"] = new
+        tmp = path + ".fleet-tmp"   # same directory, so the rename is atomic
+        try:
+            fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as fh: json.dump(d, fh)
+            os.replace(tmp, path)
+        except BaseException as e:
+            # BaseException, so a SIGTERM-driven SystemExit mid-write still unlinks the
+            # 0600 temp holding a live credential rather than stranding it on disk.
+            try: os.unlink(tmp)
+            except Exception: pass
+            if isinstance(e, Exception): return "write failed: " + type(e).__name__
+            raise
+        return None if stored_token(jload(path)) == new["accessToken"] else "read-back mismatch"
+    return store
+
+
+# Runs only after this machine's own profile call refused the access token — the moment the
+# CLI itself would refresh. The reply rotates the refresh token, so the store is proven
+# writable first (by writing what it already holds) and the new credential is stored before
+# it is used: a refresh that could not be written back would sign this machine out.
+# Returns (new claudeAiOauth, None) or (None, why not).
+def refresh(o, cdir, store):
+    rt = o.get("refreshToken")
+    if not isinstance(rt, str) or not rt: return None, "no refresh token"
+    rexp = secs(o.get("refreshTokenExpiresAt"))
+    if rexp and rexp < time.time(): return None, "refresh token expired, sign in again"
+    held = refresh_lock(cdir)
+    if held is None: return None, "another refresh holds the lock"
+    # The token endpoint rotates the refresh token the moment the POST succeeds, so from here
+    # to the write-back a death (the deck's 60s ssh timeout sends SIGTERM) would strand the
+    # rotated token: the old one is now dead server-side and the new one never reached disk,
+    # locking this box out of refresh until a human `claude auth login`. Defer those two
+    # signals across just this span — a POST plus one local atomic write — then honour them.
+    deferred = []
+    prev = {}
+    try:
+        for _sig in (signal.SIGHUP, signal.SIGTERM):
+            prev[_sig] = signal.signal(_sig, lambda n, f: deferred.append(n))
+        why = store(o)
+        if why: return None, "store not writable, " + why
+        scopes = [x for x in (o.get("scopes") or []) if isinstance(x, str)] if isinstance(o.get("scopes"), list) else []
+        # An empty scopes list falls back to the defaults, exactly as the CLI's own refresh does.
+        code, body = oauth_post(TOKEN_URL, {"grant_type": "refresh_token", "refresh_token": rt,
+                                             "client_id": o.get("clientId") or CLIENT_ID,
+                                             "scope": " ".join(scopes or SCOPES)})
+        if code != 200 or not isinstance(body, dict) or not isinstance(body.get("access_token"), str):
+            return None, "token endpoint answered %s" % (code or "nothing")
+        now = int(time.time() * 1000)
+        new = dict(o, accessToken=body["access_token"],
+                   refreshToken=body["refresh_token"] if isinstance(body.get("refresh_token"), str) else rt)
+        ei, rei = body.get("expires_in"), body.get("refresh_token_expires_in")
+        new["expiresAt"] = now + (int(ei) if isinstance(ei, (int, float)) else 3600) * 1000
+        if isinstance(rei, (int, float)): new["refreshTokenExpiresAt"] = now + int(rei) * 1000
+        why = store(new)
+        if why: return None, "refreshed but not stored, " + why
+        return new, None
+    finally:
+        for _sig, _h in prev.items(): signal.signal(_sig, _h)
+        unlock(held)
+        if deferred: raise SystemExit(1)   # a kill arrived during the span; honour it now
+
 PCT_KEYS = ("utilization", "used_percentage", "used_percent", "pct")
 XU_KEYS = ("utilization", "used_credits", "monthly_limit", "decimal_places", "currency",
            "is_enabled", "spend_limit_reached")
@@ -162,10 +304,14 @@ def claude_cli(home, where):
     cfg = jload(os.path.join(home, ".claude.json")) or {}
     acct = cfg.get("oauthAccount") or {}
     ce, co = acct.get("emailAddress") or None, acct.get("organizationUuid") or None
-    cred = jload(os.path.join(home, ".claude", ".credentials.json"))
-    note = None
+    cred_path = os.path.join(home, ".claude", ".credentials.json")
+    cred = jload(cred_path)
+    # A refresh is written straight back, so only a store we can write safely earns one: the
+    # on-disk credential file, never the Mac Keychain (read-only here — see the header).
+    note, store = None, file_store(cred_path)
     if cred is None and where == "local" and OS == "darwin":
         cred, why = keychain()
+        store = None
         # A Keychain that refused, or holds something else, is its own state — but only when
         # it is the reason there is no token, so a working on-disk credential still wins.
         if cred is None and why and why[0] != "absent":
@@ -179,6 +325,19 @@ def claude_cli(home, where):
     base = base_of(ce, co, o.get("expiresAt") if isinstance(o, dict) else None)
     if token:
         code, body = oauth_get(PROFILE_URL, token)
+        # Only the store shape the CLI writes today is refreshed; a flat legacy file is left
+        # for the CLI to migrate. The note says what happened either way.
+        if code in (401, 403) and store and isinstance(cred, dict) and isinstance(cred.get("claudeAiOauth"), dict):
+            new, why = refresh(o, os.path.join(home, ".claude"), store)
+            if new:
+                o, token = new, new["accessToken"]
+                base = base_of(ce, co, o.get("expiresAt"))
+                code, body = oauth_get(PROFILE_URL, token)
+                # A refreshed token that STILL will not prove itself is not a success: say so,
+                # or the row would read "token refreshed" beside a signed-out state.
+                note = "token refreshed" if code == 200 else "refreshed but still refused (%s)" % code
+            else:
+                note = "not refreshed: " + why
         if code == 200 and isinstance(body, dict):
             a, g = body.get("account") or {}, body.get("organization") or {}
             # Only a token that just proved itself is worth spending a second call on. The
@@ -193,12 +352,12 @@ def claude_cli(home, where):
             return entry("claude_cli", where, state="ok", signed_in=True, proof="profile",
                          email=a.get("email") or a.get("email_address"), org=g.get("uuid"),
                          tier=g.get("rate_limit_tier"), plan=g.get("organization_type"),
-                         usage_state=ustate, usage=usage, **base)
-        # No refresh flow here: a human reopens Claude Code. The config is the only fallback,
-        # and it is labelled as one because it can name a different account than the token.
+                         usage_state=ustate, usage=usage, note=note, **base)
+        # A token refused and not refreshable: the config is the only fallback, and it is
+        # labelled as one because it can name a different account than the token.
         state = "token_expired" if code in (401, 403) else "rate_limited" if code == 429 else "error"
         return entry("claude_cli", where, state=state, signed_in=False if state == "token_expired" else None,
-                     proof="config", email=ce, org=co, **base)
+                     proof="config", email=ce, org=co, note=note, **base)
     if ce or co:
         return entry("claude_cli", where, state="config_only", proof="config", email=ce, org=co, note=note, **base)
     installed = os.path.isdir(os.path.join(home, ".claude")) or (where == "local" and bool(shutil.which("claude")))
