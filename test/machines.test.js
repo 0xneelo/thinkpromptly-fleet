@@ -227,7 +227,10 @@ const LINE = {
 
 // One record per ssh call: every argv element NUL-terminated, then a newline.
 const argvLog = (f) =>
-  fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((r) => r.split('\0').slice(0, -1));
+  // test/ssh-shim.sh writes one record per write(): arguments each closed by a NUL, the
+  // record itself closed by a second NUL. Splitting on the pair is what keeps two racing
+  // shims from reading back as one call.
+  fs.readFileSync(f, 'utf8').split('\0\0').filter(Boolean).map((r) => r.split('\0'));
 
 test('/api/machines — the ssh argv per route, and no ssh at all for local or push', async (t) => {
   const dir = tmpdir('machines-ssh');
