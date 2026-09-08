@@ -48,20 +48,25 @@ function fakeHome() {
 }
 
 // Stands in for api.anthropic.com: whatever it answers is what the token's identity is.
-async function fakeProfile(status, body) {
+// One server, two paths — the collector asks the profile first and only then for usage, so
+// `usage` is [status, body] and defaults to a failure the identity assertions ignore.
+async function fakeProfile(status, body, usage) {
   const srv = http.createServer((req, res) => {
-    res.writeHead(status, { 'content-type': 'application/json' });
-    res.end(JSON.stringify(body));
+    const [s, b] = req.url.startsWith('/usage') ? usage || [500, {}] : [status, body];
+    res.writeHead(s, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(b));
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
-  return { url: 'http://127.0.0.1:' + srv.address().port + '/profile', close: () => new Promise((r) => srv.close(r)) };
+  const base = 'http://127.0.0.1:' + srv.address().port;
+  return { url: base + '/profile', usage: base + '/usage', close: () => new Promise((r) => srv.close(r)) };
 }
 
 // Async on purpose: execFileSync would block this process's event loop, and the fake
-// profile server the script is calling lives in it.
-const collect = async (home, url) =>
+// profile server the script is calling lives in it. Both URLs are always overridden, or a
+// test would reach the real api.anthropic.com with the dummy token.
+const collect = async (home, url, usageUrl) =>
   (await promisify(execFile)('sh', [SCRIPT], {
-    env: { ...process.env, HOME: home, FLEET_PROFILE_URL: url },
+    env: { ...process.env, HOME: home, FLEET_PROFILE_URL: url, FLEET_USAGE_URL: usageUrl },
     encoding: 'utf8',
     timeout: 30000,
   })).stdout.trim();
@@ -75,7 +80,7 @@ test('fleet-logins.sh — the token names the account, the config is only a fall
     organization: { uuid: ORG, rate_limit_tier: 'default_claude_max_20x' },
   });
   t.after(() => p.close());
-  const out = await collect(home, p.url);
+  const out = await collect(home, p.url, p.usage);
   const d = JSON.parse(out);
 
   const claude = pick(d, 'claude_cli');
@@ -105,13 +110,87 @@ test('fleet-logins.sh — a rejected token falls back to the config, labelled as
   const home = fakeHome();
   const p = await fakeProfile(401, { error: 'unauthorized' });
   t.after(() => p.close());
-  const out = await collect(home, p.url);
+  const out = await collect(home, p.url, p.usage);
   const claude = pick(JSON.parse(out), 'claude_cli');
 
   assert.equal(claude.state, 'token_expired');
   assert.equal(claude.signed_in, false);
   assert.equal(claude.proof, 'config');
   assert.equal(claude.email, 'lafayette@infinite-holdings.llc');
+  assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
+});
+
+// The live reply's shape, plus a `spend` block that must not travel and an extra_usage the
+// deck reads amounts out of.
+const USAGE_BODY = {
+  five_hour: { utilization: 42.0, resets_at: '2026-09-06T20:00:00Z' },
+  seven_day: { utilization: 7.5, resets_at: null },
+  spend: { secret: 'NO' },
+  limits: [{ kind: 'weekly_scoped', percent: 3, scope: { model: { display_name: 'Fable' } } }],
+  extra_usage: {
+    utilization: 1, used_credits: 100, monthly_limit: 4000, decimal_places: 2,
+    currency: 'EUR', is_enabled: true, spend_limit_reached: false,
+  },
+};
+
+test('fleet-logins.sh — a proved token also reports its usage, trimmed to what the deck reads', async (t) => {
+  const home = fakeHome();
+  const p = await fakeProfile(
+    200,
+    { account: { email: 'aylianator@gmail.com' }, organization: { uuid: ORG } },
+    [200, USAGE_BODY]
+  );
+  t.after(() => p.close());
+  const out = await collect(home, p.url, p.usage);
+  const claude = pick(JSON.parse(out), 'claude_cli');
+
+  assert.equal(claude.usage_state, 'ok');
+  assert.equal(claude.usage.five_hour.utilization, 42);
+  assert.equal(claude.usage.seven_day.utilization, 7.5);
+  // Only the windows, the scoped limits and the credit pool travel; `spend` is none of them
+  // and an unknown key added tomorrow leaves the box the same way.
+  assert.equal(claude.usage.spend, undefined);
+  assert.equal(claude.usage.limits[0].scope.model.display_name, 'Fable');
+  assert.equal(claude.usage.extra_usage.currency, 'EUR');
+  assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
+});
+
+test('fleet-logins.sh — a rate-limited usage call is a state, not a lost identity', async (t) => {
+  const home = fakeHome();
+  const p = await fakeProfile(
+    200,
+    { account: { email: 'aylianator@gmail.com' }, organization: { uuid: ORG } },
+    [429, { error: 'rate_limited' }]
+  );
+  t.after(() => p.close());
+  const out = await collect(home, p.url, p.usage);
+  const claude = pick(JSON.parse(out), 'claude_cli');
+
+  assert.equal(claude.usage_state, 'rate_limited');
+  assert.equal(claude.usage, undefined);
+  // The profile answered, so the identity it proved stands whatever the second call did.
+  assert.equal(claude.state, 'ok');
+  assert.equal(claude.proof, 'profile');
+  assert.equal(claude.email, 'aylianator@gmail.com');
+  assert.equal(claude.org, ORG);
+  assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
+});
+
+test('fleet-logins.sh — windows nested under rate_limits are unwrapped, not dropped', async (t) => {
+  const home = fakeHome();
+  const p = await fakeProfile(
+    200,
+    { account: { email: 'aylianator@gmail.com' }, organization: { uuid: ORG } },
+    [200, { rate_limits: { five_hour: { utilization: 5.0, resets_at: null } } }]
+  );
+  t.after(() => p.close());
+  const out = await collect(home, p.url, p.usage);
+  const claude = pick(JSON.parse(out), 'claude_cli');
+
+  // Trimming the outer object of this shape used to keep nothing, so the deck saw a proved
+  // login reporting no windows at all.
+  assert.equal(claude.usage_state, 'ok');
+  assert.equal(claude.usage.five_hour.utilization, 5);
   assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
 });
 
@@ -773,4 +852,291 @@ test('/api/machines — usage and sessions join onto the row, and no credential 
   })(r.body, '$');
   assert.deepEqual(bad, [], 'credential-shaped keys or seeded secrets reached /api/machines');
   assert.ok(!r.text.includes(SECRET), 'a seeded secret appeared in the raw response body');
+});
+
+// --- A proved Claude login carries usage, and usage is a Credits fact: it lands on the
+// credits row, never a second time on the machines row.
+test('/api/machines — a collected usage reply lands on the credits row, not on the machines one', async (t) => {
+  const dir = tmpdir('machines-credits');
+  const now = Math.floor(Date.now() / 1000);
+  const env = hostFixture(dir, {
+    v: 1,
+    id: 'macbook',
+    host: 'rfc1918-internal',
+    os: 'darwin',
+    ts: now,
+    clients: [
+      {
+        client: 'claude_cli', where: 'local', installed: true, signed_in: true, state: 'ok',
+        proof: 'profile', email: 'aylianator@gmail.com', org: ORG, access_token: SECRET,
+        usage_state: 'ok',
+        usage: { five_hour: { utilization: 42, resets_at: null }, seven_day: { utilization: 7, resets_at: null } },
+      },
+    ],
+  });
+  const s = await startServer(env, { dir });
+  t.after(() => s.stop());
+
+  const r = await s.get('/api/machines?refresh=1');
+  assert.equal(r.status, 200);
+  const mac = r.body.machines.find((m) => m.id === 'macbook');
+  const claude = mac.clients.find((c) => c.client === 'claude_cli' && c.where === 'local');
+  assert.equal(claude.usage.windows.five_hour.pct, 42);
+  assert.equal(claude.usage.windows.seven_day.pct, 7);
+  assert.equal(claude.usage.stale_windows, false);
+
+  const db = s.open();
+  t.after(() => db.close());
+  const row = db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?').get('claude', 'aylianator@gmail.com');
+  assert.ok(row, 'the machines collect wrote no credits row');
+  const credits = JSON.parse(row.payload);
+  // A live token read, so the row is sourced as one and reads like any other oauth row.
+  assert.equal(credits.source, 'oauth');
+  assert.equal(credits.state, 'ok');
+  assert.equal(credits.windows.five_hour.pct, 42);
+  // clientRow's whitelist is what keeps the numbers in one place: the machines row is
+  // identity, and storing usage there too would let the two disagree.
+  const stored = JSON.parse(db.prepare('SELECT payload FROM machines WHERE id = ?').get('macbook').payload);
+  assert.ok(!JSON.stringify(stored).includes('usage'), 'usage was stored on the machines row too');
+
+  // The same walk as the join test: a usage reply must not smuggle a credential through.
+  const BANNED = new Set(['token', 'access_token', 'refresh_token', 'cookie', 'authorization']);
+  const SECRETS = new Set([SECRET, SECRET_SESSION]);
+  const bad = [];
+  (function walk(v, at) {
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, at + '[' + i + ']'));
+    if (v && typeof v === 'object')
+      return Object.entries(v).forEach(([k, x]) => {
+        if (BANNED.has(k.toLowerCase())) bad.push('key ' + at + '.' + k);
+        walk(x, at + '.' + k);
+      });
+    if (typeof v === 'string' && SECRETS.has(v)) bad.push('value ' + at + ' = ' + v);
+  })(r.body, '$');
+  assert.deepEqual(bad, [], 'credential-shaped keys or seeded secrets reached /api/machines');
+  assert.ok(!r.text.includes(SECRET), 'a seeded secret appeared in the raw response body');
+});
+
+// --- creditsWrite's borrow, and beats(). Exported seams: the write goes to the throwaway db
+// of the seams() instance, so the stored payload is the assertion.
+const zeroOauth = (now) => ({
+  kind: 'claude', id: 'borrow@example.invalid', email: 'borrow@example.invalid', org: ORG,
+  host: 'mac', source: 'oauth', state: 'ok', updated_at: now,
+  windows: { five_hour: { pct: 0, resets_at: null }, seven_day: { pct: 0, resets_at: null } },
+});
+const desktopAt = (now, age) => ({
+  kind: 'claude', id: 'borrow@example.invalid', email: 'borrow@example.invalid', org: ORG,
+  host: 'mac', source: 'desktop', state: 'ok', updated_at: now - age, sample_ts: now - age,
+  windows: { five_hour: { pct: 61, resets_at: null } },
+});
+const storedRow = (m, id) =>
+  JSON.parse(m.db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?').get('claude', id).payload);
+
+test('creditsWrite — a stale alternate cannot lend its windows to a signal-free reply', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  m.creditsWrite([zeroOauth(now), desktopAt(now, 8 * 86400)]);
+
+  // The desktop sample is eight days old: its five-hour window has reset many times over, so
+  // it vouches for nothing. A profile-proved 0% with nothing fresher to contradict it IS 0%.
+  const r = storedRow(m, 'borrow@example.invalid');
+  assert.equal(r.source, 'oauth');
+  assert.equal(r.windows.five_hour.pct, 0);
+  assert.equal(r.windows_from, undefined);
+});
+
+test('creditsWrite — a fresh alternate does lend its windows', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  m.creditsWrite([zeroOauth(now), desktopAt(now, 600)]);
+
+  const r = storedRow(m, 'borrow@example.invalid');
+  assert.equal(r.source, 'oauth');
+  assert.equal(r.windows_from, 'desktop');
+  assert.equal(r.windows.five_hour.pct, 61);
+});
+
+test('beats — on equal rank the newer rollout snapshot wins, not the reply that landed last', (t) => {
+  const { beats } = seams(t);
+  // Both Codex rows, so both rank 2: whichever ssh reply finished last used to win, and the
+  // row flipped between a current 74% and a month-old 0% on every page load.
+  const a = { source: 'codex', state: 'ok', updated_at: NOW - 100, snapshot_ts: NOW };
+  const b = { source: 'codex', state: 'ok', updated_at: NOW, snapshot_ts: NOW - 10 * 86400 };
+  assert.equal(beats(a, b), true);
+  assert.equal(beats(b, a), false);
+
+  // With no snapshot to compare, the read date is still the only date there is.
+  const a2 = { ...a, snapshot_ts: null };
+  const b2 = { ...b, snapshot_ts: null };
+  assert.equal(beats(a2, b2), false);
+  assert.equal(beats(b2, a2), true);
+});
+
+test('beats — on equal rank the newer desktop sample wins, not the ssh reply that landed last', (t) => {
+  const { beats } = seams(t);
+  // The lafayette row: both desktop, both rank 1, and updated_at is only when each machine was
+  // asked — so a box's nine-day-old sample outlasted the mac's twelve-minute-old one.
+  const a = { source: 'desktop', state: 'ok', updated_at: NOW - 1, sample_ts: NOW - 720 };
+  const b = { source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 9 * 86400 };
+  assert.equal(beats(a, b), true);
+  assert.equal(beats(b, a), false);
+});
+
+test('beats — a failed read neither pins a row nor erases a good one, at any rank', (t) => {
+  const { beats } = seams(t);
+  // The aylianator row: a six-hour-old oauth error (rank 3) held the row against fresh desktop
+  // samples (rank 1), so the page read "could not read usage" over a borrowed 14-day-old number.
+  const stale = { source: 'oauth', state: 'error', updated_at: NOW - 6 * 3600 };
+  const fresh = { source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 3 * 3600 };
+  assert.equal(beats(fresh, stale), true);
+
+  // And the other way: a rate-limited oauth call must not replace a minute-old desktop sample
+  // with a banner just because it outranks it.
+  const failed = { source: 'oauth', state: 'rate_limited', updated_at: NOW };
+  const good = { source: 'desktop', state: 'ok', updated_at: NOW - 60, sample_ts: NOW - 60 };
+  assert.equal(beats(failed, good), false);
+});
+
+test('beats — a sample past every window it carries cannot displace a failed read', (t) => {
+  const { beats } = seams(t);
+  // Rule 2 ("a reading that worked beats a failure") used to fire on state alone. So a desktop
+  // sample weeks past its own five-hour window won the batch against a failed oauth call and
+  // then overwrote the last row that still held real numbers — with a figure agedOut() only
+  // greys back out. A failed read asserts nothing; neither does this, so it must not win.
+  const spent = {
+    source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 20 * 86400,
+    windows: { five_hour: { pct: 15, resets_at: null } },
+  };
+  const failed = { source: 'oauth', state: 'rate_limited', updated_at: NOW };
+  assert.equal(beats(spent, failed, NOW), false);
+
+  // A sample still inside its window keeps the behaviour the rule was added for: the stale
+  // failure of a better source does not get to pin the row against numbers that are real.
+  assert.equal(beats({ ...spent, sample_ts: NOW - 600 }, failed, NOW), true);
+});
+
+test('creditsWrite — a spent sample does not overwrite the last real reading', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  // Yesterday's live reading, already past RANK_STALE so nothing shields it by age alone.
+  m.creditsWrite([
+    { ...zeroOauth(now - 13 * 3600), updated_at: now - 13 * 3600,
+      windows: { five_hour: { pct: 42, resets_at: 'x' }, seven_day: { pct: 7, resets_at: 'x' } } },
+  ]);
+  assert.equal(storedRow(m, 'borrow@example.invalid').windows.five_hour.pct, 42);
+
+  // This sweep: the token read fails, and the only other candidate is three weeks stale.
+  m.creditsWrite([
+    { ...zeroOauth(now), state: 'rate_limited', windows: {} },
+    // Read this sweep (updated_at = now) but describing a sample three weeks old — the shape
+    // a desktop history file actually has once that account stopped using the app.
+    { ...desktopAt(now, 20 * 86400), updated_at: now, windows: { five_hour: { pct: 15, resets_at: null } } },
+  ]);
+  // Whatever the row now says, it must not be the stale number: 42 stands or the failure is
+  // reported, but 15% was never true of this account at any point the deck can vouch for.
+  assert.notEqual(storedRow(m, 'borrow@example.invalid').windows.five_hour?.pct, 15);
+});
+
+test('creditsWrite — the newer desktop sample is stored, whichever machine reported last', (t) => {
+  const now = Math.floor(Date.now() / 1000);
+  const mac = {
+    kind: 'claude', id: 'lafayette@example.invalid', email: 'lafayette@example.invalid', org: ORG,
+    host: 'mac', source: 'desktop', state: 'ok', updated_at: now - 2, sample_ts: now - 720,
+    windows: { five_hour: { pct: 59, resets_at: null }, seven_day: { pct: 52, resets_at: null } },
+  };
+  const box = {
+    kind: 'claude', id: 'lafayette@example.invalid', email: 'lafayette@example.invalid', org: ORG,
+    host: 'box', source: 'desktop', state: 'ok', updated_at: now, sample_ts: now - 9 * 86400,
+    windows: { five_hour: { pct: 0, resets_at: null }, seven_day: { pct: 30, resets_at: null } },
+  };
+  // Either arrival order: the sample's own age decides, not which ssh reply finished last.
+  for (const rows of [[mac, box], [box, mac]]) {
+    const m = seams(t);
+    m.creditsWrite(rows);
+    const r = storedRow(m, 'lafayette@example.invalid');
+    assert.equal(r.windows.seven_day.pct, 52);
+    assert.equal(r.sample_ts, now - 720);
+  }
+});
+
+// One stub for two local machines: FLEET_LOGINS_SH is a single path, so the two replies are
+// claimed with mkdir — atomic, so each of the concurrent calls takes exactly one of them. The
+// second answers late on purpose: b landing last is the order the per-machine write got wrong.
+function pairFixture(dir, a, b) {
+  const stub = path.join(dir, 'stub-logins.sh');
+  fs.writeFileSync(
+    stub,
+    '#!/bin/sh\nif mkdir ' + JSON.stringify(path.join(dir, 'claimed')) + " 2>/dev/null; then\n" +
+      "printf '%s\\n' '" + JSON.stringify(a) + "'\nelse\nsleep 0.2\nprintf '%s\\n' '" + JSON.stringify(b) + "'\nfi\n"
+  );
+  const cfg = path.join(dir, 'machines.json');
+  fs.writeFileSync(
+    cfg,
+    JSON.stringify({
+      machines: [
+        { id: 'macbook', host: 'mac', label: 'MacBook Pro', os: 'macos', route: 'local' },
+        { id: 'german-box', host: 'german-box', label: 'German Box', os: 'linux', route: 'local' },
+      ],
+    })
+  );
+  return { FLEET_LOGINS_SH: stub, FLEET_MACHINES_FILE: cfg };
+}
+
+const usageLine = (host, now, windows) => ({
+  v: 1, host, os: 'linux', ts: now,
+  clients: [
+    {
+      client: 'claude_cli', where: 'local', installed: true, signed_in: true, state: 'ok',
+      proof: 'profile', email: 'aylianator@gmail.com', org: ORG, usage_state: 'ok', usage: windows,
+    },
+  ],
+});
+
+test('/api/machines — one account on two machines: the real reading survives the empty reply', async (t) => {
+  const dir = tmpdir('machines-pair');
+  const now = Math.floor(Date.now() / 1000);
+  const env = pairFixture(
+    dir,
+    usageLine('mac', now, { five_hour: { utilization: 63, resets_at: null }, seven_day: { utilization: 20, resets_at: null } }),
+    // The unpopulated reply the endpoint gives for some accounts: every window zero, every
+    // reset null. Written per machine it clobbered the real reading whenever it landed last.
+    usageLine('german-box', now, { five_hour: { utilization: 0, resets_at: null }, seven_day: { utilization: 0, resets_at: null } })
+  );
+  const s = await startServer(env, { dir });
+  t.after(() => s.stop());
+
+  assert.equal((await s.get('/api/machines?refresh=1')).status, 200);
+  const db = s.open();
+  t.after(() => db.close());
+  const row = JSON.parse(
+    db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?').get('claude', 'aylianator@gmail.com').payload
+  );
+  // Whichever machine finished last: 63 is the only reading either of them actually holds.
+  assert.equal(row.windows.five_hour.pct, 63);
+  assert.ok(row.windows_from === undefined || row.windows_from === 'oauth', 'borrowed from ' + row.windows_from);
+});
+
+test('/api/credits — a future snapshot stamp is clamped, so it cannot pin the row for good', async (t) => {
+  const dir = tmpdir('credits-snapshot');
+  const s = await startServer({}, { dir });
+  t.after(() => s.stop());
+  const now = Math.floor(Date.now() / 1000);
+  const push = (updated_at, snapshot_ts, percent) =>
+    s.post('/api/credits', {
+      kind: 'codex', email: 'admin@deus.finance', host: 'rog-strix', state: 'ok',
+      updated_at, snapshot_ts, rate_limits: { primary: { used_percent: percent } },
+    });
+  const db = s.open();
+  t.after(() => db.close());
+  const row = () =>
+    JSON.parse(db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?').get('codex', 'admin@deus.finance').payload);
+
+  // Two hours ago, claiming a snapshot from thirty years hence: no genuine reading could
+  // ever carry a larger one, so unclamped it would win the same-rank tie for good.
+  assert.equal((await push(now - 7200, now + 999999999, 74)).status, 200);
+  assert.ok(row().snapshot_ts <= now, 'a future snapshot stamp was stored as claimed');
+
+  // A real read two hours later, its snapshot the rollout it just saw.
+  assert.equal((await push(now, now, 30)).status, 200);
+  assert.equal(row().weekly.pct, 30);
+  assert.equal(row().snapshot_ts, now);
 });

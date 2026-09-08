@@ -1182,15 +1182,33 @@ const safeParse = (s) => {
     return null;
   }
 };
-const beats = (a, b) => {
+// When a row's numbers are from: a desktop row dates them by the sample it read, a Codex
+// row by the rollout it read. An oauth row has neither — its updated_at IS the read time.
+const dataTs = (r) => r.sample_ts ?? r.snapshot_ts ?? null;
+const beats = (a, b, now = Math.floor(Date.now() / 1000)) => {
   if (!b) return true;
   const ra = SOURCE_RANK[a.source] || 0;
   const rb = SOURCE_RANK[b.source] || 0;
   const at = a.updated_at || 0;
   const bt = b.updated_at || 0;
   // A read that failed carries no numbers, so it must not displace a recent one that
-  // succeeded: a single rate-limited call would otherwise erase a good live reading.
-  if (ra === rb && b.state === 'ok' && a.state !== 'ok' && at - bt < RANK_STALE) return false;
+  // succeeded, whatever its rank: a single rate-limited call would otherwise erase a good
+  // live reading. The Machines page shows the token state per client, so nothing is hidden.
+  if (b.state === 'ok' && a.state !== 'ok' && at - bt < RANK_STALE) return false;
+  // The other way round it takes effect at once — but only for numbers still worth
+  // asserting. A failure carries none, so displacing it is right; displacing it with a
+  // sample weeks past its own window's age would throw away the last real reading and put
+  // in its place a number agedOut() only greys back out. vouches() is that same bar, and
+  // it is the bar the borrow step below already holds every lender to.
+  if (a.state === 'ok' && b.state !== 'ok' && !allAgedOut(a, now)) return true;
+  // Two rows of the same rank describe the same account from different machines, and
+  // updated_at is only when each machine was asked. So the mac's twelve-minute-old desktop
+  // sample and a box's nine-day-old one tie on rank, as do the mac's Codex 74% and a box's
+  // month-old 0%, and the row flipped to whichever ssh reply happened to finish last. The
+  // newer numbers are the truer ones either way.
+  const ad = dataTs(a);
+  const bd = dataTs(b);
+  if (ra === rb && Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd) return ad > bd;
   return ra === rb ? at >= bt : ra > rb || at - bt > RANK_STALE;
 };
 
@@ -1439,35 +1457,80 @@ function creditsCandidates(d, host, map, push) {
   // One row per org, and a machine sees a handful: the slice is what stops a push from
   // turning a long list into as many stored rows.
   for (const s of (Array.isArray(d.desktop) ? d.desktop : []).slice(0, HISTORY_ORGS))
-    if (s && typeof s === 'object' && typeof s.org === 'string') add('claude', s.org, null, 'desktop', desktopRow(s));
-  if (d.codex && typeof d.codex === 'object')
-    add('codex', null, typeof d.codex.email === 'string' ? d.codex.email : CODEX_EMAIL, 'codex', codexRow(d.codex));
+    if (s && typeof s === 'object' && typeof s.org === 'string') {
+      const ds = desktopRow(s);
+      // Clamped like the Codex snapshot below: a future sample stamp would win every tie and never age.
+      if (ds.sample_ts > t) ds.sample_ts = t;
+      add('claude', s.org, null, 'desktop', ds);
+    }
+  if (d.codex && typeof d.codex === 'object') {
+    const cx = codexRow(d.codex);
+    // Never later than now, for the same reason: the snapshot stamp breaks a same-rank tie,
+    // and a future one would win every tie against every genuine reading from here on.
+    if (cx.snapshot_ts > t) cx.snapshot_ts = t;
+    add('codex', null, typeof d.codex.email === 'string' ? d.codex.email : CODEX_EMAIL, 'codex', cx);
+  }
   return out;
 }
 
+// How long a sample may still be quoted as a current figure. Not the window's own length:
+// the desktop source carries no reset stamp, so a seven-day reading days old may sit on
+// the far side of a reset and read "at the limit" for an account now at zero. These are
+// the ages within which the number is still worth asserting; past them the reading becomes
+// no reading, and only the trend line keeps it, which is honestly historical.
+const WINDOW_AGE = { five_hour: 2 * 3600, seven_day: 24 * 3600, extra: 7 * 86400 };
+// A model-scoped weekly (seven_day_fable) is a seven_day window and ages like one.
+const windowAge = (n) => WINDOW_AGE[n] ?? (n.startsWith('seven_day') ? WINDOW_AGE.seven_day : 7 * 86400);
+
 // The endpoint answers for some accounts with every window zeroed and every resets_at
-// null — an unpopulated reply, not a real 0%. Taken at face value it would hide genuine
-// usage the desktop sample knows about, so a signal-free reply does not count as windows.
+// null — an unpopulated reply, not a real 0%. Such a reply must not hide fresher real
+// usage another source knows about, so it does not count as windows and the row borrows.
 // `extra` comes from the separate credit block and is populated even when the rate-limit
 // windows are not, so it cannot vouch for them.
 const hasSignal = (r) =>
   Object.entries(r.windows || {}).some(([n, w]) => n !== 'extra' && w && (w.pct > 0 || w.resets_at !== null));
+// ...but only a source still inside its own window's age may vouch. An eight-day-old
+// desktop sample describes a week that has since reset; lending it here would answer a
+// profile-proved 0% with a number the view then ages back out into "stale", which is
+// worse than the zero. Nothing fresher to contradict it means the zero IS the reading.
+// Every window a row carries already older than the span that window describes: it asserts
+// nothing a reader should act on. agedOut() greys those windows at render time; beats() uses
+// this to stop such a row overwriting the last one that still held real numbers, which a
+// failed read of a better source would otherwise invite it to do.
+const allAgedOut = (r, now) => {
+  const names = Object.keys(r.windows || {}).filter((n) => n !== 'extra');
+  const t = r.sample_ts ?? r.updated_at ?? 0;
+  return names.length > 0 && names.every((n) => now - t > windowAge(n));
+};
+const vouches = (r, now) =>
+  Object.entries(r.windows || {}).some(
+    ([n, w]) =>
+      n !== 'extra' &&
+      w &&
+      (w.pct > 0 || w.resets_at !== null) &&
+      now - (r.sample_ts ?? r.updated_at ?? 0) <= windowAge(n)
+  );
 
 function creditsWrite(rows) {
+  const now = Math.floor(Date.now() / 1000);
   const best = new Map();
   const groups = new Map();
   for (const r of rows) {
     const k = r.kind + '\0' + r.id;
     groups.set(k, (groups.get(k) || []).concat(r));
-    if (beats(r, best.get(k))) best.set(k, r);
+    if (beats(r, best.get(k), now)) best.set(k, r);
   }
   // Keep the winner's richer fields (only the endpoint reports credits) but borrow the
   // percentages from the best source that actually reported any.
   for (const [k, r] of best) {
     if (hasSignal(r)) continue;
     const alt = (groups.get(k) || [])
-      .filter((o) => o !== r && hasSignal(o))
-      .sort((a, b) => (SOURCE_RANK[b.source] || 0) - (SOURCE_RANK[a.source] || 0) || b.updated_at - a.updated_at)[0];
+      .filter((o) => o !== r && hasSignal(o) && vouches(o, now))
+      .sort(
+        (a, b) =>
+          (SOURCE_RANK[b.source] || 0) - (SOURCE_RANK[a.source] || 0) ||
+          (dataTs(b) ?? b.updated_at) - (dataTs(a) ?? a.updated_at)
+      )[0];
     if (alt) best.set(k, { ...r, windows: alt.windows, sample_ts: alt.sample_ts, windows_from: alt.source });
   }
   // A collect carries no pushed rows, so without comparing against what is already stored
@@ -1475,7 +1538,7 @@ function creditsWrite(rows) {
   let written = 0;
   for (const [k, r] of best) {
     const prev = creditsGetId.get(r.kind, r.id);
-    if (prev && !beats(r, safeParse(prev.payload))) continue;
+    if (prev && !beats(r, safeParse(prev.payload), now)) continue;
     // Which machines report this account and how — every candidate for the key, not just
     // the winner: an account signed in on three boxes is a different fact from one on one.
     const seen = [];
@@ -1488,16 +1551,6 @@ function creditsWrite(rows) {
   return written;
 }
 
-// Every mapped account is listed even before a machine has reported it, in file order, so
-// a silent account reads as "no data yet" rather than vanishing.
-// How long a sample may still be quoted as a current figure. Not the window's own length:
-// the desktop source carries no reset stamp, so a seven-day reading days old may sit on
-// the far side of a reset and read "at the limit" for an account now at zero. These are
-// the ages within which the number is still worth asserting; past them the reading becomes
-// no reading, and only the trend line keeps it, which is honestly historical.
-const WINDOW_AGE = { five_hour: 2 * 3600, seven_day: 24 * 3600, extra: 7 * 86400 };
-// A model-scoped weekly (seven_day_fable) is a seven_day window and ages like one.
-const windowAge = (n) => WINDOW_AGE[n] ?? (n.startsWith('seven_day') ? WINDOW_AGE.seven_day : 7 * 86400);
 function agedOut(r, now) {
   if (!r.sample_ts) return r;
   const age = now - r.sample_ts;
@@ -1512,6 +1565,8 @@ function agedOut(r, now) {
   return any ? { ...r, windows, stale_windows: true } : r;
 }
 
+// Every mapped account is listed even before a machine has reported it, in file order, so
+// a silent account reads as "no data yet" rather than vanishing.
 function creditsRows() {
   const nowSec = Math.floor(Date.now() / 1000);
   const rows = db
@@ -1597,11 +1652,12 @@ async function creditsCollect(force) {
 
 // --- Machines: which account each AI client on each machine is signed in as. The same
 // shape of collector as Credits, asking a different question — identity, not usage.
-// box/fleet-logins.sh runs on the machine and reports only identities (email, org uuid,
-// plan, account id) plus how each was proved. A polled machine needs no install: the script
-// is piped over `ssh <host> [wsl] sh -s`. A machine with no ssh route pushes here instead.
-// No token is ever read here, stored in fleet.db, or sent to a browser — each machine uses
-// its own token locally for one profile call and emits only what it names.
+// box/fleet-logins.sh runs on the machine and reports identities (email, org uuid, plan,
+// account id) plus how each was proved, and — for a Claude login whose token proved itself —
+// that account's usage windows, which are handed straight to the credits store. A polled
+// machine needs no install: the script is piped over `ssh <host> [wsl] sh -s`. A machine with
+// no ssh route pushes here instead. No token is ever read here, stored in fleet.db, or sent
+// to a browser — each machine uses its own token locally and emits only what it names.
 db.exec(`CREATE TABLE IF NOT EXISTS machines (id TEXT PRIMARY KEY, payload TEXT, updated_at INTEGER)`);
 
 const MACHINES_FILE = process.env.FLEET_MACHINES_FILE || path.join(__dirname, 'machines.json');
@@ -1609,6 +1665,14 @@ const MACHINES_FILE = process.env.FLEET_MACHINES_FILE || path.join(__dirname, 'm
 const LOGINS_SH = process.env.FLEET_LOGINS_SH || path.join(__dirname, 'box', 'fleet-logins.sh');
 const MACHINES_TTL =
   (Number(process.env.FLEET_MACHINES_TTL_SECS) > 0 ? Number(process.env.FLEET_MACHINES_TTL_SECS) : 300) * 1000;
+// Longer than the session poll, and longer than the credits collect: a proved Claude login
+// costs two HTTPS round trips on the far side, every WSL user and Windows profile pays them,
+// and a cold WSL start takes seconds before any of it begins. A slow endpoint must not read
+// as an unreachable machine. The budget is per machine but the cost is per signed-in
+// profile — each is capped at 2 x curl -m 8 — so this holds a cold hop plus three proved
+// profiles. A machine with more than that, all of them answering at the ceiling, still
+// reports as its own row's timeout error rather than as a wrong number.
+const LOGINS_TIMEOUT = 60000;
 const MACHINE_CLIENTS = ['claude_cli', 'codex_cli', 'claude_desktop', 'codex_desktop'];
 // Kept per machine until that machine reports again, so a box that is down shows why while
 // its last known logins stay on screen.
@@ -1751,6 +1815,23 @@ const machinePayload = (d) => ({
   clients: (Array.isArray(d.clients) ? d.clients : []).slice(0, 16).map(clientRow).filter(Boolean),
 });
 
+// A Claude login that proved itself also reports that account's own usage windows, which is
+// a Credits fact, not a Machines one: it goes to the credits store, where the Machines page
+// reads it back through machinesUsage(). Routed through creditsCandidates() so a machine
+// line gets exactly the whitelisting, identity mapping and future-stamp clamp a credits
+// reply gets — clientRow() drops usage from the stored row, so it is never kept twice.
+function machinesCredits(d, host, map, push) {
+  const out = [];
+  for (const c of Array.isArray(d && d.clients) ? d.clients : []) {
+    if (!c || c.client !== 'claude_cli' || c.proof !== 'profile') continue;
+    if (typeof c.org !== 'string' && typeof c.email !== 'string') continue;
+    if (!c.usage || typeof c.usage !== 'object') continue;
+    const synth = { ts: d.ts, claude: { email: c.email, org: c.org, state: c.usage_state || 'ok', usage: c.usage } };
+    out.push(...creditsCandidates(synth, host, map, push));
+  }
+  return out;
+}
+
 let machinesAt = 0; // last live collect, ms
 // A GET inside the TTL early-returns and would otherwise render the stale rows as if they
 // were fresh, with no sign a sweep is running. A counter, not a flag: two forced sweeps can
@@ -1775,17 +1856,18 @@ async function machinesCollect(force) {
       script = null;
     }
     const now = Math.floor(Date.now() / 1000);
+    // One mapping for the sweep, from the file alone: a machines line carries no accounts list.
+    const map = creditsMap([]);
+    const credits = [];
     await Promise.allSettled(
       machinesConfig().map(async (m) => {
         if (m.route === 'push') return; // nothing to poll: that machine calls us
         try {
           if (m.route === 'ssh' && !script) throw new Error('cannot read ' + LOGINS_SH);
-          // Longer than the session poll: a Claude login costs one HTTPS round trip on the
-          // far side, and a slow endpoint must not read as an unreachable machine.
           const r =
             m.route === 'local'
-              ? await run('sh', [LOGINS_SH], { timeout: 25000 })
-              : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', script, { timeout: 25000 });
+              ? await run('sh', [LOGINS_SH], { timeout: LOGINS_TIMEOUT })
+              : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', script, { timeout: LOGINS_TIMEOUT });
           const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
           // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
           // blaming a script that never got to run.
@@ -1798,7 +1880,9 @@ async function machinesCollect(force) {
             );
           // Keyed by the config id, never the hostname: a machine can report a name that
           // belongs to nobody (the Mac answers with an rfc1918 address).
-          machinesUpsert.run(m.id, JSON.stringify({ ...machinePayload(JSON.parse(line)), collected_at: now }), now);
+          const d = JSON.parse(line);
+          machinesUpsert.run(m.id, JSON.stringify({ ...machinePayload(d), collected_at: now }), now);
+          credits.push(...machinesCredits(d, m.host || m.id, map, false));
           machinesErrors.delete(m.id);
         } catch (e) {
           // The stored row stands: last known logins beat none while a box is unreachable.
@@ -1806,6 +1890,9 @@ async function machinesCollect(force) {
         }
       })
     );
+    // Written once the sweep is in, like creditsCollect: only a batch holding every machine's
+    // candidates lets a real reading rescue another box's unpopulated reply for that account.
+    creditsWrite(credits);
   } finally {
     // In a finally so a throw above cannot strand the counter above zero, which would leave
     // the page saying "collecting" for as long as the deck runs.
@@ -2040,6 +2127,7 @@ async function machinesRoute(req, res) {
   const id = m.id;
   const now = Math.floor(Date.now() / 1000);
   machinesUpsert.run(id, JSON.stringify({ ...machinePayload(b), collected_at: now }), now);
+  creditsWrite(machinesCredits(b, id, creditsMap([]), true));
   machinesErrors.delete(id);
   return json(res, { ok: true, id });
 }
@@ -3223,4 +3311,6 @@ module.exports = {
   reaperTick, reaperLoop, REAPER,
   // Test seams: the pure joins the Machines view renders from, no I/O of their own.
   machinesUsage, machinesSessions, clientUsage,
+  // Test seams: which candidate wins a credits row, and what that row ends up holding.
+  creditsWrite, beats,
 };

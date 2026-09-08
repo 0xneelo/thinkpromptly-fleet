@@ -4,9 +4,10 @@
 # the four AI clients is signed in as (Claude CLI, Codex CLI, Claude desktop, Codex desktop).
 #   sh fleet-logins.sh [id]            -> print the line
 #   sh fleet-logins.sh push <url> [id] -> POST the line to a fleetdeck /api/machines
-# IDENTITY ONLY. The Claude access token and the Codex tokens are read into python memory,
-# used only for this machine's own profile call, and never printed, stored, logged, or put
-# in argv — the two request headers go through a 0600 temp file, so no token appears in `ps`.
+# IDENTITY, plus the usage windows of a Claude login that proved itself. The Claude access
+# token and the Codex tokens are read into python memory, used only for this machine's own
+# profile and usage calls, and never printed, stored, logged, or put in argv — the two
+# request headers go through a 0600 temp file, so no token appears in `ps`.
 # A hang-up (the deck's ssh timeout) unwinds through `finally`, so that file never outlives
 # the call. On a non-200 the response body is dropped unread. Runs on mac, WSL and linux.
 
@@ -37,6 +38,7 @@ for _s in (signal.SIGHUP, signal.SIGTERM): signal.signal(_s, _bail)
 
 HOME = os.path.expanduser("~")
 PROFILE_URL = os.environ.get("FLEET_PROFILE_URL") or "https://api.anthropic.com/api/oauth/profile"
+USAGE_URL = os.environ.get("FLEET_USAGE_URL") or "https://api.anthropic.com/api/oauth/usage"
 # Shared Windows profiles are not people; scanning them would report the same login twice.
 WIN_SKIP = ("Public", "Default", "Default User", "All Users", "desktop.ini")
 
@@ -88,9 +90,10 @@ def keychain():
         return None, ("unknown_source", "the Keychain Claude Code-credentials item is not the JSON object expected")
     return d, None
 
-# The token's own identity, which is the truth: ~/.claude.json can name a different account
-# than the token in use. Returns (status, body) and never the body of a failed call.
-def profile(token):
+# One oauth GET with this machine's own token: the profile names the account (the truth,
+# since ~/.claude.json can name a different one than the token in use) and the usage endpoint
+# gives that account's windows. Returns (status, body) and never the body of a failed call.
+def oauth_get(url, token):
     hdr = body = None
     try:
         fd, hdr = tempfile.mkstemp()   # 0600 by default; the token never reaches argv
@@ -99,7 +102,7 @@ def profile(token):
         fd, body = tempfile.mkstemp()
         os.close(fd)
         r = subprocess.run(["curl", "-sS", "-m", "8", "-o", body, "-w", "%{http_code}",
-                            "-H", "@" + hdr, PROFILE_URL], capture_output=True, text=True, timeout=20)
+                            "-H", "@" + hdr, url], capture_output=True, text=True, timeout=20)
         code = (r.stdout or "").strip()
         if code == "200": return 200, jload(body)
         return (int(code) if code.isdigit() else 0), None
@@ -111,6 +114,39 @@ def profile(token):
                 if f: os.unlink(f)
             except Exception:
                 pass
+
+PCT_KEYS = ("utilization", "used_percentage", "used_percent", "pct")
+XU_KEYS = ("utilization", "used_credits", "monthly_limit", "decimal_places", "currency",
+           "is_enabled", "spend_limit_reached")
+
+# A per-model weekly limit: only the fields the deck turns into a window travel.
+def trim_limit(l):
+    o = {k: l[k] for k in ("kind", "percent", "resets_at") if k in l}
+    s = l.get("scope") if isinstance(l.get("scope"), dict) else {}
+    m = s.get("model") if isinstance(s.get("model"), dict) else {}
+    scope = {k: s[k] for k in ("surface",) if k in s}
+    model = {k: m[k] for k in ("display_name", "id") if k in m}
+    if model: scope["model"] = model
+    if scope: o["scope"] = scope
+    return o
+
+# The reply carries more than the windows — `spend` among it. Only what the deck's own
+# whitelist reads is copied out, so a field the endpoint adds later never leaves this box.
+def trim_usage(u):
+    # Some builds answer with the windows nested under rate_limits, others at the top level;
+    # trimming the outer object of a nested reply would keep nothing at all.
+    rl = u.get("rate_limits")
+    if isinstance(rl, dict): u = rl
+    out = {}
+    for k, v in u.items():
+        if k == "extra_usage":
+            if isinstance(v, dict): out[k] = {x: v[x] for x in XU_KEYS if x in v}
+        elif k == "limits":
+            if isinstance(v, list):
+                out[k] = [trim_limit(l) for l in v[:20] if isinstance(l, dict)]
+        elif isinstance(v, dict) and any(x in v for x in PCT_KEYS):
+            out[k] = {x: v[x] for x in PCT_KEYS + ("resets_at",) if x in v}
+    return out
 
 def jwt(tok):
     try:
@@ -142,12 +178,22 @@ def claude_cli(home, where):
     token = o.get("accessToken") if isinstance(o, dict) else None
     base = base_of(ce, co, o.get("expiresAt") if isinstance(o, dict) else None)
     if token:
-        code, body = profile(token)
+        code, body = oauth_get(PROFILE_URL, token)
         if code == 200 and isinstance(body, dict):
             a, g = body.get("account") or {}, body.get("organization") or {}
+            # Only a token that just proved itself is worth spending a second call on. The
+            # windows belong to THIS account, so they ride with the identity that named it.
+            ucode, ubody = oauth_get(USAGE_URL, token)
+            # A 200 carrying something other than the object expected is a broken reply: called
+            # "ok" with no windows it would read on the deck as an account using nothing.
+            ok = ucode == 200 and isinstance(ubody, dict)
+            ustate = ("ok" if ok else "rate_limited" if ucode == 429
+                      else "token_expired" if ucode in (401, 403) else "error")
+            usage = trim_usage(ubody) if ok else None
             return entry("claude_cli", where, state="ok", signed_in=True, proof="profile",
                          email=a.get("email") or a.get("email_address"), org=g.get("uuid"),
-                         tier=g.get("rate_limit_tier"), plan=g.get("organization_type"), **base)
+                         tier=g.get("rate_limit_tier"), plan=g.get("organization_type"),
+                         usage_state=ustate, usage=usage, **base)
         # No refresh flow here: a human reopens Claude Code. The config is the only fallback,
         # and it is labelled as one because it can name a different account than the token.
         state = "token_expired" if code in (401, 403) else "rate_limited" if code == 429 else "error"
