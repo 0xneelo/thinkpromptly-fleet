@@ -12,12 +12,19 @@
 #   FLEET_SHIM_UNREACH    space-separated hosts that answer like an unreachable box
 #   FLEET_SHIM_MAP_WSL    1 = run `wsl sh -s` as plain `sh -s` (no WSL interop available)
 
-# The deck polls machines concurrently, so several shims append to this log at once. One
-# `printf` reuses its format for every argument, so a whole record is a single small write
-# to an O_APPEND descriptor opened once — which is what keeps two racing shims from
-# interleaving a record. A loop of one printf per element would not be.
+# The deck polls machines concurrently, so several shims append to this log at once. A
+# record must therefore be ONE write() to the O_APPEND descriptor: POSIX makes that append
+# atomic, so two racing shims cannot interleave. `printf` reuses its format for every
+# argument, so a single call emits the whole record in one small buffered write.
+#
+# The empty trailing argument is what closes the record — a second NUL. It used to be a
+# separate `printf '\n'`, which made a record TWO writes, and two shims could land both
+# argument runs before either terminator: the two calls then read back as one record with
+# the arguments of both. That is the flake fixed on 2026-09-08 (it failed ~8% of runs of
+# test/machines.test.js). No argv the deck builds contains an empty string, so a NUL pair
+# never occurs inside a record.
 if [ -n "$FLEET_SHIM_ARGV_LOG" ]; then
-  { printf '%s\0' "$@"; printf '\n'; } >> "$FLEET_SHIM_ARGV_LOG"
+  printf '%s\0' "$@" '' >> "$FLEET_SHIM_ARGV_LOG"
 fi
 
 # Walk off the option pairs the deck always sends; whatever is left is host then command.
