@@ -4,7 +4,7 @@ SSH to our hosts uses short-lived OpenSSH certificates. Not static keys. Not the
 
 ## Connect
 
-Easiest path — four config aliases that always use the newest cert (via the `~/.ssh/deploy-certs/current` symlink): `ssh vps-deploy` (root@think-box), `ssh ob-deploy` (root@onboarding-app-box), `ssh ivybox-deploy` (root@ivy-box), `ssh gb-deploy` (vibe@german-box). If they fail with a missing-file or permission error, the current cert expired, was killed, or lacks your principal — ask the operator for a fresh `root,vibe` mint.
+Easiest path — five config aliases that always use the newest cert (via the `~/.ssh/deploy-certs/current` symlink): `ssh vps-deploy` (root@think-box), `ssh ob-deploy` (root@onboarding-app-box), `ssh ivybox-deploy` (root@ivy-box), `ssh gb-deploy` (vibe@german-box), `ssh rs-deploy` (misterisley@rog-strix). If they fail with a missing-file or permission error, the current cert expired, was killed, or lacks your principal — ask the operator for a fresh `root,vibe,misterisley` mint. A principal must match the login username, so a `root,vibe` cert reaches every box except rog-strix.
 
 Manual form: certs live in `~/.ssh/deploy-certs/<timestamp>/` — two files: `deployer` (private key) and `deployer-cert.pub` (certificate).
 

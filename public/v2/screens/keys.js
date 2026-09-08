@@ -35,10 +35,18 @@
   // ---- constants, verbatim from today's keys.js ---------------------------
   var TTLS = ['1h', '4h', '8h'];
   // root = the VPS boxes' login (think-box, onboarding-app-box, ivy-box),
-  // vibe = german-box login. Ruling O9 wanted these from hosts.json, but
-  // hosts.json carries no user field — see improvised.md I-L7-01.
-  var PRINCIPALS = ['root', 'vibe'];
-  var PRINCIPAL_TITLE = { root: 'VPS boxes: think · onboarding · ivy', vibe: 'german-box' };
+  // vibe = german-box login, misterisley = rog-strix's Windows login. A cert
+  // principal must match the login username, so a cert missing one silently
+  // drops that machine off the fleet — which is what happened to rog-strix
+  // from 2026-09-06 on, once mints moved from the CLI script to this screen.
+  // Ruling O9 wanted these from hosts.json, but hosts.json carries no user
+  // field — see improvised.md I-L7-01.
+  var PRINCIPALS = ['root', 'vibe', 'misterisley'];
+  var PRINCIPAL_TITLE = {
+    root: 'VPS boxes: think · onboarding · ivy',
+    vibe: 'german-box',
+    misterisley: 'rog-strix',
+  };
   var KILL_CONFIRM = 'Kill this cert now? Agents using it lose access immediately.';
   var POLL_MS = 30000;
   var TICK_MS = 1000;

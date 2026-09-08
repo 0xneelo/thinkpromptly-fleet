@@ -131,12 +131,15 @@ test('a 503 from a dead broker reaches the UI as the broker\'s own message', () 
 
 test('the TTL and principal chip sets are the current app\'s', () => {
   assert.deepStrictEqual(keys.TTLS, ['1h', '4h', '8h']);
-  assert.deepStrictEqual(keys.PRINCIPALS, ['root', 'vibe']);
+  // misterisley joined the set on 2026-09-08: a cert principal must match the login user,
+  // so without it rog-strix drops off the fleet on every mint made from this screen.
+  assert.deepStrictEqual(keys.PRINCIPALS, ['root', 'vibe', 'misterisley']);
 });
 
 test('the principal titles are verbatim, middle dots and all', () => {
   assert.strictEqual(keys.PRINCIPAL_TITLE.root, 'VPS boxes: think · onboarding · ivy');
   assert.strictEqual(keys.PRINCIPAL_TITLE.vibe, 'german-box');
+  assert.strictEqual(keys.PRINCIPAL_TITLE.misterisley, 'rog-strix');
   assert.deepStrictEqual(Object.keys(keys.PRINCIPAL_TITLE), keys.PRINCIPALS, 'a title per principal');
 });
 

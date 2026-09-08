@@ -1918,7 +1918,7 @@ class AppLogic extends Sub {
       ...busVals, ...termVals,
       // keys
       ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
-      prinChips: ['root', 'vibe'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
+      prinChips: ['root', 'vibe', 'misterisley'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: [
         { name: 'deploy-ca', fp: 'SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0', comment: 'misterislez@rfc1918-internal.by.netflash.com.cy' },

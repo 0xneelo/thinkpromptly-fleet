@@ -1418,7 +1418,7 @@ class AppLogic extends Sub {
       }),
       // keys
       ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
-      prinChips: ['root', 'vibe'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
+      prinChips: ['root', 'vibe', 'misterisley'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: FD.fixture.keyRows,
       // accounts (fd-v2 L8) — the mock's seed, or the live rows that
