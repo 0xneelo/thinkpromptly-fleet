@@ -388,6 +388,12 @@ def claude_cli(home, where):
             ustate = ("ok" if ok else "rate_limited" if ucode == 429
                       else "token_expired" if ucode in (401, 403) else "error")
             usage = trim_usage(ubody) if ok else None
+            # A failed usage call must say so on the row, or a proved login with no numbers
+            # is indistinguishable from one nobody asked.
+            if not ok and not note:
+                note = ("usage call got no answer" if not ucode else
+                        "usage reply was not the object expected" if ucode == 200 else
+                        "usage call refused with HTTP %d" % ucode)
             return entry("claude_cli", where, state="ok", signed_in=True, proof="profile",
                          email=a.get("email") or a.get("email_address"), org=g.get("uuid"),
                          tier=g.get("rate_limit_tier"), plan=g.get("organization_type"),
