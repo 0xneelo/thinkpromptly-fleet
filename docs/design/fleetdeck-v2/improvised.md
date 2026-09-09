@@ -953,9 +953,11 @@ Consequences worth knowing:
 
 - One `Terminal`, one WebSocket, one scrollback per session for the life of the tile. Maximize is a
   move of the *rect*, not of the DOM, so nothing is torn down.
-- z-order: a tiled terminal sits at 54, under the mock's full-screen overlay (55); the maximized one
-  is raised to 56, over the overlay's own background, so the overlay paints the chrome and the layer
-  paints the terminal.
+- z-order: the layer is `position:fixed`, so it is a stacking context of its own and a box's z-index
+  never reaches the overlay. While tiled the layer sits at 54, under the mock's full-screen overlay
+  (55); `sync()` raises the whole layer to 56 while a maximized terminal is on screen, so the overlay
+  paints the chrome and the layer paints the terminal. (First shipped raising only the box, which left
+  the full screen showing the blurred backdrop and nothing else — fixed 2026-09-07.)
 - Re-alignment is driven by a per-render callback (`FD.l3.onRender`), a `ResizeObserver` on the
   current target box, and window `resize` / capture-phase `scroll` — **not** a `MutationObserver`: a
   live terminal rewrites its own rows constantly, and a subtree observer re-enters on every byte of
