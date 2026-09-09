@@ -40,6 +40,9 @@
   var FULL_SEL = '[data-screen-label="Session full screen"]';
   // Under the mock's full-screen overlay (z-index 55) when tiled, over it when
   // maximized — the overlay paints the chrome, this layer paints the terminal.
+  // The layer is position:fixed, so it is a stacking context of its own and a
+  // box's z-index never reaches the overlay: sync() raises the whole layer
+  // while a maximized terminal is on screen, and lowers it again after.
   var Z_TILED = 54;
   var Z_MAX = 56;
 
@@ -526,6 +529,7 @@
     var fullBody = FD.l3.termBody;
     var fullShown = visible(document.querySelector(FULL_SEL)) && visible(fullBody);
     var menuOpen = !!FD.l3.termMenu;
+    var raised = false;
 
     for (var i = 0; i < model.length; i++) {
       var rec = model[i];
@@ -535,14 +539,16 @@
       var target = maxed && fullShown ? fullBody : (i < els.length ? els[i].children[1] : null);
       // While the ≡ menu is open it would overlap the terminal, and the menu
       // lives inside the overlay's stacking context where this layer cannot
-      // reach. The terminal steps aside for it. I-L3-10.
-      var wanted = target && (maxed ? fullShown && !menuOpen : shown) ? target : null;
+      // reach. The terminal steps aside for it. I-L3-10. A tiled box never
+      // shows under the full screen either: the layer is raised as a whole.
+      var wanted = target && (maxed ? fullShown && !menuOpen : shown && !fullShown) ? target : null;
 
       if (!wanted) { hide(rec.box); rec.rect = null; continue; }
 
       var rect = contentRect(wanted);
       if (!rect.width || !rect.height) { hide(rec.box); rec.rect = null; continue; }
       place(rec.box, rect, maxed ? Z_MAX : Z_TILED);
+      if (maxed) raised = true;
 
       if (!rec.opened) {
         rec.term.open(rec.mount);
@@ -560,6 +566,7 @@
       }
       if (maxed && document.activeElement !== rec.mount) rec.term.focus();
     }
+    ensureLayer().style.zIndex = String(raised ? Z_MAX : Z_TILED);
   }
 
   // The mock's tile ✕ carries no handler (mock L235), and the compiled template
