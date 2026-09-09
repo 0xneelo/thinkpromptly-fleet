@@ -1338,6 +1338,104 @@ test('creditsWrite — a spent sample does not overwrite the last real reading',
   assert.notEqual(storedRow(m, 'borrow@example.invalid').windows.five_hour?.pct, 15);
 });
 
+// --- The hold a failed read leaves behind. beats() still refuses to let it displace good
+// numbers; without a mark on the row nothing on the page said the live call was not made.
+const throttled = (ts, note) => ({
+  v: 1, id: 'rog-strix', host: 'ROG Strix', ts,
+  clients: [{
+    client: 'claude_cli', proof: 'profile', email: 'borrow@example.invalid', org: ORG,
+    usage_state: 'rate_limited', usage: null, note,
+  }],
+});
+
+test('machinesCredits — a refused usage call is still a candidate, with the collector\'s words', (t) => {
+  const { machinesCredits, creditsWrite } = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  const out = machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].state, 'rate_limited');
+  assert.equal(out[0].email, 'borrow@example.invalid');
+  assert.deepEqual(out[0].windows, {});
+  assert.equal(out[0].note, 'usage call refused with HTTP 429, pausing 3600s');
+  // A clean read with no windows at all is still nothing to report.
+  assert.deepEqual(machinesCredits(
+    { v: 1, id: 'rog-strix', ts: now, clients: [{ client: 'claude_cli', proof: 'profile', email: 'x@example.invalid', org: ORG, usage_state: 'ok', usage: null }] },
+    'ROG Strix', new Map(), false
+  ), []);
+  assert.equal(typeof creditsWrite, 'function');
+});
+
+test('creditsWrite — a losing throttled read marks the row it could not displace', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  // Yesterday's desktop sample is what the page is showing. The mac's live read this sweep
+  // was refused: it carries no numbers, so it must not win — but it must be visible.
+  m.creditsWrite([desktopAt(now, 600)]);
+  m.creditsWrite(m.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
+
+  const r = storedRow(m, 'borrow@example.invalid');
+  assert.equal(r.source, 'desktop');
+  assert.equal(r.windows.five_hour.pct, 61, 'the last good numbers were lost');
+  assert.equal(r.state, 'ok');
+  assert.deepEqual(r.hold, {
+    state: 'rate_limited', host: 'ROG Strix',
+    note: 'usage call refused with HTTP 429, pausing 3600s', at: now, until: now + 3600,
+  });
+  // The other note the collector writes states the pause the same way round.
+  const m2 = seams(t);
+  m2.creditsWrite([desktopAt(now, 600)]);
+  m2.creditsWrite(m2.machinesCredits(throttled(now, 'usage call skipped, endpoint asked for a 3147s pause'), 'ROG Strix', new Map(), false));
+  assert.equal(storedRow(m2, 'borrow@example.invalid').hold.until, now + 3147);
+  // One sweep carries both: the mac's sample and the box's refusal land in the same write,
+  // where the refusal loses the candidate round before it ever meets the stored row.
+  const m3 = seams(t);
+  m3.creditsWrite([
+    desktopAt(now, 600),
+    ...m3.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false),
+  ]);
+  const r3 = storedRow(m3, 'borrow@example.invalid');
+  assert.equal(r3.windows.five_hour.pct, 61);
+  assert.equal(r3.hold.until, now + 3600);
+});
+
+test('creditsWrite — a read that works clears the hold, and a stale one is dropped on the way out', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  m.creditsWrite([desktopAt(now, 600)]);
+  m.creditsWrite(m.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
+  assert.ok(storedRow(m, 'borrow@example.invalid').hold);
+
+  // The next sweep reads live: the winning row is the fresh payload, which carries no hold.
+  m.creditsWrite([{ ...zeroOauth(now), windows: { five_hour: { pct: 12, resets_at: null } } }]);
+  assert.equal(storedRow(m, 'borrow@example.invalid').hold, undefined);
+
+  // And a hold nobody has re-reported for half a day is no longer news.
+  const old = seams(t);
+  old.creditsWrite([desktopAt(now - 13 * 3600, 600)]);
+  old.creditsWrite(old.machinesCredits(throttled(now - 13 * 3600, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
+  assert.ok(storedRow(old, 'borrow@example.invalid').hold);
+  assert.equal(old.creditsRows().find((r) => r.email === 'borrow@example.invalid').hold, undefined);
+});
+
+test('creditsRows — an aged-out window keeps the number it last held', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  m.creditsWrite([
+    {
+      kind: 'claude', id: 'aged@example.invalid', email: 'aged@example.invalid', org: ORG,
+      host: 'mac', source: 'oauth', state: 'ok', updated_at: now - 8 * 86400,
+      windows: { five_hour: { pct: 42, resets_at: 'x' }, seven_day: { pct: null, resets_at: null } },
+    },
+  ]);
+  const row = m.creditsRows().find((r) => r.email === 'aged@example.invalid');
+  assert.equal(row.windows.seven_day.stale, true);
+  // "—" tells a reader nothing; the last figure, greyed, tells them what it was.
+  assert.equal(row.windows.five_hour.pct, null);
+  assert.equal(row.windows.five_hour.last, 42);
+  // Nothing to keep means nothing invented.
+  assert.equal('last' in row.windows.seven_day, false);
+});
+
 test('creditsWrite — the newer desktop sample is stored, whichever machine reported last', (t) => {
   const now = Math.floor(Date.now() / 1000);
   const mac = {

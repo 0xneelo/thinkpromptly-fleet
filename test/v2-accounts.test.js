@@ -108,10 +108,31 @@ test('banner: one sentence per state, a rate limit is not a fault', () => {
   assert.equal(acct.banner({ state: 'ok', host: 'h' }), null);
   assert.deepEqual(acct.banner({ state: 'token_expired', host: 'german-box' }),
     { text: 'token expired — open Claude Code on german-box', tone: 'notice' });
-  assert.deepEqual(acct.banner({ state: 'rate_limited', host: 'german-box' }),
+  assert.deepEqual(acct.banner({ state: 'rate_limited', host: 'german-box', windows: { seven_day: { pct: 40 } }, }),
     { text: 'usage endpoint busy on german-box — figures below are the last good read', tone: 'muted' });
+  // A row that never got a good read has no figures to point at.
+  assert.deepEqual(acct.banner({ state: 'rate_limited', host: 'german-box', windows: {} }),
+    { text: 'usage endpoint busy on german-box', tone: 'muted' });
   assert.deepEqual(acct.banner({ state: 'error', host: 'german-box' }),
     { text: 'could not read usage on german-box', tone: 'notice' });
+});
+
+test('banner: a held usage call speaks before the row\'s own state', () => {
+  // The row still reads state ok — the numbers are the last good ones — so only `hold` can
+  // say the live call is not being made. A throttle is not a fault, hence muted.
+  const at = SEC(NOW - 5 * 60000);
+  assert.deepEqual(
+    acct.banner({ state: 'ok', host: 'mac', windows: { seven_day: { pct: 40 } }, hold: { state: 'rate_limited', host: 'ROG Strix', note: 'usage call refused with HTTP 429, pausing 3600s', at, until: at + 3600 } }),
+    { text: 'usage call throttled on ROG Strix until ' + acct.hhmm(at + 3600) + ' — figures below are the last good read', tone: 'muted' }
+  );
+  // No pause length in the note, no clock time in the sentence.
+  assert.deepEqual(acct.banner({ state: 'ok', host: 'mac', windows: { seven_day: { pct: 40 } }, hold: { state: 'rate_limited', host: 'ROG Strix', note: null, at, until: null } }),
+    { text: 'usage call throttled on ROG Strix — figures below are the last good read', tone: 'muted' });
+  // Anything but a throttle is a fault the operator can act on.
+  assert.deepEqual(acct.banner({ state: 'ok', host: 'mac', windows: { seven_day: { pct: 40 } }, hold: { state: 'token_expired', host: 'german-box', note: null, at, until: null } }),
+    { text: 'usage call refused, token expired on german-box — figures below are the last good read', tone: 'notice' });
+  assert.deepEqual(acct.banner({ state: 'ok', host: 'mac', windows: { seven_day: { pct: 40 } }, hold: { state: 'error', host: 'german-box', note: null, at, until: null } }),
+    { text: 'usage call failed on german-box — figures below are the last good read', tone: 'notice' });
 });
 
 test('staleNote: the two sampled sentences, verbatim', () => {
@@ -139,6 +160,9 @@ test('bars: window order and labels, extra last, empty rows still render', () =>
   // A window with no percentage still gets a row — an empty bar says "reported, unknown".
   assert.deepEqual(acct.bars({ kind: 'claude', windows: { five_hour: { pct: null, resets_at: null, stale: true } } }, NOW),
     [{ label: '5 hour', pct: null, right: '—', level: '', resets: '' }]);
+  // An aged-out window keeps the number it last held: greyed, and named as history.
+  assert.deepEqual(acct.bars({ kind: 'claude', windows: { five_hour: { pct: null, resets_at: null, stale: true, last: 42 } } }, NOW),
+    [{ label: '5 hour', pct: null, last: 42, right: 'was 42%', level: '', resets: '' }]);
   // Codex: weekly then the session window.
   assert.deepEqual(acct.bars({ kind: 'codex', weekly: { pct: 80, resets_at: null }, secondary: { pct: 4, resets_at: null } }, NOW)
     .map((b) => [b.label, b.right]), [['weekly', '80%'], ['session', '4%']]);

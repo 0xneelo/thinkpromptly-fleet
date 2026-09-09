@@ -76,6 +76,12 @@
     return 'resets in ' + (m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + (m % 60) + 'm');
   }
 
+  // A pause has an end, and a clock time is the one form of it a reader can act on.
+  function hhmm(epoch) {
+    const d = new Date(epoch * 1000);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
   // accounts.js:57. Red over 90, amber from 70 — the mock's own bar() stops at amber,
   // so L8 keeps its own copy rather than changing a helper the Machines screen shares.
   const level = (pct) => (pct > 90 ? 'red' : pct >= 70 ? 'amber' : '');
@@ -180,9 +186,21 @@
   // accounts.js:154-166. An expired token still leaves whatever another source reported,
   // so the notice sits above the bars rather than replacing them; rate limiting says
   // nothing about the account, so it must not read like a fault ('muted', not 'notice').
+  // A held read leaves the row's own state 'ok' — the numbers are the last good ones and a
+  // better source may even have supplied them. `hold` is the only sign the live call is not
+  // being made, so it speaks first.
   function banner(r) {
+    // A row that never got a good read has no figures to point at.
+    const below = r.windows && Object.keys(r.windows).length ? ' — figures below are the last good read' : '';
+    if (r.hold)
+      return {
+        text: 'usage call ' +
+          (r.hold.state === 'rate_limited' ? 'throttled' : r.hold.state === 'token_expired' ? 'refused, token expired' : 'failed') +
+          ' on ' + r.hold.host + (r.hold.until ? ' until ' + hhmm(r.hold.until) : '') + below,
+        tone: r.hold.state === 'rate_limited' ? 'muted' : 'notice',
+      };
     if (r.state === 'token_expired') return { text: 'token expired — open Claude Code on ' + r.host, tone: 'notice' };
-    if (r.state === 'rate_limited') return { text: 'usage endpoint busy on ' + r.host + ' — figures below are the last good read', tone: 'muted' };
+    if (r.state === 'rate_limited') return { text: 'usage endpoint busy on ' + r.host + below, tone: 'muted' };
     if (r.state === 'error') return { text: 'could not read usage on ' + r.host, tone: 'notice' };
     return null;
   }
@@ -217,12 +235,16 @@
 
   // accounts.js:72-84: a window with no percentage still gets a row — an empty bar says
   // "reported, unknown".
+  // An aged-out window keeps the number it last held (server.js agedOut): shown as "was 42%"
+  // and drawn grey, it says more than "—" without claiming to be a current figure.
   function barOf(name, w, now) {
     const pct = w && typeof w.pct === 'number' ? w.pct : null;
+    const last = pct === null && w && typeof w.last === 'number' ? w.last : null;
     return {
       label: name,
       pct,
-      right: pct === null ? '—' : pct + '%',
+      ...(last === null ? {} : { last }),
+      right: pct !== null ? pct + '%' : last !== null ? 'was ' + last + '%' : '—',
       level: pct === null ? '' : level(pct),
       resets: until(w && w.resets_at, now),
     };
@@ -365,7 +387,7 @@
   }
 
   const pure = {
-    ago, until, level, worst, atLimit, order, summary, creditsLine, trend,
+    ago, until, hhmm, level, worst, atLimit, order, summary, creditsLine, trend,
     sourceText, banner, staleNote, bars, barOf, enrich, note, toRows, toErrors, label,
     progressRows, progressSummary, accountLines,
     WIN_LABEL, SOURCE, TIER,

@@ -1211,10 +1211,12 @@ class AppLogic extends Sub {
       cardPad: compact ? '14px 16px' : '18px 20px',
     };
     const accTone = (lvl) => (lvl === 'red' ? t.bad : lvl === 'amber' ? t.warn : t.good);
+    // An aged-out window draws at the width it last held, in grey: the shape of the reading
+    // survives, the colour no longer claims it is current.
     const accBar = (b) => ({
       label: b.label,
       resets: b.resets || '',
-      fillStyle: { display: 'block', height: '100%', width: (b.pct == null ? 0 : Math.max(0, Math.min(100, b.pct))) + '%', borderRadius: '2px', background: b.pct == null ? t.ink35 : accTone(b.level) },
+      fillStyle: { display: 'block', height: '100%', width: Math.max(0, Math.min(100, (b.pct == null ? b.last : b.pct) || 0)) + '%', borderRadius: '2px', background: b.pct == null ? t.ink35 : accTone(b.level) },
       right: b.right,
       // Only the fill carries the level colour: the mock's bar() and today's .pct rule
       // both render the percentage itself in neutral ink.

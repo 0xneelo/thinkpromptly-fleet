@@ -1375,7 +1375,10 @@ function claudeRow(c) {
   }
   // An already-normalized row (a relayed push) carries its pool here, not under extra_usage.
   if (!credit && c.credit && typeof c.credit === 'object') credit = c.credit;
-  return { state: creditState(c.state), windows, ...(credit ? { credit } : {}) };
+  // The collector's own words for why a call carried no windows ("pausing 3600s"). It is the
+  // only place the pause length is stated, so a failed read is unreadable without it.
+  const note = typeof c.note === 'string' && c.note ? c.note.slice(0, 200) : null;
+  return { state: creditState(c.state), windows, ...(note ? { note } : {}), ...(credit ? { credit } : {}) };
 }
 
 // window_minutes 10080 = the weekly window (primary); secondary is the shorter one.
@@ -1526,6 +1529,21 @@ const vouches = (r, now) =>
       now - (r.sample_ts ?? r.updated_at ?? 0) <= windowAge(n)
   );
 
+// What a losing failed read leaves on the row it could not displace. The collector states the
+// pause it is keeping in its note and nowhere else, in either of the two shapes it writes.
+const HOLD_SECS = /(\d+)s pause|pausing (\d+)s/;
+function holdOf(r) {
+  const m = HOLD_SECS.exec(r.note || '');
+  const secs = m && Number(m[1] || m[2]);
+  return {
+    state: r.state,
+    host: r.host,
+    note: r.note || null,
+    at: r.updated_at,
+    until: Number.isFinite(secs) && secs > 0 ? r.updated_at + secs : null,
+  };
+}
+
 function creditsWrite(rows) {
   const now = Math.floor(Date.now() / 1000);
   const best = new Map();
@@ -1552,14 +1570,31 @@ function creditsWrite(rows) {
   // a local snapshot would clobber a better report an off-fleet machine pushed earlier.
   let written = 0;
   for (const [k, r] of best) {
+    // A failed read must not displace good numbers (beats() saw to that), but it knows the
+    // one thing the numbers cannot: this account's live read is on hold. One sweep carries the
+    // mac's desktop sample and the box's refusal for the same account in the same batch, so
+    // the refusal is looked for among the whole group, not only in the candidate that won.
+    const held = (groups.get(k) || [])
+      .filter((o) => o.state !== 'ok')
+      .sort((a, b) => (b.updated_at || 0) - (a.updated_at || 0))[0];
     const prev = creditsGetId.get(r.kind, r.id);
-    if (prev && !beats(r, safeParse(prev.payload), now)) continue;
+    const stored = prev && safeParse(prev.payload);
+    if (stored && !beats(r, stored, now)) {
+      // Marking the stored row in place is what puts the hold on the page; the numbers below
+      // it are untouched, and the stamp is unchanged so the upsert's own freshness guard passes.
+      if (held && stored.state === 'ok') {
+        stored.hold = holdOf(held);
+        creditsUpsert.run(stored.kind, stored.id, stored.email, stored.org, stored.host, JSON.stringify(stored), stored.updated_at);
+      }
+      continue;
+    }
     // Which machines report this account and how — every candidate for the key, not just
     // the winner: an account signed in on three boxes is a different fact from one on one.
     const seen = [];
     for (const c of groups.get(k))
       if (!seen.some((s) => s.host === c.host && s.source === c.source)) seen.push({ host: c.host, source: c.source });
-    creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify({ ...r, seen }), r.updated_at);
+    const hold = held && r.state === 'ok' ? { hold: holdOf(held) } : {};
+    creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify({ ...r, seen, ...hold }), r.updated_at);
     if (r.email && r.org) creditsDropId.run(r.kind, 'org:' + r.org);
     written++;
   }
@@ -1579,7 +1614,9 @@ function agedOut(r, now) {
   let any = false;
   for (const [n, w] of Object.entries(r.windows || {})) {
     if (age > windowAge(n)) {
-      windows[n] = { ...w, pct: null, stale: true };
+      // The number is no longer a current figure, but "—" tells the reader nothing at all.
+      // Kept as `last`, the view can still show it greyed, with its age beside it.
+      windows[n] = Number.isFinite(w.pct) ? { ...w, pct: null, stale: true, last: w.pct } : { ...w, pct: null, stale: true };
       any = true;
     } else windows[n] = w;
   }
@@ -1593,7 +1630,13 @@ function creditsRows() {
   const rows = db
     .prepare('SELECT * FROM credits')
     .all()
-    .map((r) => agedOut(JSON.parse(r.payload), nowSec));
+    .map((r) => {
+      const row = agedOut(JSON.parse(r.payload), nowSec);
+      // A hold is news only while it is current: half a day on, the row's own age says more
+      // than a pause nobody has re-reported since.
+      if (row.hold && nowSec - (row.hold.at || 0) > RANK_STALE) delete row.hold;
+      return row;
+    });
   const have = new Set(rows.map((r) => r.kind + '\0' + r.id));
   const cfg = creditsAccounts();
   const blank = (kind, id, extra) => ({
@@ -1859,8 +1902,15 @@ function machinesCredits(d, host, map, push) {
   for (const c of Array.isArray(d && d.clients) ? d.clients : []) {
     if (!c || c.client !== 'claude_cli' || c.proof !== 'profile') continue;
     if (typeof c.org !== 'string' && typeof c.email !== 'string') continue;
-    if (!c.usage || typeof c.usage !== 'object') continue;
-    const synth = { ts: d.ts, claude: { email: c.email, org: c.org, state: c.usage_state || 'ok', usage: c.usage } };
+    const usage = c.usage && typeof c.usage === 'object' ? c.usage : null;
+    // A call that was skipped or refused carries no windows, but it is still a fact about this
+    // account. Dropped here, the stored row kept reading 'ok' and nothing on the page said the
+    // figures were being held; as a candidate it can at least mark the row it loses to.
+    if (!usage && (!c.usage_state || c.usage_state === 'ok')) continue;
+    const synth = {
+      ts: d.ts,
+      claude: { email: c.email, org: c.org, state: usage ? c.usage_state || 'ok' : c.usage_state, usage, note: c.note },
+    };
     out.push(...creditsCandidates(synth, host, map, push));
   }
   return out;
@@ -3404,5 +3454,5 @@ module.exports = {
   machinesUsage, machinesSessions, clientUsage,
   // Test seams: which candidate wins a credits row, what that row ends up holding, and
   // what a reader is finally shown once ageing has had its say.
-  creditsWrite, beats, creditsRows,
+  creditsWrite, beats, creditsRows, machinesCredits,
 };
