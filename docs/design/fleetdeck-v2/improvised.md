@@ -2242,3 +2242,17 @@ properties are re-set on every apply rather than cached, since the theme toggle 
 style they are merged into. `shape()` records its last label → `{key, count, collapsed}` map in a
 module variable, which is what the DOM pass reads: it decorates headers it did not compute, and
 logic.js calls `shape()` on every render, so the map is never behind the DOM.
+
+### I-L8-10 — A closed row shows the all-models 7 day window
+
+**Serves:** operator ruling 2026-09-09 ("the minimized number that is shown should be the
+'all models 7 days', not the 5 hours").
+
+The mock's closed card shows one bar and the L8 port picked the "5 hour" one (`primary` in the
+accounts render). With live rows that hid the constraining number exactly when a row was closed:
+lafayette read 14% (5 hour) while its Fable weekly sat at 100%, and "most constrained first"
+ordered rows by a window the closed card never drew. The closed card now draws the "7 day" bar
+(the all-models weekly) and falls back to the first bar as before. Open rows are unchanged —
+5 hour, 7 day, the model weeklies, extra usage — so the fixture render and the pixel gate are
+untouched (fixture mode never has a closed live row). Hand-edited in both `template.dc.html`
+and `logic.js` (no playwright on this Mac); `npm run v2:compile` must reproduce it byte for byte.

@@ -1460,7 +1460,9 @@ class AppLogic extends Sub {
         // fault are never hidden behind a chevron. improvised.md I-L8-02.
         const aOpen = this.state.aOpen || {};
         const open = i in aOpen ? !!aOpen[i] : (accLive ? !!(a.atLimit || a.banner || a.noData || a.noWindows) : false);
-        const primary = a.bars.find((b) => b.label === '5 hour') || a.bars[0];
+        // A closed row shows the all-models 7 day window, not the 5 hour one: the weekly
+        // is what actually constrains an account (operator, 2026-09-09). improvised.md I-L8-10.
+        const primary = a.bars.find((b) => b.label === '7 day') || a.bars[0];
         return {
           ...a, open,
           visBars: open ? a.bars : (primary ? [primary] : []),
