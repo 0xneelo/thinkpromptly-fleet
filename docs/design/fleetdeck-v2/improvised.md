@@ -2251,8 +2251,9 @@ logic.js calls `shape()` on every render, so the map is never behind the DOM.
 The mock's closed card shows one bar and the L8 port picked the "5 hour" one (`primary` in the
 accounts render). With live rows that hid the constraining number exactly when a row was closed:
 lafayette read 14% (5 hour) while its Fable weekly sat at 100%, and "most constrained first"
-ordered rows by a window the closed card never drew. The closed card now draws the "7 day" bar
-(the all-models weekly) and falls back to the first bar as before. Open rows are unchanged —
+ordered rows by a window the closed card never drew. The closed card now draws whichever weekly
+is more used up — "7 day" (all models) or "7 day Fable" — and falls back to the first bar as
+before (operator refinement, same day: "whatever is used up more"). Open rows are unchanged —
 5 hour, 7 day, the model weeklies, extra usage — so the fixture render and the pixel gate are
 untouched (fixture mode never has a closed live row). Hand-edited in both `template.dc.html`
 and `logic.js` (no playwright on this Mac); `npm run v2:compile` must reproduce it byte for byte.
