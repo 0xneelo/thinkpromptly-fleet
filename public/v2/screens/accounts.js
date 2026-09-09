@@ -313,9 +313,40 @@
   // accounts.js:219 — '<host>: <message>' per collector error.
   const toErrors = (payload) => ((payload && payload.errors) || []).map((e) => e.host + ': ' + e.message);
 
+  // A machines view -> the progress popup's rows. A Refresh runs the logins sweep first
+  // (server.js: GET /api/credits?refresh=1), and `sweep` is how that sweep says which box it
+  // is still waiting on. An unknown status reads as pending: a row is never claimed done on
+  // a word this file does not know.
+  const ERR_MAX = 60;
+  function progressRows(view) {
+    const list = (view && view.sweep && view.sweep.machines) || [];
+    return list.map((m) => ({
+      id: m.id,
+      label: m.label || m.id,
+      status: m.status === 'ok' || m.status === 'error' ? m.status : 'pending',
+      // Tenths, from the server's milliseconds: a pending row ticks and a fast one is not 0.
+      secs: Math.round(Math.max(0, Number(m.ms) || 0) / 100) / 10,
+      error: typeof m.error === 'string' && m.error
+        ? (m.error.length > ERR_MAX ? m.error.slice(0, ERR_MAX - 1) + '…' : m.error)
+        : '',
+    }));
+  }
+
+  // The one line the popup closes on. Counts what was polled, not what is configured: a
+  // push-only machine is nothing this sweep waited for.
+  function progressSummary(rows) {
+    if (!rows.length) return 'no machines polled';
+    const ok = rows.filter((r) => r.status === 'ok').length;
+    const bad = rows.filter((r) => r.status === 'error').length;
+    return [rows.length + (rows.length === 1 ? ' machine' : ' machines'), ok + ' ok']
+      .concat(bad ? [bad + ' failed'] : [])
+      .join(' · ');
+  }
+
   const pure = {
     ago, until, level, worst, atLimit, order, summary, creditsLine, trend,
     sourceText, banner, staleNote, bars, barOf, enrich, note, toRows, toErrors, label,
+    progressRows, progressSummary,
     WIN_LABEL, SOURCE, TIER,
   };
 
@@ -553,27 +584,162 @@
     });
   }
 
+  // The compiled header carries its own "Refresh" button with a null onclick, rendered for
+  // every screen with per-screen copy — so it is wired by delegation rather than by editing
+  // anything compiled: on Accounts it runs the same load(true), on every other screen it
+  // stays the no-op it is today.
+  let delegated = false;
+  function delegate() {
+    if (delegated) return;
+    delegated = true;
+    document.addEventListener('click', (e) => {
+      const btn = e.target && e.target.closest && e.target.closest('button');
+      if (!btn || btn.id === 'accounts-refresh') return; // the chrome's own pill wires itself
+      if (btn.textContent.trim() !== 'Refresh' || !btn.closest('main header')) return;
+      const router = root.FD && root.FD.router;
+      if (!router || router.route().screen !== 'accounts') return;
+      load(true);
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Refresh progress popup. A forced refresh sweeps every polled machine over ssh
+  // before it merges the readings, which takes tens of seconds — so it says what it
+  // is waiting on. Its own fixed panel on document.body, in the same theme tokens as
+  // the chrome above, and nothing compiled is touched.
+  // ---------------------------------------------------------------------------
+
+  const PROGRESS = 'accounts-progress';
+  const GLYPH = { pending: '○', ok: '●', error: '✕' };
+  const progress = { open: false, title: '', rows: [], merging: false, note: '', failed: false };
+  let poller = null;
+  let closeTimer = null;
+  // One generation per opening. `load` is exported, so a second refresh can open the popup
+  // while the first is still awaiting the API; the first's ticks and its finish must then
+  // write nothing into the popup the second now owns.
+  let gen = 0;
+
+  function paintProgress() {
+    const old = document.getElementById(PROGRESS);
+    if (!progress.open) {
+      if (old) old.remove();
+      return;
+    }
+    const t = tok();
+    let box = old;
+    if (!box) {
+      box = el('div');
+      box.id = PROGRESS;
+      // A live region: the sweep's state is announced as it changes, not only on close.
+      box.setAttribute('role', 'status');
+      box.setAttribute('aria-live', 'polite');
+      document.body.appendChild(box);
+    }
+    box.setAttribute('style', 'position:fixed;z-index:6;top:76px;right:24px;width:300px;' +
+      'border-radius:12px;border:1px solid ' + t.line + ';background:' + t.panel +
+      ';box-shadow:' + t.panelShadow +
+      ';backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);padding:' +
+      (t.cardPad || '18px 20px') + ';display:flex;flex-direction:column;gap:8px;');
+    box.replaceChildren();
+    box.append(el('span', 'font-size:12.5px;font-weight:500;color:' + t.ink + ';', progress.title));
+
+    progress.rows.forEach((r) => {
+      const line = el('div', 'display:flex;align-items:baseline;gap:8px;font-size:12px;color:' + t.ink60 + ';');
+      line.append(el('span', 'color:' + (r.status === 'error' ? t.bad : r.status === 'ok' ? t.ink : t.ink35) + ';',
+        GLYPH[r.status]));
+      line.append(el('span', 'color:' + t.ink + ';', r.label));
+      line.append(el('span', 'margin-left:auto;', r.secs + 's'));
+      box.append(line);
+      if (r.error) box.append(el('p', 'margin:0 0 0 20px;font-size:11.5px;color:' + t.bad + ';', r.error));
+    });
+
+    if (progress.merging) box.append(el('p', 'margin:0;font-size:12px;color:' + t.ink60 + ';', 'merging readings…'));
+    if (progress.note)
+      box.append(el('p', 'margin:0;font-size:12px;color:' + (progress.failed ? t.bad : t.ink60) + ';', progress.note));
+
+    const close = el('button', 'align-self:flex-start;border-radius:9999px;border:1px solid ' + t.line +
+      ';background:transparent;color:' + t.ink75 + ';padding:4px 14px;font-size:12px;cursor:pointer;', 'Close');
+    close.onclick = closeProgress;
+    box.append(close);
+  }
+
+  function closeProgress() {
+    clearTimeout(closeTimer);
+    clearInterval(poller);
+    poller = null;
+    progress.open = false;
+    paintProgress();
+  }
+
+  // A poll that fails leaves the last rows standing: the refresh itself is what reports the
+  // failure. A plain GET never starts a sweep, so this stays cheap while one is running.
+  const pollProgress = (api, myGen) =>
+    api.machines().then(
+      (view) => {
+        if (!progress.open || gen !== myGen) return;
+        progress.rows = progressRows(view);
+        progress.merging = !!(view.sweep && view.sweep.credits_collecting);
+        paintProgress();
+      },
+      () => {}
+    );
+
+  function openProgress(api) {
+    clearTimeout(closeTimer);
+    clearInterval(poller);
+    const myGen = ++gen;
+    Object.assign(progress, { open: true, title: 'Querying live usage…', rows: [], merging: false, note: '', failed: false });
+    paintProgress();
+    poller = setInterval(() => pollProgress(api, myGen), 800);
+    pollProgress(api, myGen);
+    return myGen;
+  }
+
+  // One last read before the summary: the sweep settles between two polls, and rows left
+  // reading "pending" would be counted as neither ok nor failed.
+  async function finishProgress(api, myGen, error) {
+    if (gen !== myGen) return; // a newer refresh owns the popup now
+    clearInterval(poller);
+    poller = null;
+    if (!progress.open) return;
+    await pollProgress(api, myGen);
+    if (!progress.open || gen !== myGen) return;
+    progress.merging = false;
+    progress.failed = !!error;
+    progress.title = error ? 'Refresh failed' : 'Live usage updated';
+    progress.note = error || progressSummary(progress.rows);
+    paintProgress();
+    // A clean run gets out of the way on its own; a failure stays until it is read.
+    if (!error) closeTimer = setTimeout(closeProgress, 2500);
+  }
+
   // ---------------------------------------------------------------------------
   // Load. No polling: a collect fans out over ssh, so it runs only when the page or
   // the operator asks for it (accounts.js:234-250).
   // ---------------------------------------------------------------------------
 
   async function load(force) {
+    // Synchronous, before any await: `load` is exported and the pill's disabled state only
+    // lands on the next frame, so a second call can arrive while the first is still out.
+    if (state.loading) return;
     const api = data();
     if (!api) return;
     state.loading = true;
     state.error = '';
     push();
+    const myGen = force ? openProgress(api) : 0;
     try {
       const payload = await api.credits(force ? { refresh: true } : {});
       state.rows = toRows(payload, undefined, api.toAccounts);
       state.errors = toErrors(payload);
       state.loaded = true;
+      if (force) await finishProgress(api, myGen, '');
     } catch (e) {
       // accounts.js:243 — the whole list is replaced by the failure, verbatim.
       state.error = 'cannot reach fleetdeck';
       state.rows = [];
       state.errors = [];
+      if (force) await finishProgress(api, myGen, 'cannot reach fleetdeck' + (e && e.message ? ' — ' + String(e.message).slice(0, 120) : ''));
     } finally {
       state.loading = false;
       push();
@@ -595,6 +761,7 @@
     // Fixture mode renders FD.fixture as-is: never call setData there.
     if (!api || api.isFixture()) return;
     watch();
+    delegate();
     load(false);
   }
 

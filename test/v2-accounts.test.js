@@ -263,3 +263,39 @@ test('toErrors: one line per collector error', () => {
     ['ivy-box: ssh: connect: timed out']);
   assert.deepEqual(acct.toErrors(null), []);
 });
+
+// The Refresh popup. A forced refresh sweeps every polled machine over ssh before it merges
+// the readings, and `sweep` on the machines view is what says where it has got to.
+test('progressRows: one row per polled machine, tenths of a second, error truncated', () => {
+  const long = 'ssh: connect to host gb-deploy port 22: ' + 'x'.repeat(40);
+  const rows = acct.progressRows({
+    sweep: {
+      collecting: true,
+      machines: [
+        { id: 'german-box', label: 'German Box', status: 'error', ms: 25150, error: long },
+        { id: 'vps', label: 'VPS', status: 'ok', ms: 940, error: null },
+        { id: 'macbook', label: null, status: 'pending', ms: 3000, error: null },
+      ],
+    },
+  });
+  assert.deepEqual(rows.map((r) => r.status), ['error', 'ok', 'pending']);
+  assert.deepEqual(rows.map((r) => r.secs), [25.2, 0.9, 3]);
+  // A missing label still names the machine, never an empty row.
+  assert.equal(rows[2].label, 'macbook');
+  assert.equal(rows[0].error.length, 60);
+  assert.ok(rows[0].error.endsWith('…'));
+  assert.equal(rows[1].error, '');
+  // Nothing to show before the first poll lands, and an unknown status is not "done".
+  assert.deepEqual(acct.progressRows(null), []);
+  assert.deepEqual(acct.progressRows({ sweep: { machines: [{ id: 'x', ms: 0 }] } }),
+    [{ id: 'x', label: 'x', status: 'pending', secs: 0, error: '' }]);
+});
+
+test('progressSummary: the one line the popup closes on', () => {
+  const row = (status) => ({ status });
+  assert.equal(acct.progressSummary([row('ok'), row('ok'), row('ok'), row('error')]),
+    '4 machines · 3 ok · 1 failed');
+  assert.equal(acct.progressSummary([row('ok'), row('ok')]), '2 machines · 2 ok');
+  assert.equal(acct.progressSummary([row('ok')]), '1 machine · 1 ok');
+  assert.equal(acct.progressSummary([]), 'no machines polled');
+});

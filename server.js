@@ -1163,7 +1163,9 @@ db.exec(
   `CREATE TABLE IF NOT EXISTS credits_history (org TEXT, t INTEGER, fh REAL, sd REAL, xu REAL, PRIMARY KEY (org, t))`
 );
 
-const CREDITS_SH = path.join(__dirname, 'box', 'fleet-credits.sh');
+// Overridable like FLEET_LOGINS_SH, so a test can drive the collect with a stub instead of
+// reading this Mac's own credentials and calling the real usage endpoint.
+const CREDITS_SH = process.env.FLEET_CREDITS_SH || path.join(__dirname, 'box', 'fleet-credits.sh');
 // Quote-free, argument-free: the same remote-command rule as fleet-lastmsg.sh. No wsl
 // prefix here — remote() adds it per host, so a plain Linux host runs the script directly.
 const CREDITS_REMOTE = 'sh /home/vibe/bin/fleet-credits.sh';
@@ -1622,41 +1624,51 @@ function creditsRows() {
 }
 
 let creditsAt = 0; // last live collect, ms
+// True only while a collect's fan-out is out. Served on the machines view so a Refresh can
+// say which phase it is in — the machines sweep, or the credits merge that follows it.
+let creditsInflight = false;
 
 async function creditsCollect(force) {
   const errors = [];
   if (force || Date.now() - creditsAt > CREDITS_TTL) {
     creditsAt = Date.now(); // claimed before the awaits, so parallel loads don't stampede
-    const local = run('sh', [CREDITS_SH], { timeout: 30000 }).then((r) => ['mac', r]);
-    // Longer than the session poll's 15s: this one waits on a remote HTTPS call, and a
-    // slow endpoint must not be reported as a missing script.
-    const remotes = HOSTS().map((host) =>
-      ssh(host, remote(host, CREDITS_REMOTE), { timeout: 30000 }).then((r) => [host, r])
-    );
-    // A host that is down, or has no script installed, leaves its stored rows standing.
-    const replies = [];
-    for (const [host, r] of await Promise.all([local, ...remotes])) {
-      try {
-        const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
-        // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
-        // blaming a script that may well be installed and working.
-        if (!line)
-          throw new Error(
-            r.stderr.trim() ||
-              (r.err ? 'fleet-credits.sh did not answer: ' + (r.err.killed ? 'timed out' : r.err.message) : 'no output from fleet-credits.sh')
-          );
-        replies.push([host, JSON.parse(line)]);
-      } catch (e) {
-        errors.push({ host, message: e.message.slice(0, 500) });
+    creditsInflight = true;
+    // The Accounts page reads this as the sweep's second phase; in a finally so a throw
+    // cannot strand it true for as long as the deck runs.
+    try {
+      const local = run('sh', [CREDITS_SH], { timeout: 30000 }).then((r) => ['mac', r]);
+      // Longer than the session poll's 15s: this one waits on a remote HTTPS call, and a
+      // slow endpoint must not be reported as a missing script.
+      const remotes = HOSTS().map((host) =>
+        ssh(host, remote(host, CREDITS_REMOTE), { timeout: 30000 }).then((r) => [host, r])
+      );
+      // A host that is down, or has no script installed, leaves its stored rows standing.
+      const replies = [];
+      for (const [host, r] of await Promise.all([local, ...remotes])) {
+        try {
+          const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
+          // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
+          // blaming a script that may well be installed and working.
+          if (!line)
+            throw new Error(
+              r.stderr.trim() ||
+                (r.err ? 'fleet-credits.sh did not answer: ' + (r.err.killed ? 'timed out' : r.err.message) : 'no output from fleet-credits.sh')
+            );
+          replies.push([host, JSON.parse(line)]);
+        } catch (e) {
+          errors.push({ host, message: e.message.slice(0, 500) });
+        }
       }
+      // One mapping for the whole fleet: a CLI login on any machine names an org for all of them.
+      const map = creditsMap(replies.flatMap(([, d]) => (Array.isArray(d.accounts) ? d.accounts : [])));
+      creditsWrite(replies.flatMap(([host, d]) => creditsCandidates(d, host, map, false)));
+      // Every machine's samples merge into one series per org — one box keeps sampling the
+      // accounts another stopped using. Retention is bounded here, once per collect.
+      for (const [, d] of replies) creditsHistoryWrite(d);
+      historyPrune.run(Math.floor(Date.now() / 1000) - HISTORY_KEEP);
+    } finally {
+      creditsInflight = false;
     }
-    // One mapping for the whole fleet: a CLI login on any machine names an org for all of them.
-    const map = creditsMap(replies.flatMap(([, d]) => (Array.isArray(d.accounts) ? d.accounts : [])));
-    creditsWrite(replies.flatMap(([host, d]) => creditsCandidates(d, host, map, false)));
-    // Every machine's samples merge into one series per org — one box keeps sampling the
-    // accounts another stopped using. Retention is bounded here, once per collect.
-    for (const [, d] of replies) creditsHistoryWrite(d);
-    historyPrune.run(Math.floor(Date.now() / 1000) - HISTORY_KEEP);
   }
   return { rows: creditsRows(), errors };
 }
@@ -1856,6 +1868,14 @@ let machinesAt = 0; // last live collect, ms
 // usually the one to finish first.
 let machinesSeq = 0;
 const machinesInflight = new Map(); // token -> ms that sweep started
+// Per-machine progress, so a Refresh can show which box it is still waiting on rather than
+// one undifferentiated spinner. Keyed by the sweep token, never shared: two forced sweeps
+// can overlap (Accounts' Refresh and the Machines screen's), and one flat map would have the
+// later sweep's reset wipe the earlier one's rows and then settle into whichever row now
+// holds that id. The view reports the NEWEST sweep, so a finished sweep's rows stand until a
+// newer one starts.
+const machinesProgress = new Map(); // sweep -> Map<id, { label, started_at, finished_at, status, error }>
+const PROGRESS_SWEEPS = 2; // kept: the newest, plus the one still on screen behind it
 
 async function machinesCollect(force) {
   if (!force && Date.now() - machinesAt <= MACHINES_TTL) return;
@@ -1873,8 +1893,21 @@ async function machinesCollect(force) {
     // One mapping for the sweep, from the file alone: a machines line carries no accounts list.
     const map = creditsMap([]);
     const credits = [];
+    const config = machinesConfig();
+    const startedAt = Date.now();
+    const rows = new Map();
+    for (const m of config)
+      if (m.route !== 'push')
+        rows.set(m.id, { label: str(m.label, 60) || m.id, started_at: startedAt, finished_at: null, status: 'pending', error: null });
+    machinesProgress.set(sweep, rows);
+    for (const token of [...machinesProgress.keys()].sort((a, b) => b - a).slice(PROGRESS_SWEEPS))
+      machinesProgress.delete(token);
+    const settle = (id, status, error) => {
+      const p = rows.get(id); // this sweep's own rows, whatever else has started since
+      if (p) Object.assign(p, { finished_at: Date.now(), status, error: error || null });
+    };
     await Promise.allSettled(
-      machinesConfig().map(async (m) => {
+      config.map(async (m) => {
         if (m.route === 'push') return; // nothing to poll: that machine calls us
         try {
           if (m.route === 'ssh' && !script) throw new Error('cannot read ' + LOGINS_SH);
@@ -1898,9 +1931,11 @@ async function machinesCollect(force) {
           machinesUpsert.run(m.id, JSON.stringify({ ...machinePayload(d), collected_at: now }), now);
           credits.push(...machinesCredits(d, m.host || m.id, map, false));
           machinesErrors.delete(m.id);
+          settle(m.id, 'ok');
         } catch (e) {
           // The stored row stands: last known logins beat none while a box is unreachable.
           machinesErrors.set(m.id, e.message.slice(0, 500));
+          settle(m.id, 'error', e.message.slice(0, 500));
         }
       })
     );
@@ -2110,6 +2145,9 @@ function machinesView() {
     // says an rfc1918 address); the configured `host` on `base` is the joinable key.
     return { ...base, state: 'ok', reported_at: d.collected_at || d.ts || null, reported_host: d.host || null, clients };
   });
+  // The newest sweep's rows. A slower older sweep finishing meanwhile must not replace what
+  // the page shows for the refresh the operator just asked for.
+  const progress = machinesProgress.size ? machinesProgress.get(Math.max(...machinesProgress.keys())) : null;
   return {
     machines,
     collected_at: machinesAt ? Math.floor(machinesAt / 1000) : null,
@@ -2119,6 +2157,21 @@ function machinesView() {
     collect_started_at: machinesInflight.size
       ? Math.floor(Math.min(...machinesInflight.values()) / 1000)
       : null,
+    // The same two facts, plus one row per POLLED machine, for a Refresh that shows its own
+    // progress. Milliseconds so a row can tick while it is still pending; the fields above
+    // stay as they were, because other callers read them.
+    sweep: {
+      collecting: machinesInflight.size > 0,
+      started_at: machinesInflight.size ? Math.floor(Math.min(...machinesInflight.values()) / 1000) : null,
+      credits_collecting: creditsInflight,
+      machines: [...(progress || [])].map(([id, p]) => ({
+        id,
+        label: p.label,
+        status: p.status,
+        ms: (p.finished_at || Date.now()) - p.started_at,
+        error: p.error,
+      })),
+    },
     // What a routeless machine puts in its cron; the deck is the only thing that knows it.
     push_url: 'http://' + TAILNET_HOST + '/api/machines',
   };
@@ -3005,8 +3058,23 @@ const server = http.createServer(async (req, res) => {
       const r = seatClaim(b);
       return json(res, r.body, r.code);
     }
-    if (p === '/api/credits' && req.method === 'GET')
-      return json(res, await creditsCollect(url.searchParams.get('refresh') === '1'));
+    if (p === '/api/credits' && req.method === 'GET') {
+      const refresh = url.searchParams.get('refresh') === '1';
+      // The live per-account usage is what the logins sweep carries, and it is also what
+      // refreshes an expired box token in place. A Refresh that ran only the credits script
+      // asked the old question. The sweep writes its own credits rows, so the collect below
+      // returns the merged set. A plain GET is unchanged: no sweep, no ssh.
+      // The sweep is the better question, not the only one: a throw out of it (its own
+      // creditsWrite tail is uncaught) must degrade this route to the credits collect
+      // alone, the way it always answered before the sweep was added.
+      if (refresh)
+        try {
+          await machinesCollect(true);
+        } catch (e) {
+          console.error('credits refresh: logins sweep failed, merging readings anyway: ' + e.message);
+        }
+      return json(res, await creditsCollect(refresh));
+    }
     if (p === '/api/credits') return await creditsRoute(req, res);
     if (p === '/api/machines' && req.method === 'GET') {
       await machinesCollect(url.searchParams.get('refresh') === '1');

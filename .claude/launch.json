@@ -28,6 +28,16 @@
         "/Users/misterislez/remote-system/.claude/worktrees/v2-s1-preview/public"
       ],
       "port": 4174
+    },
+    {
+      "name": "deck-worktree",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "FLEET_DB=${TMPDIR:-/tmp}/fleetdeck-preview.db exec node server.js"
+      ],
+      "port": 3140,
+      "autoPort": true
     }
   ]
 }

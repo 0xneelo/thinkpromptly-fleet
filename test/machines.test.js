@@ -401,6 +401,88 @@ test('/api/machines — the ssh argv per route, and no ssh at all for local or p
   // The sweep is over by the time the GET answers, so the page must not be told otherwise.
   assert.equal(r.body.collecting, false);
   assert.equal(r.body.collect_started_at, null);
+
+  // One progress row per POLLED machine, in file order. The push machine is not polled, so
+  // a Refresh must not sit waiting on a row that nothing is fetching.
+  const sweep = r.body.sweep;
+  assert.deepStrictEqual(sweep.machines.map((m) => m.id), ['german-box', 'vps', 'macbook']);
+  assert.deepStrictEqual(sweep.machines.map((m) => m.status), ['ok', 'ok', 'ok']);
+  assert.deepStrictEqual(sweep.machines.map((m) => m.label), ['German Box', 'VPS', 'MacBook Pro']);
+  for (const m of sweep.machines) {
+    assert.equal(typeof m.ms, 'number', m.id + ' has no elapsed time');
+    assert.equal(m.error, null);
+  }
+  assert.equal(sweep.collecting, false);
+  assert.equal(sweep.credits_collecting, false);
+});
+
+// The Accounts page's Refresh calls this endpoint, and the live per-account usage is what the
+// logins sweep carries — a Refresh that ran only fleet-credits.sh asked the old question.
+test('/api/credits?refresh=1 — the logins sweep runs first, then the credits collect', async (t) => {
+  const dir = tmpdir('credits-refresh');
+  const log = path.join(dir, 'argv.log');
+  // A stub for the deck's own machine, so the collect never reads this Mac's credentials.
+  const creditsSh = path.join(dir, 'stub-credits.sh');
+  fs.writeFileSync(creditsSh, "#!/bin/sh\nprintf '%s\\n' '{\"ts\":1757000000,\"host\":\"mac\"}'\n");
+  const env = {
+    ...fixture(dir, LINE, [
+      { id: 'german-box', label: 'German Box', os: 'windows', route: 'ssh', ssh: 'gb-deploy', wsl: true },
+      { id: 'rog-strix', label: 'ROG Strix', os: 'windows', route: 'push' },
+    ]),
+    FLEET_CREDITS_SH: creditsSh,
+    FLEET_SSH_BIN: SHIM,
+    FLEET_SHIM_ARGV_LOG: log,
+    FLEET_SHIM_MAP_WSL: '1',
+  };
+  // No hosts: the only ssh call in the log is then the sweep's own, not the credits fan-out's.
+  const s = await startServer(env, { dir, hosts: [] });
+  t.after(() => s.stop());
+
+  const r = await s.get('/api/credits?refresh=1');
+  assert.equal(r.status, 200);
+  assert.ok(Array.isArray(r.body.rows));
+  // The sweep is piped as `[wsl] sh -s`; fleet-credits.sh is never sent that way.
+  const swept = argvLog(log).filter((c) => c[c.length - 1] === 'wsl sh -s' || c[c.length - 1] === 'sh -s');
+  assert.equal(swept.length, 1, 'the sweep did not run: ' + JSON.stringify(argvLog(log)));
+  assert.deepStrictEqual(swept[0], [...SSH_OPTS, 'gb-deploy', 'wsl sh -s']);
+
+  // That sweep's own progress is readable afterwards, and this GET does not start another
+  // one: the TTL was claimed when the sweep began.
+  const after = await s.get('/api/machines');
+  assert.deepStrictEqual(after.body.sweep.machines.map((m) => [m.id, m.status]), [['german-box', 'ok']]);
+  assert.equal(argvLog(log).length, 1, 'the plain GET started a second sweep');
+});
+
+// Two Refreshes can overlap — the Accounts screen's runs the sweep through /api/credits, the
+// Machines screen's runs its own — so progress is kept per sweep. A later sweep resetting a
+// shared map would blank the rows the earlier one is still filling, and settle into whatever
+// row then held that id.
+test('/api/machines — two overlapping forced sweeps keep whole progress rows', async (t) => {
+  const dir = tmpdir('machines-overlap');
+  const log = path.join(dir, 'argv.log');
+  const env = {
+    ...fixture(dir, LINE, [
+      { id: 'german-box', label: 'German Box', os: 'windows', route: 'ssh', ssh: 'gb-deploy', wsl: true, host: 'german-box' },
+      { id: 'vps', label: 'VPS', os: 'linux', route: 'ssh', ssh: 'vps-deploy', host: 'vps' },
+      { id: 'macbook', label: 'MacBook Pro', os: 'macos', route: 'local' },
+      { id: 'rog-strix', label: 'ROG Strix', os: 'windows', route: 'push' },
+    ]),
+    FLEET_SSH_BIN: SHIM,
+    FLEET_SHIM_ARGV_LOG: log,
+    FLEET_SHIM_MAP_WSL: '1',
+  };
+  const s = await startServer(env, { dir });
+  t.after(() => s.stop());
+
+  const both = await Promise.all([s.get('/api/machines?refresh=1'), s.get('/api/machines?refresh=1')]);
+  for (const r of both) assert.equal(r.status, 200);
+
+  // The newest sweep's rows, whole: one per POLLED machine, every one settled and timed.
+  const sweep = (await s.get('/api/machines')).body.sweep;
+  assert.deepStrictEqual(sweep.machines.map((m) => m.id), ['german-box', 'vps', 'macbook']);
+  assert.deepStrictEqual(sweep.machines.map((m) => m.status), ['ok', 'ok', 'ok']);
+  for (const m of sweep.machines) assert.equal(typeof m.ms, 'number', m.id + ' has no elapsed time');
+  assert.equal(sweep.collecting, false);
 });
 
 // The true case of the sweep signal: a GET that lands inside the TTL while a sweep is still
@@ -477,13 +559,22 @@ test('/api/machines — an unreachable box carries its own error and does not po
   const s = await startServer(env, { dir });
   t.after(() => s.stop());
 
-  const rows = new Map((await s.get('/api/machines?refresh=1')).body.machines.map((m) => [m.id, m]));
+  const body = (await s.get('/api/machines?refresh=1')).body;
+  const rows = new Map(body.machines.map((m) => [m.id, m]));
   const down = rows.get('german-box');
   // ssh's own words, so the row says why rather than blaming the collector.
   assert.ok(down.error && down.error.includes('Connection timed out'), JSON.stringify(down.error));
   assert.notEqual(down.state, 'ok');
   assert.equal(rows.get('vps').state, 'ok');
   assert.equal(rows.get('vps').error, null);
+
+  // The Refresh popup reads the same failure from the sweep's own progress: the box that
+  // could not be reached is marked, and the one beside it still settled ok.
+  const sweep = new Map(body.sweep.machines.map((m) => [m.id, m]));
+  assert.equal(sweep.get('german-box').status, 'error');
+  assert.ok(sweep.get('german-box').error.includes('Connection timed out'), JSON.stringify(sweep.get('german-box').error));
+  assert.equal(sweep.get('vps').status, 'ok');
+  assert.equal(sweep.get('vps').error, null);
 });
 
 test('/api/machines — the row is keyed by the configured host, the machine reports its own', async (t) => {

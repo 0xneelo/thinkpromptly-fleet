@@ -248,7 +248,13 @@ and leases by; nothing joins on it yet, it is carried so the join has a key to u
 
 **Identity, plus that account's own usage.** A Claude login whose token proved itself also
 reports its usage windows, which land on the Credits row for that account rather than on the
-machines row. The Claude access token and the Codex tokens are read into python memory on the
+machines row. That sweep is therefore what a live usage reading comes from, so Refresh on the
+Accounts screen — `GET /api/credits?refresh=1` — runs the machines sweep first, which also
+refreshes an expired box token in place, and only then the credits collect that merges the
+rows. The sweep fans out over ssh and takes tens of seconds, so the page polls
+`GET /api/machines` while it runs and shows that response's `sweep` block: one row per polled
+machine with its status and elapsed time, then `credits_collecting` for the merge that
+follows. A plain `GET /api/credits` still sweeps nothing. The Claude access token and the Codex tokens are read into python memory on the
 machine that owns them, used only for that machine's own profile and usage calls, and never
 printed, stored in `fleet.db`, logged, or sent to a browser — the request headers go through
 a 0600 temp file, so no token appears in `ps`. `~/.claude.json` can name a *different* account than
