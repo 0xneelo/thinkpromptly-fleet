@@ -341,7 +341,9 @@ function fixture(dir, line, machines) {
 // test/ssh-shim.sh stands in for ssh: it drops the option pairs and the host and runs the
 // remote command here, so the deck's real fan-out, stdin piping and error handling run.
 const SHIM = path.join(__dirname, 'ssh-shim.sh');
-const SSH_OPTS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8'];
+// The sweep's own connect timeout, not the session polls' 8s: a box waking from standby
+// (rog-strix) takes longer than that to answer TCP at all.
+const SSH_OPTS = ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=25'];
 const LINE = {
   v: 1,
   host: 'DESKTOP-XYZ',

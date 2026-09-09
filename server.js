@@ -643,7 +643,11 @@ function runInput(cmd, args, input, opts = {}) {
 // The binary is overridable so tests can drive a fake host poller with the same argv shape;
 // unset, this is the plain `ssh` it has always been.
 const SSH_BIN = process.env.FLEET_SSH_BIN || 'ssh';
-const sshArgs = (dest, remoteCmd) => ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', dest, remoteCmd];
+// ConnectTimeout is per call: the session polls keep 8s so a dead box costs one tick, but the
+// machines sweep waits longer — rog-strix wakes from Modern Standby through a relay and needs
+// more than 8s to answer TCP at all, then answers fine (observed 2026-09-09: refused at 8, alive at 25).
+const sshArgs = (dest, remoteCmd, connectTimeout = 8) =>
+  ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=' + connectTimeout, dest, remoteCmd];
 
 // A host reached through a cert alias offers the deploy cert and nothing else, so a publickey
 // refusal there has exactly one cause and one fix. Said once per host and not again until that
@@ -677,7 +681,8 @@ const ssh = async (host, remoteCmd, opts) => {
 };
 const sshInput = async (host, remoteCmd, input, opts) => {
   const dest = SSH_HOST(host);
-  return certGate(host, dest, await runInput(SSH_BIN, sshArgs(dest, remoteCmd), input, { ...SSH_OPTS, ...opts }));
+  const { connectTimeout, ...rest } = opts || {};
+  return certGate(host, dest, await runInput(SSH_BIN, sshArgs(dest, remoteCmd, connectTimeout), input, { ...SSH_OPTS, ...rest }));
 };
 
 
@@ -1679,6 +1684,9 @@ const MACHINES_TTL =
 // profiles. A machine with more than that, all of them answering at the ceiling, still
 // reports as its own row's timeout error rather than as a wrong number.
 const LOGINS_TIMEOUT = 60000;
+// Inside LOGINS_TIMEOUT with room for the collection itself (rog-strix cold: ~25s to answer
+// TCP, then ~11s for two profiles with a token refresh each).
+const SWEEP_CONNECT_TIMEOUT = 25;
 const MACHINE_CLIENTS = ['claude_cli', 'codex_cli', 'claude_desktop', 'codex_desktop'];
 // Kept per machine until that machine reports again, so a box that is down shows why while
 // its last known logins stay on screen.
@@ -1873,7 +1881,7 @@ async function machinesCollect(force) {
           const r =
             m.route === 'local'
               ? await run('sh', [LOGINS_SH], { timeout: LOGINS_TIMEOUT })
-              : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', script, { timeout: LOGINS_TIMEOUT });
+              : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', script, { timeout: LOGINS_TIMEOUT, connectTimeout: SWEEP_CONNECT_TIMEOUT });
           const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
           // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
           // blaming a script that never got to run.
