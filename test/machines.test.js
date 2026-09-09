@@ -245,6 +245,17 @@ test('fleet-logins.sh — a refreshed token that still will not prove itself is 
     assert.ok(!out.includes(secret), secret + ' leaked into the reported line');
 });
 
+test('fleet-logins.sh — a 403 on the usage call, after a proved profile, pauses like a 429', async (t) => {
+  const home = fakeHome();
+  const p = await fakeProfile(200, IDENTITY, [403, { error: { type: 'permission_error' } }]);
+  t.after(() => p.close());
+  const claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.proof, 'profile');
+  assert.equal(claude.usage_state, 'rate_limited');
+  assert.equal(claude.note, 'usage call refused with HTTP 403, pausing 600s');
+  assert.ok(fs.existsSync(path.join(home, '.claude', '.fleet-usage-backoff')));
+});
+
 test('fleet-logins.sh — a refused usage call is remembered, and not repeated until its pause has passed', async (t) => {
   const home = fakeHome();
   const stamp = path.join(home, '.claude', '.fleet-usage-backoff');
@@ -256,7 +267,7 @@ test('fleet-logins.sh — a refused usage call is remembered, and not repeated u
   let claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
   assert.equal(claude.state, 'ok');
   assert.equal(claude.usage_state, 'rate_limited');
-  assert.equal(claude.note, 'usage endpoint rate-limited, pausing 600s');
+  assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 600s');
   const deadline = Number(fs.readFileSync(stamp, 'utf8'));
   assert.ok(Math.abs(deadline - (Math.floor(Date.now() / 1000) + 600)) <= 5, 'the stamp is a ten-minute deadline');
   assert.equal(p.calls.filter((c) => c.url === '/usage').length, 1);

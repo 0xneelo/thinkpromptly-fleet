@@ -379,14 +379,17 @@ def claude_cli(home, where):
                 note = "usage call skipped, endpoint asked for a %ds pause" % left
             else:
                 ucode, ubody, retry = oauth_get(USAGE_URL, token)
-                if ucode == 429:
+                # A 403 here is not the token: the profile call just proved it. The endpoint
+                # refuses this account for now — the throttle's other face — and asking again
+                # next sweep only restarts its clock, so it pauses exactly like a 429.
+                if ucode in (429, 403):
                     backoff_set(home, retry)
-                    note = "usage endpoint rate-limited, pausing %ds" % max(BACKOFF_MIN, int(retry or 0))
+                    note = "usage call refused with HTTP %d, pausing %ds" % (ucode, max(BACKOFF_MIN, int(retry or 0)))
             # A 200 carrying something other than the object expected is a broken reply: called
             # "ok" with no windows it would read on the deck as an account using nothing.
             ok = ucode == 200 and isinstance(ubody, dict)
-            ustate = ("ok" if ok else "rate_limited" if ucode == 429
-                      else "token_expired" if ucode in (401, 403) else "error")
+            ustate = ("ok" if ok else "rate_limited" if ucode in (429, 403)
+                      else "token_expired" if ucode == 401 else "error")
             usage = trim_usage(ubody) if ok else None
             # A failed usage call must say so on the row, or a proved login with no numbers
             # is indistinguishable from one nobody asked.
