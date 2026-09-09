@@ -105,27 +105,57 @@ def keychain():
 # One oauth GET with this machine's own token: the profile names the account (the truth,
 # since ~/.claude.json can name a different one than the token in use) and the usage endpoint
 # gives that account's windows. Returns (status, body) and never the body of a failed call.
+# Returns (status, body, retry_after): the body only on a 200, and the Retry-After the
+# endpoint sends with a 429 — the one number that says how long to leave that account alone.
 def oauth_get(url, token):
-    hdr = body = None
+    hdr = body = heads = None
     try:
         fd, hdr = tempfile.mkstemp()   # 0600 by default; the token never reaches argv
         os.write(fd, ("Authorization: Bearer " + token + "\nanthropic-beta: oauth-2025-04-20\n").encode())
         os.close(fd)
         fd, body = tempfile.mkstemp()
         os.close(fd)
-        r = subprocess.run(["curl", "-sS", "-m", "8", "-o", body, "-w", "%{http_code}",
+        fd, heads = tempfile.mkstemp()
+        os.close(fd)
+        r = subprocess.run(["curl", "-sS", "-m", "8", "-o", body, "-D", heads, "-w", "%{http_code}",
                             "-H", "@" + hdr, url], capture_output=True, text=True, timeout=20)
         code = (r.stdout or "").strip()
-        if code == "200": return 200, jload(body)
-        return (int(code) if code.isdigit() else 0), None
+        retry = None
+        try:
+            for line in open(heads, errors="replace"):
+                k, _, v = line.partition(":")
+                if k.strip().lower() == "retry-after" and v.strip().isdigit(): retry = int(v.strip())
+        except Exception:
+            pass
+        if code == "200": return 200, jload(body), None
+        return (int(code) if code.isdigit() else 0), None, retry
     except Exception:
-        return 0, None
+        return 0, None, None
     finally:
-        for f in (hdr, body):
+        for f in (hdr, body, heads):
             try:
                 if f: os.unlink(f)
             except Exception:
                 pass
+
+# The usage endpoint throttles per account, and its Retry-After is a sliding window: every
+# call inside it re-arms it, so a deck sweeping on a five-minute TTL plus a Refresh click kept
+# one account refused for hours. The refusal is remembered next to that profile's own
+# credentials as a deadline, and no usage call is made for it until the deadline has passed.
+# Never shorter than ten minutes: the header says when the window ends, not how sparse the
+# calls must be to stay out of it.
+BACKOFF_MIN = 600
+def backoff_path(home): return os.path.join(home, ".claude", ".fleet-usage-backoff")
+def backoff_left(home):
+    try:
+        return max(0, int(float(open(backoff_path(home)).read().strip())) - int(time.time()))
+    except Exception:
+        return 0
+def backoff_set(home, retry_after):
+    try:
+        with open(backoff_path(home), "w") as fh: fh.write(str(int(time.time()) + max(BACKOFF_MIN, int(retry_after or 0))))
+    except Exception:
+        pass
 
 # One POST to the token endpoint. The body goes through a 0600 temp file (`--data-binary @`),
 # so the refresh token is no more an argument than the access token is. Returns (status, body)
@@ -324,7 +354,7 @@ def claude_cli(home, where):
     token = o.get("accessToken") if isinstance(o, dict) else None
     base = base_of(ce, co, o.get("expiresAt") if isinstance(o, dict) else None)
     if token:
-        code, body = oauth_get(PROFILE_URL, token)
+        code, body, _ = oauth_get(PROFILE_URL, token)
         # Only the store shape the CLI writes today is refreshed; a flat legacy file is left
         # for the CLI to migrate. The note says what happened either way.
         if code in (401, 403) and store and isinstance(cred, dict) and isinstance(cred.get("claudeAiOauth"), dict):
@@ -332,7 +362,7 @@ def claude_cli(home, where):
             if new:
                 o, token = new, new["accessToken"]
                 base = base_of(ce, co, o.get("expiresAt"))
-                code, body = oauth_get(PROFILE_URL, token)
+                code, body, _ = oauth_get(PROFILE_URL, token)
                 # A refreshed token that STILL will not prove itself is not a success: say so,
                 # or the row would read "token refreshed" beside a signed-out state.
                 note = "token refreshed" if code == 200 else "refreshed but still refused (%s)" % code
@@ -342,7 +372,16 @@ def claude_cli(home, where):
             a, g = body.get("account") or {}, body.get("organization") or {}
             # Only a token that just proved itself is worth spending a second call on. The
             # windows belong to THIS account, so they ride with the identity that named it.
-            ucode, ubody = oauth_get(USAGE_URL, token)
+            # Not while a refusal's deadline stands: that call would only re-arm it.
+            left = backoff_left(home)
+            if left:
+                ucode, ubody, retry = 429, None, None
+                note = "usage call skipped, endpoint asked for a %ds pause" % left
+            else:
+                ucode, ubody, retry = oauth_get(USAGE_URL, token)
+                if ucode == 429:
+                    backoff_set(home, retry)
+                    note = "usage endpoint rate-limited, pausing %ds" % max(BACKOFF_MIN, int(retry or 0))
             # A 200 carrying something other than the object expected is a broken reply: called
             # "ok" with no windows it would read on the deck as an account using nothing.
             ok = ucode == 200 and isinstance(ubody, dict)

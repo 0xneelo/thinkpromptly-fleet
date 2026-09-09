@@ -264,7 +264,11 @@ A token the endpoint refuses on a machine whose credential is an on-disk `.crede
 endpoint, client id, scopes and the same two lock directories, so it never races a live
 session — and the new credential is written back to that file atomically. A box login
 therefore stays signed in and keeps reporting instead of going stale between uses; the
-machines row says `token refreshed` when it happened and `not refreshed: …` why not. The
+machines row says `token refreshed` when it happened and `not refreshed: …` why not. The usage endpoint throttles per
+account and its `Retry-After` is a sliding window, so a refused usage call is remembered as a
+deadline in `<profile>/.claude/.fleet-usage-backoff` (never under ten minutes) and that profile's
+usage is not asked again until it has passed — the row says `usage call skipped, endpoint asked
+for a Ns pause` meanwhile. The
 Mac's login Keychain is **read, never written**: the operator runs Claude Code there, so
 their own sessions keep that token fresh, and a background writer must not race the CLI's own
 Keychain writes. A refresh token past its own expiry (30 days), or an expired Mac login, still

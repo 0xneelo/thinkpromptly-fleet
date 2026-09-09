@@ -59,11 +59,11 @@ async function fakeProfile(status, body, usage, token) {
     req.on('data', (c) => { raw += c; });
     req.on('end', () => {
       calls.push({ method: req.method, url: req.url, auth: req.headers.authorization || '', body: raw });
-      let [s, b] = req.url.startsWith('/usage') ? usage || [500, {}] : [status, body];
+      let [s, b, h] = req.url.startsWith('/usage') ? usage || [500, {}] : [status, body];
       if (req.url.startsWith('/token')) [s, b] = token || [404, {}];
       else if (token && token[0] === 200 && req.headers.authorization !== 'Bearer ' + token[1].access_token)
         [s, b] = [401, { error: 'unauthorized' }];
-      res.writeHead(s, { 'content-type': 'application/json' });
+      res.writeHead(s, { 'content-type': 'application/json', ...(h || {}) });
       res.end(JSON.stringify(b));
     });
   });
@@ -243,6 +243,39 @@ test('fleet-logins.sh — a refreshed token that still will not prove itself is 
   assert.equal(creds(home).claudeAiOauth.refreshToken, 'REFRESH-TOKEN-2');
   for (const secret of [TOKEN, 'NEW-TOKEN', 'REFRESH-TOKEN-2'])
     assert.ok(!out.includes(secret), secret + ' leaked into the reported line');
+});
+
+test('fleet-logins.sh — a refused usage call is remembered, and not repeated until its pause has passed', async (t) => {
+  const home = fakeHome();
+  const stamp = path.join(home, '.claude', '.fleet-usage-backoff');
+  const p = await fakeProfile(200, IDENTITY, [429, { error: { type: 'rate_limit_error' } }, { 'retry-after': '216' }]);
+  t.after(() => p.close());
+
+  // Run 1: the endpoint refuses and names a 216s window. The pause is never shorter than
+  // ten minutes — the header says when the window ends, not how sparse calls must be.
+  let claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.state, 'ok');
+  assert.equal(claude.usage_state, 'rate_limited');
+  assert.equal(claude.note, 'usage endpoint rate-limited, pausing 600s');
+  const deadline = Number(fs.readFileSync(stamp, 'utf8'));
+  assert.ok(Math.abs(deadline - (Math.floor(Date.now() / 1000) + 600)) <= 5, 'the stamp is a ten-minute deadline');
+  assert.equal(p.calls.filter((c) => c.url === '/usage').length, 1);
+
+  // Run 2: the profile is proved again, the usage call is not made at all.
+  claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.proof, 'profile');
+  assert.equal(claude.usage_state, 'rate_limited');
+  assert.match(claude.note, /^usage call skipped, endpoint asked for a \d+s pause$/);
+  assert.equal(p.calls.filter((c) => c.url === '/usage').length, 1, 'a second usage call re-armed the throttle');
+
+  // Run 3: the deadline has passed; the call is made, and this time it answers.
+  fs.writeFileSync(stamp, String(Math.floor(Date.now() / 1000) - 1));
+  const ok = await fakeProfile(200, IDENTITY, [200, USAGE_BODY]);
+  t.after(() => ok.close());
+  claude = pick(JSON.parse(await collect(home, ok.url, ok.usage)), 'claude_cli');
+  assert.equal(claude.usage_state, 'ok');
+  assert.equal(claude.note, undefined);
+  assert.equal(claude.usage.seven_day.utilization, 7.5);
 });
 
 // The live reply's shape, plus a `spend` block that must not travel and an extra_usage the
