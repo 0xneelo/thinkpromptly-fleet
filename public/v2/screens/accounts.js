@@ -334,19 +334,40 @@
 
   // The one line the popup closes on. Counts what was polled, not what is configured: a
   // push-only machine is nothing this sweep waited for.
-  function progressSummary(rows) {
+  function progressSummary(rows, accounts) {
     if (!rows.length) return 'no machines polled';
     const ok = rows.filter((r) => r.status === 'ok').length;
     const bad = rows.filter((r) => r.status === 'error').length;
+    const live = (accounts || []).filter((a) => a.status === 'live').length;
+    const held = (accounts || []).length - live;
     return [rows.length + (rows.length === 1 ? ' machine' : ' machines'), ok + ' ok']
       .concat(bad ? [bad + ' failed'] : [])
+      .concat(accounts && accounts.length ? [live + (live === 1 ? ' account' : ' accounts') + ' read live'] : [])
+      .concat(held ? [held + ' not read'] : [])
       .join(' · ');
+  }
+
+  // Which accounts the sweep actually read, from the machines view the popup already polls:
+  // every profile-proved Claude login, with the collector's own words when its usage call
+  // was skipped or refused. "6 machines ok" says nothing about accounts; this does.
+  const NOT_READ = /refused|skipped|rate-limited|no answer|not the object/;
+  function accountLines(view) {
+    const out = [];
+    for (const m of (view && view.machines) || []) {
+      for (const c of m.clients || []) {
+        if (!c || c.client !== 'claude_cli' || c.proof !== 'profile' || !c.email) continue;
+        const note = typeof c.note === 'string' ? c.note : '';
+        const read = !NOT_READ.test(note);
+        out.push({ email: c.email, host: m.label || m.id, status: read ? 'live' : 'held', text: read ? 'usage read live' : note });
+      }
+    }
+    return out;
   }
 
   const pure = {
     ago, until, level, worst, atLimit, order, summary, creditsLine, trend,
     sourceText, banner, staleNote, bars, barOf, enrich, note, toRows, toErrors, label,
-    progressRows, progressSummary,
+    progressRows, progressSummary, accountLines,
     WIN_LABEL, SOURCE, TIER,
   };
 
@@ -611,7 +632,7 @@
 
   const PROGRESS = 'accounts-progress';
   const GLYPH = { pending: '○', ok: '●', error: '✕' };
-  const progress = { open: false, title: '', rows: [], merging: false, note: '', failed: false };
+  const progress = { open: false, title: '', rows: [], accounts: [], merging: false, note: '', failed: false };
   let poller = null;
   let closeTimer = null;
   // One generation per opening. `load` is exported, so a second refresh can open the popup
@@ -653,6 +674,17 @@
       if (r.error) box.append(el('p', 'margin:0 0 0 20px;font-size:11.5px;color:' + t.bad + ';', r.error));
     });
 
+    if (progress.accounts.length) {
+      box.append(el('span', 'margin-top:4px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:' + t.ink45 + ';', 'accounts'));
+      progress.accounts.forEach((a) => {
+        const line = el('div', 'display:flex;align-items:baseline;gap:8px;font-size:12px;color:' + t.ink60 + ';');
+        line.append(el('span', 'color:' + (a.status === 'live' ? t.ink : t.ink35) + ';', a.status === 'live' ? '●' : '○'));
+        line.append(el('span', 'color:' + t.ink + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', a.email));
+        line.append(el('span', 'margin-left:auto;white-space:nowrap;', a.host));
+        box.append(line);
+        box.append(el('p', 'margin:0 0 0 20px;font-size:11.5px;color:' + t.ink60 + ';', a.text));
+      });
+    }
     if (progress.merging) box.append(el('p', 'margin:0;font-size:12px;color:' + t.ink60 + ';', 'merging readings…'));
     if (progress.note)
       box.append(el('p', 'margin:0;font-size:12px;color:' + (progress.failed ? t.bad : t.ink60) + ';', progress.note));
@@ -678,6 +710,7 @@
       (view) => {
         if (!progress.open || gen !== myGen) return;
         progress.rows = progressRows(view);
+        progress.accounts = accountLines(view);
         progress.merging = !!(view.sweep && view.sweep.credits_collecting);
         paintProgress();
       },
@@ -688,7 +721,7 @@
     clearTimeout(closeTimer);
     clearInterval(poller);
     const myGen = ++gen;
-    Object.assign(progress, { open: true, title: 'Querying live usage…', rows: [], merging: false, note: '', failed: false });
+    Object.assign(progress, { open: true, title: 'Querying live usage…', rows: [], accounts: [], merging: false, note: '', failed: false });
     paintProgress();
     poller = setInterval(() => pollProgress(api, myGen), 800);
     pollProgress(api, myGen);
@@ -707,7 +740,7 @@
     progress.merging = false;
     progress.failed = !!error;
     progress.title = error ? 'Refresh failed' : 'Live usage updated';
-    progress.note = error || progressSummary(progress.rows);
+    progress.note = error || progressSummary(progress.rows, progress.accounts);
     paintProgress();
     // A clean run gets out of the way on its own; a failure stays until it is read.
     if (!error) closeTimer = setTimeout(closeProgress, 2500);

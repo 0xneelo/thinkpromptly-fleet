@@ -299,3 +299,26 @@ test('progressSummary: the one line the popup closes on', () => {
   assert.equal(acct.progressSummary([row('ok')]), '1 machine · 1 ok');
   assert.equal(acct.progressSummary([]), 'no machines polled');
 });
+
+test('accountLines — every proved login, live or with the collector\'s own reason it was not read', () => {
+  const view = { machines: [
+    { id: 'german-box', label: 'german-box', clients: [
+      { client: 'claude_cli', proof: 'profile', email: 'lafayette@infinite-holdings.llc' },
+      { client: 'claude_cli', proof: 'config', email: 'admin@deus.finance' },
+      { client: 'codex_cli', proof: 'jwt', email: 'admin@deus.finance' },
+    ] },
+    { id: 'rog-strix', label: 'ROG Strix', clients: [
+      { client: 'claude_cli', proof: 'profile', email: 'aylianator@gmail.com', note: 'usage call skipped, endpoint asked for a 3210s pause' },
+      { client: 'claude_cli', proof: 'profile', email: 'x@y.z', note: 'token refreshed' },
+    ] },
+  ] };
+  assert.deepStrictEqual(acct.accountLines(view), [
+    { email: 'lafayette@infinite-holdings.llc', host: 'german-box', status: 'live', text: 'usage read live' },
+    { email: 'aylianator@gmail.com', host: 'ROG Strix', status: 'held', text: 'usage call skipped, endpoint asked for a 3210s pause' },
+    { email: 'x@y.z', host: 'ROG Strix', status: 'live', text: 'usage read live' },
+  ]);
+  assert.deepStrictEqual(acct.accountLines({}), []);
+  const rows = [{ status: 'ok' }, { status: 'ok' }];
+  assert.equal(acct.progressSummary(rows, acct.accountLines(view)), '2 machines · 2 ok · 2 accounts read live · 1 not read');
+  assert.equal(acct.progressSummary(rows), '2 machines · 2 ok');
+});
