@@ -1216,7 +1216,15 @@ const beats = (a, b, now = Math.floor(Date.now() / 1000)) => {
   const ad = dataTs(a);
   const bd = dataTs(b);
   if (ra === rb && Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd) return ad > bd;
-  return ra === rb ? at >= bt : ra > rb || at - bt > RANK_STALE;
+  if (ra === rb) return at >= bt;
+  if (ra > rb) return true;
+  // A weaker source takes over a row whose better source stopped reporting half a day ago —
+  // but only with numbers newer than the ones it would replace. updated_at is when a machine
+  // was asked, not how old its numbers are: the mac's desktop sample from three days back,
+  // read just now, displaced this morning's live 90% the moment that reading turned twelve
+  // hours old, and put on the page a figure agedOut() had already greyed. A live reading is
+  // dated by its read; a sample by itself.
+  return at - bt > RANK_STALE && (ad ?? at) > (bd ?? bt);
 };
 
 // Freshest wins: the same account is reported by every machine it is signed in on.

@@ -1239,6 +1239,21 @@ test('creditsWrite — a live reading ages out too, on its own read time', (t) =
   assert.equal(row.stale_windows, true);
 });
 
+test('beats — a weaker source read just now takes over a half-day-old live row only with newer numbers', (t) => {
+  const { beats } = seams(t);
+  // This morning's live reading, twelve hours old. The mac reads its desktop history now,
+  // but that history's newest sample is three days old — older than the live numbers.
+  const live = { source: 'oauth', state: 'ok', updated_at: NOW - 13 * 3600 };
+  const staleSample = { source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 3 * 86400 };
+  assert.equal(beats(staleSample, live, NOW), false, 'older numbers displaced a live reading');
+  // A sample newer than the live read is the fresher truth, and the rank-stale rule stands.
+  const freshSample = { source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 600 };
+  assert.equal(beats(freshSample, live, NOW), true);
+  // Under twelve hours the better source is simply still reporting: no takeover either way.
+  const recentLive = { source: 'oauth', state: 'ok', updated_at: NOW - 3600 };
+  assert.equal(beats(freshSample, recentLive, NOW), false);
+});
+
 test('beats — a sample past every window it carries cannot displace a failed read', (t) => {
   const { beats } = seams(t);
   // Rule 2 ("a reading that worked beats a failure") used to fire on state alone. So a desktop
