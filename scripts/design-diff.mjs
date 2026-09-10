@@ -73,6 +73,8 @@ export const SCREEN_MAP = Object.freeze([
   { id: 'accounts', label: 'Accounts', view: 'app', nav: 'Accounts', reach: 'App link; Accounts sidebar button' },
   { id: 'machines', label: 'Machines', view: 'app', nav: 'Machines', reach: 'App link; Machines sidebar button' },
   { id: 'goals', label: 'Goals', view: 'app', nav: 'Goals', reach: 'App link; Goals sidebar button' },
+  { id: 'docs', label: 'Docs', view: 'app', nav: 'Docs', reach: 'App link; Docs sidebar button' },
+  { id: 'unblock', label: 'Unblock', view: 'app', nav: 'Unblock', reach: 'App link; Unblock sidebar button' },
   { id: 'desktop-sessions', label: 'Desktop sessions', view: 'app', nav: 'Desktop sessions', reach: 'App link; Desktop sessions sidebar button' },
   { id: 'session-full-screen', label: 'Session full screen', view: 'app', nav: 'Windows', fullscreen: true, reach: 'App; Windows; first tile Fullscreen button' },
   { id: '01-title', label: '01 Title', view: 'deck', slide: 0, reach: 'Deck link; 0 ArrowRight presses' },
@@ -366,7 +368,7 @@ export async function run(options) {
       report.results.push(result);
       console.log(`${result.pass ? 'PASS' : 'FAIL'} ${screen.id} ${theme}: ${result.mismatchPct === null ? result.reason || 'captured (no previous baseline)' : result.mismatchPct.toFixed(6) + '%'}`);
     }
-    report.allPass = report.results.length === 36 && report.results.every(result => result.pass && !result.skipped);
+    report.allPass = report.results.length === SCREEN_MAP.length * THEMES.length && report.results.every(result => result.pass && !result.skipped);
     report.status = 'complete';
     const measured = report.results.filter(result => result.mismatchPct !== null).map(result => result.mismatchPct);
     report.maxMismatchPct = measured.length ? Math.max(...measured) : null;

@@ -312,7 +312,12 @@ function checkAgainstS2(all) {
       drifted.push(`${name}: S2 defines it, this extractor does not know it`);
       continue;
     }
-    const hit = firstDrift(s2[name], all[name]);
+    // Screens the mock never drew (goals, docs) have titles only in the template, so S2's
+    // fixture may carry keys the mock lacks: `titles` is compared on the mock's keys alone.
+    const s2Value = name === 'titles' && s2[name] && typeof s2[name] === 'object'
+      ? Object.fromEntries(Object.keys(all[name]).map((k) => [k, s2[name][k]]))
+      : s2[name];
+    const hit = firstDrift(s2Value, all[name]);
     if (hit) drifted.push(`${name} — ${hit}`);
   }
   return { owned, drifted };

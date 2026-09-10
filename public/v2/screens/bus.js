@@ -66,7 +66,9 @@
   var booted = false;      // has one poll ever landed
   var provisional = {};    // targets opened by hook before the server knows them
   var desktopTitles = null;// cliSessionId / session id -> human title
-  var desktopProjects = null;// cliSessionId / session id -> project (I-L12-06)
+  var desktopProjects = null;
+  // worktree directory -> project, for slugs the live registry has dropped.
+  var desktopTrees = null;// cliSessionId / session id -> project (I-L12-06)
   var desktopLive = null;  // cliSessionId / session id -> live
   var titlesPromise = null;
   var errs = {};           // message key -> receipt error string we own
@@ -187,7 +189,18 @@
   function desktopProject(id) {
     if (!desktopProjects) return '';
     var key = id.indexOf(ID_PREFIX) === 0 ? id.slice(ID_PREFIX.length) : id;
-    return desktopProjects[key] || '';
+    if (desktopProjects[key]) return desktopProjects[key];
+    // Fallback for a seat the live registry no longer lists: its slug still opens
+    // with the worktree directory that names the project. Longest match wins, so a
+    // directory that is a prefix of another cannot claim the other's seats.
+    if (!desktopTrees) return '';
+    var best = '';
+    for (var dir in desktopTrees) {
+      if (!Object.prototype.hasOwnProperty.call(desktopTrees, dir)) continue;
+      if (key !== dir && key.indexOf(dir + '-') !== 0) continue;
+      if (dir.length > best.length) best = dir;
+    }
+    return best ? desktopTrees[best] : '';
   }
 
   // The mock's rail label. BEHAVIOUR section 2 quotes the old <option> labels
@@ -208,8 +221,9 @@
     return 'Claude Desktop · ' + id;
   }
 
-  // Fetched once, on first sight of an 'id:<uuid>' target. /api/desktop-sessions
-  // is the only place the title lives; a failure just leaves the raw id showing.
+  // Fetched once, as soon as any desktop row is on the rail. /api/desktop-sessions
+  // is the only place the title and the cwd live; a failure just leaves the raw id
+  // showing and the row without a project.
   function ensureDesktopTitles() {
     if (titlesPromise) return titlesPromise;
     if (!bus.live || !FD.data || typeof FD.data.desktopSessions !== 'function') return null;
@@ -217,19 +231,44 @@
       var map = {};
       var alive = {};
       var proj = {};
+      var trees = {};
       ((res && res.groups) || []).forEach(function (g) {
         ((g && g.sessions) || []).forEach(function (x) {
           if (!x) return;
           var p = projectOfCwd(x.cwd);
-          if (x.cliSessionId) { if (x.title) map[x.cliSessionId] = x.title; if (x.live) alive[x.cliSessionId] = true; if (p) proj[x.cliSessionId] = p; }
-          if (x.id) { if (x.title) map[x.id] = x.title; if (x.live) alive[x.id] = true; if (p) proj[x.id] = p; }
+          // Three identities per row, because the rail keys on whichever one the
+          // server handed it: an `id:<cliSessionId>` target, the collector's own row
+          // id, or -- for every live seat -- the registry slug the deck offers as a
+          // plain target name ('session-filters-grouping-28ba5c-3d'). Only the last
+          // one appears in `targets[]`, so without it a live desktop row could never
+          // find its project (operator, 2026-09-08: "we have so many No project").
+          var keys = [x.cliSessionId, x.id, x.liveName];
+          for (var k = 0; k < keys.length; k++) {
+            var key = keys[k];
+            if (!key) continue;
+            if (x.title) map[key] = x.title;
+            if (x.live) alive[key] = true;
+            if (p) proj[key] = p;
+          }
+          // A seat that has gone offline keeps its slug in the message history but
+          // loses its `liveName`, so the exact keys above miss it. Its worktree
+          // directory still names the project, and every slug the deck mints starts
+          // with that directory: 'messaging-live-sessions-d52c83-2b' from the
+          // worktree 'messaging-live-sessions-d52c83'. Recorded separately so a
+          // prefix match is only ever the fallback.
+          if (p && typeof x.cwd === 'string' && x.cwd.indexOf('/.claude/worktrees/') !== -1) {
+            var dir = x.cwd.replace(/\/+$/, '');
+            dir = dir.slice(dir.lastIndexOf('/') + 1);
+            if (dir) trees[dir] = p;
+          }
         });
       });
       desktopTitles = map;
       desktopLive = alive;
       desktopProjects = proj;
+      desktopTrees = trees;
       restampRows();
-    }).catch(function () { desktopTitles = desktopTitles || {}; desktopLive = desktopLive || {}; desktopProjects = desktopProjects || {}; });
+    }).catch(function () { desktopTitles = desktopTitles || {}; desktopLive = desktopLive || {}; desktopProjects = desktopProjects || {}; desktopTrees = desktopTrees || {}; });
     return titlesPromise;
   }
 
@@ -360,6 +399,12 @@
       if (project) row.project = project;
       return row;
     });
+
+    // A desktop row's title and project both live in /api/desktop-sessions, and a
+    // rail built by the poll never went through open(), which used to be the only
+    // caller. Fetching here is what gives every desktop row a project, not just the
+    // ones somebody opened. The promise is cached, so this is one request per load.
+    if (rows.some(function (r) { return r.kind === DESKTOP; })) ensureDesktopTitles();
 
     // 6. Unread, from the raw rows: inbound messages newer than fd-bus-seen
     //    (BEHAVIOUR section 7). Computed off created_at, not the humanised `at`.
@@ -1094,7 +1139,7 @@
         FD.setData('seedThreads', validThreads(threads));
       }
     }
-    if (t.type === DESKTOP && id.indexOf(ID_PREFIX) === 0) ensureDesktopTitles();
+    if (t.type === DESKTOP) ensureDesktopTitles();
 
     var root = host.host;
     if (root && root.setState && root.state && root.state.view !== 'app') root.setState({ view: 'app' });

@@ -134,13 +134,33 @@ test('the TTL and box chip sets are the current app\'s', () => {
   // 2026-09-08: the chips became boxes rather than unix logins. rog-strix had been
   // unreachable since 2026-09-06 because this screen only knew root and vibe, and a
   // principal that does not match a box's login username does not open it.
-  assert.deepStrictEqual(keys.BOX_IDS, ['rog-strix', 'german', 'onboarding', 'promptly', 'ivy']);
+  assert.deepStrictEqual(keys.BOX_IDS, ['rog-strix', 'vibes-asus', 'german', 'onboarding', 'promptly', 'ivy']);
+  // keys.js finds each chip by its label, so a box id must never read as a TTL or as Mint.
+  assert.deepStrictEqual(keys.BOX_IDS.filter((id) => keys.TTLS.includes(id) || id === 'Mint'), []);
+});
+
+test('the chip labels logic.js renders are BOX_IDS, in order', () => {
+  // keys.js joins its titles to the chips by label, and logic.js owns the labels
+  // (prinChips) and the default selection (prin). A box in one list and not the
+  // other mislabelled every chip on 2026-09-10 — the old join was positional.
+  // logic.js is hand-maintained beside the template, so both are pinned.
+  const fs = require('fs');
+  for (const rel of ['public/v2/template.dc.html', 'public/v2/logic.js']) {
+    const src = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    const chips = src.match(/prinChips: (\[[^\]]*\])/);
+    assert.ok(chips, 'prinChips list in ' + rel);
+    assert.deepStrictEqual(JSON.parse(chips[1].replace(/'/g, '"')), keys.BOX_IDS, rel + ' prinChips');
+    const def = src.match(/ttl: '1h', prin: \{([^}]*)\}/);
+    assert.ok(def, 'prin default in ' + rel);
+    const ids = def[1].split(',').map((kv) => kv.split(':')[0].trim().replace(/'/g, ''));
+    assert.deepStrictEqual(ids, keys.BOX_IDS, rel + ' prin default');
+  }
 });
 
 test('every box chip carries the login that actually opens it', () => {
   assert.deepStrictEqual(
     keys.BOXES.map((b) => b.user),
-    ['misterisley', 'vibe', 'root', 'root', 'root']
+    ['misterisley', 'tabor', 'vibe', 'root', 'root', 'root']
   );
   assert.ok(keys.BOXES.every((b) => b.title && b.title.length), 'a title per box');
 });

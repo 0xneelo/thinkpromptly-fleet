@@ -54,6 +54,11 @@ function boot(env) {
 // as a step instead of racing a timer. `listen: true` also binds the two listeners on this
 // instance's own ports, which is how a reaper test talks HTTP to the deck it is stepping.
 // Always set the whole env, never a delta: node:test shares one process per file.
+// The tailnet listener binds a second loopback address, which is an lo0 alias only on the
+// operator's Mac. A machine without that alias sets FLEET_TEST_TAILNET_BIND (e.g. ::1) rather
+// than hanging on every listener test.
+const TAILNET_BIND = process.env.FLEET_TEST_TAILNET_BIND || '127.0.0.2';
+
 function load(env = {}, opts = {}) {
   const full = {
     FLEET_NO_LISTEN: opts.listen ? '' : '1',
@@ -68,14 +73,15 @@ function load(env = {}, opts = {}) {
     FLEET_FENCE: '',
     FLEET_TAILNET_KEY: '',
     FLEET_NAME_CLOSE_SCRIPT: '',
-    FLEET_TAILNET_BIND: '127.0.0.2',
+    FLEET_TAILNET_BIND: TAILNET_BIND,
     ...env,
   };
   for (const [k, v] of Object.entries(full))
     if (v === '') delete process.env[k];
     else process.env[k] = String(v);
   if (opts.listen && !full.FLEET_TAILNET_HOST)
-    process.env.FLEET_TAILNET_HOST = '127.0.0.2:' + process.env.PORT;
+    process.env.FLEET_TAILNET_HOST =
+      (TAILNET_BIND.includes(':') ? '[' + TAILNET_BIND + ']' : TAILNET_BIND) + ':' + process.env.PORT;
   delete require.cache[require.resolve(path.join(ROOT, 'server.js'))];
   return require(path.join(ROOT, 'server.js'));
 }

@@ -101,3 +101,55 @@ The mock has no Goals screen, so `template.dc.html` carries only the mount node 
 `public/v2/screens/goals.js` draws the whole screen in plain DOM (createElement/textContent only — a
 dictated direction must never be parsed as markup). Nothing polls: it loads on entering the screen and
 on Refresh, because the jail changes when the goalkeeper commits.
+
+## 2026-09-10 · the `#unblock` screen holds every seat's decision sheet, and the operator sends answers back
+
+New screen `/app#unblock` plus `/api/unblock`. It is the deck version of the `adhd-unblock` HTML sheet:
+a seat (orchestrator, coordinator, worker) POSTs its sheet — title, intro, questions with options and a
+from-zero explainer — and the operator answers every open sheet in one place instead of one Artifact
+per seat. Sheets and answers live in two `fleet.db` tables (`unblock_sheets`, `unblock_answers`), not
+in a jail, because nothing else owns them.
+
+Every click is timestamped by the SERVER: `answered_at` when a choice is first clicked (re-clicking the
+same option keeps the first time, a different option moves it), `note_at` on the last note edit. The
+operator's own time is the audit trail the seats reason over — "the note is newer than the click, so
+the note is the last word".
+
+Answers go back over the message bus, and only when the operator says so: **Send new (N)** posts the
+answers changed since the last send (`partial: true`, same JSON the HTML sheet prints), **Send all**
+the whole sheet, each card its own **Send this**. Nothing auto-sends a half-answered sheet. The reply
+target is the bus target the seat named when it posted; a sheet with no target gets a copy box instead
+of a send button.
+
+`POST /api/unblock` is the one AGENT route (no `Origin`, like the registry); every write the operator
+makes (`PUT …/answers/:qid`, `…/send`, `…/close`) requires an allowed `Origin`, so a seat cannot answer
+its own questions through the deck. All routes are loopback-only: every seat that posts is a Claude
+Desktop session on this Mac. The screen polls every 20 s while open, because sheets arrive while the
+operator is looking at the list.
+## 2026-09-10 · the `#docs` screen
+
+New screen `/app#docs` over `GET /api/docs`. It lists what the sessions themselves produce —
+artifacts, ELI5s, unblock sheets, session digests, reports, loose HTML and markdown — newest
+first, filterable by day, session, kind and text. The data source is the deck's own sqlite index,
+swept from the session exports, the session scratchpads and each repo's `docs/`: a sweep of the
+file system is far too slow to do per keystroke, so the index is the thing the screen queries and
+Refresh (`?refresh=1`) is the only way to make it sweep again.
+
+The server does the filtering, so every filter change is one fetch; the `days` and `kinds` counts
+in the response are counts over the UNFILTERED index, which is what keeps a chip's number honest
+while a filter is on.
+
+Files are served BY ID ONLY, through `/api/docs/open?id=<id>`, on the loopback listener — a path
+never reaches the URL. What can be stored is gated on the way in: a POST registers only a real
+`.html`/`.md` file, and never one under a hidden directory (`~/.ssh`, `.secrets`, `~/.claude/*`)
+unless a swept root owns it. No seat or box worker on the tailnet can reach the route at all. A row of kind `artifact` is already a URL and opens
+directly. Every link opens in a new tab with `rel=noopener`.
+
+The filters live on the hash (`#docs?session=…&day=…&kind=…&q=…`), so a filtered screen is a link
+the operator can copy, and `router.route()` now returns `{ view, screen, params }` with
+`navigate(screen, params)` writing them back. That is also how the Desktop sessions row icon
+arrives here: it deep-links `#docs?session=<CLI uuid>`, which is the one id both screens share.
+
+The mock has no Docs screen, so `template.dc.html` carries only the mount node `#fd-docs-root` and
+`public/v2/screens/docs.js` draws the whole screen in plain DOM (createElement/textContent only —
+a title comes from a file some session wrote and must never be parsed as markup). Nothing polls.

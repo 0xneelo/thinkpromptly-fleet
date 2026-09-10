@@ -12,6 +12,8 @@ const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
 const { coordinatorRoute } = require('./coordinator-api');
 const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
 const { DesktopSeatTitles } = require('./desktop-seat-titles');
+const { DocsIndex, defaultRoots } = require('./docs-index');
+const { createUnblock } = require('./unblock');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -1245,6 +1247,7 @@ const creditsGetId = db.prepare('SELECT payload FROM credits WHERE kind = ? AND 
 const historyInsert = db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu) VALUES (?, ?, ?, ?, ?)');
 const historyPrune = db.prepare('DELETE FROM credits_history WHERE t < ?');
 const historyGet = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t');
+const historyLast = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t DESC LIMIT 1');
 const HISTORY_KEEP = 60 * 86400; // a trend older than two months answers no question anyone asks
 const HISTORY_POINTS = 120; // enough shape for a sparkline; the rest is payload weight
 
@@ -1612,6 +1615,26 @@ function creditsWrite(rows) {
   return written;
 }
 
+// The usage call is made once an hour at most; the desktop app samples an account as it is
+// used, every few minutes. A sample newer than the row's own numbers is the truer reading of
+// the windows it covers, so those percentages are taken from it (operator, 2026-09-10). What
+// the sample cannot supply stays the live read's: reset stamps, the model weeklies, credits.
+function freshen(r) {
+  if (r.kind !== 'claude' || !r.org) return r;
+  const s = historyLast.get(r.org);
+  if (!s || !(s.t > (dataTs(r) ?? r.updated_at ?? 0))) return r;
+  // Each refreshed window is dated by the sample it came from (`at`); the row's own date is
+  // untouched, so a window the sample does not cover still ages by the read that made it.
+  const windows = { ...(r.windows || {}) };
+  const names = [];
+  for (const [k, n] of [['fh', 'five_hour'], ['sd', 'seven_day'], ['xu', 'extra']]) {
+    if (!Number.isFinite(s[k])) continue;
+    windows[n] = { ...(windows[n] || { resets_at: null }), pct: s[k], at: s.t };
+    names.push(n);
+  }
+  return names.length ? { ...r, windows, fresh: { t: s.t, windows: names } } : r;
+}
+
 function agedOut(r, now) {
   // What the numbers describe, dated: a desktop row by the sample it read, a codex row by
   // the rollout, an oauth row by nothing — a live read has no stamp but its own read time.
@@ -1620,10 +1643,11 @@ function agedOut(r, now) {
   // span it describes, with nothing on screen saying so.
   const t = dataTs(r) ?? r.updated_at;
   if (!t) return r;
-  const age = now - t;
   const windows = {};
   let any = false;
   for (const [n, w] of Object.entries(r.windows || {})) {
+    // A window refreshed from a desktop sample (freshen) carries that sample's own date.
+    const age = now - (w.at ?? t);
     if (age > windowAge(n)) {
       // The number is no longer a current figure, but "—" tells the reader nothing at all.
       // Kept as `last`, the view can still show it greyed, with its age beside it.
@@ -1642,7 +1666,7 @@ function creditsRows() {
     .prepare('SELECT * FROM credits')
     .all()
     .map((r) => {
-      const row = agedOut(JSON.parse(r.payload), nowSec);
+      const row = agedOut(freshen(JSON.parse(r.payload)), nowSec);
       // A hold is news only while it is current: half a day on, the row's own age says more
       // than a pause nobody has re-reported since.
       if (row.hold && nowSec - (row.hold.at || 0) > RANK_STALE) delete row.hold;
@@ -1846,6 +1870,8 @@ const desktopSessionStore = new DesktopSessions({
     return sshInput(machine.ssh, machine.wsl ? 'wsl sh -s' : 'sh -s', script, options);
   },
 });
+
+const docsIndex = new DocsIndex({ db, roots: defaultRoots() });
 
 const DESKTOP_TRANSCRIPT_SH = process.env.FLEET_DESKTOP_TRANSCRIPT_SH || path.join(__dirname, 'box', 'desktop-transcript.sh');
 // Renders one transcript on the machine that owns it. The selector is either a validated
@@ -2957,6 +2983,7 @@ async function body(req, maxBytes = 4096) {
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
@@ -3073,6 +3100,16 @@ function send(res, code, type, body) {
 }
 
 const json = (res, obj, code = 200) => send(res, code, 'application/json', JSON.stringify(obj));
+
+// --- unblock: the operator's answers to a seat's decision sheet. Loopback only, like /api/goals.
+const unblockRoute = createUnblock({
+  db,
+  messageBus,
+  send,
+  json,
+  body,
+  allowedOrigins: ALLOWED_ORIGINS,
+});
 
 // --- registry. Shared by both listeners: orchestrators curl from loopback, box workers
 // over tailnet. Agent POSTs carry no Origin header, so the gate rejects a *foreign*
@@ -3423,6 +3460,47 @@ async function notifyRoute(req, res, p, url, remote = false) {
   }
 }
 
+// --- docs. The index of what the operator's own sessions wrote. Loopback only, and
+// deliberately absent from tailnetHandler (the same rule /api/goals follows): these are
+// the operator's working files, and a box worker has no business reading them.
+async function docsRoute(req, res, url) {
+  if (req.method === 'GET') {
+    const refresh = url.searchParams.get('refresh') === '1';
+    const sweep = docsIndex.sweep(refresh);
+    // A plain GET answers out of the table at once and lets the sweep land behind it. Only
+    // a Refresh, or a first load with nothing stored yet, is worth waiting on the disk for.
+    if (refresh || docsIndex.at === null) await sweep;
+    else Promise.resolve(sweep).catch(() => {});
+    const q = url.searchParams;
+    return json(res, docsIndex.view({
+      day: q.get('day'), session: q.get('session'), kind: q.get('kind'), q: q.get('q'),
+      limit: q.get('limit') || undefined,
+    }));
+  }
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  // The hook POSTs from a shell and carries no Origin; a *foreign* Origin is another
+  // page's browser and is rejected (the registry gate, same reasoning).
+  if (req.headers.origin && !ALLOWED_ORIGINS.has(req.headers.origin))
+    return send(res, 403, 'text/plain', 'forbidden');
+  const b = await body(req, 16384).catch(() => null);
+  if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+  try {
+    return json(res, { ok: true, doc: docsIndex.add(b) });
+  } catch (e) {
+    return json(res, { ok: false, error: e.message }, 400);
+  }
+}
+
+// The stored path is the only thing served: an id, never a path from the query. What gets
+// stored is gated in DocsIndex.add (a real .html/.md path, never under a hidden directory
+// outside the swept roots). An Artifact row is a claude.ai URL with no local file.
+function docsOpen(req, res, url) {
+  const id = Number(url.searchParams.get('id'));
+  const row = Number.isSafeInteger(id) && id > 0 ? docsIndex.get(id) : null;
+  if (!row || row.gone || !row.path.startsWith('/')) return send(res, 404, 'text/plain', 'not found');
+  return sendFile(res, row.path, req);
+}
+
 const server = http.createServer(async (req, res) => {
   if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
@@ -3450,6 +3528,11 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, false);
     if (p === '/api/goals') return await goalsRoute(req, res);
+    if (p === '/api/docs') return await docsRoute(req, res, url);
+    if (p === '/api/docs/open') return docsOpen(req, res, url);
+    // Loopback only, and deliberately absent from tailnetHandler: a decision sheet is the
+    // operator's, and no box worker may read one or answer for them.
+    if (p === '/api/unblock' || p.startsWith('/api/unblock/')) return await unblockRoute(req, res, p);
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     // Loopback only, and deliberately absent from tailnetHandler (M13).
     // The epoch is deliberately withheld: it is the credential fenceCheck trusts, and this
@@ -3804,6 +3887,8 @@ module.exports = {
   reaperTick, reaperLoop, REAPER,
   // Test seams: the pure joins the Machines view renders from, no I/O of their own.
   machinesUsage, machinesSessions, clientUsage,
+  // Test seam: the docs index this instance swept into, so a test can read it without HTTP.
+  docsIndex,
   // Test seams: which candidate wins a credits row, what that row ends up holding, and
   // what a reader is finally shown once ageing has had its say.
   creditsWrite, beats, creditsRows, machinesCredits, creditsCollect, creditsCandidates,
