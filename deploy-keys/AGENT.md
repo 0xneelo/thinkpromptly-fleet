@@ -4,13 +4,43 @@ Target state after the owner applies [RUNBOOK.md](../docs/goals/ssh-ca-rotation/
 These repository artifacts do not mean any host was changed. Check the owner's receipt.
 Project remote-system / deploy-keys. Rotation worker Ivo, tag agent-ivo.
 
-## Two profiles
+## Today (until S3)
+
+The existing aliases use `deploy-certs/current` and privileged login-name principals:
+`vps-deploy`, `ob-deploy`, `ivybox-deploy` log in as root; `gb-deploy` as vibe;
+`rs-deploy` as misterisley. These are the recorded pre-rotation settings, not live probes.
+The keys screen defaults to **Legacy**, with root,vibe,misterisley,tabor and 8h selected;
+its TTL chips allow 1h, 4h, or 8h. Only Legacy mints update `current`.
+Daily and Admin are additional modes for the owner to stage and verify during S3.
+
+Connect using the existing alias, or use the explicit certificate directory supplied by
+the operator in the Connect form/manual command:
+
+```text
+ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i <dir>/deployer -o CertificateFile=<dir>/deployer-cert.pub <login>@<host>
+```
+
+The german-box SSH shell is Windows **cmd**; invoke `wsl` for Unix commands and tmux.
+Creating a Windows deploy account does not provision that user's WSL distribution.
+Owners must prove required collector/WSL access before switching aliases.
+These connection instructions apply only to separately authorized operators/agents;
+Ivo's repository lane never connects, mints, or reads its own SSH directory.
+
+Do not switch the five existing aliases during a partial rollout. After every host passes
+S3 and collector checks, the owner activates the role aliases below, updates each SSH row's
+`user` in machines.json to match, and sets `deploy-keys/ROTATION-STATE` to `s3-applied`.
+The exact environment override is `SSH_ROTATION_STATE=s3-applied`; without it the file
+controls the default. The file is read per request. Before this gate it remains `legacy`.
+The UI and route refuse a Legacy mint that omits a configured machine login.
+
+## Role profiles after S3
 
 - **Daily**: `deploy`, 8h, PTY only (forwarding and user-rc extensions cleared).
   Login as the standard/no-sudo deploy user using the five `*-deploy` aliases.
 - **Admin**: `admin`, 1h, default OpenSSH extensions. Privileged logins use `*-admin`.
-  Optional box tags are additive. `admin,promptly-only` still grants fleet-wide Admin.
-  A genuinely box-restricted cert carries only the chosen tag, with no admin principal.
+  Admin box chips were removed from the screen. CLI tags are additive:
+  `admin,promptly-only` still grants fleet-wide Admin. A box-restricted CLI cert carries
+  only the chosen tag, with no admin principal.
 
 The CA private key must exist only inside 1Password. The operator mints through its agent
 and approves in 1Password. An agent worker never mints, uses ssh-add, connects an agent socket,
@@ -34,7 +64,9 @@ Use `--ca-pub <v2-public-file>` or CA_PUB after v1 retirement: the historical de
 **vibes-asus: sixth machine, trust UNKNOWN, outside this rotation.** No guessed template/tag.
 Mac is the operator/1Password/deck machine, not an SSH target for this lane.
 Before S3, existing deploy aliases still use root/vibe/misterisley; the owner stages the
-User changes from `ssh-config.roles.example` per host only after verification.
+User changes from `ssh-config.roles.example` only after all five hosts pass S3.
+Daily mints update `current-daily`; Admin mints update `current-admin`. The role alias
+groups use their matching pointer. Neither profile changes the legacy `current` link.
 
 AuthorizedPrincipalsFile: `/etc/ssh/principals/%u` on Linux,
 `__PROGRAMDATA__/ssh/principals/%u` on Windows. Deploy accepts only deploy. Privileged files

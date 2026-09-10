@@ -25,7 +25,7 @@ replace their sshd_config or authorized_keys changes. `lowcap_backup_pull` also 
 No worker in this goal contacts or coordinates those sessions.
 
 vibes-asus is a sixth machine with **UNKNOWN trust/account state**, not an approved target.
-It has no principal template, mint tag, or apply command here. Its UI chip is disabled.
+It has no principal template, mint tag, or apply command here. Admin box chips are removed.
 Owner decision: inspect first, then authorize a separately scoped onboarding; recommendation
 is to keep it outside this rotation until verified. GitHub App PEM/OAuth rotation and
 rog-strix Tailscale expiry (2026-12-01) are outside this runbook.
@@ -33,23 +33,50 @@ rog-strix Tailscale expiry (2026-12-01) are outside this runbook.
 Before touching one host:
 
 1. Obtain that owner's approval and a maintenance window. Preserve an existing privileged
-   session and a working console/recovery route. Do not close either until a new login passes.
+   session and a working console/recovery route. On Windows the restart drops **every SSH
+   session**, including that privileged session. Before every Windows apply, prove the
+   **wsl-machine non-certificate admin login** below and retain an independent console.
 2. Stage the reviewed `deploy-keys/` directory **with its lib/ and principals/ subdirectories**
    from branch `agent-ssh-ca-rotation` at a pushed SHA listed in REPORT.md. Work locally on the
-   target, from the staged repository root. Windows: elevated PowerShell 5.1+ with LocalAccounts
-   and ScheduledTasks modules. Linux: root via sudo, Python 3.8+, OpenSSH, systemd, useradd/usermod.
+   target, from the staged repository root. On **both Windows boxes**, stage that root at
+   `C:\ProgramData\ssh-ca-rotation` (so it contains deploy-keys\lib and deploy-keys\principals).
+   In an elevated cmd run `cd /d C:\ProgramData\ssh-ca-rotation`; in elevated PowerShell run
+   `Set-Location C:\ProgramData\ssh-ca-rotation`. Use PowerShell 5.1+ with LocalAccounts
+   and ScheduledTasks modules. The table commands work from cmd via powershell.exe.
+   Linux: root via sudo, Python 3.8+, OpenSSH, systemd, useradd/usermod.
 3. Stage only the operator-exported v2 **public** key: Linux `/var/tmp/deploy-ca-v2.pub`;
    Windows `C:\ProgramData\ssh\deploy-ca-v2.pub`. Compare its SHA256 fingerprint to the operator's
    separately supplied public fingerprint. Never place private CA material on any host.
 4. Linux examples use service `ssh` and `/usr/sbin/sshd`. Verify locally that this is the
    installed service/binary; if the unit is `sshd`, consistently use `--service sshd` in apply
-   **and rollback**. Windows examples use the inbox OpenSSH sshd path; if the service uses a
-   different executable, pass that verified full path through `-Sshd` for apply and rollback.
+   **and rollback**. Windows derives its validator from the sshd Win32_Service PathName;
+   verify that executable. If detection is ambiguous, stop and pass the verified full path
+   through `-Sshd` for apply and rollback.
 5. Review `sshd_config` plus its Includes/Match rules and public authorized_keys entries.
    A `cert-authority` authorized_keys entry can trust a CA independently of TrustedUserCAKeys;
    v1 retirement must cover that path too, under its owning lane. Do not guess or remove it here.
 6. Run the relevant dry-run **on the target** to get the actual file diff. Offline `--root`
    fixtures demonstrate the planner but are not a substitute for reviewing that host.
+
+Windows recovery gate, **Mac operator only**: export only the public half of the existing
+1Password **wsl-machine** key to `$HOME/.ssh/wsl-machine.pub`, and verify fingerprint
+`SHA256:JaxLCc5XTWKixVFdoHMCLQyzpsCTNTbMs6wO4hcvV/U`. Use the matching 1Password agent
+identity with certificate/config fallback disabled, independently on each Windows host:
+
+```bash
+for LOGIN_TARGET in vibe@100.80.44.86 misterisley@100.124.95.60; do
+  ssh -F /dev/null -o IdentitiesOnly=yes -o CertificateFile=none \
+    -o PubkeyAcceptedAlgorithms=ssh-ed25519 -o StrictHostKeyChecking=yes \
+    -o PreferredAuthentications=publickey -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no \
+    -o IdentityAgent="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" \
+    -i "$HOME/.ssh/wsl-machine.pub" "$LOGIN_TARGET" 'whoami /groups'
+done
+```
+
+Require Administrators SID `S-1-5-32-544` enabled in the resulting token, not deny-only.
+If that named fallback does not already work on a host, stop: this rotation does not install
+it. A cert login or an existing connection is not the recovery proof. These are future
+owner commands; this worker neither accesses the agent nor runs SSH.
 
 All apply entry points accept a dry-run (`--dry-run`, `-DryRun`, or `-WhatIf`). Dry-runs
 write no files, users, ACLs, services, tasks, or backups. They show the full file changes,
@@ -58,6 +85,17 @@ previews. Ordinary reruns are idempotent. Existing symlink/reparse targets are r
 owned by or writable to unprivileged users; owners must resolve unsafe directory permissions
 before retrying. Windows backup-directory ACLs explicitly inherit Administrators/SYSTEM
 permissions so the detached recovery task can read its manifest and backup files.
+
+A host-wide lock serializes trust and principals applies/rollbacks, including planning and
+snapshot reads. Linux uses a protected lock file; Windows uses a named mutex and a pending
+marker covering the detached restart. Dry-run does not acquire a persistent file lock.
+Linux baseline `sshd -T` checks are mandatory across IPv4/IPv6 contexts: trust must resolve
+to `/etc/ssh/deploy_ca.pub`; initial S3 must have no pre-existing principals file/command.
+An unchanged managed rerun or explicit `--retire-legacy` may retain this script's exact
+managed principals policy. Unrecognized Includes/Match policy requires owner reconciliation,
+never silent rewriting. Trust append must retain v1 in the planned file unless `--retire-v1`.
+The deploy password-denial Match block precedes existing Match rules; an earlier Include
+that could defeat precedence is refused. Verify the actual target dry-run before proceeding.
 
 On apply, scripts validate the baseline, save a private-to-admin **public-configuration**
 backup, install changes, validate again, and reload/restart only sshd. Linux automatically
@@ -97,15 +135,15 @@ For S2, the operator needs a **v2 legacy-login cert** while hosts still use logi
 principals, and a still-valid v1 legacy cert. Mint them on the Mac with 1Password approval:
 
 ```bash
-V2_LEGACY=$(./deploy-keys/mint-deploy-cert.sh -n root,vibe,misterisley -t 1h --ca-pub "$HOME/.ssh/deploy-ca-v2.pub")
-V1_LEGACY=$(./deploy-keys/mint-deploy-cert.sh -n root,vibe,misterisley -t 1h --ca-pub "$HOME/.ssh/deploy-ca.pub")
+V2_LEGACY=$(./deploy-keys/mint-deploy-cert.sh --legacy -n root,vibe,misterisley,tabor -t 8h --ca-pub "$HOME/.ssh/deploy-ca-v2.pub")
+V1_LEGACY=$(./deploy-keys/mint-deploy-cert.sh --legacy -n root,vibe,misterisley,tabor -t 8h --ca-pub "$HOME/.ssh/deploy-ca.pub")
 ssh-keygen -Lf "$V2_LEGACY/deployer-cert.pub"
 ssh-keygen -Lf "$V1_LEGACY/deployer-cert.pub"
 ```
 
-Retain directory **paths**, not key/cert contents, in the operator terminal. Each mint
-updates `deploy-certs/current`, so use the explicit paths in all transition checks below.
-Refresh expired 1h certs when needed. The v2 Key ID must end `-ca2`; compare Signing CA.
+Retain directory **paths**, not key/cert contents, in the operator terminal. Only Legacy
+updates `deploy-certs/current`; Daily updates `current-daily`, Admin `current-admin`.
+Use explicit paths in transition checks. Refresh expired certificates when needed. The v2 Key ID must end `-ca2`; compare Signing CA.
 The default CA path remains the required `~/.ssh/deploy-ca.pub`; the explicit CLI flag wins
 over CA_PUB. Future UI mints inherit CA_PUB from the deck process environment. Deploy this
 repository UI only when the operator can configure that process for v2 in an independently
@@ -120,8 +158,8 @@ Execute locally on each host, one at a time:
 
 | Host | Preview | Apply |
 |---|---|---|
-| german-box | `.\deploy-keys\setup-german-box-ca.ps1 -CaPub C:\ProgramData\ssh\deploy-ca-v2.pub -DryRun` | `.\deploy-keys\setup-german-box-ca.ps1 -CaPub C:\ProgramData\ssh\deploy-ca-v2.pub` |
-| rog-strix | `.\deploy-keys\setup-rog-strix-ca.ps1 -CaPub C:\ProgramData\ssh\deploy-ca-v2.pub -WhatIf` | `.\deploy-keys\setup-rog-strix-ca.ps1 -CaPub C:\ProgramData\ssh\deploy-ca-v2.pub` |
+| german-box | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\setup-german-box-ca.ps1 -CaPub C:\ProgramData\ssh\deploy-ca-v2.pub -DryRun` | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\setup-german-box-ca.ps1 -CaPub C:\ProgramData\ssh\deploy-ca-v2.pub` |
+| rog-strix | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\setup-rog-strix-ca.ps1 -CaPub C:\ProgramData\ssh\deploy-ca-v2.pub -WhatIf` | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\setup-rog-strix-ca.ps1 -CaPub C:\ProgramData\ssh\deploy-ca-v2.pub` |
 | onboarding-app-box | `sudo sh ./deploy-keys/apply-trust-linux.sh /var/tmp/deploy-ca-v2.pub --service ssh --dry-run` | `sudo sh ./deploy-keys/apply-trust-linux.sh /var/tmp/deploy-ca-v2.pub --service ssh` |
 | ivy-box | `sudo sh ./deploy-keys/apply-trust-linux.sh /var/tmp/deploy-ca-v2.pub --service ssh --dry-run` | `sudo sh ./deploy-keys/apply-trust-linux.sh /var/tmp/deploy-ca-v2.pub --service ssh` |
 | think-box (collision hold) | `sudo sh ./deploy-keys/apply-trust-linux.sh /var/tmp/deploy-ca-v2.pub --service ssh --dry-run` | `sudo sh ./deploy-keys/apply-trust-linux.sh /var/tmp/deploy-ca-v2.pub --service ssh` |
@@ -136,7 +174,7 @@ The rog-strix bootstrap fingerprint `SHA256:JaxLCc5XTWKixVFdoHMCLQyzpsCTNTbMs6wO
 identifies the operator's 1Password **wsl-machine** fallback, public comment
 `misterislez-mac-to-wsl`; it is not CA v2. Rotation neither adds nor removes that fallback.
 
-Windows, from the recovery/console session: substitute the exact printed path/task name:
+Windows, from an elevated PowerShell recovery/console session: substitute the exact printed path/task name:
 
 ```powershell
 Get-Content -LiteralPath '<printed-backup-path>\result.txt'
@@ -146,33 +184,44 @@ Get-ScheduledTaskInfo -TaskName '<printed-task-name>'
 
 Require `restart-ok`, service Running, and task completion. After successful new login,
 remove just that completed task with `Unregister-ScheduledTask -TaskName '<printed-task-name>' -Confirm:$false`.
-If result.txt is absent or says restored/failed, stop; use the recovery session. Retain backups.
+If result.txt is absent or says restored/failed, stop; use the independent console. Retain
+backups. Tasks are configured to start and continue on battery. A `ca-rotation.pending`
+marker blocks concurrent/later applies until restart or successful automatic restoration.
+If recovery itself failed and the marker persists: read its public backup-path value, inspect
+the named task/result and sshd configuration, stop that exact task from the console, and
+verify no apply/recovery process remains. Only then may the owner remove the stale marker
+`C:\ProgramData\ssh\ca-rotation.pending` and preview/run the appropriate rollback below.
+Never clear it simply to bypass a running task; retain the recorded backup path first.
 
-Mac owner S2 check: aliases still use their legacy users. Do not install S3's deploy-user
-alias definitions yet. For **both** V1_LEGACY and V2_LEGACY, run all five individually:
+Mac owner S2 check: existing `*-deploy` aliases keep their legacy users and `current`.
+Add only the five **individual `Host *-admin` endpoint blocks** from
+`ssh-config.roles.example` (HostName/User); defer both common identity/certificate groups
+and any `*-deploy` changes until all S3 checks pass. This adds verification aliases without
+changing existing collectors. The verifier takes only HostName/port from each alias and
+forces its explicit user, identity, certificate and a fresh direct connection.
+For both certificates, run all five individually from the Mac owner terminal:
 
 ```bash
 for CERT_DIR in "$V1_LEGACY" "$V2_LEGACY"; do
-  for TARGET in gb-deploy rs-deploy ob-deploy ivybox-deploy vps-deploy; do
-    ssh -o BatchMode=yes -o IdentityAgent=none -o IdentitiesOnly=yes \
-      -o PreferredAuthentications=publickey -o PasswordAuthentication=no \
-      -o KbdInteractiveAuthentication=no -o PubkeyAcceptedAlgorithms=ssh-ed25519-cert-v01@openssh.com \
-      -o StrictHostKeyChecking=yes -o ControlMaster=no -o ControlPath=none \
-      -i "$CERT_DIR/deployer" -o CertificateFile="$CERT_DIR/deployer-cert.pub" "$TARGET" 'echo ok'
+  for TARGET in gb-admin rs-admin ob-admin ivybox-admin vps-admin; do
+    ./deploy-keys/verify-cert.sh "$TARGET" --expect admin \
+      --identity "$CERT_DIR/deployer" --certificate "$CERT_DIR/deployer-cert.pub"
   done
- done
+done
 ```
 
-Require **10/10** successful fresh connections. No agent, password, bare public key, or
-existing multiplexed session may satisfy this gate. Host-key errors are not authentication
-refusals. Check trust fingerprints locally too; the script prints the resulting public set.
+Require **10/10** successful fresh connections. No alias-configured extra cert, agent,
+password, bare public key, or multiplexed session may satisfy this gate. Verify trust
+fingerprints locally too; the script prints the resulting public set. The verifier requires
+Mac Python 3, OpenSSH and direct reachability; configured proxies are deliberately excluded.
+Use credential paths without whitespace, quotes, backslashes or percent expansion tokens.
 
 S2 rollback per host (first preview the exact printed backup):
 
 | Host | Rollback command (append dry-run flag for preview) |
 |---|---|
-| german-box | `.\deploy-keys\setup-german-box-ca.ps1 -Rollback '<S2-backup>'` |
-| rog-strix | `.\deploy-keys\setup-rog-strix-ca.ps1 -Rollback '<S2-backup>'` |
+| german-box | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\setup-german-box-ca.ps1 -Rollback "<S2-backup>"` |
+| rog-strix | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\setup-rog-strix-ca.ps1 -Rollback "<S2-backup>"` |
 | onboarding-app-box | `sudo sh ./deploy-keys/apply-trust-linux.sh --rollback '<S2-backup>' --service ssh` |
 | ivy-box | `sudo sh ./deploy-keys/apply-trust-linux.sh --rollback '<S2-backup>' --service ssh` |
 | think-box | `sudo sh ./deploy-keys/apply-trust-linux.sh --rollback '<S2-backup>' --service ssh` |
@@ -185,50 +234,51 @@ on every target. Rollback itself retains a new snapshot; do not confuse it with 
 **Human gate:** approve creating a no-sudo Linux deploy user / standard non-admin Windows
 deploy user on each host. Existing privileged deploy accounts cause the scripts to stop;
 the owner must resolve membership/rights explicitly. Linux creation uses an unusable password
-and a shell; Windows generates an unlogged in-memory random password. SSH password and
+and a shell; Windows generates an unlogged in-memory random password and sets
+PasswordNeverExpires/UserMayNotChangePassword. SSH password and
 keyboard-interactive login are disabled for deploy. No secret is exported or reported.
 
 | Host | Preview | Apply |
 |---|---|---|
-| german-box | `.\deploy-keys\apply-principals-windows.ps1 -Box german-box -DryRun` | `.\deploy-keys\apply-principals-windows.ps1 -Box german-box` |
-| rog-strix | `.\deploy-keys\apply-principals-windows.ps1 -Box rog-strix -WhatIf` | `.\deploy-keys\apply-principals-windows.ps1 -Box rog-strix` |
+| german-box | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\apply-principals-windows.ps1 -Box german-box -DryRun` | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\apply-principals-windows.ps1 -Box german-box` |
+| rog-strix | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\apply-principals-windows.ps1 -Box rog-strix -WhatIf` | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\apply-principals-windows.ps1 -Box rog-strix` |
 | onboarding-app-box | `sudo sh ./deploy-keys/apply-principals-linux.sh --box onboarding-app-box --service ssh --dry-run` | `sudo sh ./deploy-keys/apply-principals-linux.sh --box onboarding-app-box --service ssh` |
 | ivy-box | `sudo sh ./deploy-keys/apply-principals-linux.sh --box ivy-box --service ssh --dry-run` | `sudo sh ./deploy-keys/apply-principals-linux.sh --box ivy-box --service ssh` |
 | think-box (collision hold) | `sudo sh ./deploy-keys/apply-principals-linux.sh --box think-box --service ssh --dry-run` | `sudo sh ./deploy-keys/apply-principals-linux.sh --box think-box --service ssh` |
 
 Require the appropriate principals directory and per-user contents:
 
-- Linux: `/etc/ssh/principals/%u`; root-owned files, deploy cannot write them.
+- Linux: `/etc/ssh/principals/%u`; root-owned directory 0755/files 0644, deploy cannot write them.
 - Windows: `__PROGRAMDATA__/ssh/principals/%u`; SYSTEM/Administrators control writes,
   standard users can read principals but cannot modify them.
 - `deploy`: only `deploy`.
 - `root`, `vibe`, or `misterisley`: `admin`, the host's box-only tag, and its legacy login.
   Keep legacy principals until S5 to preserve the previous cert path.
 
-After each host passes local validation and the Windows task result check above, the Mac
-operator merges **only that host's two blocks** from `deploy-keys/ssh-config.roles.example`
-into their SSH config. Replace conflicting earlier alias blocks; OpenSSH uses first obtained
-values. The `*-deploy` alias now logs in as deploy, and `*-admin` as root/vibe/misterisley.
-Existing machines.json already selects the five deploy aliases. Validate existing collectors
-and required Windows/WSL access as the new user before moving on. No automatic collector or
-application ownership changes are made by this rotation.
+After each host passes local validation and the Windows task result check above, verify
+roles with the explicit credential paths below. Keep all five existing deploy aliases and
+machines.json user metadata unchanged during partial rollout. The new admin endpoint
+aliases from S2 suffice for checks; the verifier overrides the login and credentials.
+No automatic collector, WSL distribution, or application ownership changes are made here.
 
 Mac operator mints the role certs (real approval required):
 
 ```bash
 DAILY_DIR=$(./deploy-keys/mint-deploy-cert.sh --daily --ca-pub "$HOME/.ssh/deploy-ca-v2.pub")
-ADMIN_DIR=$(./deploy-keys/mint-deploy-cert.sh --admin --ca-pub "$HOME/.ssh/deploy-ca-v2.pub")
 PROMPTLY_DIR=$(./deploy-keys/mint-deploy-cert.sh --admin -n promptly-only --ca-pub "$HOME/.ssh/deploy-ca-v2.pub")
+ADMIN_DIR=$(./deploy-keys/mint-deploy-cert.sh --admin --ca-pub "$HOME/.ssh/deploy-ca-v2.pub")
 ```
 
-**Principal matching is OR.** `admin,promptly-only` remains fleet-wide Admin. The UI's
-optional Admin chips deliberately add tags and say they do not restrict access. To test
-single-host restriction, the CLI example above omits `admin` and includes only promptly-only.
+**Principal matching is OR.** `admin,promptly-only` remains fleet-wide Admin. Admin box
+chips were removed from the UI; the screen's Admin mode grants all five approved hosts.
+To test single-host restriction, the CLI example omits `admin` and includes only promptly-only.
+Both Admin variants update `current-admin`, so mint fleet-wide Admin **last**, as above.
 This follows [OpenSSH AuthorizedPrincipalsFile](https://man.openbsd.org/sshd_config).
 Daily uses `-O clear -O permit-pty`; Admin retains OpenSSH's default extensions.
 
 From the Mac owner terminal, verify each host using the explicit paths (the verifier also
-accepts `--dry-run`, which prints its exact invocation without reading credentials/config):
+accepts `--dry-run`, which prints its preflight/alias-resolution plan and command with
+endpoint placeholders without reading credentials/config):
 
 | Host | Daily check | Admin check | Scope check |
 |---|---|---|---|
@@ -240,10 +290,24 @@ accepts `--dry-run`, which prints its exact invocation without reading credentia
 
 Daily checks require Linux username deploy/nonzero UID and failure of `sudo -n true`, or
 Windows username deploy and a non-admin token. Admin checks require UID 0 or an admin token.
-Refusal requires OpenSSH's public-key authentication denial; a timeout, absent credential,
-DNS failure, or host-key failure does not pass. Require **5 daily + 5 admin + 1 scoped success
+Refusal requires a completed SSH exchange with the resolved target and a rejected publickey
+probe for the explicit certificate fingerprint. A generic auth error, absent credential,
+local signing failure, wrong certificate, DNS failure, or host-key failure does not pass. Require **5 daily + 5 admin + 1 scoped success
 + 4 scoped refusals = 15 passing checks**. Also verify both v1/v2 legacy certs still log in
-through the privileged `*-admin` aliases (10 more fresh logins using the S2 flags).
+through the privileged `*-admin` aliases (repeat the S2 verifier loop: 10 fresh logins).
+
+**All-host activation gate:** after every S3 role/scope and legacy check passes, prove all
+required collectors and Windows/WSL operations as deploy using explicit Daily credentials.
+Then replace conflicting alias definitions with the complete `ssh-config.roles.example`:
+`*-deploy` uses User deploy/current-daily; `*-admin` uses its privileged user/current-admin.
+OpenSSH uses first obtained values, so remove/replace earlier conflicting alias settings.
+Update each SSH machine's `user` in machines.json to deploy at the same activation gate.
+Only then set `deploy-keys/ROTATION-STATE` to `s3-applied`, or configure the exact override
+`SSH_ROTATION_STATE=s3-applied` in a separately approved deployment. Before this gate the
+file remains `legacy`; the screen defaults to Legacy/8h and keeps 1h/4h/8h TTL chips active.
+The state file is read per request; changing it needs no Mac deck restart. If any host or
+collector is not ready, keep the legacy default, metadata and existing deploy aliases.
+The Legacy coverage guard then refuses future Legacy mints once machines.json names deploy.
 
 Owner application permissions are separate, explicit decisions. Do not chown an existing
 production tree wholesale. For a new approved deployment directory only, an owner can use
@@ -261,18 +325,20 @@ sudo install -o root -g root -m 0440 /var/tmp/deploy-app.sudoers /etc/sudoers.d/
 sudo visudo -c
 ```
 
-APPROVED_UNIT is a required owner-supplied unit name without `.service`; verify the
+APPROVED_UNIT is a required owner-supplied unit name; an optional trailing `.service` is
+normalized to exactly one suffix. Verify the
 `/usr/bin/systemctl` path. No wildcard. The service and any code it executes as root must
 not be deploy-writable. Skip this entirely unless needed. Rollback: restore the saved
 sudoers file, or remove this newly added file if none existed, then `sudo visudo -c`.
 
 S3 rollback uses the **S3** backup on the same host:
 
-- german-box / rog-strix: `.\deploy-keys\apply-principals-windows.ps1 -Rollback '<S3-backup>'`
+- german-box / rog-strix: `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\apply-principals-windows.ps1 -Rollback "<S3-backup>"`
 - onboarding-app-box / ivy-box / think-box: `sudo sh ./deploy-keys/apply-principals-linux.sh --rollback '<S3-backup>' --service ssh`
 
-Preview first. Restore that host's previous Mac alias User setting and verify its v1
-legacy login. New deploy accounts are disabled, not deleted. Existing accounts are retained.
+Preview first. If activation already occurred, restore the previous aliases and matching
+machines.json users, reset the rollout file to legacy and remove any s3-applied environment
+override under the deployment owner. Verify v1 legacy login. New deploy accounts are disabled, not deleted. Existing accounts are retained.
 Keep S2's dual trust while resolving S3; do not roll back another owner's concurrent edits.
 
 ## S4 — remove the on-disk v1 CA private file (operator only)
@@ -355,8 +421,8 @@ principals reruns; the transition default intentionally includes legacy names:
 
 | Host | Trust retirement (preview then apply) | Principal retirement (preview then apply) |
 |---|---|---|
-| german-box | `.\deploy-keys\setup-german-box-ca.ps1 -RetireV1 -DryRun` then repeat without `-DryRun` | `.\deploy-keys\apply-principals-windows.ps1 -Box german-box -RetireLegacy -DryRun` then repeat without `-DryRun` |
-| rog-strix | `.\deploy-keys\setup-rog-strix-ca.ps1 -RetireV1 -WhatIf` then repeat without `-WhatIf` | `.\deploy-keys\apply-principals-windows.ps1 -Box rog-strix -RetireLegacy -WhatIf` then repeat without `-WhatIf` |
+| german-box | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\setup-german-box-ca.ps1 -RetireV1 -DryRun` then repeat without `-DryRun` | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\apply-principals-windows.ps1 -Box german-box -RetireLegacy -DryRun` then repeat without `-DryRun` |
+| rog-strix | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\setup-rog-strix-ca.ps1 -RetireV1 -WhatIf` then repeat without `-WhatIf` | `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy-keys\apply-principals-windows.ps1 -Box rog-strix -RetireLegacy -WhatIf` then repeat without `-WhatIf` |
 | onboarding-app-box | `sudo sh ./deploy-keys/apply-trust-linux.sh --retire-v1 --service ssh --dry-run` then repeat without `--dry-run` | `sudo sh ./deploy-keys/apply-principals-linux.sh --box onboarding-app-box --retire-legacy --service ssh --dry-run` then repeat without `--dry-run` |
 | ivy-box | `sudo sh ./deploy-keys/apply-trust-linux.sh --retire-v1 --service ssh --dry-run` then repeat without `--dry-run` | `sudo sh ./deploy-keys/apply-principals-linux.sh --box ivy-box --retire-legacy --service ssh --dry-run` then repeat without `--dry-run` |
 | think-box (collision hold) | `sudo sh ./deploy-keys/apply-trust-linux.sh --retire-v1 --service ssh --dry-run` then repeat without `--dry-run` | `sudo sh ./deploy-keys/apply-principals-linux.sh --box think-box --retire-legacy --service ssh --dry-run` then repeat without `--dry-run` |
@@ -369,8 +435,9 @@ line only through its approved owner transaction; otherwise v1 might still authe
 
 Required final proof: v2 Daily/Admin checks green on all five; the scope matrix remains
 1 success / 4 refusals; fresh, unexpired v1-signed certs are refused on every host **before
-and independently of legacy-name removal**. Use the S2 cert-only flags and each privileged
-alias, expecting Permission denied (publickey), or the verifier's `--expect refused`.
+and independently of legacy-name removal**. Use the verifier with each privileged
+alias, that explicit v1 credential pair, and `--expect refused`; a generic denial alone
+does not establish this gate.
 An expired v1 certificate proves nothing about removal of trust. Obtain the unexpired v1
 proof cert through its retained 1Password entry before retirement; never recover it from disk.
 

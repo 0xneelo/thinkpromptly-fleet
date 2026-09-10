@@ -13,14 +13,14 @@ legacy login-name principals remain until the owner's final retirement proof.
 
 | Tool | Purpose |
 |---|---|
-| mint-deploy-cert.sh | operator mint, --daily (deploy/8h/PTY only) or --admin (admin/1h/default extensions), CA_PUB / --ca-pub, non-minting --dry-run |
+| mint-deploy-cert.sh | operator mint, --legacy (login names, 1h/4h/8h), --daily (deploy/8h/PTY only) or --admin (admin/1h/default extensions), CA_PUB / --ca-pub, non-minting --dry-run |
 | apply-trust-linux.sh | local owner append/retire trust, --dry-run, --rollback, validation and reload |
 | setup-german-box-ca.ps1 / setup-rog-strix-ca.ps1 | local Windows owner trust, -DryRun/-WhatIf, -Rollback, SYSTEM restart with recovery |
 | bootstrap-rog-strix.sh | print local owner invocation only; original transport archived verbatim under goal inputs/ |
 | apply-principals-linux.sh / apply-principals-windows.ps1 | deploy accounts and per-login role principals, previews and rollback |
 | verify-cert.sh | owner-only fresh certificate-auth checks, role/scope refusal distinction, --dry-run |
 | render-sudoers.sh --app UNIT | pure exact-unit sudoers template renderer; no installation |
-| ssh-config.roles.example | staged Daily/Admin aliases; owner activates per host after S3 |
+| ssh-config.roles.example | staged Daily/Admin aliases; owner activates after all five hosts pass S3 |
 
 Five scoped hosts: think-box, onboarding-app-box, ivy-box, german-box, rog-strix.
 **vibes-asus is a sixth box with UNKNOWN trust**, excluded pending owner decision. The
@@ -40,12 +40,25 @@ Operator examples (not executed by repository workers):
 ```
 
 CLI --ca-pub wins over CA_PUB; historical default is ~/.ssh/deploy-ca.pub. Non-v1 CAs get a
-`deployer-<stamp>-ca2` Key ID. Profiles fix TTLs at 8h/1h; explicit legacy `-n` retains the
-1h/4h/8h cap for transition. Admin with extra tags is a union, not restricted scope; omit
-admin for a tag-only cert. The keys UI defaults to Daily and hides tags until Admin is selected.
-Its loopback mint route accepts `{profile, ttl?, extraTags?}`; it rejects arbitrary principals,
-unknown/duplicate tags, duration overrides, and caller-supplied CA paths. Legacy API payloads
-must migrate to this schema; the operator CLI retains explicit legacy minting.
+`deployer-<stamp>-ca2` Key ID. Daily fixes deploy/8h; Admin fixes admin/1h. Legacy
+preserves root,vibe,misterisley,tabor with a 1h/4h/8h cap. The UI defaults to Legacy with
+**8h selected** and active TTL chips until every host passes S3. Then the owner sets
+`deploy-keys/ROTATION-STATE` or `SSH_ROTATION_STATE` to `s3-applied`, selecting Daily for
+future screen loads. The committed state is `legacy`. This switch does not change hosts.
+
+Only Legacy updates `deploy-certs/current`. Daily and Admin update `current-daily` and
+`current-admin`; role aliases use their matching pointer. Deleting an active certificate
+directory unlinks only pointers targeting that directory. An Admin tag-only mint also
+updates `current-admin`; mint fleet-wide Admin last when preparing the scope checks.
+Admin box chips were dropped: the screen's Admin is fleet-wide. Use the CLI without the
+admin principal for a tag-only cert. Admin plus a tag is a union, not restricted scope.
+
+The loopback route accepts `{profile: legacy|daily|admin, ttl?, extraTags?}` and rejects
+unknown fields, arbitrary principals, unsupported/duplicate tags, invalid durations and
+caller-supplied CA paths. Legacy always includes all four login names; both screen and
+route refuse it if machines.json includes an uncovered SSH login. Each machine's `user`
+records its alias login. Old `{ttl, principals}` callers must migrate to the profile schema.
+The API's omitted Legacy duration remains 1h; the screen explicitly submits its selected TTL.
 
 The CA stays only in 1Password; a leaf private key is created in a new mode-700 output directory
 and expires with its certificate. The script refuses existing output directories. Never put
