@@ -1655,9 +1655,10 @@ test('fleet-logins.sh — a sweep outside the hour proves the identity and asks 
   assert.ok(!fs.existsSync(path.join(home, '.claude', '.fleet-usage-backoff')), 'a skipped read armed the throttle');
 });
 
-test('fleet-credits.sh — told to stand down it reports no live Claude row, and samples anyway', async (t) => {
-  // fleet-credits.sh has no overridable usage URL, so this runs it the only way a test may:
-  // with the read switched off. Anything else would spend a token at the real endpoint.
+test('fleet-credits.sh — it reads no token and reports no live Claude row, and samples anyway', async (t) => {
+  // The script named the account from ~/.claude.json but read the token from the credential
+  // store, and on the Mac the two disagreed: one person's numbers under another's name. It
+  // now reads no token and calls no endpoint at all — the logins sweep is the live source.
   const home = fakeHome();
   const appDir = path.join(home, 'Library', 'Application Support', 'Claude');
   fs.mkdirSync(appDir, { recursive: true });
@@ -1667,7 +1668,7 @@ test('fleet-credits.sh — told to stand down it reports no live Claude row, and
   );
   const out = (
     await promisify(execFile)('sh', [path.join(ROOT, 'box', 'fleet-credits.sh')], {
-      env: { ...process.env, HOME: home, FLEET_READ_USAGE: '0' },
+      env: { ...process.env, HOME: home },
       encoding: 'utf8',
       timeout: 30000,
     })
@@ -1681,4 +1682,48 @@ test('fleet-credits.sh — told to stand down it reports no live Claude row, and
   assert.equal(d.history.length, 1);
   assert.equal(d.accounts[0].email, 'lafayette@infinite-holdings.llc');
   assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
+});
+
+// The same disagreement seen from the deck's side: an installed copy of fleet-credits.sh that
+// still reads a token would report a live Claude row, and the collect must drop it.
+test('creditsCollect — a credits reply\'s live Claude row is dropped, not stored', async (t) => {
+  const dir = tmpdir('credits-drop');
+  const ghost = {
+    host: 'fake',
+    ts: Math.floor(Date.now() / 1000),
+    claude: {
+      email: 'ghost@example.invalid',
+      org: '11111111-1111-4111-8111-111111111111',
+      state: 'ok',
+      usage: { five_hour: { utilization: 10, resets_at: null }, seven_day: { utilization: 20, resets_at: null } },
+    },
+    desktop: [],
+    history: [],
+    accounts: [],
+    codex: null,
+  };
+  const sh = path.join(dir, 'ghost-credits.sh');
+  fs.writeFileSync(sh, "#!/bin/sh\ncat <<'EOF'\n" + JSON.stringify(ghost) + '\nEOF\n');
+  // No hosts: the collect's fan-out has nothing to ssh to, so the stub is the only reply.
+  const m = load({
+    FLEET_DB: path.join(dir, 'fleet.db'),
+    FLEET_HOSTS_FILE: hostsFile(dir, []),
+    FLEET_CREDITS_SH: sh,
+  });
+  t.after(async () => {
+    await unload(m);
+    delete process.env.FLEET_NO_LISTEN;
+  });
+
+  await m.creditsCollect(true);
+  const stored = m.creditsRows().filter((r) => r.id === 'ghost@example.invalid');
+  assert.deepEqual(stored, [], 'the reply\'s live Claude row was stored: ' + JSON.stringify(stored));
+
+  // Control: the normalizer still yields that row. The drop is creditsCollect's doing, so
+  // the logins sweep — which feeds creditsCandidates itself — keeps its live source.
+  const cand = m.creditsCandidates(ghost, 'fake', new Map(), false);
+  const oauth = cand.filter((c) => c.kind === 'claude' && c.source === 'oauth');
+  assert.equal(oauth.length, 1);
+  assert.equal(oauth[0].id, 'ghost@example.invalid');
+  assert.equal(oauth[0].windows.five_hour.pct, 10);
 });

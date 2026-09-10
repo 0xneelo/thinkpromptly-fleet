@@ -1725,7 +1725,11 @@ async function creditsCollect(force) {
       }
       // One mapping for the whole fleet: a CLI login on any machine names an org for all of them.
       const map = creditsMap(replies.flatMap(([, d]) => (Array.isArray(d.accounts) ? d.accounts : [])));
-      creditsWrite(replies.flatMap(([host, d]) => creditsCandidates(d, host, map, false)));
+      // A credits reply's live Claude row is dropped: the installed copies name the account
+      // from ~/.claude.json and read the token from the credential store, and on the Mac the
+      // two disagreed (2026-09-10) — one person's numbers under another's name. The logins
+      // sweep proves email, org and usage from the same token, so it is the only live source.
+      creditsWrite(replies.flatMap(([host, d]) => creditsCandidates({ ...d, claude: null }, host, map, false)));
       // Every machine's samples merge into one series per org — one box keeps sampling the
       // accounts another stopped using. Retention is bounded here, once per collect.
       for (const [, d] of replies) creditsHistoryWrite(d);
@@ -3510,7 +3514,7 @@ module.exports = {
   machinesUsage, machinesSessions, clientUsage,
   // Test seams: which candidate wins a credits row, what that row ends up holding, and
   // what a reader is finally shown once ageing has had its say.
-  creditsWrite, beats, creditsRows, machinesCredits,
+  creditsWrite, beats, creditsRows, machinesCredits, creditsCollect, creditsCandidates,
   // Test seams: the hourly window the usage endpoint is read in, and the claim on it.
   usageDue, usageHoursOpen,
 };

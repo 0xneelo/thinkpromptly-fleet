@@ -1,20 +1,17 @@
 #!/usr/bin/env sh
 # Master copy — installed on the box at /home/vibe/bin/fleet-credits.sh (see README).
-# One compact JSON line for THIS machine: Claude oauth usage (the signed-in CLI account),
-# the Claude desktop app's own usage history (every org it has sampled), the org -> email
-# mapping any CLI config on this machine can prove, and Codex rollout rate limits.
+# One compact JSON line for THIS machine: the Claude desktop app's own usage history (every
+# org it has sampled), the org -> email mapping any CLI config on this machine can prove,
+# and Codex rollout rate limits. Live Claude usage is fleet-logins.sh's (see below).
 #   sh fleet-credits.sh            -> print the line
 #   sh fleet-credits.sh push <url> -> POST the line to a fleetdeck /api/credits
-# The access token is read on the machine that owns it, kept in shell memory, and used
-# only for the usage call below. It is never printed, stored, logged or sent anywhere
-# else — the Authorization header goes through a 0600 temp file so the token never
-# appears in `ps`. Runs on mac, WSL and linux; the collect case takes no arguments.
+# No access token is read: nothing here needs one. Runs on mac, WSL and linux; the
+# collect case takes no arguments.
 
 PY=$(command -v python3)
 JQ=$(command -v jq)
 HOST=$(hostname -s 2>/dev/null || hostname)
 TS=$(date +%s)
-USAGE_URL=https://api.anthropic.com/api/oauth/usage
 
 # First non-empty value among the dotted paths, from the JSON on stdin. Empty on any miss.
 jval() {
@@ -37,56 +34,15 @@ for p in sys.argv[1:]:
   fi
 }
 
-# --- Claude. Linux/WSL keeps the credentials in a file, the Mac in the login Keychain.
-CRED=""
-if [ -r "$HOME/.claude/.credentials.json" ]; then
-  CRED=$(cat "$HOME/.claude/.credentials.json")
-elif [ "$(uname -s)" = Darwin ]; then
-  CRED=$(security find-generic-password -s "Claude Code-credentials" -w 2>/dev/null)
-fi
-
+# --- Claude live usage is NOT read here. This script named the account from ~/.claude.json
+# and read the token from the credential store, and on the Mac the two disagreed
+# (2026-09-10): one person's numbers went out under another's name. box/fleet-logins.sh
+# proves email, org and usage from the same token, so it is the only live source; this
+# script keeps the desktop samples, the org -> email mapping and the Codex rollouts.
 STATE=absent
 EMAIL=""
 USAGE=""
 ORG=""
-if [ -n "$CRED" ]; then
-  TOKEN=$(printf %s "$CRED" | jval claudeAiOauth.accessToken accessToken)
-  EXP=$(printf %s "$CRED" | jval claudeAiOauth.expiresAt expiresAt)
-  if [ -r "$HOME/.claude.json" ]; then
-    EMAIL=$(jval oauthAccount.emailAddress < "$HOME/.claude.json")
-    ORG=$(jval oauthAccount.organizationUuid < "$HOME/.claude.json")
-  fi
-  STATE=error
-  # expiresAt is ms since epoch; a non-numeric value is treated as unknown, not expired.
-  case $EXP in
-    '' | *[!0-9]*) ;;
-    *) [ "$EXP" -lt "$((TS * 1000))" ] && STATE=token_expired ;;
-  esac
-  # The deck reads the usage endpoint once an hour, inside its window (ruling 2026-09-10).
-  # A skipped read is not a failed one: this machine reports no live Claude row at all, the
-  # way it does with no CLI login here. The desktop samples and Codex parts below still travel.
-  if [ "${FLEET_READ_USAGE:-1}" = 0 ]; then
-    STATE=absent
-  elif [ -n "$TOKEN" ] && [ "$STATE" != token_expired ]; then
-    HDR=$(umask 077; mktemp)
-    BODY=$(umask 077; mktemp)
-    trap 'rm -f "$HDR" "$BODY"' EXIT INT TERM
-    printf 'Authorization: Bearer %s\n' "$TOKEN" > "$HDR"
-    # -o/-w rather than -f: 401/403 has to be told apart from every other failure.
-    CODE=$(curl --max-time 10 -s -o "$BODY" -w '%{http_code}' -H @"$HDR" \
-      -H 'anthropic-beta: oauth-2025-04-20' -H 'Content-Type: application/json' "$USAGE_URL")
-    case $CODE in
-      2??) STATE=ok; USAGE=$(cat "$BODY") ;;
-      401 | 403) STATE=token_expired ;; # no refresh flow here: the human reopens Claude Code
-      429) STATE=rate_limited ;; # nothing is wrong with the account; the next run gets it
-      *) STATE=error ;;
-    esac
-    rm -f "$HDR" "$BODY"
-    trap - EXIT INT TERM
-  fi
-fi
-TOKEN=""
-CRED=""
 
 # --- Claude desktop app + org mapping. plan-usage-history.json is derived numbers only,
 # and it covers every org the app has sampled — including accounts with no CLI login here.
