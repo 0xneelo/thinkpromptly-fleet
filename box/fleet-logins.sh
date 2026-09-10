@@ -144,18 +144,35 @@ def oauth_get(url, token):
 # credentials as a deadline, and no usage call is made for it until the deadline has passed.
 # Never shorter than ten minutes: the header says when the window ends, not how sparse the
 # calls must be to stay out of it.
+# One refusal is a window; a run of them is an account the endpoint wants left alone, so each
+# consecutive refusal doubles the pause up to four hours, and the first read that answers
+# forgets the run. A 403 carries no Retry-After and comes back every time, so it starts an
+# hour up. The stamp is "<deadline> <streak>"; a stamp written before the streak existed
+# reads as streak 0.
 BACKOFF_MIN = 600
+BACKOFF_MIN_403 = 3600
+BACKOFF_MAX = 4 * 3600
 def backoff_path(home): return os.path.join(home, ".claude", ".fleet-usage-backoff")
-def backoff_left(home):
+def backoff_read(home):
     try:
-        return max(0, int(float(open(backoff_path(home)).read().strip())) - int(time.time()))
+        parts = open(backoff_path(home)).read().split()
+        return int(float(parts[0])), (int(parts[1]) if len(parts) > 1 else 0)
     except Exception:
-        return 0
-def backoff_set(home, retry_after):
+        return 0, 0
+def backoff_left(home): return max(0, backoff_read(home)[0] - int(time.time()))
+def backoff_set(home, code, retry_after):
+    streak = backoff_read(home)[1] + 1
+    floor = BACKOFF_MIN_403 if code == 403 else BACKOFF_MIN
+    pause = min(BACKOFF_MAX, max(floor, int(retry_after or 0)) * 2 ** (streak - 1))
     try:
-        with open(backoff_path(home), "w") as fh: fh.write(str(int(time.time()) + max(BACKOFF_MIN, int(retry_after or 0))))
+        with open(backoff_path(home), "w") as fh: fh.write("%d %d" % (int(time.time()) + pause, streak))
     except Exception:
         pass
+    return pause, streak
+def backoff_clear(home):
+    try: os.remove(backoff_path(home))
+    except Exception: pass
+def ordinal(n): return "%d%s" % (n, "th" if n % 100 in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
 
 # One POST to the token endpoint. The body goes through a 0600 temp file (`--data-binary @`),
 # so the refresh token is no more an argument than the access token is. Returns (status, body)
@@ -383,11 +400,14 @@ def claude_cli(home, where):
                 # refuses this account for now — the throttle's other face — and asking again
                 # next sweep only restarts its clock, so it pauses exactly like a 429.
                 if ucode in (429, 403):
-                    backoff_set(home, retry)
-                    note = "usage call refused with HTTP %d, pausing %ds" % (ucode, max(BACKOFF_MIN, int(retry or 0)))
+                    pause, streak = backoff_set(home, ucode, retry)
+                    note = "usage call refused with HTTP %d, pausing %ds%s" % (
+                        ucode, pause, "" if streak < 2 else " (%s refusal)" % ordinal(streak))
             # A 200 carrying something other than the object expected is a broken reply: called
             # "ok" with no windows it would read on the deck as an account using nothing.
             ok = ucode == 200 and isinstance(ubody, dict)
+            # A read that answered ends the run: the next refusal starts at the floor again.
+            if ok: backoff_clear(home)
             ustate = ("ok" if ok else "rate_limited" if ucode in (429, 403)
                       else "token_expired" if ucode == 401 else "error")
             usage = trim_usage(ubody) if ok else None

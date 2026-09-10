@@ -252,7 +252,8 @@ test('fleet-logins.sh — a 403 on the usage call, after a proved profile, pause
   const claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
   assert.equal(claude.proof, 'profile');
   assert.equal(claude.usage_state, 'rate_limited');
-  assert.equal(claude.note, 'usage call refused with HTTP 403, pausing 600s');
+  // A 403 carries no Retry-After and comes back every time, so it starts an hour up.
+  assert.equal(claude.note, 'usage call refused with HTTP 403, pausing 3600s');
   assert.ok(fs.existsSync(path.join(home, '.claude', '.fleet-usage-backoff')));
 });
 
@@ -268,7 +269,7 @@ test('fleet-logins.sh — a refused usage call is remembered, and not repeated u
   assert.equal(claude.state, 'ok');
   assert.equal(claude.usage_state, 'rate_limited');
   assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 600s');
-  const deadline = Number(fs.readFileSync(stamp, 'utf8'));
+  const deadline = Number(fs.readFileSync(stamp, 'utf8').split(' ')[0]);
   assert.ok(Math.abs(deadline - (Math.floor(Date.now() / 1000) + 600)) <= 5, 'the stamp is a ten-minute deadline');
   assert.equal(p.calls.filter((c) => c.url === '/usage').length, 1);
 
@@ -287,6 +288,51 @@ test('fleet-logins.sh — a refused usage call is remembered, and not repeated u
   assert.equal(claude.usage_state, 'ok');
   assert.equal(claude.note, undefined);
   assert.equal(claude.usage.seven_day.utilization, 7.5);
+  assert.ok(!fs.existsSync(stamp), 'a read that answered left the run standing');
+});
+
+test('fleet-logins.sh — each refusal in a row doubles the pause, up to four hours', async (t) => {
+  const home = fakeHome();
+  const stamp = path.join(home, '.claude', '.fleet-usage-backoff');
+  const p = await fakeProfile(200, IDENTITY, [429, { error: { type: 'rate_limit_error' } }]);
+  t.after(() => p.close());
+
+  let claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 600s');
+  assert.equal(fs.readFileSync(stamp, 'utf8').split(' ')[1], '1');
+
+  // The first pause has passed and the endpoint refuses again: the run is remembered, so the
+  // second pause is twice the first.
+  fs.writeFileSync(stamp, Math.floor(Date.now() / 1000) - 1 + ' 1');
+  claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 1200s (2nd refusal)');
+  const [deadline, streak] = fs.readFileSync(stamp, 'utf8').split(' ').map(Number);
+  assert.equal(streak, 2);
+  assert.ok(Math.abs(deadline - (Math.floor(Date.now() / 1000) + 1200)) <= 5, 'the stamp is a twenty-minute deadline');
+
+  // A long run is capped: 600 * 2**9 is far past four hours.
+  fs.writeFileSync(stamp, Math.floor(Date.now() / 1000) - 1 + ' 9');
+  claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 14400s (10th refusal)');
+});
+
+test('fleet-logins.sh — a stamp written before the streak existed is still honoured', async (t) => {
+  const home = fakeHome();
+  const stamp = path.join(home, '.claude', '.fleet-usage-backoff');
+  fs.writeFileSync(stamp, String(Math.floor(Date.now() / 1000) + 300));
+  const p = await fakeProfile(200, IDENTITY, [200, USAGE_BODY]);
+  t.after(() => p.close());
+
+  const claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.match(claude.note, /^usage call skipped, endpoint asked for a \d+s pause$/);
+  assert.equal(p.calls.filter((c) => c.url === '/usage').length, 0);
+
+  // Expired, it counts as no run at all: the refusal that follows pauses the floor.
+  fs.writeFileSync(stamp, String(Math.floor(Date.now() / 1000) - 1));
+  const no = await fakeProfile(200, IDENTITY, [429, { error: { type: 'rate_limit_error' } }]);
+  t.after(() => no.close());
+  const again = pick(JSON.parse(await collect(home, no.url, no.usage)), 'claude_cli');
+  assert.equal(again.note, 'usage call refused with HTTP 429, pausing 600s');
 });
 
 // The live reply's shape, plus a `spend` block that must not travel and an extra_usage the
