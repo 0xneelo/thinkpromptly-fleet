@@ -57,3 +57,9 @@ test('Linux validation/reload failures restore prior public configuration with r
   const r = spawnSync('python3', ['test/deploy-apply-transaction.py'], {encoding:'utf8'});
   assert.equal(r.status, 0, r.stderr);
 });
+
+test('Windows audit regressions: precedence, mutex, atomic writes and malformed-config rollback', {skip:!process.env.PWSH_BIN}, () => {
+  const r = spawnSync(process.env.PWSH_BIN, ['-NoProfile','-File','test/deploy-windows-transaction.ps1'], {encoding:'utf8'});
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  for (const finding of ['A1','A2','A5','A7']) assert.match(r.stdout, new RegExp('PASS ' + finding));
+});

@@ -33,6 +33,9 @@ for (const box of Object.keys(boxes).slice(3)) {
     for (const flag of ['-DryRun','-WhatIf']) {
       const r = spawnSync(process.env.PWSH_BIN,['-NoProfile','-File','deploy-keys/apply-principals-windows.ps1','-Box',box,'-Root',path.join(root,'etc/ssh'),flag],{encoding:'utf8'});
       assert.equal(r.status,0,r.stderr); assert.match(r.stdout,/\+ ACCOUNT deploy: standard Users/);
+      assert.match(r.stdout,/PasswordNeverExpires; UserMayNotChangePassword/);
+      assert.match(r.stdout,/AllowStartIfOnBatteries \+ DontStopIfGoingOnBatteries/);
+      assert.match(r.stdout,/service PathName validator/);
       assert.match(r.stdout,/AuthorizedPrincipalsFile __PROGRAMDATA__\/ssh\/principals\/%u/);
       assert.deepEqual(fixtures.snapshot(root),before);
     }

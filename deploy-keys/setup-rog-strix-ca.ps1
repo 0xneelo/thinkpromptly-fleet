@@ -6,10 +6,12 @@
 # rog-strix owner: run locally in elevated PowerShell. No remote transport.
 [CmdletBinding(SupportsShouldProcess)]
 param([string]$CaPub, [switch]$RetireV1, [switch]$DryRun, [string]$Rollback,
-      [string]$Root = "$env:ProgramData\ssh", [string]$Sshd = "$env:WINDIR\System32\OpenSSH\sshd.exe")
+      [string]$Root = "$env:ProgramData\ssh", [string]$Sshd)
 . "$PSScriptRoot\lib\windows-apply.ps1"
-$RollbackDisableDeploy = $false
-$RollbackAcls = @{}
+$preview = $DryRun -or $WhatIfPreference
+Invoke-WithRotationLock -Root $Root -Preview $preview -Action {
+$script:RollbackDisableDeploy = $false
+$script:RollbackAcls = @{}
 $changes = [ordered]@{}
 if ($Rollback) { $changes = Get-RollbackChanges $Rollback $Root }
 elseif ($RetireV1) {
@@ -25,5 +27,5 @@ else {
     $changes[$ca] = Add-Ca (Read-PublicConfig $ca) $key
     $changes[$conf] = Set-GlobalDirective (Read-PublicConfig $conf) 'TrustedUserCAKeys' '__PROGRAMDATA__/ssh/deploy_ca.pub'
 }
-$preview = $DryRun -or $WhatIfPreference
-Invoke-WindowsApply -Changes $changes -Root $Root -Sshd $Sshd -Preview $preview -Entry 'setup-rog-strix-ca.ps1' -DisableDeploy $RollbackDisableDeploy -RestoreAcls $RollbackAcls
+Invoke-WindowsApply -Changes $changes -Root $Root -Sshd $Sshd -Preview $preview -Entry 'setup-rog-strix-ca.ps1' -DisableDeploy $RollbackDisableDeploy -RestoreAcls $RollbackAcls -Rollback ([bool]$Rollback)
+}

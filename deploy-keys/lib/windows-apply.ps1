@@ -1,6 +1,29 @@
 # Shared local host-owner transaction. Dot-source from an entry script.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:RotationHelperPath = $PSCommandPath
+
+function Invoke-WithRotationLock {
+    param([string]$Root, [bool]$Preview, [scriptblock]$Action,
+          [string]$MutexName = 'Global\FleetdeckSshCaRotation')
+    if ($Preview) { & $Action; return }
+    $mutex = [Threading.Mutex]::new($false, $MutexName)
+    $owned = $false
+    try {
+        try { $owned = $mutex.WaitOne(0) }
+        catch [Threading.AbandonedMutexException] { $owned = $true }
+        if (-not $owned) { throw 'Another CA rotation apply/rollback holds the host mutex' }
+        # The detached SYSTEM task can outlive its caller and mutex. Its pending
+        # marker blocks the gap until restart or recovery completes successfully.
+        if (Test-Path -LiteralPath (Join-Path $Root 'ca-rotation.pending')) {
+            throw 'CA rotation restart/recovery is pending; inspect the recorded task before another apply'
+        }
+        & $Action
+    } finally {
+        if ($owned) { $mutex.ReleaseMutex() }
+        $mutex.Dispose()
+    }
+}
 
 function Read-PublicConfig([string]$Path) {
     if (Test-Path -LiteralPath $Path) { return [IO.File]::ReadAllText($Path) }
@@ -41,6 +64,30 @@ function Set-GlobalDirective([string]$Before, [string]$Name, [string]$Value) {
     if ($lines.Count -gt 0 -and $lines[-1] -eq '') { $lines = @($lines | Select-Object -SkipLast 1) }
     return "$Name $Value`r`n" + (($lines -join "`r`n") + $(if ($lines.Count) { "`r`n" } else { '' }))
 }
+function Set-DeployPolicy([string]$Content) {
+    $begin = '# BEGIN CA ROTATION DEPLOY'; $end = '# END CA ROTATION DEPLOY'
+    $Content = $Content -replace ('(?s)' + [regex]::Escape($begin) + '.*?' + [regex]::Escape($end) + '\r?\n?'), ''
+    $match = [regex]::Match($Content, '(?im)^\s*Match\s+')
+    $split = if ($match.Success) { $match.Index } else { $Content.Length }
+    $prefix = $Content.Substring(0, $split)
+    if ($prefix -match '(?im)^\s*Include\s+') {
+        throw 'Include before deploy policy requires owner review: inline global directives and move Match blocks into sshd_config first'
+    }
+    return $prefix.TrimEnd("`r", "`n") + "`r`n$begin`r`nMatch User deploy`r`n    PasswordAuthentication no`r`n    KbdInteractiveAuthentication no`r`nMatch all`r`n$end`r`n" + $Content.Substring($split)
+}
+function Assert-TransitionPolicy([string]$Before, [string]$After, [bool]$Principals) {
+    if ($After -notmatch '(?im)^\s*TrustedUserCAKeys\s+__PROGRAMDATA__/ssh/deploy_ca\.pub\s*$') {
+        throw 'Managed trust directive missing; complete S2 before principals apply'
+    }
+    if (-not $Principals) {
+        $pattern = '(?im)^\s*AuthorizedPrincipalsFile[^\r\n]*'
+        $oldValues = @([regex]::Matches($Before, $pattern) | ForEach-Object { $_.Value }) -join "`n"
+        $newValues = @([regex]::Matches($After, $pattern) | ForEach-Object { $_.Value }) -join "`n"
+        if ($oldValues -cne $newValues) {
+            throw 'Trust transaction must preserve the existing principals directive'
+        }
+    }
+}
 function Show-FileDiff([string]$Path, [string]$Before, [AllowNull()][object]$After) {
     if ($Before -ceq $After) { return }
     Write-Output "--- $Path"
@@ -52,6 +99,82 @@ function Show-FileDiff([string]$Path, [string]$Before, [AllowNull()][object]$Aft
 function Test-Sshd([string]$Sshd, [string]$Conf) {
     & $Sshd -t -f $Conf
     if ($LASTEXITCODE -ne 0) { throw 'sshd -t failed' }
+}
+function Resolve-SshdPath([string]$Explicit) {
+    if ($Explicit) { return $Explicit }
+    $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='sshd'"
+    if (-not $service) { throw 'sshd service is missing' }
+    $command = [Environment]::ExpandEnvironmentVariables($service.PathName).Trim()
+    if ($command -match '^"([^"]+\.exe)"(?:\s|$)') { $executable = $Matches[1] }
+    elseif ($command -match '^([^\s"]+\.exe)(?:\s|$)') { $executable = $Matches[1] }
+    else { throw 'Ambiguous sshd service executable; owner must inspect PathName' }
+    if ($executable -notmatch '(?i)[\\/]sshd\.exe$') { throw 'Service executable is not sshd.exe' }
+    return $executable
+}
+function Assert-DeployGroups($Account) {
+    $privileged = @('S-1-5-32-544','S-1-5-32-547','S-1-5-32-548','S-1-5-32-549',
+                    'S-1-5-32-550','S-1-5-32-551','S-1-5-32-552','S-1-5-32-556','S-1-5-32-578')
+    foreach ($group in Get-LocalGroup) {
+        if ($group.SID.Value -notin $privileged -and $group.Name -ne 'docker-users') { continue }
+        if (Get-LocalGroupMember -Group $group -ErrorAction Stop | Where-Object { $_.SID -eq $Account.SID }) {
+            throw 'Existing deploy account belongs to a privileged group; owner must resolve'
+        }
+    }
+}
+function Test-SshdPolicy([string]$Sshd, [string]$Conf, [string]$Root, [string[]]$Users) {
+    foreach ($user in $Users) {
+        foreach ($source in @('127.0.0.1', '10.0.0.1', '192.0.2.1', '2001:db8::1')) {
+            $effective = & $Sshd -T -f $Conf -C "user=$user,host=localhost,addr=$source"
+            if ($LASTEXITCODE -ne 0) { throw 'sshd effective-policy check failed' }
+            $values = @{}
+            foreach ($line in $effective) {
+                $parts = $line -split '\s+', 2
+                if ($parts.Count -eq 2) { $values[$parts[0].ToLowerInvariant()] = $parts[1].Replace('\','/') }
+            }
+            if ($values.trustedusercakeys -notin @('__PROGRAMDATA__/ssh/deploy_ca.pub', ($Root.Replace('\','/') + '/deploy_ca.pub'))) {
+                throw 'Effective trust policy differs; inspect Match/Include'
+            }
+            if ($values.authorizedprincipalsfile -notin @('__PROGRAMDATA__/ssh/principals/%u', ($Root.Replace('\','/') + '/principals/%u'))) {
+                throw 'Effective principals policy differs; inspect Match/Include'
+            }
+            if ($values.ContainsKey('authorizedprincipalscommand') -and $values.authorizedprincipalscommand -ne 'none') { throw 'Unexpected principals command' }
+            if ($user -eq 'deploy' -and ($values.passwordauthentication -ne 'no' -or $values.kbdinteractiveauthentication -ne 'no')) {
+                throw 'Effective deploy password policy differs'
+            }
+        }
+    }
+}
+
+function Set-PublicConfigAcl([string]$Path, [bool]$Readable, [string]$Sddl) {
+    if ($Sddl) {
+        $acl = Get-Acl -LiteralPath $Path
+        $acl.SetSecurityDescriptorSddlForm($Sddl)
+        Set-Acl -LiteralPath $Path -AclObject $acl
+    } else { Set-StrictAcl $Path $Readable }
+}
+function Move-PublicConfigAtomically([string]$Temp, [string]$Path) {
+    if (Test-Path -LiteralPath $Path) { [IO.File]::Replace($Temp, $Path, [NullString]::Value) }
+    else { [IO.File]::Move($Temp, $Path) }
+}
+function Write-AtomicPublicConfig([string]$Path, [string]$Content, [bool]$Readable = $false, [string]$Sddl = '') {
+    $temp = Join-Path (Split-Path -Parent $Path) ('.ca-rotation-' + [guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        [IO.File]::WriteAllText($temp, $Content, [Text.UTF8Encoding]::new($false))
+        Set-PublicConfigAcl $temp $Readable $Sddl
+        Move-PublicConfigAtomically $temp $Path
+        # ReplaceFile retains destination metadata; explicitly enforce the planned ACL.
+        Set-PublicConfigAcl $Path $Readable $Sddl
+    } finally {
+        if (Test-Path -LiteralPath $temp) { Remove-Item -LiteralPath $temp -Force }
+    }
+}
+
+function Test-TransactionBaseline([string]$Sshd, [string]$Conf, [string]$Backup, [System.Collections.IDictionary]$Changes, [bool]$Rollback) {
+    if (-not $Rollback) { Test-Sshd $Sshd $Conf; return }
+    $candidate = Join-Path $Backup 'rollback-candidate.conf'
+    $content = if ($Changes.Contains($Conf)) { $Changes[$Conf] } else { Read-PublicConfig $Conf }
+    [IO.File]::WriteAllText($candidate, $content, [Text.UTF8Encoding]::new($false))
+    Test-Sshd $Sshd $candidate
 }
 function Set-StrictAcl([string]$Path, [bool]$Readable = $false) {
     $item = Get-Item -LiteralPath $Path
@@ -85,7 +208,8 @@ function Assert-ProtectedPolicyPath([string]$Path) {
 }
 function Invoke-WindowsApply {
     param([System.Collections.IDictionary]$Changes, [string]$Root, [string]$Sshd, [bool]$Preview, [string]$Entry,
-          [bool]$CreateDeploy = $false, [bool]$DisableDeploy = $false, [hashtable]$RestoreAcls = @{})
+          [bool]$CreateDeploy = $false, [bool]$DisableDeploy = $false, [hashtable]$RestoreAcls = @{},
+          [bool]$Rollback = $false, [string[]]$PrincipalUsers = @())
     $conf = Join-Path $Root 'sshd_config'
     $changed = [ordered]@{}
     foreach ($p in $Changes.Keys) {
@@ -98,19 +222,24 @@ function Invoke-WindowsApply {
     }
     if ($DisableDeploy) { Write-Output '- ACCOUNT deploy: disable newly created account; retain its files' }
     foreach ($p in $RestoreAcls.Keys) { Write-Output "ACL RESTORE $p : $($RestoreAcls[$p])" }
-    if ($CreateDeploy) { Write-Output '+ ACCOUNT deploy: standard Users group only, no password login; certificate authentication' }
+    if ($CreateDeploy) { Write-Output '+ ACCOUNT deploy: standard Users group only; PasswordNeverExpires; UserMayNotChangePassword; no password login; certificate authentication' }
     $caPath = Join-Path $Root 'deploy_ca.pub'
     $caText = if ($Changes.Contains($caPath)) { $Changes[$caPath] } else { Read-PublicConfig $caPath }
     foreach ($line in ($caText -split '\r?\n')) { if ($line.Trim() -and -not $line.Trim().StartsWith('#')) { Write-Output ('CA fingerprint: ' + (Get-CaFingerprint $line)) } }
-    Write-Output 'PLAN: protected ACLs; sshd -t; detached SYSTEM task restarts sshd; restores backup on failure'
+    Write-Output 'PLAN: protected ACLs; service PathName validator (unless explicit -Sshd); sshd -t; detached SYSTEM task restarts sshd; AllowStartIfOnBatteries + DontStopIfGoingOnBatteries; restores backup on failure'
     if ($Preview) { Write-Output 'DRY-RUN: no files, accounts, ACLs, tasks, or services changed'; return }
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { throw 'Apply requires Windows' }
     if ([IO.Path]::GetFullPath($Root).TrimEnd('\') -ne [IO.Path]::GetFullPath("$env:ProgramData\ssh").TrimEnd('\')) { throw 'Custom Root is allowed only for offline dry-runs' }
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Apply requires an elevated owner terminal' }
+    $Sshd = Resolve-SshdPath $Sshd
     foreach ($directory in @($Root, (Join-Path $Root 'principals'), (Join-Path $Root 'ca-rotation-backups'))) { Assert-ProtectedPolicyPath $directory }
     foreach ($policyFile in $Changes.Keys) { Assert-ProtectedPolicyPath $policyFile }
-    Test-Sshd $Sshd $conf
+    if (-not $Rollback) {
+        $after = if ($Changes.Contains($conf)) { $Changes[$conf] } else { Read-PublicConfig $conf }
+        Assert-TransitionPolicy (Read-PublicConfig $conf) $after ($PrincipalUsers.Count -gt 0)
+        Test-Sshd $Sshd $conf
+    }
     if (-not $changed.Count -and -not $CreateDeploy -and -not $DisableDeploy) { Write-Output 'Already current; no restart'; return }
     $backup = Join-Path $Root ('ca-rotation-backups\' + [guid]::NewGuid().ToString('N'))
     Assert-PlainPath $backup
@@ -118,6 +247,7 @@ function Invoke-WindowsApply {
     if (-not (Test-Path -LiteralPath $backupParent)) { New-Item -ItemType Directory -Path $backupParent | Out-Null; Set-StrictAcl $backupParent }
     New-Item -ItemType Directory -Path $backup -Force | Out-Null
     Set-StrictAcl $backup
+    if ($Rollback) { Test-TransactionBaseline $Sshd $conf $backup $Changes $true }
     $manifest = @()
     foreach ($p in $changed.Keys) {
         $exists = Test-Path -LiteralPath $p
@@ -132,7 +262,7 @@ function Invoke-WindowsApply {
         if ($CreateDeploy) {
             # Random password is held only in memory, never accepted for SSH and never logged.
             $secret = ConvertTo-SecureString ([guid]::NewGuid().ToString('N') + 'aA1!') -AsPlainText -Force
-            New-LocalUser -Name deploy -Password $secret -Description 'CA daily deploy account' | Out-Null
+            New-LocalUser -Name deploy -Password $secret -PasswordNeverExpires -UserMayNotChangePassword -Description 'CA daily deploy account' | Out-Null
             $secret.Dispose()
             Add-LocalGroupMember -SID 'S-1-5-32-545' -Member deploy
         }
@@ -140,48 +270,52 @@ function Invoke-WindowsApply {
             if ($null -eq $changed[$p]) { Remove-Item -LiteralPath $p -ErrorAction SilentlyContinue; continue }
             $parent = Split-Path -Parent $p
             if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null; Set-StrictAcl $parent $true }
-            [IO.File]::WriteAllText($p, $changed[$p], [Text.UTF8Encoding]::new($false))
-            if ($RestoreAcls.ContainsKey($p)) {
-                $acl = Get-Acl -LiteralPath $p; $acl.SetSecurityDescriptorSddlForm($RestoreAcls[$p]); Set-Acl -LiteralPath $p -AclObject $acl
-            } else { Set-StrictAcl $p ($p -match '[\\/]principals[\\/]') }
+            $sddl = if ($RestoreAcls.ContainsKey($p)) { $RestoreAcls[$p] } else { '' }
+            Write-AtomicPublicConfig $p $changed[$p] ($p -match '[\\/]principals[\\/]') $sddl
         }
         if ($DisableDeploy) { Disable-LocalUser -Name deploy }
         Test-Sshd $Sshd $conf
+        if (-not $Rollback -and $PrincipalUsers.Count) { Test-SshdPolicy $Sshd $conf $Root $PrincipalUsers }
         # Keep restart/rollback independent of an SSH parent process. Never restart the deck.
         $restart = Join-Path $backup 'restart.ps1'
         $body = @'
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $PSCommandPath
+. (Join-Path $here 'windows-apply.ps1')
 $m = Get-Content -Raw -LiteralPath (Join-Path $here 'manifest.json') | ConvertFrom-Json
+$pending = Join-Path (Split-Path -Parent (Split-Path -Parent $here)) 'ca-rotation.pending'
 try {
     Restart-Service sshd -ErrorAction Stop
     if ((Get-Service sshd).Status -ne 'Running') { throw 'sshd is not running' }
     'restart-ok' | Set-Content -LiteralPath (Join-Path $here 'result.txt')
+    Remove-Item -LiteralPath $pending -Force
 } catch {
     foreach ($f in $m.files) {
         if ($f.existed) {
-            Copy-Item -LiteralPath $f.saved -Destination $f.path -Force
-            $acl = Get-Acl -LiteralPath $f.path
-            $acl.SetSecurityDescriptorSddlForm($f.acl)
-            Set-Acl -LiteralPath $f.path -AclObject $acl
+            Write-AtomicPublicConfig $f.path ([IO.File]::ReadAllText($f.saved)) $false $f.acl
         } else { Remove-Item -LiteralPath $f.path -ErrorAction SilentlyContinue }
     }
     if ($m.createdDeploy) { Disable-LocalUser -Name deploy }
     Restart-Service sshd -ErrorAction Stop
     'restart-failed; restored files; new deploy account disabled if present' | Set-Content -LiteralPath (Join-Path $here 'result.txt')
+    Remove-Item -LiteralPath $pending -Force
     exit 1
 }
 '@
         [IO.File]::WriteAllText($restart, $body, [Text.UTF8Encoding]::new($false))
         Set-StrictAcl $restart
+        Copy-Item -LiteralPath $script:RotationHelperPath -Destination (Join-Path $backup 'windows-apply.ps1')
+        Set-StrictAcl (Join-Path $backup 'windows-apply.ps1')
         $task = 'ssh-ca-rotation-' + (Split-Path -Leaf $backup)
         $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -ExecutionPolicy Bypass -File "' + $restart + '"')
-        Register-ScheduledTask -TaskName $task -Action $action -User SYSTEM -RunLevel Highest -Force | Out-Null
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+        Register-ScheduledTask -TaskName $task -Action $action -Settings $settings -User SYSTEM -RunLevel Highest -Force | Out-Null
+        Write-AtomicPublicConfig (Join-Path $Root 'ca-rotation.pending') $backup
         Start-ScheduledTask -TaskName $task
         Write-Output "Restart queued via SYSTEM task $task. Read $backup\result.txt; remove task after verification."
     } catch {
         foreach ($f in $manifest) {
-            if ($f.existed) { Copy-Item -LiteralPath $f.saved -Destination $f.path -Force; $acl = Get-Acl -LiteralPath $f.path; $acl.SetSecurityDescriptorSddlForm($f.acl); Set-Acl -LiteralPath $f.path -AclObject $acl }
+            if ($f.existed) { Write-AtomicPublicConfig $f.path ([IO.File]::ReadAllText($f.saved)) $false $f.acl }
             else { Remove-Item -LiteralPath $f.path -ErrorAction SilentlyContinue }
         }
         if ($CreateDeploy -and (Get-LocalUser -Name deploy -ErrorAction SilentlyContinue)) { Disable-LocalUser -Name deploy }
