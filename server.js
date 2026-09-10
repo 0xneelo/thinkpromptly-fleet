@@ -11,6 +11,7 @@ const pty = require('node-pty');
 const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
 const { coordinatorRoute } = require('./coordinator-api');
 const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
+const { DocsIndex, defaultRoots } = require('./docs-index');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -1841,6 +1842,8 @@ const desktopSessionStore = new DesktopSessions({
   },
 });
 
+const docsIndex = new DocsIndex({ db, roots: defaultRoots() });
+
 const DESKTOP_TRANSCRIPT_SH = process.env.FLEET_DESKTOP_TRANSCRIPT_SH || path.join(__dirname, 'box', 'desktop-transcript.sh');
 // Renders one transcript on the machine that owns it. The selector is either a validated
 // UUID or 'tmux:<validated session name>', which is why it can ride as the positional
@@ -2951,6 +2954,7 @@ async function body(req, maxBytes = 4096) {
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
@@ -3410,6 +3414,47 @@ async function notifyRoute(req, res, p, url, remote = false) {
   }
 }
 
+// --- docs. The index of what the operator's own sessions wrote. Loopback only, and
+// deliberately absent from tailnetHandler (the same rule /api/goals follows): these are
+// the operator's working files, and a box worker has no business reading them.
+async function docsRoute(req, res, url) {
+  if (req.method === 'GET') {
+    const refresh = url.searchParams.get('refresh') === '1';
+    const sweep = docsIndex.sweep(refresh);
+    // A plain GET answers out of the table at once and lets the sweep land behind it. Only
+    // a Refresh, or a first load with nothing stored yet, is worth waiting on the disk for.
+    if (refresh || docsIndex.at === null) await sweep;
+    else Promise.resolve(sweep).catch(() => {});
+    const q = url.searchParams;
+    return json(res, docsIndex.view({
+      day: q.get('day'), session: q.get('session'), kind: q.get('kind'), q: q.get('q'),
+      limit: q.get('limit') || undefined,
+    }));
+  }
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  // The hook POSTs from a shell and carries no Origin; a *foreign* Origin is another
+  // page's browser and is rejected (the registry gate, same reasoning).
+  if (req.headers.origin && !ALLOWED_ORIGINS.has(req.headers.origin))
+    return send(res, 403, 'text/plain', 'forbidden');
+  const b = await body(req, 16384).catch(() => null);
+  if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+  try {
+    return json(res, { ok: true, doc: docsIndex.add(b) });
+  } catch (e) {
+    return json(res, { ok: false, error: e.message }, 400);
+  }
+}
+
+// The stored path is the only thing served: an id, never a path from the query. What gets
+// stored is gated in DocsIndex.add (a real .html/.md path, never under a hidden directory
+// outside the swept roots). An Artifact row is a claude.ai URL with no local file.
+function docsOpen(req, res, url) {
+  const id = Number(url.searchParams.get('id'));
+  const row = Number.isSafeInteger(id) && id > 0 ? docsIndex.get(id) : null;
+  if (!row || row.gone || !row.path.startsWith('/')) return send(res, 404, 'text/plain', 'not found');
+  return sendFile(res, row.path, req);
+}
+
 const server = http.createServer(async (req, res) => {
   if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
@@ -3437,6 +3482,8 @@ const server = http.createServer(async (req, res) => {
     }
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, false);
     if (p === '/api/goals') return await goalsRoute(req, res);
+    if (p === '/api/docs') return await docsRoute(req, res, url);
+    if (p === '/api/docs/open') return docsOpen(req, res, url);
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     // Loopback only, and deliberately absent from tailnetHandler (M13).
     // The epoch is deliberately withheld: it is the credential fenceCheck trusts, and this
@@ -3791,6 +3838,8 @@ module.exports = {
   reaperTick, reaperLoop, REAPER,
   // Test seams: the pure joins the Machines view renders from, no I/O of their own.
   machinesUsage, machinesSessions, clientUsage,
+  // Test seam: the docs index this instance swept into, so a test can read it without HTTP.
+  docsIndex,
   // Test seams: which candidate wins a credits row, what that row ends up holding, and
   // what a reader is finally shown once ageing has had its say.
   creditsWrite, beats, creditsRows, machinesCredits, creditsCollect, creditsCandidates,

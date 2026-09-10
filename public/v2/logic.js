@@ -548,6 +548,7 @@ class AppLogic extends Sub {
           .filter((d) => d.v),
         copy: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copy', r, e.currentTarget); try { navigator.clipboard.writeText(r.title + '\n' + path + '\n' + r.branch + '\ncli=' + cli + '\nsession=' + sid); } catch (e2) {} },
         copyConv: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copyConv', r, e.currentTarget); try { navigator.clipboard.writeText('# ' + r.title + '\n' + r.model + ' · ' + r.turns + ' · ' + r.branch + '\n\n[conversation transcript for ' + sid + ']'); } catch (e2) {} },
+        docs: (e) => { e.stopPropagation(); if (FD.router) FD.router.navigate('docs', cli ? { session: cli } : {}); },
       };
     };
     // S2 oracle audit F2 (2026-09-08, binding instruction 2): a throw anywhere in
@@ -1214,6 +1215,9 @@ class AppLogic extends Sub {
     // same tokens as the accounts chrome and follows the theme toggle with it.
     FD.screens.goals = FD.screens.goals || {};
     FD.screens.goals.tokens = FD.screens.accounts.tokens;
+    // The Docs screen does the same, in its own mount node.
+    FD.screens.docs = FD.screens.docs || {};
+    FD.screens.docs.tokens = FD.screens.accounts.tokens;
     const accTone = (lvl) => (lvl === 'red' ? t.bad : lvl === 'amber' ? t.warn : t.good);
     // An aged-out window draws at the width it last held, in grey: the shape of the reading
     // survives, the colour no longer claims it is current.
@@ -1265,7 +1269,7 @@ class AppLogic extends Sub {
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
       rowPadY: compact ? '7px' : '11px', cardPad: compact ? '14px 16px' : '18px 20px',
       isWindows: screen === 'windows', isOrg: screen === 'org', isRegistry: screen === 'registry',
-      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isGoals: screen === 'goals', isDesktop: screen === 'desktop',
+      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isGoals: screen === 'goals', isDocs: screen === 'docs', isDesktop: screen === 'desktop',
       goDesktop: () => this.setState({ screen: 'desktop' }), navDesktop: navBtn(screen === 'desktop'),
       dq: this.state.dq, setDq: (e) => this.setState({ dq: e.target.value }), resetDs: () => this.setState({ dq: '', dsExp: {} }),
       dsGroups, dsCount, dsLive,
@@ -1277,8 +1281,9 @@ class AppLogic extends Sub {
       goAccounts: () => this.setState({ screen: 'accounts' }),
       goMachines: () => this.setState({ screen: 'machines' }),
       goGoals: () => this.setState({ screen: 'goals' }),
+      goDocs: () => this.setState({ screen: 'docs' }),
       navWindows: navBtn(screen === 'windows'), navOrg: navBtn(screen === 'org'), navRegistry: navBtn(screen === 'registry'),
-      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'), navGoals: navBtn(screen === 'goals'),
+      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'), navGoals: navBtn(screen === 'goals'), navDocs: navBtn(screen === 'docs'),
       toggleMode: () => {
         const next = !this.isDark();
         try { localStorage.setItem('fd-landing-dark', next ? '1' : '0'); } catch (e) {}
@@ -1608,7 +1613,7 @@ function fdAsked(what) {
       const byPath = { '/': 'land', '/app': 'app', '/deck': 'deck' }[here.pathname];
       return byPath || null;
     }
-    const asked = String(here.hash || '').replace(/^#/, '');
+    const asked = String(here.hash || '').replace(/^#/, '').split('?')[0];
     return router.SCREENS.includes(asked) ? asked : null;
   } catch (e) { return null; }
 }

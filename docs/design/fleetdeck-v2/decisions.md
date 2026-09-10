@@ -101,3 +101,31 @@ The mock has no Goals screen, so `template.dc.html` carries only the mount node 
 `public/v2/screens/goals.js` draws the whole screen in plain DOM (createElement/textContent only — a
 dictated direction must never be parsed as markup). Nothing polls: it loads on entering the screen and
 on Refresh, because the jail changes when the goalkeeper commits.
+
+## 2026-09-10 · the `#docs` screen
+
+New screen `/app#docs` over `GET /api/docs`. It lists what the sessions themselves produce —
+artifacts, ELI5s, unblock sheets, session digests, reports, loose HTML and markdown — newest
+first, filterable by day, session, kind and text. The data source is the deck's own sqlite index,
+swept from the session exports, the session scratchpads and each repo's `docs/`: a sweep of the
+file system is far too slow to do per keystroke, so the index is the thing the screen queries and
+Refresh (`?refresh=1`) is the only way to make it sweep again.
+
+The server does the filtering, so every filter change is one fetch; the `days` and `kinds` counts
+in the response are counts over the UNFILTERED index, which is what keeps a chip's number honest
+while a filter is on.
+
+Files are served BY ID ONLY, through `/api/docs/open?id=<id>`, on the loopback listener — a path
+never reaches the URL. What can be stored is gated on the way in: a POST registers only a real
+`.html`/`.md` file, and never one under a hidden directory (`~/.ssh`, `.secrets`, `~/.claude/*`)
+unless a swept root owns it. No seat or box worker on the tailnet can reach the route at all. A row of kind `artifact` is already a URL and opens
+directly. Every link opens in a new tab with `rel=noopener`.
+
+The filters live on the hash (`#docs?session=…&day=…&kind=…&q=…`), so a filtered screen is a link
+the operator can copy, and `router.route()` now returns `{ view, screen, params }` with
+`navigate(screen, params)` writing them back. That is also how the Desktop sessions row icon
+arrives here: it deep-links `#docs?session=<CLI uuid>`, which is the one id both screens share.
+
+The mock has no Docs screen, so `template.dc.html` carries only the mount node `#fd-docs-root` and
+`public/v2/screens/docs.js` draws the whole screen in plain DOM (createElement/textContent only —
+a title comes from a file some session wrote and must never be parsed as markup). Nothing polls.

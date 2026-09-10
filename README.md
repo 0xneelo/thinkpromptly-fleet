@@ -16,8 +16,8 @@ One page serves three views. The view travels on the query string, the screen on
 | `/app` | The deck |
 | `/deck` | Investor deck, five slides |
 
-The deck has eight screens: `windows`, `org`, `registry`, `bus`, `keys`, `accounts`,
-`machines`, `desktop`. `/app#registry` opens one directly. The old per-page URLs
+The deck has ten screens: `windows`, `org`, `registry`, `bus`, `keys`, `accounts`,
+`machines`, `goals`, `docs`, `desktop`. `/app#registry` opens one directly. The old per-page URLs
 (`/index.html`, `/keys.html`, `/accounts.html`, `/machines.html`, `/sessions.html`)
 answer with a 302 to the screen that replaced them, so an old bookmark still lands in
 the right place. `/v2/` serves the same shell, which is what the design gate captures.
@@ -198,6 +198,18 @@ session's `<cliSessionId>.jsonl` on the owning machine via `box/desktop-transcri
 (text and tool calls; thinking dropped, tool output clipped). Its read-only
 `GET /api/desktop-sessions` returns `groups` keyed by account UUID, org UUID, and machine,
 plus per-machine collection status. Org labels come from `credits-accounts.json`.
+
+**Docs.** `/app#docs` lists every document the sessions produce — published Artifacts,
+ELI5 explainers, unblock sheets, session digests, reports, and any `.html`/`.md` a session
+writes — newest first, filterable by day (date picker or day chips), by session, by kind, and
+by text. The filter lives in the hash (`#docs?session=<cli-uuid>&day=2026-09-10`), and each
+Desktop sessions row has a Docs icon that opens the list for that session. The index is a
+`docs` table in `fleet.db`, swept from `~/.claude/session-exports`, the session scratchpads
+under `/private/tmp/claude-501/*/*/scratchpad/`, and this repo's `docs/{reports,research,unblocks}`
+(`FLEET_DOCS_ROOTS` adds more, colon-separated). `bin/docs-hook.js` is a Claude Code
+PostToolUse hook on `Write|Artifact` that registers each written file and each published
+Artifact URL as it happens; `GET /api/docs` lists, `POST /api/docs` registers, and
+`GET /api/docs/open?id=` serves a file by index id only. Loopback only, never on the tailnet.
 Enable a machine with `"desktop_sessions": true` on its existing `machines.json` entry;
 the Mac and german-box are enabled, while rog-strix remains deferred. The same local/SSH
 routing used by Machines pipes `box/desktop-sessions.sh` to the configured deploy alias.
