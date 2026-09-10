@@ -31,6 +31,7 @@ worktree you run it from**: `node_modules/` is gitignored, so a fresh clone and 
 
     npm install   # once per worktree — 6 packages, about 2s
     npm test      # node --test, one file at a time
+    FLEET_TEST_TAILNET_BIND=::1 npm test   # on a Mac without the 127.0.0.2 lo0 alias
 
 `npm test` checks that first. `scripts/check-deps.js` runs as `pretest` and prints one line
 naming the missing packages, instead of letting the first test file die on `Cannot find

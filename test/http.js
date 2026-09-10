@@ -8,7 +8,11 @@ const { spawn } = require('child_process');
 const { tmpdir, hostsFile } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
-const TAILNET_BIND = '127.0.0.2'; // second loopback address, so both listeners can share a port
+// Second loopback address, so both listeners can share a port. It is an lo0 alias only on the
+// operator's Mac; a machine without it sets FLEET_TEST_TAILNET_BIND (e.g. ::1), as helpers.js
+// reads it, rather than hanging on every listener test.
+const TAILNET_BIND = process.env.FLEET_TEST_TAILNET_BIND || '127.0.0.2';
+const TAILNET_HOST = TAILNET_BIND.includes(':') ? '[' + TAILNET_BIND + ']' : TAILNET_BIND; // in a URL or Host header
 
 // Sibling worktrees run this same file at the same time, so the band is picked per process
 // rather than derived from a pid that lands in the same range on every one of them.
@@ -30,7 +34,7 @@ async function startServer(env = {}, opts = {}) {
         FLEET_DB: file,
         FLEET_HOSTS_FILE: hosts,
         FLEET_TAILNET_BIND: TAILNET_BIND,
-        FLEET_TAILNET_HOST: TAILNET_BIND + ':' + port,
+        FLEET_TAILNET_HOST: TAILNET_HOST + ':' + port,
         FLEET_NO_REAPER: '1', // reaper tests drive the tick by hand
         ...env,
       },
@@ -92,7 +96,7 @@ async function startServer(env = {}, opts = {}) {
     });
 
   const local = call('127.0.0.1', '127.0.0.1:' + port);
-  const tail = call(TAILNET_BIND, TAILNET_BIND + ':' + port);
+  const tail = call(TAILNET_BIND, TAILNET_HOST + ':' + port);
 
   return {
     port, dir, file, hosts, child,
@@ -200,4 +204,4 @@ async function startBroker(env = {}, opts = {}) {
   };
 }
 
-module.exports = { startServer, startBroker, TAILNET_BIND };
+module.exports = { startServer, startBroker, TAILNET_BIND, TAILNET_HOST };
