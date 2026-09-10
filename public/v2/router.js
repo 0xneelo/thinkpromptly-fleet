@@ -17,6 +17,7 @@
     'machines',
     'goals',
     'docs',
+    'unblock',
     'desktop',
   ]);
   const DEFAULT_VIEW = 'app'; // inside /v2/; '/' becomes the landing page in L11
@@ -25,38 +26,44 @@
   // Every location read is guarded so the module can be required under Node.
   const loc = () => (typeof root.location === 'object' ? root.location : null);
 
-  // A screen may carry filters: '#docs?session=<uuid>&day=2026-09-10'. They live on the
-  // hash so a filtered screen is a link the operator can copy, and so a param-only change
-  // never touches the query string the view is read from.
-  function params(search) {
-    const out = {};
-    new URLSearchParams(search).forEach(function (v, k) { out[k] = v; });
-    return out;
+  // `#screen?a=b`: the screen owns whatever follows its name, so one sheet, one row or one
+  // window can have a URL of its own without a second query string. A screen that asks for
+  // nothing reads an empty params object.
+  function hashParts(hash) {
+    const raw = String(hash || '').replace(/^#/, '');
+    const cut = raw.indexOf('?');
+    return cut < 0 ? [raw, ''] : [raw.slice(0, cut), raw.slice(cut + 1)];
   }
 
   function route() {
     const here = loc();
     const view = new URLSearchParams((here && here.search) || '').get('view');
-    const hash = String((here && here.hash) || '').replace(/^#/, '');
-    const cut = hash.indexOf('?');
-    const screen = cut < 0 ? hash : hash.slice(0, cut);
+    const [screen, query] = hashParts(here && here.hash);
+    const params = {};
+    new URLSearchParams(query).forEach((v, k) => { params[k] = v; });
     const known = SCREENS.includes(screen);
     return {
       view: VIEWS.includes(view) ? view : DEFAULT_VIEW,
       screen: known ? screen : DEFAULT_SCREEN,
-      // An unknown screen's params die with it: the default screen must not inherit them.
-      params: known && cut >= 0 ? params(hash.slice(cut + 1)) : {},
+      // An unknown screen's params die with it: the default screen must not inherit a stranger's params.
+      params: known ? params : {},
     };
   }
 
-  // Sorted, so the same filters in another key order are the same hash and the same key().
-  const query = (p) => new URLSearchParams(Object.keys(p || {}).sort().map((k) => [k, p[k]])).toString();
+  function query(params) {
+    const q = new URLSearchParams();
+    Object.keys(params || {}).forEach((k) => {
+      const v = params[k];
+      if (v !== null && v !== undefined && v !== '') q.set(k, String(v));
+    });
+    const s = q.toString();
+    return s ? '?' + s : '';
+  }
 
-  function navigate(screen, p) {
+  function navigate(screen, params) {
     if (!SCREENS.includes(screen)) throw new Error('unknown screen: ' + screen);
-    const q = query(p);
-    const hash = screen + (q ? '?' + q : '');
     const here = loc();
+    const hash = screen + query(params);
     if (here) {
       const history = root.history;
       // pushState keeps programmatic navigation and popstate on one path; the
@@ -88,8 +95,11 @@
     };
   }
 
-  // The params are part of the key: changing a filter and nothing else still has to emit.
-  const key = (r) => r.view + '\0' + r.screen + '\0' + query(r.params);
+  // The params are part of the route: moving from one sheet to the next changes nothing else,
+  // and a subscriber that never saw it would keep painting the sheet before it.
+  const key = (r) =>
+    r.view + '\0' + r.screen + '\0' +
+    Object.keys(r.params).sort().map((k) => k + '=' + r.params[k]).join('&');
 
   // One user action can produce both a popstate and a hashchange; subscribers
   // only ever see a route that differs from the one they last saw.

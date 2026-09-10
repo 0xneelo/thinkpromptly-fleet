@@ -96,6 +96,7 @@ FD.fixture = Object.assign(FD.fixture || {}, {
       machines: ['Machines', 'Which account each AI client is signed in as, per machine. No install needed — identities are read over ssh.'],
       goals: ['Goals', 'The red thread, managed by the goalkeeper and the operator. Written only through the goalkeeper CLI.'],
       docs: ['Docs', 'Every artifact, explainer and session doc the sessions produce, by day and by session.'],
+      unblock: ['Unblock', 'Decision sheets the seats posted. One click per card, then send the answers back to the seat that asked.'],
       desktop: ['Desktop sessions', 'Claude Desktop Code tabs across your accounts and machines. Find a conversation, see where it runs, and reach a live session.'],
     },
 });

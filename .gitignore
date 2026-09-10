@@ -11,3 +11,5 @@ deploy-keys/fleet-tailnet.env
 # scratch dirs used by build/verify tooling
 .tmp/
 .tmp2/
+# operator-local secrets, mode 600, never committed
+.secrets/

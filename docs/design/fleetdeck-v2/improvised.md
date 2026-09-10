@@ -2259,3 +2259,30 @@ before (operator refinement, same day: "whatever is used up more"). Open rows ar
 5 hour, 7 day, the model weeklies, extra usage — so the fixture render and the pixel gate are
 untouched (fixture mode never has a closed live row). Hand-edited in both `template.dc.html`
 and `logic.js` (no playwright on this Mac); `npm run v2:compile` must reproduce it byte for byte.
+
+### I-L12-08 — a desktop row is matched on three identities, and its worktree as a fallback
+
+**Serves:** "Group by · Project". Data-only. Found on the live deck, 2026-09-08: eighteen desktop
+rows sat under "No project" when every one of them had a `cwd`.
+
+`/api/desktop-sessions` names a seat three ways — `cliSessionId`, the collector's row `id`, and
+`liveName`, the registry slug (`session-filters-grouping-28ba5c-3d`). **Only the slug appears in
+`/api/messages` `targets[]`**, which is where the rail's ids come from, and the first cut keyed the
+project map on the other two. So the rows that resolved were the handful opened through an
+`id:<uuid>` deep link, and every ordinary live seat fell through. All three identities are now keys.
+
+The fetch also had to move. It fired from `open()` only, so a rail built by the poll — the normal
+case — never warmed the map at all; `build()` now triggers it whenever a desktop row is present, and
+the promise is cached, so it stays one request per page load. That widens L6's "messages and sessions
+and nothing else" contract by one endpoint for a rail that has desktop rows; the test is split in two
+to say so rather than silently relaxed.
+
+**A seat that has gone offline keeps its slug in the message history but loses its `liveName`,** so
+the exact keys still miss it. Its slug opens with the worktree directory (`messaging-live-sessions-d52c83-2b`
+from the worktree `messaging-live-sessions-d52c83`), and that directory's own repo names the project,
+so a directory→project map is the fallback, longest match first — a shorter directory that prefixes a
+longer one cannot claim the longer one's seats. Exact keys always win, so the prefix rule never
+overrides a seat the registry actually knows.
+
+On the live deck this took "No project" from 18 rows to **1**: `current`, the placeholder target the
+server resolves to a real session only at delivery, so there is nothing for the client to look up.

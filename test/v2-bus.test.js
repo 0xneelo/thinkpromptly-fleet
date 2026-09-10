@@ -151,9 +151,24 @@ test.afterEach(() => {
 // BEHAVIOUR §1 — data
 // ---------------------------------------------------------------------------
 test('reads GET /api/messages?limit=50 and GET /api/sessions, and nothing else', async () => {
-  const { calls } = await boot();
+  // No desktop row on the rail, so the desktop-sessions read below never fires.
+  const { calls } = await boot({ messages: { messages: [], targets: [] } });
   assert.deepStrictEqual(calls.map((c) => c.method + ' ' + c.url).sort(),
     ['GET /api/messages?limit=50', 'GET /api/sessions']);
+});
+
+test('a rail with a desktop row also reads /api/desktop-sessions, once', async () => {
+  // That endpoint carries the title and the cwd, so a desktop row cannot be labelled
+  // or given a project without it. The promise is cached: a second poll re-reads
+  // nothing (I-L12-08).
+  const { calls, bus } = await boot();
+  const ds = () => calls.filter((c) => c.url.indexOf('/api/desktop-sessions') === 0).length;
+  assert.ok(calls.some((c) => c.url.indexOf('/api/desktop-sessions') === 0),
+    'the fixture rail has desktop rows, so the read happened');
+  assert.strictEqual(ds(), 1);
+  await bus.refresh();
+  await settle();
+  assert.strictEqual(ds(), 1, 'a later poll re-reads nothing');
 });
 
 test('groups messages into one thread per other party, oldest message first', async () => {
@@ -778,6 +793,49 @@ test('a desktop row takes its project from the seat cwd, worktree or not', async
   assert.strictEqual(row(WORKTREE_SEAT).project, expectProject(WORKTREE_SEAT.cwd));
   assert.ok(!row(WORKTREE_SEAT).project.includes('worktrees'));
   assert.strictEqual(row(PLAIN_SEAT).project, expectProject(PLAIN_SEAT.cwd));
+});
+
+test('a live desktop row finds its project through the registry slug', async () => {
+  // The deck offers a live seat as a plain target name -- the registry slug, which is
+  // what /api/desktop-sessions calls `liveName`. Keying only on cliSessionId/id left
+  // every one of those rows under "No project" (operator, 2026-09-08).
+  const withSlug = (() => {
+    for (const g of DESKTOP.groups || []) {
+      for (const x of g.sessions || []) if (x.liveName && x.cwd) return x;
+    }
+    throw new Error('the desktop-sessions fixture has no row with a liveName and a cwd');
+  })();
+  const { FD, bus } = await boot({
+    messages: { messages: [], targets: [{ type: 'claude-desktop', session: withSlug.liveName }] },
+  });
+  bus.attach(fakeHost());
+  await settle();
+  await settle();
+  const row = FD.fixture.busSessions.find((r) => r.id === withSlug.liveName);
+  assert.ok(row, 'the slug target is on the rail');
+  assert.strictEqual(row.project, expectProject(withSlug.cwd));
+});
+
+test('an offline seat still finds its project through its worktree directory', async () => {
+  // The registry drops a dead seat's slug, so the exact keys miss. The slug still
+  // opens with the worktree directory, and that directory names the project.
+  const wt = (() => {
+    for (const g of DESKTOP.groups || []) {
+      for (const x of g.sessions || []) if ((x.cwd || '').includes('/.claude/worktrees/')) return x;
+    }
+    throw new Error('the desktop-sessions fixture has no worktree row');
+  })();
+  const dir = wt.cwd.replace(/\/+$/, '').split('/').pop();
+  const deadSlug = dir + '-zz';          // same worktree, a seat the registry forgot
+  const { FD, bus } = await boot({
+    messages: { messages: [], targets: [{ type: 'claude-desktop', session: deadSlug }] },
+  });
+  bus.attach(fakeHost());
+  await settle();
+  await settle();
+  const row = FD.fixture.busSessions.find((r) => r.id === deadSlug);
+  assert.ok(row, 'the dead slug is on the rail');
+  assert.strictEqual(row.project, expectProject(wt.cwd));
 });
 
 test('a box row takes its project from the session-name prefix', async () => {

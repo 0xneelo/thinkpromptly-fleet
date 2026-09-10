@@ -12,6 +12,7 @@ const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
 const { coordinatorRoute } = require('./coordinator-api');
 const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
 const { DocsIndex, defaultRoots } = require('./docs-index');
+const { createUnblock } = require('./unblock');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -3072,6 +3073,16 @@ function send(res, code, type, body) {
 
 const json = (res, obj, code = 200) => send(res, code, 'application/json', JSON.stringify(obj));
 
+// --- unblock: the operator's answers to a seat's decision sheet. Loopback only, like /api/goals.
+const unblockRoute = createUnblock({
+  db,
+  messageBus,
+  send,
+  json,
+  body,
+  allowedOrigins: ALLOWED_ORIGINS,
+});
+
 // --- registry. Shared by both listeners: orchestrators curl from loopback, box workers
 // over tailnet. Agent POSTs carry no Origin header, so the gate rejects a *foreign*
 // origin rather than a missing one; every value is validated before any write. Host
@@ -3484,6 +3495,9 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/goals') return await goalsRoute(req, res);
     if (p === '/api/docs') return await docsRoute(req, res, url);
     if (p === '/api/docs/open') return docsOpen(req, res, url);
+    // Loopback only, and deliberately absent from tailnetHandler: a decision sheet is the
+    // operator's, and no box worker may read one or answer for them.
+    if (p === '/api/unblock' || p.startsWith('/api/unblock/')) return await unblockRoute(req, res, p);
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     // Loopback only, and deliberately absent from tailnetHandler (M13).
     // The epoch is deliberately withheld: it is the credential fenceCheck trusts, and this
