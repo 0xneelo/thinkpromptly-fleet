@@ -175,6 +175,7 @@ input:focus,select:focus,textarea:focus{outline:none;}
       <button onClick="{{ A_goKeys }}" title="SSH keys" style="{{ A_navKeys }}" style-hover="background:{{ A_hoverBg }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"></circle><path d="m10.7 12.3 8.8-8.8"></path><path d="m15 5 3 3"></path><path d="m18 8 2-2"></path></svg><span style="{{ A_navLabel }}">SSH keys</span></button>
       <button onClick="{{ A_goAccounts }}" title="Accounts" style="{{ A_navAccounts }}" style-hover="background:{{ A_hoverBg }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg><span style="{{ A_navLabel }}">Accounts</span></button>
       <button onClick="{{ A_goMachines }}" title="Machines" style="{{ A_navMachines }}" style-hover="background:{{ A_hoverBg }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="7" rx="1.5"></rect><rect x="2" y="14" width="20" height="7" rx="1.5"></rect><path d="M6 6.5h.01"></path><path d="M6 17.5h.01"></path></svg><span style="{{ A_navLabel }}">Machines</span></button>
+      <button onClick="{{ A_goGoals }}" title="Goals" style="{{ A_navGoals }}" style-hover="background:{{ A_hoverBg }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path><path d="M4 22v-7"></path></svg><span style="{{ A_navLabel }}">Goals</span></button>
       <button onClick="{{ A_goDesktop }}" title="Desktop sessions" style="{{ A_navDesktop }}" style-hover="background:{{ A_hoverBg }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><path d="M8 21h8"></path><path d="M12 17v4"></path></svg><span style="{{ A_navLabel }}">Desktop sessions</span></button>
     </nav>
     <sc-if value="{{ A_leftOpen }}" hint-placeholder-val="{{ true }}">
@@ -664,6 +665,13 @@ input:focus,select:focus,textarea:focus{outline:none;}
             </div>
           </sc-for>
         </div>
+      </sc-if>
+
+      <!-- The Goals screen is drawn entirely by public/v2/screens/goals.js: its content is the
+           goalkeeper's own thread and goals, which have no counterpart in the mock. This is the
+           mount node and nothing else. -->
+      <sc-if value="{{ A_isGoals }}" hint-placeholder-val="{{ false }}">
+        <div id="fd-goals-root" data-screen-label="Goals" style="display:flex;flex-direction:column;gap:14px;"></div>
       </sc-if>
 
       <sc-if value="{{ A_isDesktop }}" hint-placeholder-val="{{ false }}">
@@ -1306,6 +1314,7 @@ class AppLogic extends Sub {
       keys: ['SSH keys', 'Short-lived certs signed by the CA held in 1Password. Private keys stay on disk and are never shown here.'],
       accounts: ['Accounts', 'Usage per AI account, most constrained first. Machines report percentages only.'],
       machines: ['Machines', 'Which account each AI client is signed in as, per machine. No install needed — identities are read over ssh.'],
+      goals: ['Goals', 'The red thread, managed by the goalkeeper and the operator. Written only through the goalkeeper CLI.'],
       desktop: ['Desktop sessions', 'Claude Desktop Code tabs across your accounts and machines. Find a conversation, see where it runs, and reach a live session.'],
     };
     // Desktop sessions
@@ -1764,7 +1773,7 @@ class AppLogic extends Sub {
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
       rowPadY: compact ? '7px' : '11px', cardPad: compact ? '14px 16px' : '18px 20px',
       isWindows: screen === 'windows', isOrg: screen === 'org', isRegistry: screen === 'registry',
-      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isDesktop: screen === 'desktop',
+      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isGoals: screen === 'goals', isDesktop: screen === 'desktop',
       goDesktop: () => this.setState({ screen: 'desktop' }), navDesktop: navBtn(screen === 'desktop'),
       dq: this.state.dq, setDq: (e) => this.setState({ dq: e.target.value }), resetDs: () => this.setState({ dq: '', dsExp: {} }),
       dsGroups, dsCount, dsLive,
@@ -1775,8 +1784,9 @@ class AppLogic extends Sub {
       goKeys: () => this.setState({ screen: 'keys' }),
       goAccounts: () => this.setState({ screen: 'accounts' }),
       goMachines: () => this.setState({ screen: 'machines' }),
+      goGoals: () => this.setState({ screen: 'goals' }),
       navWindows: navBtn(screen === 'windows'), navOrg: navBtn(screen === 'org'), navRegistry: navBtn(screen === 'registry'),
-      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'),
+      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'), navGoals: navBtn(screen === 'goals'),
       toggleMode: () => {
         const next = !this.isDark();
         try { localStorage.setItem('fd-landing-dark', next ? '1' : '0'); } catch (e) {}

@@ -94,6 +94,7 @@ FD.fixture = Object.assign(FD.fixture || {}, {
       keys: ['SSH keys', 'Short-lived certs signed by the CA held in 1Password. Private keys stay on disk and are never shown here.'],
       accounts: ['Accounts', 'Usage per AI account, most constrained first. Machines report percentages only.'],
       machines: ['Machines', 'Which account each AI client is signed in as, per machine. No install needed — identities are read over ssh.'],
+      goals: ['Goals', 'The red thread, managed by the goalkeeper and the operator. Written only through the goalkeeper CLI.'],
       desktop: ['Desktop sessions', 'Claude Desktop Code tabs across your accounts and machines. Find a conversation, see where it runs, and reach a live session.'],
     },
 });

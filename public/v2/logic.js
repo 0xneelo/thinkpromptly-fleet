@@ -1210,6 +1210,10 @@ class AppLogic extends Sub {
       panel: t.panel, panelShadow: t.panelShadow, track: t.track, hoverBg: t.hoverBg,
       cardPad: compact ? '14px 16px' : '18px 20px',
     };
+    // The Goals screen draws itself in plain DOM into its own mount node, so it paints in the
+    // same tokens as the accounts chrome and follows the theme toggle with it.
+    FD.screens.goals = FD.screens.goals || {};
+    FD.screens.goals.tokens = FD.screens.accounts.tokens;
     const accTone = (lvl) => (lvl === 'red' ? t.bad : lvl === 'amber' ? t.warn : t.good);
     // An aged-out window draws at the width it last held, in grey: the shape of the reading
     // survives, the colour no longer claims it is current.
@@ -1261,7 +1265,7 @@ class AppLogic extends Sub {
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
       rowPadY: compact ? '7px' : '11px', cardPad: compact ? '14px 16px' : '18px 20px',
       isWindows: screen === 'windows', isOrg: screen === 'org', isRegistry: screen === 'registry',
-      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isDesktop: screen === 'desktop',
+      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isGoals: screen === 'goals', isDesktop: screen === 'desktop',
       goDesktop: () => this.setState({ screen: 'desktop' }), navDesktop: navBtn(screen === 'desktop'),
       dq: this.state.dq, setDq: (e) => this.setState({ dq: e.target.value }), resetDs: () => this.setState({ dq: '', dsExp: {} }),
       dsGroups, dsCount, dsLive,
@@ -1272,8 +1276,9 @@ class AppLogic extends Sub {
       goKeys: () => this.setState({ screen: 'keys' }),
       goAccounts: () => this.setState({ screen: 'accounts' }),
       goMachines: () => this.setState({ screen: 'machines' }),
+      goGoals: () => this.setState({ screen: 'goals' }),
       navWindows: navBtn(screen === 'windows'), navOrg: navBtn(screen === 'org'), navRegistry: navBtn(screen === 'registry'),
-      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'),
+      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'), navGoals: navBtn(screen === 'goals'),
       toggleMode: () => {
         const next = !this.isDark();
         try { localStorage.setItem('fd-landing-dark', next ? '1' : '0'); } catch (e) {}

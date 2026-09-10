@@ -395,11 +395,16 @@ def claude_cli(home, where):
             # Not while a refusal's deadline stands: that call would only re-arm it.
             # A sweep outside the deck's hourly window claims no usage state at all — no
             # numbers is not a failed read — and leaves the refusal stamp untouched.
-            usage, ustate = None, None
+            # Every attempt and every stand-down is also stated as a fact with a stamp on it,
+            # because `note` is one line that the next sweep overwrites: the deck keeps these
+            # and the Accounts page lists them, so a run of refusals can be read afterwards.
+            usage, ustate, ucall = None, None, None
             if not READ_USAGE:
                 note = "usage read skipped this sweep (hourly schedule)"
+                ucall = {"at": int(time.time()), "code": None, "retry_after": None,
+                         "pause": None, "skipped": "schedule", "ok": False}
             else:
-                left = backoff_left(home)
+                pause, left = None, backoff_left(home)
                 if left:
                     ucode, ubody, retry = 429, None, None
                     note = "usage call skipped, endpoint asked for a %ds pause" % left
@@ -427,10 +432,12 @@ def claude_cli(home, where):
                     note = ("usage call got no answer" if not ucode else
                             "usage reply was not the object expected" if ucode == 200 else
                             "usage call refused with HTTP %d" % ucode)
+                ucall = {"at": int(time.time()), "code": ucode or None, "retry_after": retry,
+                         "pause": pause, "skipped": "backoff" if left else None, "ok": ok}
             return entry("claude_cli", where, state="ok", signed_in=True, proof="profile",
                          email=a.get("email") or a.get("email_address"), org=g.get("uuid"),
                          tier=g.get("rate_limit_tier"), plan=g.get("organization_type"),
-                         usage_state=ustate, usage=usage, note=note, **base)
+                         usage_state=ustate, usage=usage, usage_call=ucall, note=note, **base)
         # A token refused and not refreshable: the config is the only fallback, and it is
         # labelled as one because it can name a different account than the token.
         state = "token_expired" if code in (401, 403) else "rate_limited" if code == 429 else "error"
