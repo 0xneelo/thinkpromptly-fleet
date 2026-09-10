@@ -111,7 +111,8 @@ test('verify refuses ambiguous credential paths before any SSH or key inspection
 test('sudoers renderer permits only an exact unit and never a shell or wildcard', () => {
   const render = app => spawnSync('bash',['deploy-keys/render-sudoers.sh','--app',app],{encoding:'utf8'});
   assert.match(render('onboarding').stdout,/deploy ALL=\(root\) NOPASSWD: \/usr\/bin\/systemctl restart onboarding.service/);
-  for (const app of ['*','foo;id','../foo','foo bar','$(id)']) assert.notEqual(render(app).status,0);
+  assert.equal(render('onboarding.service').stdout,render('onboarding').stdout);
+  for (const app of ['*','foo;id','../foo','foo bar','$(id)','.service']) assert.notEqual(render(app).status,0);
 });
 test('Linux rollback preview restores exact snapshot and disables newly created deploy without writes', () => fixtures(root => {
   const backup=path.join(root,'etc/ssh/ca-rotation-backups/example');
