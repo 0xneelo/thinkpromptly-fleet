@@ -103,7 +103,7 @@ def lane_full(lane, index, now):
         "    reported_at %s · verified_at %s · %s"
         % (stamp(lane.get("reported_at")), stamp(lane.get("verified_at")),
            due_note(lane.get("next_report_due"), now)),
-        "    evidence: %s" % (" · ".join(str(item) for item in evidence)
+        "    evidence: %s" % (str(evidence[0])
                               if isinstance(evidence, list) and evidence else "none"),
     ]
 

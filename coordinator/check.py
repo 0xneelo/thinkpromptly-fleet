@@ -456,6 +456,9 @@ def selftest_bundle(now, checked):
     check("    goal: ship the L2 pipeline to production" in lines,
           "a live lane must render in full")
     checked += ["bundle: quiet lane summarised", "bundle: live lane in full"]
+    check(bundle.lane_full(fixture_lane("L1", evidence=["git:first", "git:second"]), 0, now)[-1]
+          == "    evidence: git:first", "D-304: a lane must render only its first evidence pointer")
+    checked.append("bundle: exactly the first evidence pointer per lane (D-304)")
 
     # The gate still trips on a genuinely oversized board.
     huge = fixture_board([fixture_lane("L1", goal="x " * bundle.BUNDLE_GATE_BYTES)])
