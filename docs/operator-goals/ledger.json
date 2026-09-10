@@ -1,6 +1,6 @@
 {
- "project": "weave",
- "updated": "2026-09-06",
+ "project": "remote-system",
+ "updated": "2026-09-10",
  "goals": [
   {
    "id": "G1",
@@ -98,6 +98,33 @@
    "log": [
     {
      "at": "2026-09-06",
+     "note": "added"
+    }
+   ]
+  },
+  {
+   "id": "G3",
+   "goal": "Prod VPS ssh alerts reach Telegram: a login from a new IP and the 06:00Z daily brute-force summary (pinned) land in a chat the operator reads",
+   "why": "sshd on 138.199.198.246 was hardened 2026-09-10; the alert hook and summary timer are live but /etc/ssh-alert.env is missing, so nothing is sent",
+   "asks": [],
+   "theme": "ops",
+   "asked": "2026-09-10",
+   "status": "active",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "docs/goals/vps-ssh-alerts-telegram/ (pack tbd); lowcap memory prod-vps-ssh-hardened-2026-09-10"
+    }
+   ],
+   "sources": [
+    "operator via lowcap session great-wescoff: 'hand this off to a fleetdeck operator so we can build the tg bot from there'"
+   ],
+   "updated": "2026-09-10",
+   "log": [
+    {
+     "at": "2026-09-10",
      "note": "added"
     }
    ]
