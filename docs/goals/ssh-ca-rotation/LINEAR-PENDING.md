@@ -69,3 +69,25 @@ prepared; 46 focused passes, no failures, one intentionally unrun signing integr
 The signing test requires clarification of the hard no-minting rule; no exception has
 been received and none is inferred. Linear retry: oauth_token_invalid_grant.
 Would-be milestone/final comments are in REPORT.md; nothing posted. Signed: Ivo
+
+## Final repository receipt — 2026-09-10T21:28:00Z
+
+Project remote-system / deploy-keys. Tag agent-ivo; labels agent:agent-ivo,
+project:remote-system, subproject:deploy-keys, session:cli-worker.
+
+All M1–M5 implementation commits are pushed and independently verified; REPORT.md
+contains every full SHA. M5: 9d65bca6e4f026408db7d72f16da96c0bc5193a4. Final hardening:
+bce90453daae2af0710f2eca6d9aa2a019d14f1e. Final suite: 756 tests, 754 pass, one explicitly
+exempt credits 3 !== 1 failure, one unrun signing test. No lane regression remains among
+executed tests. Focused 46 pass / 0 fail / 1 unrun; offline browser and ShellCheck pass.
+
+Would-be operator:decision issue: [Ivo · security-engineer] Resolve M1 signing-test versus
+absolute no-minting/private-file rule. Options: keep the hard prohibition and accept an
+explicitly deferred signing integration, or approve only isolated throwaway signing with
+cleanup, no agent, no real CA, and no ~/.ssh reads. Recommendation: keep the prohibition
+until the operator explicitly decides. No exception has been received or assumed.
+
+Inherited npm pretest title drift remains needs:general, without an exemption claim.
+No Linear operation succeeded; no Done status or comment is claimed. Full acceptance is
+not asserted. Actual host applies and Mac discovery remain outside this repository lane.
+Signed: Ivo

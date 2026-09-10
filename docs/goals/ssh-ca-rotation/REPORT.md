@@ -1,126 +1,136 @@
-# SSH CA rotation — repository delivery report
+# SSH CA rotation — final repository delivery report
 
-Author: Ivo (security-engineer), `agent-ivo`.
-Project: remote-system / deploy-keys. Branch: `agent-ssh-ca-rotation`.
-Base: `162f600`. Status: implementation in progress; no host acceptance claimed.
+**Ivo · security-engineer · agent-ivo**
 
-## M1
+Project: **remote-system / deploy-keys**. Worktree: `ssh-ca-rotation`.
 
-Added CA_PUB/--ca-pub precedence, v2 Key ID tagging, Daily/Admin profiles, strict
-profile/principal/TTL checks, non-minting --dry-run, isolated test-signing seam,
-and refusal to overwrite existing output directories.
-Regression: before implementation 1 pass / 4 fail / 1 skipped; after implementation
-5 pass / 0 fail / 1 skipped. The skipped real-signing test requires explicit permission
-because this lane prohibits minting and private files. ShellCheck 0.11.0: clean.
-Ivo performed reads, implementation, and self-review directly under the Codex exception;
-no subagents. Review found no remaining M1 issue; real-signing validation is outstanding.
-Pushed and independently verified SHA: `d36b6db659af13044dc462d21f0bca3edbcfecb4`.
+Branch: `agent-ssh-ca-rotation`; launch base: `162f600`.
 
-## Operational boundaries
+**M1–M5 repository artifacts are pushed. Full acceptance is not claimed:** the required
+real-signing integration test remains unrun under the explicit no-minting/private-file
+rule. An exception was requested; none has been received. No host operation is authorized
+or implied by this delivery. RUNBOOK.md is the future owner apply plan.
 
-No SSH to any host, no minting, no agent socket access, no ~/.ssh reads or writes.
-No host apply, Mac deck restart, ~/.claude edit, other branch or worktree change.
-The prescribed badge --show returned WORKER / Ivo. Registry POST returned 401; the
-seat fence was respected with no retry. Linear scan returned oauth_token_invalid_grant;
-issues/comments remain in LINEAR-PENDING.md, not posted. No issue IDs fabricated.
-Canonical git committer: 0xneelo <204101082+0xneelo@users.noreply.github.com>.
+## Pushed milestones
 
-Signed: Ivo
+Every row was pushed using a newly brokered token in GH_TOKEN only and independently
+verified against `git ls-remote` with another fresh broker token. No token in argv, URL,
+file, log, or report. Canonical author/committer is
+`0xneelo <204101082+0xneelo@users.noreply.github.com>`; hooks were not bypassed.
 
-## M2
+| Milestone | Pushed SHA | Delivered artifacts |
+|---|---|---|
+| M1 | `d36b6db659af13044dc462d21f0bca3edbcfecb4` | mint profiles, public-CA overrides, ca2 tag, no-mint preview, test seam |
+| M2 | `a17053c21e3ceca6f93e7a5043a2e239f6ec504e` | dual-CA trust transactions, Windows SYSTEM restart/recovery, rog-strix scripts |
+| M3 | `9da5f1a02dc08ebd5f0f3b4a1e70f9fa040eec5e` | five principal template sets, account/config apply, verification, aliases, sudoers template |
+| M4 | `51b95537ce9e03ea30c965d24fc29cc23f4a90b6` | Daily/Admin keys controls, validated mint route, manual logic.js mirror, tests |
+| M5 | `9d65bca6e4f026408db7d72f16da96c0bc5193a4` | RUNBOOK.md, final-state AGENT/README docs, rollback/retirement preview tests |
+| Final hardening | `bce90453daae2af0710f2eca6d9aa2a019d14f1e` | protected policy-path checks, inheritable SYSTEM recovery ACLs, fixture render guard |
 
-Implemented Linux and Windows multi-CA trust transactions with exact file previews,
-validation, failure restore, explicit rollback commands, and retained backups. Windows
-restart is detached under SYSTEM. Public-only offline fixtures: 6 tests pass, including
-Linux validation/reload failure restoration and both Windows DryRun/WhatIf modes.
-ShellCheck and PowerShell parser clean. Ivo self-review: fixed Windows PowerShell 5
-compatibility and replaced additive ACL grants with explicit protected DACLs.
+Commit links use the actual origin repository:
+[history of this branch](https://github.com/0xneelo/thinkpromptly-fleet/commits/agent-ssh-ca-rotation).
+The later report-only receipt commit records these immutable implementation SHAs.
 
-The rog-strix inputs stay verbatim in inputs/. Their deploy-keys counterparts necessarily
-change beyond append logic to meet the binding dry-run/rollback/no-transport constraints:
-bootstrap now prints a local owner command; rotation never adds the bootstrap fallback.
-Its public fingerprint identifies 1Password wsl-machine, not the CA.
-M2 pushed and independently verified SHA: `a17053c21e3ceca6f93e7a5043a2e239f6ec504e`. Linear retry still oauth_token_invalid_grant; entries remain pending.
+## Acceptance against README 1–5
 
-Baseline prerequisite finding: npm test stops at pretest fixture title drift (goals/unblock).
-The direct test suite is running separately. No exemption is assumed for this preflight;
-it will be reported and queued if outside this lane.
+| # | Status | Evidence / limitation |
+|---|---|---|
+| 1 | **OPEN** | **756 total: 754 pass, 1 explicitly exempt credits failure (3 !== 1), 1 unrun signing test**. Focused tests: 46 pass, 0 fail, 1 unrun opt-in signing test. All other lane regressions fixed. `npm test` also has inherited pretest fixture-title drift; no exemption is claimed for it. |
+| 2 | PASS (repository/offline) | ShellCheck 0.11.0 clean on all 6 new/changed .sh entry scripts. All 4 delivered PowerShell files parse. Windows DryRun/WhatIf and Linux dry-runs preserve exact fixture snapshots; rollback previews and Linux validation/reload failure restoration pass. No real apply was executed. |
+| 3 | PASS (scan + diff review) | Full-branch git grep for private-key/certificate blobs and recognized token formats: 0 matching files. Changes reviewed contain public keys/fingerprints, code, and synthetic test fixtures only. No operational credential material committed or reported. |
+| 4 | PASS | No SSH to any host, no certificate minting or key generation, no agent-socket access, and no read/write of the worker's ~/.ssh. No host apply, Mac deck restart, ~/.claude file edit, other branch/worktree mutation, or sibling-agent orchestration. |
+| 5 | PASS (repository) | RUNBOOK.md covers S1→S5, named owners, 5-host command/check/rollback tables, Windows task completion, CA overlap, 15-check role/scope matrix, Mac discovery/deletion gates, collisions, and all four TO-DISCOVER consumer rows. All 9 referenced script entry files exist. |
 
-Signed: Ivo
+The real-signing test is present in `test/deploy-cert-mint.test.js`, guarded by
+`SSH_CA_ALLOW_TEST_MINT=1`. It generates temporary credentials, signs through a test-only
+file signer, inspects SSH metadata, and deletes its temporary directory. It is **not run**
+in this goal. It requires a direct exception to the hard prohibition; elapsed time is not
+approval. Therefore “all new tests pass” cannot be asserted without qualification.
 
-## M3
+## Validation details
 
-Five principal template directories, Linux/Windows local account/config apply, explicit
-legacy-principal and v1 retirement modes, certificate-only verify script, staged SSH alias
-example, and exact-unit sudoers template/renderer added. Existing machines.json already
-uses the five deploy aliases; alias User changes are staged for owners, not activated.
-No guessed sixth-host trust. Linux effective policy is checked before reload. Rollback
-disables a newly created account and retains its files. Windows restores saved ACLs.
+- M1 red-before-green: 1 pass / 4 fail / 1 skipped before implementation, then 5 pass /
+  0 fail / 1 skipped. Covers profile/principal/TTL validation, public override precedence,
+  v1/non-v1 Key ID distinction, and zero-write previews.
+- Trust/principals/verify/renderer: final **18/18** pass, with PowerShell running offline
+  from a local 7.4.6 runtime. Tests include both Windows dry-run spellings, last-CA refusal,
+  rollback bytes/ACL previews, no fixture mutation, and fake transport success/refusal/error
+  distinction. Python transaction tests inject validation/reload failures against temporary
+  public configuration; all service/account commands are mocked.
+- Keys and actual mint route: **23/23** pass. Requests exercise the existing Origin fence,
+  fixed durations, approved/duplicate/unknown tags, arbitrary-principal rejection, and exact
+  spawn arguments with the mint process mocked.
+- Offline Playwright: Daily default, tags hidden until Admin, label-keyed chip join, unknown
+  vibes-asus disabled, both mocked request bodies, no page errors, and isolated mint-card
+  layout at 390px. Every request is fulfilled locally; no live API or mint is contacted.
+  The surrounding desktop shell has an existing narrow-viewport limitation, queued separately.
+- The first full suite after M4 found 9 fixture-render regressions caused by accessing
+  absent FD.screens. Corrected the presence/shape guard; all **32/32** bus/keys/route tests
+  and the browser proof then passed. These failures are not exempted.
+- Final full suite: **756 total: 754 pass, 1 explicitly exempt credits failure (3 !== 1), 1 unrun signing test**. The only allowed observed failure is the existing
+  credits discovery `3 !== 1`. The separately allowed routable-screen failure did not occur.
+- `npm test` pretest fails before running tests: extractor titles omit `goals`/`unblock`
+  present in fixture.js. This was observed before lane code changes. The extractor,
+  fixture.js, and template.dc.html are byte-identical to the launch base (git diff empty).
+  This is recorded as needs:general in LINEAR-PENDING.md, not silently exempted. Direct
+  suite invocation is `node --test --test-concurrency=1 test/*.test.js` with isolated HOME,
+  SSH_AUTH_SOCK unset, and real SSH blocked by the test PATH wrapper.
+- Dependencies were installed only in this worktree; `npm rebuild node-pty` resolved the
+  initial missing native module. No global package installation or host configuration changed.
 
-16/16 trust/principal/verify/renderer tests pass on offline fixtures; combined with M1:
-21 pass, 0 fail, 1 opt-in real-signing test unrun. All six changed/new shell entry scripts
-are ShellCheck clean; PowerShell parser clean. Self-review by Ivo, no subagents: corrected
-rollback account disabling and ACL restoration, and preserved Linux existing file modes.
-M3 pushed and independently verified SHA: `9da5f1a02dc08ebd5f0f3b4a1e70f9fa040eec5e`. Linear retry remains oauth_token_invalid_grant.
+The branch-wide material scan was run with git grep, not inferred from git status:
 
-Signed: Ivo
+```bash
+git grep -IlE -- '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----|ssh-[a-z0-9-]+-cert-v01@openssh.com[[:space:]]+[A-Za-z0-9+/=]{32,}|gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{40,}|sk-(proj-)?[A-Za-z0-9_-]{40,}'
+```
 
-## M4
+Exit 1 / no matches. A corresponding staged-branch scan included the new runbook/report.
+This is a format scan plus human diff review, not a claim that regex detects every possible
+secret. Repository-only S4 search for id_ed25519 in server.js/machines.json also returned
+no matches. Mac-side discovery remains for its owner; the worker did not inspect those files.
 
-Daily/Admin profile controls and additive Admin tag chips shipped in the v2 keys screen.
-Daily defaults to deploy/8h; Admin to admin/1h. Unknown vibes-asus is disabled.
-Label-keyed chip join preserved. The server rejects unknown fields/tags, duplicate tags,
-profile/TTL conflicts, arbitrary principals, and caller-supplied CA paths before spawning.
-The existing Origin fence is unchanged. Legacy API payloads with principals now return 400;
-operator CLI legacy -n remains available for transition. logic.js was mirrored by hand;
-the compiler was not run. Impeccable product guidance used with the existing screen and
-the user's prescribed controls; no broader design/context setup was introduced.
+## Review decisions and limitations
 
-23/23 unit/actual-route tests pass. Playwright offline browser proof passes: Daily default,
-Admin tags, label join, unknown host disabled, mocked request bodies, no page errors, and
-the isolated mint card at 390px. No request reached a live API and no mint process ran.
-Phone-width full-shell layout is an existing limitation, not claimed fixed by this lane.
-Self-review by Ivo, no subagents: API payload and DOM chip joins checked; no remaining M4
-findings. M4 pushed and independently verified SHA: `51b95537ce9e03ea30c965d24fc29cc23f4a90b6`. Linear retry still oauth_token_invalid_grant.
+Ivo performed every read, edit, pre/post security review, and diff review directly under
+the user's explicit Codex exception. No reader/builder/reviewer/Fable agents were spawned.
+Self-review corrections included immutable mint output directories, relative output-path
+normalization, effective Linux sshd policy checks, disabled rollback accounts with retained
+data, snapshot path validation, saved ACL restoration, explicit Windows ACL inheritance,
+and refusal of unprivileged-write policy files/directories even when content is unchanged.
+Windows live ACL/service behavior remains an owner-side gate; only parsing/previews ran here.
 
-Direct pre-M4 suite after native dependency build: 750 tests, 748 pass, 1 exempt credits
-failure (3 !== 1), 1 skipped signing integration. npm pretest title drift remains separately
-recorded. Initial missing native node-pty module was resolved locally by npm rebuild node-pty.
+The archived rog-strix inputs remain **verbatim** in inputs/. Their delivered counterparts
+necessarily changed beyond CA append logic for the required dry-run/rollback guarantees:
+bootstrap now prints a local owner command, and trust scripts do not add an operator fallback
+key. This departure from “only the multi-CA change” is explicit. The bootstrap public key
+fingerprint identifies 1Password wsl-machine, not CA v2. Existing fallback authorization is
+preserved. No real v2 CA was created by this lane.
 
-Signed: Ivo
+Admin tags are alternatives, as [OpenSSH documents](https://man.openbsd.org/sshd_config),
+so `admin,promptly-only` does not restrict access. The UI makes that clear. The CLI supports
+an Admin-profile tag-only cert for the required 1-success/4-refusal check. Daily remains
+`deploy`/8h/PTY only; Admin remains 1h with default extensions. Legacy CLI -n retains the
+1h/4h/8h cap. Legacy HTTP principals payloads now return 400 and must migrate to the profile
+schema. UI rollout and CA_PUB configuration are future operator actions; the deck was not
+restarted. logic.js was mirrored manually; v2:compile was never run.
 
-## M5
+Impeccable product guidance informed the controls using the existing screen and prescribed
+UX. No new product/design setup or broader redesign was introduced. The user's lane scope
+prevailed over optional skill setup work.
 
-RUNBOOK.md covers S1 through S5 in owner order, all five local apply/preview/rollback
-commands, fresh cert-only verification matrices, think-box and backup-pull collision
-holds, Mac-only discovery and deletion gates, and the four TO-DISCOVER consumer rows.
-AGENT.md and README.md document the desired final state without claiming live changes.
-Runbook review found every referenced script exists (9 distinct entry scripts).
+## Registry, Linear, and remaining owner work
 
-Final integration self-review by Ivo tightened rollback snapshot path checks, blocked
-non-preview Windows fixture-root applies, retained operator-approved narrow sudo rules
-when retiring legacy principals, normalized relative mint output paths, and corrected
-the opt-in signing test's OpenSSH validity-skew expectation. Added Linux/Windows rollback
-previews and Windows v1 retirement coverage. No production applies/mints performed.
+Badge --show verified **WORKER / Ivo**. Registry POST for FD-ssh-ca-rotation returned
+**401**; the seat fence was respected, with no retry (including no PENDING registration).
+Linear scan and milestone retries returned **oauth_token_invalid_grant**. No issue, comment,
+assignment, or status transition is claimed. Would-be issues, milestone comments, and
+out-of-scope decisions remain in LINEAR-PENDING.md, signed Ivo.
 
-Focused checks: 47 tests, 46 pass, 0 fail, 1 opt-in signing test unrun. All six changed/new
-.sh entry scripts ShellCheck clean; all delivered PowerShell files parse clean. Full
-suite result will be recorded in the final receipt. M5 pushed and independently verified SHA: `9d65bca6e4f026408db7d72f16da96c0bc5193a4`.
-Linear retry remains oauth_token_invalid_grant; no comments or state changes posted.
+Remaining repository acceptance gaps: unrun signing integration and inherited npm pretest
+fixture-title drift. Pending owner decisions include vibes-asus trust, additive Admin tags,
+and Mac-side static-key consumers. Actual S1–S5 applies, Mac private-key deletion, consumer
+restrictions/retirements, and live login proofs are future human-gated work, outside this
+worker's authorization. The final-state documentation describes the target, not observed
+production. See RUNBOOK.md for exact future actions and rollback.
 
-Signed: Ivo
-
-## Final self-review corrections
-
-Ivo's final security audit found missing directory ACL inheritance for Windows SYSTEM
-recovery files. Explicit container/object inheritance now protects and makes recovery
-files readable by SYSTEM/Administrators. Existing policy files/directories writable by
-unprivileged users are refused before apply on both platforms, including no-op cases.
-18/18 offline trust/principals tests and PowerShell parse pass after this correction.
-
-The first post-M4 full suite exposed 9 bus fixture regressions: the new keysLive guard
-assumed FD.screens existed. Added the missing presence/shape guard. Existing bus regression
-coverage is green again: 32/32 bus/keys/mint-route tests, plus offline browser proof.
-That failed run was 745 pass / 10 fail (9 corrected regressions + 1 exempt credits) /
-1 skipped. A full suite rerun is in progress; these failures are not exempted.
-Supplementary hardening push SHA: pending. Signed: Ivo
+**Signed: Ivo**
