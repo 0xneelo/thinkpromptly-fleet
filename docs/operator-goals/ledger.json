@@ -132,6 +132,36 @@
      "note": "status → done — 2026-09-10 ~19:00Z operator confirmed both Telegram messages arrived (pinned summary + fake-login alert); env file on VPS root 600"
     }
    ]
+  },
+  {
+   "id": "G4",
+   "goal": "Desktop seats are addressable on the notify bus: orchestrator <project>, global, design|researcher|coordinator <N> resolve on the app titles the seats set",
+   "why": "lowcap seat 36 found /api/notify matches only the CLI session name, which is always derived; set_session_title never writes it, so every desktop seat alias returned 409 seat_unaddressable",
+   "asks": [],
+   "theme": "fleetdeck",
+   "asked": "2026-09-10",
+   "status": "active",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "docs/goals/notify-seat-aliases/README.md; lane Ysolde FD-notify-seat-aliases"
+    },
+    {
+     "ref": "branch agent-notify-seat-aliases"
+    }
+   ],
+   "sources": [
+    "operator word 'gpt xhigh' 2026-09-10 on seat 20's plan; finding O20-SEATS-1 from lowcap 🎛 36"
+   ],
+   "updated": "2026-09-10",
+   "log": [
+    {
+     "at": "2026-09-10",
+     "note": "added"
+    }
+   ]
   }
  ]
 }
