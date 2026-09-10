@@ -338,7 +338,7 @@
       ink: '#111', ink75: '#333', ink60: '#666', ink45: '#888', ink35: '#aaa',
       warn: '#b26a00', bad: '#c0392b', good: '#2e7d32', line: 'rgba(128,128,128,.28)',
       panel: 'transparent', panelShadow: 'none', hoverBg: 'rgba(128,128,128,.12)',
-      track: 'rgba(128,128,128,.2)', bgAll: '#ffffff', cardPad: '18px 20px',
+      track: 'rgba(128,128,128,.2)', cardPad: '18px 20px',
     };
   }
 
@@ -769,10 +769,8 @@
     var total = qs.length;
     var done = answeredIds(qs, v.answers).length;
     var pending = pendingIds(qs, v.answers);
-    // Sticky over the scrolling cards, so it must be opaque: the panel tint laid over the page
-    // colour looks like every other card without letting the cards below read through.
-    var c = card('position:sticky;top:8px;z-index:3;background:linear-gradient(' + t.panel + ',' + t.panel + '),' +
-      (t.bgAll || '#fff') + ';');
+    // Lives in the pane's head, above the scroll body, so no card ever rolls behind it.
+    var c = card('');
     c.appendChild(el('span', 'font-size:15px;font-weight:600;color:' + t.ink + ';', safeText(v.sheet.title)));
     if (v.sheet.intro)
       c.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink60 + ';', safeText(v.sheet.intro)));
@@ -989,6 +987,10 @@
     var grid = el('div', gridStyle());
     grid.appendChild(railPane(v));
     var pane = el('div', 'display:flex;flex-direction:column;min-height:0;min-width:0;');
+    // The sheet header sits in a head of its own, like the bus's thread toolbar: only the cards
+    // scroll, so nothing ever rolls behind the title, the progress and the Send buttons.
+    var head = el('div', 'flex:none;padding:18px 18px 0 18px;');
+    pane.appendChild(head);
     var body = el('div', paneBodyStyle());
     body.setAttribute('data-fd-scroll', 'pane:' + (state.id || ''));
     pane.appendChild(body);
@@ -997,7 +999,7 @@
     measure(grid);
 
     if (v.sheet) {
-      sheetHeader(body, v);
+      sheetHeader(head, v);
       var qs = (v.sheet.questions || []);
       var shown = 0;
       qs.forEach(function (q, i) {
