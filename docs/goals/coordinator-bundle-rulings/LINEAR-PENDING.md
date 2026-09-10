@@ -1,0 +1,2 @@
+# Linear pending — coordinator-bundle-rulings
+Seat 20 has no Linear MCP. Worker files ONE issue on start (project `remote-system`, labels `agent:vitus`, `project:remote-system`, `subproject:coordinator`, `session:cli-worker`): `[Vitus · python-pro] boot bundle: gate 16384 (D-318) + one evidence pointer per lane (D-304)`. 🧭 COORDINATOR 19 (lowcap) is waiting for this id for its N3 blocker line — put the id in REPORT.md.
