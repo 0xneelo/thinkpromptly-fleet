@@ -140,7 +140,7 @@
    "asks": [],
    "theme": "fleetdeck",
    "asked": "2026-09-10",
-   "status": "active",
+   "status": "done",
    "health": "moving",
    "progress": "",
    "next": "",
@@ -164,6 +164,10 @@
     {
      "at": "2026-09-11",
      "note": "status → active — 2026-09-11 woven into main as 7c10bbf; live Acceptance 2 check pending the deck restart"
+    },
+    {
+     "at": "2026-09-11",
+     "note": "status → done — 2026-09-11 00:45 local: after the deck restart (pid 90303) 'orchestrator remote-system', 'orchestrator lowcap-connector' and 'researcher 3' all resolved with resolvedVia=title; weave 7c10bbf"
     }
    ]
   },

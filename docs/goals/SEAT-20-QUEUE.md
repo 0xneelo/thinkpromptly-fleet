@@ -4,7 +4,7 @@ Open items without a Linear ID (Linear MCP is not connected in this seat). Each 
 
 ## Operator gates
 - operator · **RE-MINT the deploy cert with principals `root,vibe,misterisley,tabor`** (keys page, Touch ID, 8h). Since 2026-09-11 00:21 local `current` is a `tabor`-only cert: gb-deploy, vps-deploy, german-box and the deck's bus all refuse; Ivo/Ysolde bus messages undelivered (o20-ysolde-review-1, o20-ivo-compile-2) · memory mint-repoints-current-for-all-aliases.
-- operator · `./up.sh` restart of the Mac deck — covers 607cc86 usage-log table, 360f281 Accounts fix, 9d50afb vibes-asus chip, 4f4c1f8 Docs screen, 7c10bbf notify seat aliases, b50ba50 desktop snapshot removed (operator ruling) · 2026-09-11.
+- operator · deck restarted 00:43 local (pid 90303) with 607cc86, 360f281, 9d50afb, 4f4c1f8, 7c10bbf, b50ba50 live. Next restart needed after Ivo's weave (G5).
 - operator · lowcap VPS `/etc/ssh-alert.env` chat id still annotated (digits + " private <name>"); Mac copy fixed. Word to seat 20 ("fix vps chat id") or answer the lowcap session · great-wescoff report ~19:20Z.
 
 ## Operator decisions
@@ -18,7 +18,7 @@ Open items without a Linear ID (Linear MCP is not connected in this seat). Each 
 
 ## Watching
 - seat 20 · Ivo `FD-ssh-ca-rotation` (G5): M1–M5 + compile 1397a4a on origin; hunter found 12 (4 High), oracle pending — Ivo fixing from docs/goals/ssh-ca-rotation/AUDIT-2026-09-11.md; weave after fixes + verdict. Repo artifacts only; host applies gated per owner (think-box → lowcap seat D-90, onboarding-box → onboarding-app session, ivy-box → operator, german-box + rog-strix → seat 20 on word). Operator gates: S1 new CA in 1Password, S3 deploy users, S4 delete ~/.ssh/id_ed25519, S5 delete static keys.
-- seat 20 · G4 Ysolde WOVEN 7c10bbf (main, pushed 2026-09-11 ~01:1xZ); Acceptance 1 baseline exception granted (ruling o20-ysolde-ruling-1); review fixes 0df8959 in. Remaining: Acceptance 2 live check on the Mac after the deck restart, then G4 → done.
+- seat 20 · G4 Ysolde WOVEN 7c10bbf (main, pushed 2026-09-11 ~01:1xZ); Acceptance 1 baseline exception granted (ruling o20-ysolde-ruling-1); review fixes 0df8959 in. Acceptance 2 met 2026-09-11 00:45 local (three aliases resolvedVia=title after restart pid 90303). G4 DONE.
 - seat 20 · onboarding-box test results from the onboarding-app hardening session (confirm only).
 
 ## Landed by this seat
