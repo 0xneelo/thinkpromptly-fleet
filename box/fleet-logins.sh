@@ -45,6 +45,9 @@ for _s in (signal.SIGHUP, signal.SIGTERM): signal.signal(_s, _bail)
 HOME = os.path.expanduser("~")
 PROFILE_URL = os.environ.get("FLEET_PROFILE_URL") or "https://api.anthropic.com/api/oauth/profile"
 USAGE_URL = os.environ.get("FLEET_USAGE_URL") or "https://api.anthropic.com/api/oauth/usage"
+# The deck decides when the usage endpoint may be asked (once an hour, inside its window);
+# a sweep told to stand down proves identities only. Ruling 2026-09-10.
+READ_USAGE = os.environ.get("FLEET_READ_USAGE", "1") != "0"
 TOKEN_URL = os.environ.get("FLEET_TOKEN_URL") or "https://api.anthropic.com/v1/oauth/token"
 # Claude Code's own OAuth client and default scopes (read out of claude 2.1.261). A refresh is
 # the request the CLI makes on start-up, so what comes back is a credential the CLI accepts.
@@ -144,18 +147,35 @@ def oauth_get(url, token):
 # credentials as a deadline, and no usage call is made for it until the deadline has passed.
 # Never shorter than ten minutes: the header says when the window ends, not how sparse the
 # calls must be to stay out of it.
+# One refusal is a window; a run of them is an account the endpoint wants left alone, so each
+# consecutive refusal doubles the pause up to four hours, and the first read that answers
+# forgets the run. A 403 carries no Retry-After and comes back every time, so it starts an
+# hour up. The stamp is "<deadline> <streak>"; a stamp written before the streak existed
+# reads as streak 0.
 BACKOFF_MIN = 600
+BACKOFF_MIN_403 = 3600
+BACKOFF_MAX = 4 * 3600
 def backoff_path(home): return os.path.join(home, ".claude", ".fleet-usage-backoff")
-def backoff_left(home):
+def backoff_read(home):
     try:
-        return max(0, int(float(open(backoff_path(home)).read().strip())) - int(time.time()))
+        parts = open(backoff_path(home)).read().split()
+        return int(float(parts[0])), (int(parts[1]) if len(parts) > 1 else 0)
     except Exception:
-        return 0
-def backoff_set(home, retry_after):
+        return 0, 0
+def backoff_left(home): return max(0, backoff_read(home)[0] - int(time.time()))
+def backoff_set(home, code, retry_after):
+    streak = backoff_read(home)[1] + 1
+    floor = BACKOFF_MIN_403 if code == 403 else BACKOFF_MIN
+    pause = min(BACKOFF_MAX, max(floor, int(retry_after or 0)) * 2 ** (streak - 1))
     try:
-        with open(backoff_path(home), "w") as fh: fh.write(str(int(time.time()) + max(BACKOFF_MIN, int(retry_after or 0))))
+        with open(backoff_path(home), "w") as fh: fh.write("%d %d" % (int(time.time()) + pause, streak))
     except Exception:
         pass
+    return pause, streak
+def backoff_clear(home):
+    try: os.remove(backoff_path(home))
+    except Exception: pass
+def ordinal(n): return "%d%s" % (n, "th" if n % 100 in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th"))
 
 # One POST to the token endpoint. The body goes through a 0600 temp file (`--data-binary @`),
 # so the refresh token is no more an argument than the access token is. Returns (status, body)
@@ -373,34 +393,51 @@ def claude_cli(home, where):
             # Only a token that just proved itself is worth spending a second call on. The
             # windows belong to THIS account, so they ride with the identity that named it.
             # Not while a refusal's deadline stands: that call would only re-arm it.
-            left = backoff_left(home)
-            if left:
-                ucode, ubody, retry = 429, None, None
-                note = "usage call skipped, endpoint asked for a %ds pause" % left
+            # A sweep outside the deck's hourly window claims no usage state at all — no
+            # numbers is not a failed read — and leaves the refusal stamp untouched.
+            # Every attempt and every stand-down is also stated as a fact with a stamp on it,
+            # because `note` is one line that the next sweep overwrites: the deck keeps these
+            # and the Accounts page lists them, so a run of refusals can be read afterwards.
+            usage, ustate, ucall = None, None, None
+            if not READ_USAGE:
+                note = "usage read skipped this sweep (hourly schedule)"
+                ucall = {"at": int(time.time()), "code": None, "retry_after": None,
+                         "pause": None, "skipped": "schedule", "ok": False}
             else:
-                ucode, ubody, retry = oauth_get(USAGE_URL, token)
-                # A 403 here is not the token: the profile call just proved it. The endpoint
-                # refuses this account for now — the throttle's other face — and asking again
-                # next sweep only restarts its clock, so it pauses exactly like a 429.
-                if ucode in (429, 403):
-                    backoff_set(home, retry)
-                    note = "usage call refused with HTTP %d, pausing %ds" % (ucode, max(BACKOFF_MIN, int(retry or 0)))
-            # A 200 carrying something other than the object expected is a broken reply: called
-            # "ok" with no windows it would read on the deck as an account using nothing.
-            ok = ucode == 200 and isinstance(ubody, dict)
-            ustate = ("ok" if ok else "rate_limited" if ucode in (429, 403)
-                      else "token_expired" if ucode == 401 else "error")
-            usage = trim_usage(ubody) if ok else None
-            # A failed usage call must say so on the row, or a proved login with no numbers
-            # is indistinguishable from one nobody asked.
-            if not ok and not note:
-                note = ("usage call got no answer" if not ucode else
-                        "usage reply was not the object expected" if ucode == 200 else
-                        "usage call refused with HTTP %d" % ucode)
+                pause, left = None, backoff_left(home)
+                if left:
+                    ucode, ubody, retry = 429, None, None
+                    note = "usage call skipped, endpoint asked for a %ds pause" % left
+                else:
+                    ucode, ubody, retry = oauth_get(USAGE_URL, token)
+                    # A 403 here is not the token: the profile call just proved it. The
+                    # endpoint refuses this account for now — the throttle's other face — and
+                    # asking again next sweep only restarts its clock, so it pauses like a 429.
+                    if ucode in (429, 403):
+                        pause, streak = backoff_set(home, ucode, retry)
+                        note = "usage call refused with HTTP %d, pausing %ds%s" % (
+                            ucode, pause, "" if streak < 2 else " (%s refusal)" % ordinal(streak))
+                # A 200 carrying something other than the object expected is a broken reply:
+                # called "ok" with no windows it would read on the deck as an account using
+                # nothing.
+                ok = ucode == 200 and isinstance(ubody, dict)
+                # A read that answered ends the run: the next refusal starts at the floor again.
+                if ok: backoff_clear(home)
+                ustate = ("ok" if ok else "rate_limited" if ucode in (429, 403)
+                          else "token_expired" if ucode == 401 else "error")
+                usage = trim_usage(ubody) if ok else None
+                # A failed usage call must say so on the row, or a proved login with no numbers
+                # is indistinguishable from one nobody asked.
+                if not ok and not note:
+                    note = ("usage call got no answer" if not ucode else
+                            "usage reply was not the object expected" if ucode == 200 else
+                            "usage call refused with HTTP %d" % ucode)
+                ucall = {"at": int(time.time()), "code": ucode or None, "retry_after": retry,
+                         "pause": pause, "skipped": "backoff" if left else None, "ok": ok}
             return entry("claude_cli", where, state="ok", signed_in=True, proof="profile",
                          email=a.get("email") or a.get("email_address"), org=g.get("uuid"),
                          tier=g.get("rate_limit_tier"), plan=g.get("organization_type"),
-                         usage_state=ustate, usage=usage, note=note, **base)
+                         usage_state=ustate, usage=usage, usage_call=ucall, note=note, **base)
         # A token refused and not refreshable: the config is the only fallback, and it is
         # labelled as one because it can name a different account than the token.
         state = "token_expired" if code in (401, 403) else "rate_limited" if code == 429 else "error"

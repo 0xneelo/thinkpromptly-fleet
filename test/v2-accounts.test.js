@@ -346,3 +346,36 @@ test('accountLines — every proved login, live or with the collector\'s own rea
   assert.equal(acct.progressSummary(rows, acct.accountLines(view)), '2 machines · 2 ok · 2 accounts read live · 1 not read');
   assert.equal(acct.progressSummary(rows), '2 machines · 2 ok');
 });
+
+// The usage-call log below the cards: the three shapes a stored call can have, and the
+// text each reads as. hhmm is local time, so the expected stamp is built the same way
+// rather than hard-coded to one timezone.
+test('usageLogLines — a read that answered, one refused, one the deck did not make', () => {
+  const t = 1788739000;
+  const at = (e) => {
+    const d = new Date(e * 1000);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  };
+  const payload = { usage_log: [
+    { t, host: 'german-box', email: 'lafayette@infinite-holdings.llc', code: 200, retry_after: null,
+      pause: null, skipped: null, state: 'ok', note: null, fh: 12, sd: 57, sf: 100 },
+    { t: t - 60, host: 'rog-strix', email: 'aylianator@gmail.com', code: 429, retry_after: 216,
+      pause: 600, skipped: null, state: 'rate_limited', note: 'usage call refused with HTTP 429, pausing 600s (3rd refusal)',
+      fh: null, sd: null, sf: null },
+    { t: t - 120, host: 'mac', email: 'admin@deus.finance', code: 429, retry_after: null, pause: null,
+      skipped: 'backoff', state: 'rate_limited', note: 'usage call skipped, endpoint asked for a 3210s pause',
+      fh: null, sd: null, sf: null },
+    // A box whose clock runs ahead would otherwise pin its lines to the top forever.
+    { t: t + 3600, host: 'skewed', email: 'x@y.z', state: 'ok', code: 200 },
+  ] };
+
+  assert.deepStrictEqual(acct.usageLogLines(payload, t + 5), [
+    { time: at(t), host: 'german-box', email: 'lafayette@infinite-holdings.llc',
+      text: '200 · 5h 12% · 7d 57% · Fable 100%', tone: 'ok' },
+    { time: at(t - 60), host: 'rog-strix', email: 'aylianator@gmail.com',
+      text: 'HTTP 429 · retry-after 216s · paused 600s (3rd refusal)', tone: 'bad' },
+    { time: at(t - 120), host: 'mac', email: 'admin@deus.finance',
+      text: 'skipped · usage call skipped, endpoint asked for a 3210s pause', tone: 'muted' },
+  ]);
+  assert.deepStrictEqual(acct.usageLogLines({}, t), []);
+});

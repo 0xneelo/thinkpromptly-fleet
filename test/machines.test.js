@@ -76,9 +76,9 @@ async function fakeProfile(status, body, usage, token) {
 // profile server the script is calling lives in it. All three URLs are always overridden, or
 // a test would reach the real api.anthropic.com with the dummy token — and spend the dummy
 // refresh token at the real token endpoint.
-const collect = async (home, url, usageUrl, tokenUrl = url.replace(/\/profile$/, '/token')) =>
+const collect = async (home, url, usageUrl, tokenUrl = url.replace(/\/profile$/, '/token'), env = {}) =>
   (await promisify(execFile)('sh', [SCRIPT], {
-    env: { ...process.env, HOME: home, FLEET_PROFILE_URL: url, FLEET_USAGE_URL: usageUrl, FLEET_TOKEN_URL: tokenUrl },
+    env: { ...process.env, HOME: home, FLEET_PROFILE_URL: url, FLEET_USAGE_URL: usageUrl, FLEET_TOKEN_URL: tokenUrl, ...env },
     encoding: 'utf8',
     timeout: 30000,
   })).stdout.trim();
@@ -252,7 +252,8 @@ test('fleet-logins.sh — a 403 on the usage call, after a proved profile, pause
   const claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
   assert.equal(claude.proof, 'profile');
   assert.equal(claude.usage_state, 'rate_limited');
-  assert.equal(claude.note, 'usage call refused with HTTP 403, pausing 600s');
+  // A 403 carries no Retry-After and comes back every time, so it starts an hour up.
+  assert.equal(claude.note, 'usage call refused with HTTP 403, pausing 3600s');
   assert.ok(fs.existsSync(path.join(home, '.claude', '.fleet-usage-backoff')));
 });
 
@@ -268,7 +269,7 @@ test('fleet-logins.sh — a refused usage call is remembered, and not repeated u
   assert.equal(claude.state, 'ok');
   assert.equal(claude.usage_state, 'rate_limited');
   assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 600s');
-  const deadline = Number(fs.readFileSync(stamp, 'utf8'));
+  const deadline = Number(fs.readFileSync(stamp, 'utf8').split(' ')[0]);
   assert.ok(Math.abs(deadline - (Math.floor(Date.now() / 1000) + 600)) <= 5, 'the stamp is a ten-minute deadline');
   assert.equal(p.calls.filter((c) => c.url === '/usage').length, 1);
 
@@ -287,6 +288,51 @@ test('fleet-logins.sh — a refused usage call is remembered, and not repeated u
   assert.equal(claude.usage_state, 'ok');
   assert.equal(claude.note, undefined);
   assert.equal(claude.usage.seven_day.utilization, 7.5);
+  assert.ok(!fs.existsSync(stamp), 'a read that answered left the run standing');
+});
+
+test('fleet-logins.sh — each refusal in a row doubles the pause, up to four hours', async (t) => {
+  const home = fakeHome();
+  const stamp = path.join(home, '.claude', '.fleet-usage-backoff');
+  const p = await fakeProfile(200, IDENTITY, [429, { error: { type: 'rate_limit_error' } }]);
+  t.after(() => p.close());
+
+  let claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 600s');
+  assert.equal(fs.readFileSync(stamp, 'utf8').split(' ')[1], '1');
+
+  // The first pause has passed and the endpoint refuses again: the run is remembered, so the
+  // second pause is twice the first.
+  fs.writeFileSync(stamp, Math.floor(Date.now() / 1000) - 1 + ' 1');
+  claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 1200s (2nd refusal)');
+  const [deadline, streak] = fs.readFileSync(stamp, 'utf8').split(' ').map(Number);
+  assert.equal(streak, 2);
+  assert.ok(Math.abs(deadline - (Math.floor(Date.now() / 1000) + 1200)) <= 5, 'the stamp is a twenty-minute deadline');
+
+  // A long run is capped: 600 * 2**9 is far past four hours.
+  fs.writeFileSync(stamp, Math.floor(Date.now() / 1000) - 1 + ' 9');
+  claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.equal(claude.note, 'usage call refused with HTTP 429, pausing 14400s (10th refusal)');
+});
+
+test('fleet-logins.sh — a stamp written before the streak existed is still honoured', async (t) => {
+  const home = fakeHome();
+  const stamp = path.join(home, '.claude', '.fleet-usage-backoff');
+  fs.writeFileSync(stamp, String(Math.floor(Date.now() / 1000) + 300));
+  const p = await fakeProfile(200, IDENTITY, [200, USAGE_BODY]);
+  t.after(() => p.close());
+
+  const claude = pick(JSON.parse(await collect(home, p.url, p.usage)), 'claude_cli');
+  assert.match(claude.note, /^usage call skipped, endpoint asked for a \d+s pause$/);
+  assert.equal(p.calls.filter((c) => c.url === '/usage').length, 0);
+
+  // Expired, it counts as no run at all: the refusal that follows pauses the floor.
+  fs.writeFileSync(stamp, String(Math.floor(Date.now() / 1000) - 1));
+  const no = await fakeProfile(200, IDENTITY, [429, { error: { type: 'rate_limit_error' } }]);
+  t.after(() => no.close());
+  const again = pick(JSON.parse(await collect(home, no.url, no.usage)), 'claude_cli');
+  assert.equal(again.note, 'usage call refused with HTTP 429, pausing 600s');
 });
 
 // The live reply's shape, plus a `spend` block that must not travel and an extra_usage the
@@ -1405,6 +1451,10 @@ test('creditsWrite — a read that works clears the hold, and a stale one is dro
   m.creditsWrite(m.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
   assert.ok(storedRow(m, 'borrow@example.invalid').hold);
 
+  // The mac re-reports the same desktop sample a minute later: not a live read, so the
+  // hold rides along with the rewritten row.
+  m.creditsWrite([desktopAt(now + 60, 600)]);
+  assert.ok(storedRow(m, 'borrow@example.invalid').hold, 'a re-sample wiped the hold');
   // The next sweep reads live: the winning row is the fresh payload, which carries no hold.
   m.creditsWrite([{ ...zeroOauth(now), windows: { five_hour: { pct: 12, resets_at: null } } }]);
   assert.equal(storedRow(m, 'borrow@example.invalid').hold, undefined);
@@ -1539,4 +1589,202 @@ test('/api/credits — a future snapshot stamp is clamped, so it cannot pin the 
   assert.equal((await push(now, now, 30)).status, 200);
   assert.equal(row().weekly.pct, 30);
   assert.equal(row().snapshot_ts, now);
+});
+
+// --- The usage endpoint's hourly schedule (operator ruling 2026-09-10): read once an hour at
+// most, and only inside the deck's local window. A Refresh click always reads.
+const schedule = (t, env = {}) => {
+  const dir = tmpdir('usage-schedule');
+  const m = load({ FLEET_DB: path.join(dir, 'fleet.db'), FLEET_HOSTS_FILE: hostsFile(dir), ...env });
+  t.after(async () => {
+    await unload(m);
+    delete process.env.FLEET_NO_LISTEN;
+    delete process.env.FLEET_USAGE_HOURS;
+    delete process.env.FLEET_USAGE_EVERY_SECS;
+  });
+  return m;
+};
+const at = (h, min = 0) => new Date(2026, 8, 10, h, min, 0);
+
+test('usageHoursOpen — 11-3 wraps midnight, and a plain range does not', (t) => {
+  const { usageHoursOpen } = schedule(t);
+  for (const d of [at(11), at(23), at(2, 59)]) assert.equal(usageHoursOpen(d), true, d.toString());
+  for (const d of [at(3), at(10, 59)]) assert.equal(usageHoursOpen(d), false, d.toString());
+});
+
+test('usageHoursOpen — a non-wrapping window is the plain half-open range', (t) => {
+  const { usageHoursOpen } = schedule(t, { FLEET_USAGE_HOURS: '9-17' });
+  assert.equal(usageHoursOpen(at(9)), true);
+  assert.equal(usageHoursOpen(at(16, 59)), true);
+  assert.equal(usageHoursOpen(at(17)), false);
+  assert.equal(usageHoursOpen(at(8, 59)), false);
+});
+
+test('usageDue — one read an hour inside the window, and a Refresh whenever it is asked', (t) => {
+  const { usageDue } = schedule(t);
+  const open = at(12).getTime();
+  const shut = at(6).getTime();
+
+  // Inside the hours: the first sweep reads, the ones behind it in the same hour do not.
+  assert.equal(usageDue(false, open), true);
+  assert.equal(usageDue(false, open + 60000), false);
+  assert.equal(usageDue(false, open + 3599999), false);
+  assert.equal(usageDue(false, open + 3600000), true);
+
+  // Outside them nothing reads on its own — but a Refresh does, and it claims that hour.
+  assert.equal(usageDue(false, shut), false);
+  assert.equal(usageDue(true, shut), true);
+  assert.equal(usageDue(false, shut + 60000), false);
+});
+
+test('fleet-logins.sh — a sweep outside the hour proves the identity and asks for no usage', async (t) => {
+  const home = fakeHome();
+  const p = await fakeProfile(200, IDENTITY, [200, USAGE_BODY]);
+  t.after(() => p.close());
+  const claude = pick(JSON.parse(await collect(home, p.url, p.usage, undefined, { FLEET_READ_USAGE: '0' })), 'claude_cli');
+
+  assert.equal(claude.proof, 'profile');
+  assert.equal(claude.state, 'ok');
+  assert.equal(claude.email, 'aylianator@gmail.com');
+  assert.equal(p.calls.filter((c) => c.url === '/usage').length, 0, 'the usage endpoint was asked anyway');
+  // No numbers is not a failed read: the row claims no usage state, so machinesCredits()
+  // emits no candidate for it and the stored row keeps whatever it holds.
+  assert.equal(claude.usage_state, undefined);
+  assert.equal(claude.usage, undefined);
+  assert.equal(claude.note, 'usage read skipped this sweep (hourly schedule)');
+  assert.ok(!fs.existsSync(path.join(home, '.claude', '.fleet-usage-backoff')), 'a skipped read armed the throttle');
+});
+
+test('fleet-credits.sh — it reads no token and reports no live Claude row, and samples anyway', async (t) => {
+  // The script named the account from ~/.claude.json but read the token from the credential
+  // store, and on the Mac the two disagreed: one person's numbers under another's name. It
+  // now reads no token and calls no endpoint at all — the logins sweep is the live source.
+  const home = fakeHome();
+  const appDir = path.join(home, 'Library', 'Application Support', 'Claude');
+  fs.mkdirSync(appDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(appDir, 'plan-usage-history.json'),
+    JSON.stringify({ samples: [{ org: CONFIG_ORG, t: 1757000000000, u: { fh: 12, sd: 34, xu: 5 } }] })
+  );
+  const out = (
+    await promisify(execFile)('sh', [path.join(ROOT, 'box', 'fleet-credits.sh')], {
+      env: { ...process.env, HOME: home },
+      encoding: 'utf8',
+      timeout: 30000,
+    })
+  ).stdout.trim();
+  const d = JSON.parse(out.split('\n').pop());
+
+  // The same shape as a machine with no CLI login: no state to mistake for a failed read.
+  assert.equal(d.claude, null);
+  assert.equal(d.desktop.length, 1);
+  assert.equal(d.desktop[0].org, CONFIG_ORG);
+  assert.equal(d.history.length, 1);
+  assert.equal(d.accounts[0].email, 'lafayette@infinite-holdings.llc');
+  assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
+});
+
+// The same disagreement seen from the deck's side: an installed copy of fleet-credits.sh that
+// still reads a token would report a live Claude row, and the collect must drop it.
+test('creditsCollect — a credits reply\'s live Claude row is dropped, not stored', async (t) => {
+  const dir = tmpdir('credits-drop');
+  const ghost = {
+    host: 'fake',
+    ts: Math.floor(Date.now() / 1000),
+    claude: {
+      email: 'ghost@example.invalid',
+      org: '11111111-1111-4111-8111-111111111111',
+      state: 'ok',
+      usage: { five_hour: { utilization: 10, resets_at: null }, seven_day: { utilization: 20, resets_at: null } },
+    },
+    desktop: [],
+    history: [],
+    accounts: [],
+    codex: null,
+  };
+  const sh = path.join(dir, 'ghost-credits.sh');
+  fs.writeFileSync(sh, "#!/bin/sh\ncat <<'EOF'\n" + JSON.stringify(ghost) + '\nEOF\n');
+  // No hosts: the collect's fan-out has nothing to ssh to, so the stub is the only reply.
+  const m = load({
+    FLEET_DB: path.join(dir, 'fleet.db'),
+    FLEET_HOSTS_FILE: hostsFile(dir, []),
+    FLEET_CREDITS_SH: sh,
+  });
+  t.after(async () => {
+    await unload(m);
+    delete process.env.FLEET_NO_LISTEN;
+  });
+
+  await m.creditsCollect(true);
+  const stored = m.creditsRows().filter((r) => r.id === 'ghost@example.invalid');
+  assert.deepEqual(stored, [], 'the reply\'s live Claude row was stored: ' + JSON.stringify(stored));
+
+  // Control: the normalizer still yields that row. The drop is creditsCollect's doing, so
+  // the logins sweep — which feeds creditsCandidates itself — keeps its live source.
+  const cand = m.creditsCandidates(ghost, 'fake', new Map(), false);
+  const oauth = cand.filter((c) => c.kind === 'claude' && c.source === 'oauth');
+  assert.equal(oauth.length, 1);
+  assert.equal(oauth[0].id, 'ghost@example.invalid');
+  assert.equal(oauth[0].windows.five_hour.pct, 10);
+});
+
+// The usage-call log: one stored line per call the fleet made, so a refusal survives the
+// sweep that overwrote the client row's note.
+test('usage_log — a refused call and a read that answered are both kept, a schedule skip is not', (t) => {
+  const { usageLogWrite, db } = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  usageLogWrite({ v: 1, id: 'rog-strix', ts: now, clients: [
+    {
+      client: 'claude_cli', proof: 'profile', email: 'borrow@example.invalid', org: ORG,
+      usage_state: 'rate_limited',
+      note: 'usage call refused with HTTP 429, pausing 600s',
+      usage_call: { at: now, code: 429, retry_after: 216, pause: 600, skipped: null, ok: false },
+    },
+    {
+      client: 'claude_cli', proof: 'profile', email: 'read@example.invalid', org: ORG,
+      usage_state: 'ok', note: null,
+      usage_call: { at: now - 1, code: 200, retry_after: null, pause: null, skipped: null, ok: true },
+      usage: {
+        five_hour: { utilization: 12 },
+        seven_day: { utilization: 57 },
+        limits: [{ kind: 'weekly_scoped', percent: 100, scope: { model: { display_name: 'Fable' } } }],
+      },
+    },
+    // Off the hour the deck asks nobody: a line per account every five minutes saying so
+    // would bury the calls that were actually made.
+    {
+      client: 'claude_cli', proof: 'profile', email: 'quiet@example.invalid', org: ORG,
+      note: 'usage read skipped this sweep (hourly schedule)',
+      usage_call: { at: now, code: null, retry_after: null, pause: null, skipped: 'schedule', ok: false },
+    },
+    // Nothing proved this one, so there was no usage call to log.
+    { client: 'claude_cli', proof: 'config', email: 'cfg@example.invalid' },
+  ] }, 'ROG Strix');
+
+  const rows = db.prepare('SELECT * FROM usage_log ORDER BY t DESC').all();
+  assert.equal(rows.length, 2);
+  assert.deepEqual({ ...rows[0] }, {
+    t: now, host: 'ROG Strix', email: 'borrow@example.invalid', org: ORG, code: 429,
+    retry_after: 216, pause: 600, skipped: null, state: 'rate_limited',
+    note: 'usage call refused with HTTP 429, pausing 600s', fh: null, sd: null, sf: null,
+  });
+  assert.deepEqual({ ...rows[1] }, {
+    t: now - 1, host: 'ROG Strix', email: 'read@example.invalid', org: ORG, code: 200,
+    retry_after: null, pause: null, skipped: null, state: 'ok', note: null,
+    fh: 12, sd: 57, sf: 100,
+  });
+});
+
+test('usage_log — retention keeps the newest 2000 lines', (t) => {
+  const { usageLogPrune, db } = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  const ins = db.prepare('INSERT INTO usage_log (t, host, code, state) VALUES (?, ?, ?, ?)');
+  db.exec('BEGIN');
+  for (let i = 0; i < 2100; i++) ins.run(now - i, 'ROG Strix', 200, 'ok');
+  db.exec('COMMIT');
+  usageLogPrune.run();
+  assert.equal(db.prepare('SELECT count(*) c FROM usage_log').get().c, 2000);
+  const span = db.prepare('SELECT max(t) hi, min(t) lo FROM usage_log').get();
+  assert.equal(span.hi, now, 'the newest line was pruned');
+  assert.equal(span.lo, now - 1999, 'the oldest lines were kept');
 });

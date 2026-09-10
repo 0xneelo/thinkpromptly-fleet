@@ -1593,7 +1593,12 @@ function creditsWrite(rows) {
     const seen = [];
     for (const c of groups.get(k))
       if (!seen.some((s) => s.host === c.host && s.source === c.source)) seen.push({ host: c.host, source: c.source });
-    const hold = held && r.state === 'ok' ? { hold: holdOf(held) } : {};
+    // A hold rides with the row until a live read of this account answers: a row whose
+    // numbers carry their own date (a desktop sample, a rollout) is not that read, and the
+    // mac re-reports its sample every minute, so without this the hold lasted a minute.
+    const live = r.state === 'ok' && dataTs(r) == null;
+    const carried = !held && !live && stored && stored.hold ? stored.hold : null;
+    const hold = held && r.state === 'ok' ? { hold: holdOf(held) } : carried ? { hold: carried } : {};
     creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify({ ...r, seen, ...hold }), r.updated_at);
     if (r.email && r.org) creditsDropId.run(r.kind, 'org:' + r.org);
     written++;
@@ -1683,16 +1688,24 @@ async function creditsCollect(force) {
   const errors = [];
   if (force || Date.now() - creditsAt > CREDITS_TTL) {
     creditsAt = Date.now(); // claimed before the awaits, so parallel loads don't stampede
+    const readUsage = usageDue(force);
     creditsInflight = true;
     // The Accounts page reads this as the sweep's second phase; in a finally so a throw
     // cannot strand it true for as long as the deck runs.
     try {
-      const local = run('sh', [CREDITS_SH], { timeout: 30000 }).then((r) => ['mac', r]);
+      // Off-schedule the deck still reads its own desktop samples, with the usage call told
+      // to stand down; the hosts are skipped outright, because their installed copies may
+      // predate that switch and their samples can wait for the hour.
+      const local = run(
+        'sh',
+        [CREDITS_SH],
+        readUsage ? { timeout: 30000 } : { timeout: 30000, env: { ...process.env, FLEET_READ_USAGE: '0' } }
+      ).then((r) => ['mac', r]);
       // Longer than the session poll's 15s: this one waits on a remote HTTPS call, and a
       // slow endpoint must not be reported as a missing script.
-      const remotes = HOSTS().map((host) =>
-        ssh(host, remote(host, CREDITS_REMOTE), { timeout: 30000 }).then((r) => [host, r])
-      );
+      const remotes = readUsage
+        ? HOSTS().map((host) => ssh(host, remote(host, CREDITS_REMOTE), { timeout: 30000 }).then((r) => [host, r]))
+        : [];
       // A host that is down, or has no script installed, leaves its stored rows standing.
       const replies = [];
       for (const [host, r] of await Promise.all([local, ...remotes])) {
@@ -1712,7 +1725,11 @@ async function creditsCollect(force) {
       }
       // One mapping for the whole fleet: a CLI login on any machine names an org for all of them.
       const map = creditsMap(replies.flatMap(([, d]) => (Array.isArray(d.accounts) ? d.accounts : [])));
-      creditsWrite(replies.flatMap(([host, d]) => creditsCandidates(d, host, map, false)));
+      // A credits reply's live Claude row is dropped: the installed copies name the account
+      // from ~/.claude.json and read the token from the credential store, and on the Mac the
+      // two disagreed (2026-09-10) — one person's numbers under another's name. The logins
+      // sweep proves email, org and usage from the same token, so it is the only live source.
+      creditsWrite(replies.flatMap(([host, d]) => creditsCandidates({ ...d, claude: null }, host, map, false)));
       // Every machine's samples merge into one series per org — one box keeps sampling the
       // accounts another stopped using. Retention is bounded here, once per collect.
       for (const [, d] of replies) creditsHistoryWrite(d);
@@ -1721,7 +1738,7 @@ async function creditsCollect(force) {
       creditsInflight = false;
     }
   }
-  return { rows: creditsRows(), errors };
+  return { rows: creditsRows(), errors, usage_schedule: usageSchedule(), usage_log: usageLogNewest.all() };
 }
 
 // --- Machines: which account each AI client on each machine is signed in as. The same
@@ -1739,6 +1756,44 @@ const MACHINES_FILE = process.env.FLEET_MACHINES_FILE || path.join(__dirname, 'm
 const LOGINS_SH = process.env.FLEET_LOGINS_SH || path.join(__dirname, 'box', 'fleet-logins.sh');
 const MACHINES_TTL =
   (Number(process.env.FLEET_MACHINES_TTL_SECS) > 0 ? Number(process.env.FLEET_MACHINES_TTL_SECS) : 300) * 1000;
+// The usage endpoint is read once an hour at most, and only between 11:00 and 03:00 in the
+// deck's own local time (operator ruling 2026-09-10). A Refresh click reads at any hour and
+// counts as that hour's read; every other call the collectors make keeps its own cadence.
+const USAGE_EVERY_MS =
+  (Number(process.env.FLEET_USAGE_EVERY_SECS) > 0 ? Number(process.env.FLEET_USAGE_EVERY_SECS) : 3600) * 1000;
+const USAGE_HOURS = process.env.FLEET_USAGE_HOURS || '11-3';
+const [USAGE_FROM, USAGE_TO] = USAGE_HOURS.split('-').map(Number);
+// '11-3' wraps midnight, so it reads as 11:00 through 02:59; '9-17' does not wrap.
+const usageHoursOpen = (d = new Date()) =>
+  USAGE_FROM < USAGE_TO
+    ? d.getHours() >= USAGE_FROM && d.getHours() < USAGE_TO
+    : d.getHours() >= USAGE_FROM || d.getHours() < USAGE_TO;
+let usageAt = 0; // last read claimed, ms — one stamp for both collectors
+// Claims the hour as it answers, so a sweep and the credits merge behind it read once
+// between them. `force` is the Refresh click: always a read, and it claims the hour too.
+function usageDue(force, nowMs = Date.now()) {
+  if (!force && !(usageHoursOpen(new Date(nowMs)) && nowMs - usageAt >= USAGE_EVERY_MS)) return false;
+  usageAt = nowMs;
+  return true;
+}
+// When a non-forced read comes due: the schedule's own clock, walked forward to the window's
+// next opening if it lands outside the hours. Never read yet means now, or that opening.
+function usageNext(fromMs = Date.now()) {
+  let t = Math.max(usageAt ? usageAt + USAGE_EVERY_MS : fromMs, fromMs);
+  for (let i = 0; i < 24 && !usageHoursOpen(new Date(t)); i++) {
+    const d = new Date(t);
+    d.setMinutes(0, 0, 0);
+    t = d.getTime() + 3600000;
+  }
+  return Math.floor(t / 1000);
+}
+const usageSchedule = () => ({
+  every_s: USAGE_EVERY_MS / 1000,
+  hours: USAGE_HOURS,
+  open: usageHoursOpen(),
+  last_at: usageAt ? Math.floor(usageAt / 1000) : null,
+  next_at: usageNext(),
+});
 // Longer than the session poll, and longer than the credits collect: a proved Claude login
 // costs two HTTPS round trips on the far side, every WSL user and Windows profile pays them,
 // and a cold WSL start takes seconds before any of it begins. A slow endpoint must not read
@@ -1916,6 +1971,57 @@ function machinesCredits(d, host, map, push) {
   return out;
 }
 
+// Every usage call the fleet made, one line each. A client row carries `note`, one sentence
+// the next sweep overwrites — so a run of refusals, or the pause that followed one, left
+// nothing anyone could read afterwards. Only the call itself is kept: its code, the pause it
+// earned, and the percentages it came back with. No token, and never the untouched reply.
+db.exec(
+  `CREATE TABLE IF NOT EXISTS usage_log (t INTEGER, host TEXT, email TEXT, org TEXT, code INTEGER, retry_after INTEGER, pause INTEGER, skipped TEXT, state TEXT, note TEXT, fh REAL, sd REAL, sf REAL)`
+);
+const usageLogInsert = db.prepare(
+  `INSERT INTO usage_log (t, host, email, org, code, retry_after, pause, skipped, state, note, fh, sd, sf)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+);
+const USAGE_LOG_KEEP = 2000; // a few days of sweeps across the fleet; older lines answer nothing
+const usageLogPrune = db.prepare(
+  `DELETE FROM usage_log WHERE rowid NOT IN (SELECT rowid FROM usage_log ORDER BY t DESC, rowid DESC LIMIT ${USAGE_LOG_KEEP})`
+);
+const USAGE_LOG_SHOW = 200; // what one page load is served; the rest stays in fleet.db
+const usageLogNewest = db.prepare(
+  `SELECT t, host, email, org, code, retry_after, pause, skipped, state, note, fh, sd, sf
+   FROM usage_log ORDER BY t DESC, rowid DESC LIMIT ${USAGE_LOG_SHOW}`
+);
+
+// One line per Claude login whose usage call was made or held off. A schedule skip is not
+// one: off the hour that would be a line per account every five minutes, each saying only
+// that nobody asked.
+function usageLogWrite(d, host) {
+  const now = Math.floor(Date.now() / 1000);
+  for (const c of Array.isArray(d && d.clients) ? d.clients : []) {
+    if (!c || c.client !== 'claude_cli' || c.proof !== 'profile') continue;
+    const u = c.usage_call && typeof c.usage_call === 'object' ? c.usage_call : null;
+    if (!u || u.skipped === 'schedule') continue;
+    // The same normalizer the stored row goes through, so a logged percentage is the one
+    // the card shows rather than a second reading of the same reply.
+    const w = claudeRow(c).windows;
+    usageLogInsert.run(
+      epochOf(u.at) ?? now,
+      str(host, 64),
+      str(c.email, 120),
+      str(c.org, 64),
+      int(u.code),
+      int(u.retry_after),
+      int(u.pause),
+      str(u.skipped, 16),
+      str(c.usage_state, 20),
+      str(c.note, 200),
+      w.five_hour?.pct ?? null,
+      w.seven_day?.pct ?? null,
+      w.seven_day_fable?.pct ?? null
+    );
+  }
+}
+
 let machinesAt = 0; // last live collect, ms
 // A GET inside the TTL early-returns and would otherwise render the stale rows as if they
 // were fresh, with no sign a sweep is running. A counter, not a flag: two forced sweeps can
@@ -1938,6 +2044,7 @@ const PROGRESS_SWEEPS = 2; // kept: the newest, plus the one still on screen beh
 async function machinesCollect(force) {
   if (!force && Date.now() - machinesAt <= MACHINES_TTL) return;
   machinesAt = Date.now(); // claimed before the awaits, so parallel loads don't stampede
+  const readUsage = usageDue(force);
   const sweep = ++machinesSeq; // a token, not the clock: two sweeps can start the same ms
   machinesInflight.set(sweep, Date.now());
   try {
@@ -1969,10 +2076,12 @@ async function machinesCollect(force) {
         if (m.route === 'push') return; // nothing to poll: that machine calls us
         try {
           if (m.route === 'ssh' && !script) throw new Error('cannot read ' + LOGINS_SH);
+          // Off-schedule the sweep still asks every identity; only the usage call stands
+          // down. The script is read by `sh -s`, so the switch is prepended as plain shell.
           const r =
             m.route === 'local'
-              ? await run('sh', [LOGINS_SH], { timeout: LOGINS_TIMEOUT })
-              : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', script, { timeout: LOGINS_TIMEOUT, connectTimeout: SWEEP_CONNECT_TIMEOUT });
+              ? await run('sh', [LOGINS_SH], readUsage ? { timeout: LOGINS_TIMEOUT } : { timeout: LOGINS_TIMEOUT, env: { ...process.env, FLEET_READ_USAGE: '0' } })
+              : await sshInput(m.ssh, m.wsl ? 'wsl sh -s' : 'sh -s', readUsage ? script : 'FLEET_READ_USAGE=0\nexport FLEET_READ_USAGE\n' + script, { timeout: LOGINS_TIMEOUT, connectTimeout: SWEEP_CONNECT_TIMEOUT });
           const line = lines(r.stdout).map((l) => l.trim()).filter(Boolean).pop();
           // A killed ssh reports neither stdout nor stderr, so name the timeout rather than
           // blaming a script that never got to run.
@@ -1988,6 +2097,7 @@ async function machinesCollect(force) {
           const d = JSON.parse(line);
           machinesUpsert.run(m.id, JSON.stringify({ ...machinePayload(d), collected_at: now }), now);
           credits.push(...machinesCredits(d, m.host || m.id, map, false));
+          usageLogWrite(d, m.host || m.id);
           machinesErrors.delete(m.id);
           settle(m.id, 'ok');
         } catch (e) {
@@ -2000,6 +2110,7 @@ async function machinesCollect(force) {
     // Written once the sweep is in, like creditsCollect: only a batch holding every machine's
     // candidates lets a real reading rescue another box's unpopulated reply for that account.
     creditsWrite(credits);
+    usageLogPrune.run();
   } finally {
     // In a finally so a throw above cannot strand the counter above zero, which would leave
     // the page saying "collecting" for as long as the deck runs.
@@ -2230,6 +2341,8 @@ function machinesView() {
         error: p.error,
       })),
     },
+    // When the usage endpoint was last read, and when it may be read again.
+    usage_schedule: usageSchedule(),
     // What a routeless machine puts in its cron; the deck is the only thing that knows it.
     push_url: 'http://' + TAILNET_HOST + '/api/machines',
   };
@@ -3680,5 +3793,10 @@ module.exports = {
   machinesUsage, machinesSessions, clientUsage,
   // Test seams: which candidate wins a credits row, what that row ends up holding, and
   // what a reader is finally shown once ageing has had its say.
-  creditsWrite, beats, creditsRows, machinesCredits,
+  creditsWrite, beats, creditsRows, machinesCredits, creditsCollect, creditsCandidates,
+  // Test seams: the hourly window the usage endpoint is read in, and the claim on it.
+  usageDue, usageHoursOpen,
+  // Test seams: the per-reply insert behind the Accounts page's usage-call log, and the
+  // retention the sweep applies to it.
+  usageLogWrite, usageLogPrune,
 };
