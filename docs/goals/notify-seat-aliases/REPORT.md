@@ -152,3 +152,57 @@ No live-Mac result, acceptance exception or deployment approval has been inferre
 Signed: **Ysolde**
 
 2026-09-10 ~21:00Z — Ruling `o20-ysolde-ruling-1` from 🎛 ORCHESTRATOR 20 grants the Acceptance 1 baseline exception for exactly the credits host-wide discovery `3 !== 1` and v2 routable-screen extra `goals` failures; this supersedes the hold above and completes the worker goal. Seat 20 owns the weave and Acceptance 2 on the Mac after restart. Signed: **Ysolde**.
+
+## Integration addendum — O20-YSOLDE-MERGE-1 (2026-09-10)
+
+Per seat 20's explicit addendum, fetched `origin/main` at
+`aa047b2f7578af016872ec9f0f848774a686dfd3` and merged it into this branch.
+Pushed merge commit: [`82fcf4b92107e87d1a1131105303666b6ba7a47d`](https://github.com/0xneelo/thinkpromptly-fleet/commit/82fcf4b92107e87d1a1131105303666b6ba7a47d).
+Its parents are `104fbc84856a0fecb3b66ffb9db6da1ad4de1e58` and the main SHA above.
+A separate fresh broker-authenticated `git ls-remote` matched the full merge SHA.
+
+The only manual conflict was the import block in `server.js`; all three imports
+(`DesktopSeatTitles`, `DocsIndex`/`defaultRoots`, and `createUnblock`) were retained.
+Main's new Docs routes, `notifyRoute`, and accounts refresh block are byte-identical
+to main. The live title join, title/name/lease precedence, target resolution and
+notify diagnostics are byte-identical to this lane's pre-merge parent. All 28 other
+incoming main files are byte-identical in the merge. Ysolde reviewed the merge diff;
+syntax and whitespace checks passed. No tests or production behavior were altered
+to resolve the environment issues described below.
+
+Validation after the merge:
+
+- Focused suite: **39 passed, 0 failed, 0 skipped**.
+- Docs API with a visible metadata fixture: **12 passed, 0 failed, 0 skipped**.
+- Final full `npm test`: pretest **passed**; **769 tests, 768 passed, 1 failed,
+  0 skipped**, 138,371 ms. The sole failure is the approved credits host-wide
+  discovery `3 !== 1` case (now `test/machines.test.js:1739`).
+- Main fixes the former v2 routable-screen failure and fixture pretest drift.
+  The existing ruling covers the remaining credits failure; no new exception is used.
+
+The initial full run had 766 passes and three failures: the approved credits case,
+a Docs fixture rejected because its temporary path inherited the worktree's hidden
+`.claude` ancestor, and a transient Unblock `EADDRINUSE` on port 42632. The complete
+rerun below fixes the fixture location and has neither of the latter failures.
+Only the Docs metadata tree goes into visible `/tmp`; scratch databases remain in
+this worktree. The fixture preload is test setup, not a change to the merged files:
+
+```sh
+mkdir -p .tmp
+cat > .tmp/visible-docs-fixture.cjs <<'JS'
+const fs = require('node:fs');
+const helpers = require('../test/helpers');
+const fixtureTmpdir = helpers.tmpdir;
+helpers.tmpdir = (tag) => tag === 'docs'
+  ? fs.mkdtempSync('/tmp/fleetdeck-docs-ysolde-')
+  : fixtureTmpdir(tag);
+JS
+TMPDIR="$PWD/.tmp" node --test test/desktop-seat-titles.test.js test/notify.test.js
+TMPDIR="$PWD/.tmp" NODE_OPTIONS="--require=$PWD/.tmp/visible-docs-fixture.cjs" npm test
+```
+
+Linear was retried for this merge and still requires reauthentication; its signed
+completion comment is preserved in `LINEAR-PENDING.md`. Seat 20 still owns the weave,
+restart and live-Mac Acceptance 2. The worker did not perform those operations.
+
+Signed: **Ysolde**

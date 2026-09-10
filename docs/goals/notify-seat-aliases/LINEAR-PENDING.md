@@ -180,3 +180,26 @@ Pushed SHA: `5240d81de69d3430107fee2567061019794672ec`. Fresh broker-authenticat
 only through `GH_TOKEN`; the credential helper was selected through per-command env.
 
 Signed: Ysolde
+
+### PENDING-M3 — merge completion comment (2026-09-10)
+
+Per `O20-YSOLDE-MERGE-1`, merged main `aa047b2f7578af016872ec9f0f848774a686dfd3`
+into this lane and pushed `82fcf4b92107e87d1a1131105303666b6ba7a47d`; a fresh
+broker-authenticated remote check matched. The manual import conflict retains both
+main's Docs/Unblock imports and this lane's title index. Main route blocks and this
+lane's title resolution blocks retain their source-parent bytes.
+
+Focused: **39/39 passed**. Final full suite: **768 passed, 1 failed, 0 skipped**;
+pretest passed. Only the previously exempt credits host-wide `3 !== 1` failure
+remains. The old v2 failure is fixed on main. A visible Docs metadata fixture and
+a full serial rerun eliminate the initial hidden-path fixture failure and transient
+port collision; exact commands and counts are in the report's integration addendum.
+No new exception or additional production/test-source change was introduced to
+address those test-environment failures.
+
+Self-review by Ysolde: no unresolved merge findings. Linear retry still returns
+`oauth_token_invalid_grant`; this is the pending completion comment. The operator's
+`o20-ysolde-ruling-1` grants Acceptance 1's documented baseline exceptions and
+supersedes the acceptance hold earlier in this ledger. Acceptance 2 stays with seat 20.
+
+Signed: Ysolde
