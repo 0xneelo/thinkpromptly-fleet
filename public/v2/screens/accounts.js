@@ -386,10 +386,46 @@
     return out;
   }
 
+  // Every call the deck made to the usage endpoint, as the deck stored it: a client row's
+  // `note` is one sentence the next sweep overwrites, so this is the only place a run of
+  // refusals can be read back. Three shapes — a read that answered, one the endpoint
+  // refused, one the deck did not make because a pause was still standing.
+  const LOG_PCT = [['fh', '5h'], ['sd', '7d'], ['sf', 'Fable']];
+  function usageLogLines(payload, now) {
+    const out = [];
+    for (const r of (payload && payload.usage_log) || []) {
+      if (!r || typeof r !== 'object') continue;
+      // A skewed box clock would put its lines at the top of the list forever.
+      if (typeof r.t !== 'number' || r.t > now) continue;
+      const note = typeof r.note === 'string' ? r.note : '';
+      let text, tone;
+      if (r.skipped) {
+        text = 'skipped · ' + note;
+        tone = 'muted';
+      } else if (r.state === 'ok') {
+        text = [String(r.code || 200)]
+          .concat(LOG_PCT.filter(([k]) => typeof r[k] === 'number').map(([k, l]) => l + ' ' + r[k] + '%'))
+          .join(' · ');
+        tone = 'ok';
+      } else {
+        // The structured columns carry everything but the streak, which only the note says.
+        const ord = /\((\d+\w+ refusal)\)/.exec(note);
+        text =
+          [r.code ? 'HTTP ' + r.code : 'no answer']
+            .concat(r.retry_after ? ['retry-after ' + r.retry_after + 's'] : [])
+            .concat(r.pause ? ['paused ' + r.pause + 's'] : [])
+            .join(' · ') + (ord ? ' (' + ord[1] + ')' : '');
+        tone = 'bad';
+      }
+      out.push({ time: hhmm(r.t), host: r.host || '', email: r.email || '', text, tone });
+    }
+    return out;
+  }
+
   const pure = {
     ago, until, hhmm, level, worst, atLimit, order, summary, creditsLine, trend,
     sourceText, banner, staleNote, bars, barOf, enrich, note, toRows, toErrors, label,
-    progressRows, progressSummary, accountLines,
+    progressRows, progressSummary, accountLines, usageLogLines,
     WIN_LABEL, SOURCE, TIER,
   };
 
@@ -404,7 +440,7 @@
   const CHROME = 'fd-l8-chrome';
   const data = () => (root.FD && root.FD.data) || null;
 
-  const state = { rows: [], errors: [], error: '', loading: false, loaded: false };
+  const state = { rows: [], errors: [], error: '', loading: false, loaded: false, log: [] };
 
   // The tokens the mock's own theme built this render, published by the L8 method in
   // logic.js. The improvised chrome paints in these and follows the theme toggle.
@@ -475,6 +511,8 @@
       box.id = CHROME;
       box.append(el('div'));                  // the one improvised block
       box.children[0].id = 'fd-l8-summary';
+      box.append(el('div'));                  // the usage-call log, below the last card
+      box.children[1].id = 'fd-l8-usage-log';
       document.body.appendChild(box);
     }
     return box;
@@ -546,6 +584,62 @@
     }
   }
 
+  // The usage-call log sits BELOW the last account card, so it is placed in document
+  // coordinates rather than in the chrome's fixed frame — it scrolls with the cards it
+  // belongs to. Its own node in the container this file owns; nothing compiled is touched.
+  // Long by nature, so it folds, and the fold is remembered.
+  const LOG_OPEN = 'fd-usage-log-open';
+  const LOG_MAX = 100; // what one screen can be read from; the payload carries more
+  // Private browsing throws on both, and a log that cannot remember its fold still works.
+  // Folded until the operator opens it: the cards are the page, the log is the receipts.
+  const logOpen = () => {
+    try {
+      return localStorage.getItem(LOG_OPEN) === '1';
+    } catch (e) {
+      return false;
+    }
+  };
+  const setLogOpen = (on) => {
+    try {
+      localStorage.setItem(LOG_OPEN, on ? '1' : '0');
+    } catch (e) {}
+  };
+
+  function paintUsageLog(box, cards, screen) {
+    const t = tok();
+    const lines = state.log.slice(0, LOG_MAX);
+    const open = logOpen();
+    const last = cards[cards.length - 1] || screen;
+    const r = last.getBoundingClientRect();
+    const s = screen.getBoundingClientRect();
+    // The same box the cards are: a bordered panel, below the last card, at the cards' width.
+    box.setAttribute('style', 'position:absolute;z-index:4;display:flex;flex-direction:column;gap:3px;left:' +
+      (s.left + scrollX) + 'px;top:' + (r.bottom + scrollY + 18) + 'px;width:' + s.width + 'px;box-sizing:border-box;' +
+      'border-radius:12px;border:1px solid ' + t.line + ';background:' + t.panel + ';box-shadow:' + t.panelShadow +
+      ';padding:' + (t.cardPad || '18px 20px') + ';');
+    // The box floats, so the screen must leave room to scroll to it.
+    screen.style.paddingBottom = (open ? Math.min(lines.length, LOG_MAX) * 17 + 90 : 70) + 'px';
+    box.replaceChildren();
+    if (!lines.length) return; // nothing called yet: a header alone says less than no header
+    const head = el('div', 'display:flex;align-items:baseline;gap:10px;font-size:11px;letter-spacing:.06em;' +
+      'text-transform:uppercase;color:' + t.ink45 + ';');
+    head.append(el('span', '', 'usage calls · newest first · ' + lines.length + ' shown'));
+    const toggle = el('button', 'border:0;background:transparent;padding:0;cursor:pointer;font:inherit;' +
+      'letter-spacing:inherit;text-transform:inherit;color:' + t.ink60 + ';', open ? 'hide' : 'show');
+    toggle.onclick = () => {
+      setLogOpen(!open);
+      paint();
+    };
+    head.append(toggle);
+    box.append(head);
+    if (!open) return;
+    const TONE = { ok: t.ink60, bad: t.bad, muted: t.ink45 };
+    lines.forEach((l) => {
+      box.append(el('div', 'font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:' +
+        (TONE[l.tone] || t.ink60) + ';', [l.time, l.host, l.email, l.text].filter(Boolean).join(' · ')));
+    });
+  }
+
   // One idempotent pass. Cheap enough to run on scroll: it reads one rect and writes
   // text it has already computed.
   let painting = false;
@@ -593,6 +687,7 @@
         attr(p, 'data-fd-l8-note', row.noteTone || 'muted');
         notes++;
       });
+      paintUsageLog(box.children[1], cards, screen);
       // Published so the live proof can fail loudly if a paint ever matches nothing.
       root.FD.screens.accounts.painted = { cards: cards.length, notes: notes, rows: state.rows.length };
     } catch (e) {
@@ -723,6 +818,7 @@
     poller = null;
     progress.open = false;
     paintProgress();
+    sync(); // the log below the cards is re-placed once the popup stops covering it
   }
 
   // A poll that fails leaves the last rows standing: the refresh itself is what reports the
@@ -787,6 +883,7 @@
       const payload = await api.credits(force ? { refresh: true } : {});
       state.rows = toRows(payload, undefined, api.toAccounts);
       state.errors = toErrors(payload);
+      state.log = usageLogLines(payload, Date.now() / 1000);
       state.loaded = true;
       if (force) await finishProgress(api, myGen, '');
     } catch (e) {
@@ -794,6 +891,7 @@
       state.error = 'cannot reach fleetdeck';
       state.rows = [];
       state.errors = [];
+      state.log = [];
       if (force) await finishProgress(api, myGen, 'cannot reach fleetdeck' + (e && e.message ? ' — ' + String(e.message).slice(0, 120) : ''));
     } finally {
       state.loading = false;

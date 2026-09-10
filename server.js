@@ -1738,7 +1738,7 @@ async function creditsCollect(force) {
       creditsInflight = false;
     }
   }
-  return { rows: creditsRows(), errors, usage_schedule: usageSchedule() };
+  return { rows: creditsRows(), errors, usage_schedule: usageSchedule(), usage_log: usageLogNewest.all() };
 }
 
 // --- Machines: which account each AI client on each machine is signed in as. The same
@@ -1971,6 +1971,57 @@ function machinesCredits(d, host, map, push) {
   return out;
 }
 
+// Every usage call the fleet made, one line each. A client row carries `note`, one sentence
+// the next sweep overwrites — so a run of refusals, or the pause that followed one, left
+// nothing anyone could read afterwards. Only the call itself is kept: its code, the pause it
+// earned, and the percentages it came back with. No token, and never the untouched reply.
+db.exec(
+  `CREATE TABLE IF NOT EXISTS usage_log (t INTEGER, host TEXT, email TEXT, org TEXT, code INTEGER, retry_after INTEGER, pause INTEGER, skipped TEXT, state TEXT, note TEXT, fh REAL, sd REAL, sf REAL)`
+);
+const usageLogInsert = db.prepare(
+  `INSERT INTO usage_log (t, host, email, org, code, retry_after, pause, skipped, state, note, fh, sd, sf)
+   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+);
+const USAGE_LOG_KEEP = 2000; // a few days of sweeps across the fleet; older lines answer nothing
+const usageLogPrune = db.prepare(
+  `DELETE FROM usage_log WHERE rowid NOT IN (SELECT rowid FROM usage_log ORDER BY t DESC, rowid DESC LIMIT ${USAGE_LOG_KEEP})`
+);
+const USAGE_LOG_SHOW = 200; // what one page load is served; the rest stays in fleet.db
+const usageLogNewest = db.prepare(
+  `SELECT t, host, email, org, code, retry_after, pause, skipped, state, note, fh, sd, sf
+   FROM usage_log ORDER BY t DESC, rowid DESC LIMIT ${USAGE_LOG_SHOW}`
+);
+
+// One line per Claude login whose usage call was made or held off. A schedule skip is not
+// one: off the hour that would be a line per account every five minutes, each saying only
+// that nobody asked.
+function usageLogWrite(d, host) {
+  const now = Math.floor(Date.now() / 1000);
+  for (const c of Array.isArray(d && d.clients) ? d.clients : []) {
+    if (!c || c.client !== 'claude_cli' || c.proof !== 'profile') continue;
+    const u = c.usage_call && typeof c.usage_call === 'object' ? c.usage_call : null;
+    if (!u || u.skipped === 'schedule') continue;
+    // The same normalizer the stored row goes through, so a logged percentage is the one
+    // the card shows rather than a second reading of the same reply.
+    const w = claudeRow(c).windows;
+    usageLogInsert.run(
+      epochOf(u.at) ?? now,
+      str(host, 64),
+      str(c.email, 120),
+      str(c.org, 64),
+      int(u.code),
+      int(u.retry_after),
+      int(u.pause),
+      str(u.skipped, 16),
+      str(c.usage_state, 20),
+      str(c.note, 200),
+      w.five_hour?.pct ?? null,
+      w.seven_day?.pct ?? null,
+      w.seven_day_fable?.pct ?? null
+    );
+  }
+}
+
 let machinesAt = 0; // last live collect, ms
 // A GET inside the TTL early-returns and would otherwise render the stale rows as if they
 // were fresh, with no sign a sweep is running. A counter, not a flag: two forced sweeps can
@@ -2046,6 +2097,7 @@ async function machinesCollect(force) {
           const d = JSON.parse(line);
           machinesUpsert.run(m.id, JSON.stringify({ ...machinePayload(d), collected_at: now }), now);
           credits.push(...machinesCredits(d, m.host || m.id, map, false));
+          usageLogWrite(d, m.host || m.id);
           machinesErrors.delete(m.id);
           settle(m.id, 'ok');
         } catch (e) {
@@ -2058,6 +2110,7 @@ async function machinesCollect(force) {
     // Written once the sweep is in, like creditsCollect: only a batch holding every machine's
     // candidates lets a real reading rescue another box's unpopulated reply for that account.
     creditsWrite(credits);
+    usageLogPrune.run();
   } finally {
     // In a finally so a throw above cannot strand the counter above zero, which would leave
     // the page saying "collecting" for as long as the deck runs.
@@ -3517,4 +3570,7 @@ module.exports = {
   creditsWrite, beats, creditsRows, machinesCredits, creditsCollect, creditsCandidates,
   // Test seams: the hourly window the usage endpoint is read in, and the claim on it.
   usageDue, usageHoursOpen,
+  // Test seams: the per-reply insert behind the Accounts page's usage-call log, and the
+  // retention the sweep applies to it.
+  usageLogWrite, usageLogPrune,
 };

@@ -1727,3 +1727,64 @@ test('creditsCollect — a credits reply\'s live Claude row is dropped, not stor
   assert.equal(oauth[0].id, 'ghost@example.invalid');
   assert.equal(oauth[0].windows.five_hour.pct, 10);
 });
+
+// The usage-call log: one stored line per call the fleet made, so a refusal survives the
+// sweep that overwrote the client row's note.
+test('usage_log — a refused call and a read that answered are both kept, a schedule skip is not', (t) => {
+  const { usageLogWrite, db } = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  usageLogWrite({ v: 1, id: 'rog-strix', ts: now, clients: [
+    {
+      client: 'claude_cli', proof: 'profile', email: 'borrow@example.invalid', org: ORG,
+      usage_state: 'rate_limited',
+      note: 'usage call refused with HTTP 429, pausing 600s',
+      usage_call: { at: now, code: 429, retry_after: 216, pause: 600, skipped: null, ok: false },
+    },
+    {
+      client: 'claude_cli', proof: 'profile', email: 'read@example.invalid', org: ORG,
+      usage_state: 'ok', note: null,
+      usage_call: { at: now - 1, code: 200, retry_after: null, pause: null, skipped: null, ok: true },
+      usage: {
+        five_hour: { utilization: 12 },
+        seven_day: { utilization: 57 },
+        limits: [{ kind: 'weekly_scoped', percent: 100, scope: { model: { display_name: 'Fable' } } }],
+      },
+    },
+    // Off the hour the deck asks nobody: a line per account every five minutes saying so
+    // would bury the calls that were actually made.
+    {
+      client: 'claude_cli', proof: 'profile', email: 'quiet@example.invalid', org: ORG,
+      note: 'usage read skipped this sweep (hourly schedule)',
+      usage_call: { at: now, code: null, retry_after: null, pause: null, skipped: 'schedule', ok: false },
+    },
+    // Nothing proved this one, so there was no usage call to log.
+    { client: 'claude_cli', proof: 'config', email: 'cfg@example.invalid' },
+  ] }, 'ROG Strix');
+
+  const rows = db.prepare('SELECT * FROM usage_log ORDER BY t DESC').all();
+  assert.equal(rows.length, 2);
+  assert.deepEqual({ ...rows[0] }, {
+    t: now, host: 'ROG Strix', email: 'borrow@example.invalid', org: ORG, code: 429,
+    retry_after: 216, pause: 600, skipped: null, state: 'rate_limited',
+    note: 'usage call refused with HTTP 429, pausing 600s', fh: null, sd: null, sf: null,
+  });
+  assert.deepEqual({ ...rows[1] }, {
+    t: now - 1, host: 'ROG Strix', email: 'read@example.invalid', org: ORG, code: 200,
+    retry_after: null, pause: null, skipped: null, state: 'ok', note: null,
+    fh: 12, sd: 57, sf: 100,
+  });
+});
+
+test('usage_log — retention keeps the newest 2000 lines', (t) => {
+  const { usageLogPrune, db } = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  const ins = db.prepare('INSERT INTO usage_log (t, host, code, state) VALUES (?, ?, ?, ?)');
+  db.exec('BEGIN');
+  for (let i = 0; i < 2100; i++) ins.run(now - i, 'ROG Strix', 200, 'ok');
+  db.exec('COMMIT');
+  usageLogPrune.run();
+  assert.equal(db.prepare('SELECT count(*) c FROM usage_log').get().c, 2000);
+  const span = db.prepare('SELECT max(t) hi, min(t) lo FROM usage_log').get();
+  assert.equal(span.hi, now, 'the newest line was pruned');
+  assert.equal(span.lo, now - 1999, 'the oldest lines were kept');
+});
