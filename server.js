@@ -1750,11 +1750,11 @@ const MACHINES_FILE = process.env.FLEET_MACHINES_FILE || path.join(__dirname, 'm
 const LOGINS_SH = process.env.FLEET_LOGINS_SH || path.join(__dirname, 'box', 'fleet-logins.sh');
 const MACHINES_TTL =
   (Number(process.env.FLEET_MACHINES_TTL_SECS) > 0 ? Number(process.env.FLEET_MACHINES_TTL_SECS) : 300) * 1000;
-// The usage endpoint is read once an hour at most, and only between 11:00 and 03:00 in the
+// The usage endpoint is read once every eight hours at most, and only between 11:00 and 03:00 in the
 // deck's own local time (operator ruling 2026-09-10). A Refresh click reads at any hour and
 // counts as that hour's read; every other call the collectors make keeps its own cadence.
 const USAGE_EVERY_MS =
-  (Number(process.env.FLEET_USAGE_EVERY_SECS) > 0 ? Number(process.env.FLEET_USAGE_EVERY_SECS) : 3600) * 1000;
+  (Number(process.env.FLEET_USAGE_EVERY_SECS) > 0 ? Number(process.env.FLEET_USAGE_EVERY_SECS) : 8 * 3600) * 1000;
 const USAGE_HOURS = process.env.FLEET_USAGE_HOURS || '11-3';
 const [USAGE_FROM, USAGE_TO] = USAGE_HOURS.split('-').map(Number);
 // '11-3' wraps midnight, so it reads as 11:00 through 02:59; '9-17' does not wrap.
@@ -3945,7 +3945,7 @@ module.exports = {
   creditsWrite, beats, creditsRows, machinesCredits, creditsCollect, creditsCandidates,
   // Test seam: the trend line's own writer — the only thing that still reads a desktop sample.
   creditsHistoryWrite,
-  // Test seams: the hourly window the usage endpoint is read in, and the claim on it.
+  // Test seams: the eight-hour schedule the usage endpoint is read on, and the claim on it.
   usageDue, usageHoursOpen,
   // Test seams: the per-reply insert behind the Accounts page's usage-call log, and the
   // retention the sweep applies to it.

@@ -1595,7 +1595,7 @@ test('/api/credits — a future snapshot stamp is clamped, so it cannot pin the 
   assert.equal(row().snapshot_ts, now);
 });
 
-// --- The usage endpoint's hourly schedule (operator ruling 2026-09-10): read once an hour at
+// --- The usage endpoint's schedule (operator rulings 2026-09-10/11): read once every eight hours at
 // most, and only inside the deck's local window. A Refresh click always reads.
 const schedule = (t, env = {}) => {
   const dir = tmpdir('usage-schedule');
@@ -1624,16 +1624,17 @@ test('usageHoursOpen — a non-wrapping window is the plain half-open range', (t
   assert.equal(usageHoursOpen(at(8, 59)), false);
 });
 
-test('usageDue — one read an hour inside the window, and a Refresh whenever it is asked', (t) => {
+test('usageDue — one read every eight hours inside the window, and a Refresh whenever it is asked', (t) => {
   const { usageDue } = schedule(t);
   const open = at(12).getTime();
   const shut = at(6).getTime();
 
-  // Inside the hours: the first sweep reads, the ones behind it in the same hour do not.
+  // Inside the hours: the first sweep reads, the ones behind it in the same eight hours do not.
   assert.equal(usageDue(false, open), true);
   assert.equal(usageDue(false, open + 60000), false);
   assert.equal(usageDue(false, open + 3599999), false);
-  assert.equal(usageDue(false, open + 3600000), true);
+  assert.equal(usageDue(false, open + 3600000), false);
+  assert.equal(usageDue(false, open + 8 * 3600000), true);
 
   // Outside them nothing reads on its own — but a Refresh does, and it claims that hour.
   assert.equal(usageDue(false, shut), false);
