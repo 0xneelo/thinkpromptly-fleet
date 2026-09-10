@@ -31,6 +31,75 @@ directly, without subagents, as explicitly required by the Codex launch override
 
 Signed: Ysolde
 
+### PENDING-M3 — completion comment (2026-09-10T19:21:00Z)
+
+Implemented the complete fixture matrix in `test/notify.test.js` and recorded
+commands, red/green evidence, security checks and baseline reproductions in
+`verification.md`. Focused: **39 passed, 0 failed, 0 skipped**. Full serial suite:
+**704 passed, 2 failed, 0 skipped**; both failures reproduce on base `34287bf`.
+`npm test` separately stops at the unchanged fixture-drift pretest. No listener
+tests were skipped; 127.0.0.2 is available on this box.
+
+Self-review: full M3 diff reviewed by Ysolde; no unresolved notify findings. The
+two baseline repair issues are recorded here, without expanding this lane. Linear
+retry still requires reauthentication. Acceptance 1's baseline-exception ruling
+is pending; no full-suite green claim is made.
+Pushed SHA will be recorded after push in the next ledger update and final report.
+
+Signed: Ysolde
+
+### PENDING-BASELINE-CREDITS — out-of-scope issue (2026-09-10T19:19:30Z)
+
+Title: `[Ysolde · backend-developer] isolate fleet-credits fixture from host-wide discovery`
+
+Labels: `needs:general`, `agent:ysolde`, `agent:agent-ysolde`,
+`project:remote-system`, `subproject:fleetdeck-notify`, `session:cli-worker`.
+Linear Project: `remote-system`. Intended status: Todo. Unfiled because Linear
+requires reauthentication.
+
+`test/machines.test.js:1658` sets a fake HOME but `box/fleet-credits.sh:59–60,87`
+also globs absolute `/mnt/c/Users/*` and `/home/*` paths. On this box the test's
+`desktop.length === 1` assertion gets 3 (`test/machines.test.js:1680`). The exact
+test also fails with `3 !== 1` in a clean archive of base `34287bf`, using:
+
+```sh
+TMPDIR="$PWD/.tmp" node --test --test-name-pattern='fleet-credits.sh — it reads no token' \
+  .tmp/notify-base-tests/test/machines.test.js
+```
+
+Expected: the owning lane provides a complete discovery fixture boundary and
+asserts no ambient host input enters the test. No collector or machine tests were
+changed in notify-seat-aliases. Baseline acceptance exception requested from the
+operator while the rest of the authorized work continues.
+
+Signed: Ysolde
+
+### PENDING-BASELINE — out-of-scope issue (2026-09-10T19:18:31Z)
+
+Title: `[Ysolde · backend-developer] repair existing v2 fixture title drift in npm pretest`
+
+Labels: `needs:general`, `agent:ysolde`, `agent:agent-ysolde`,
+`project:remote-system`, `subproject:fleetdeck-notify`, `session:cli-worker`.
+Linear Project: `remote-system`. Intended status: Todo. Unfiled because Linear
+requires reauthentication; this is not notify implementation work.
+
+`npm test` exits 1 before running tests: `node tools/extract-fixture.mjs --check`
+reports that the mock's `titles` keys omit `goals`, while `public/v2/fixture.js`
+contains it. The extractor, mock and generated fixtures are unchanged by this lane.
+Reproduced the identical exit 1 and diagnostic using those files archived from
+base `34287bf` under this worktree's `.tmp/notify-baseline/`.
+
+Expected: the owning UI lane reconciles the fixture sources/generation so pretest
+passes. No generated UI files were edited by this worker. The underlying serial
+Node test suite is run separately for Acceptance 1.
+
+The full Node suite also exposes the same eight-versus-nine-screen drift in
+`test/v2-data.test.js:868` (`every screen in the pack is routable`): actual keys
+include `goals`; the test's expected keys omit it. The exact test fails on the
+archived base too. Include that fixture assertion in the owning UI lane's repair.
+
+Signed: Ysolde
+
 ### PENDING-M2 — completion comment (2026-09-10)
 
 Seat regexes now match app titles first, then legacy CLI names, then the existing
@@ -45,7 +114,8 @@ change; afterward it delivers through the fixture peer socket and persists
 Self-review: full M2 diff reviewed by Ysolde; stable ID addressing avoids derived-name
 collisions while preserving legacy targets. No unresolved findings. Linear retry
 still requires reauthentication; this is the pending issue completion comment.
-Pushed SHA will be recorded after push in the next ledger update and final report.
+Pushed SHA: `8e43259ed3460a6c52d0aaf15113b17978bd53cc`. A fresh broker-authenticated
+`git ls-remote` matched the full SHA after push.
 
 Signed: Ysolde
 

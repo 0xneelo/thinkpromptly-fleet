@@ -22,7 +22,7 @@ const NO_BRIDGE = '/nonexistent/fleetdeck-claude-bridge';
 
 // Sessions are seeded straight into the db this instance opens: the registry route would work
 // too, but the fixture is the fleet shape under test, not a sequence of writes to it.
-async function deck(t, rows = []) {
+async function deck(t, rows = [], observeStore = false) {
   const dir = tmpdir('notify');
   legacyDb(dir, rows.map((r) => ({ status: 'active', ...r })));
   // An empty host map makes every ssh answer "could not resolve hostname" at once, so a tmux
@@ -33,6 +33,18 @@ async function deck(t, rows = []) {
   // never against the desktop sessions actually open beside the test.
   const sessions = path.join(dir, 'sessions');
   fs.mkdirSync(sessions);
+  const preload = path.join(dir, 'observe-store.cjs');
+  if (observeStore) fs.writeFileSync(preload, `
+    const fs = require('node:fs');
+    for (const name of ['readdirSync', 'readFileSync']) {
+      const original = fs[name];
+      fs[name] = function (file, ...args) {
+        if (String(file).startsWith(process.env.CLAUDE_DESKTOP_STORE_DIR))
+          fs.appendFileSync(__dirname + '/store-reads.log', name + '\\n');
+        return original.call(this, file, ...args);
+      };
+    }
+  `);
   const s = await startServer(
     {
       FLEETDECK_BUS_TOKEN: TOKEN,
@@ -41,11 +53,23 @@ async function deck(t, rows = []) {
       CLAUDE_DESKTOP_STORE_DIR: path.join(dir, 'desktop-store'),
       FLEET_SSH_BIN: path.join(__dirname, 'fake-ssh.js'),
       FLEET_FAKE_SSH_STATE: state,
+      ...(observeStore ? { NODE_OPTIONS: '--require ' + JSON.stringify(preload) } : {}),
     },
     { dir }
   );
   t.after(() => s.stop());
   return s;
+}
+
+function desktopTitle(s, cliSessionId, title, changes = {}) {
+  const org = path.join(s.dir, 'desktop-store', 'account', 'org');
+  fs.mkdirSync(org, { recursive: true });
+  // Deliberately distinct local and CLI UUIDs: joining on the store sessionId is wrong.
+  const id = 'local_' + crypto.randomUUID();
+  const file = path.join(org, id + '.json');
+  fs.writeFileSync(file, JSON.stringify({ sessionId: id, cliSessionId, title,
+    cwd: '/private/seat-project', lastActivityAt: '2026-09-10T19:00:00Z', isArchived: false, ...changes }));
+  return file;
 }
 
 // A fake Claude Desktop session: the registry files a real one publishes (a live pid — this
@@ -353,12 +377,7 @@ test('an app title joins a derived CLI name and delivers via the stable session 
   const cli = 'd4f52004-39d2-433f-abbd-e93f240f6f85';
   const seat = await desktopSession(s, 'v3-page-bugs-derived', process.pid, cli);
   t.after(seat.close);
-  const org = path.join(s.dir, 'desktop-store', 'account', 'org');
-  fs.mkdirSync(org, { recursive: true });
-  fs.writeFileSync(path.join(org, 'local_11111111-1111-4111-8111-111111111111.json'), JSON.stringify({
-    sessionId: 'local_11111111-1111-4111-8111-111111111111', cliSessionId: cli,
-    title: '🎛 ORCHESTRATOR 20 · remote-system · notify', isArchived: false,
-  }));
+  desktopTitle(s, cli, '🎛 ORCHESTRATOR 20 · remote-system · notify');
   const r = await send(s, 'orchestrator remote-system');
   assert.equal(r.status, 200, r.text);
   assert.equal(r.body.resolvedVia, 'title');
@@ -366,6 +385,161 @@ test('an app title joins a derived CLI name and delivers via the stable session 
   assert.equal(r.body.status, 'delivered');
   assert.match(seat.frames.join(''), /ping/);
   assert.equal((await s.get('/api/notify/' + r.body.id)).body.resolved_via, 'title');
+});
+
+for (const [alias, title] of [
+  ['orchestrator lowcap-connector', '🎛 ORCHESTRATOR 36 · lowcapconnector · pricing'],
+  ['global', '🌐 GLOBAL · fleet'],
+  ['design 14', '🎨 DESIGN 14 · bus'],
+  ['researcher 3', '🔬 RESEARCHER 3 · residuals'],
+  ['coordinator 19', '🧭 COORDINATOR 19 · dispatch'],
+]) test('app title resolves ' + alias + ' with a derived CLI name', async (t) => {
+  const s = await deck(t);
+  const cli = crypto.randomUUID();
+  const seat = await desktopSession(s, 'derived-name', process.pid, cli);
+  t.after(seat.close);
+  desktopTitle(s, cli, title);
+  const r = await send(s, alias);
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.resolvedVia, 'title');
+  assert.equal(r.body.resolvedTarget, 'claude-desktop:id:' + cli);
+  assert.equal(r.body.status, 'delivered');
+  assert.match(seat.frames.join(''), /ping/);
+});
+
+for (const mode of ['no record', 'archived', 'wrong join key'])
+  test(mode + ' leaves a derived-name seat unaddressable', async (t) => {
+    const s = await deck(t);
+    const cli = crypto.randomUUID();
+    const seat = await desktopSession(s, 'derived-name', process.pid, cli);
+    t.after(seat.close);
+    if (mode !== 'no record') desktopTitle(s, cli, '🌐 GLOBAL', mode === 'archived'
+      ? { isArchived: true } : { cliSessionId: crypto.randomUUID(), sessionId: cli });
+    const r = await send(s, 'global');
+    assert.equal(r.status, 409, r.text);
+    assert.equal(r.body.error, 'seat_unaddressable');
+    assert.deepEqual(r.body.consideredTitles, []);
+    assert.equal(seat.frames.length, 0);
+    assert.deepEqual((await s.get('/api/notify')).body.notifies, []);
+  });
+
+test('two live app titles for one seat remain ambiguous even when a CLI name matches', async (t) => {
+  const s = await deck(t);
+  const a = crypto.randomUUID(), b = crypto.randomUUID();
+  const one = await desktopSession(s, '🎨 DESIGN 14 · legacy', process.pid, a);
+  const two = await desktopSession(s, 'derived-two', process.ppid, b);
+  t.after(one.close);
+  t.after(two.close);
+  desktopTitle(s, a, '🎨 DESIGN 14');
+  desktopTitle(s, b, '🎨 DESIGN 14');
+  const r = await send(s, 'design 14');
+  assert.equal(r.status, 409, r.text);
+  assert.equal(r.body.error, 'ambiguous');
+  assert.deepEqual(r.body.candidates.map((c) => c.name).sort(), ['derived-two', '🎨 DESIGN 14 · legacy']);
+  assert.equal(one.frames.length + two.frames.length, 0);
+  assert.deepEqual((await s.get('/api/notify')).body.notifies, []);
+});
+
+test('app title beats both a matching CLI name and a different orchestrator lease owner', async (t) => {
+  const s = await deck(t);
+  const cli = crypto.randomUUID();
+  const title = '🎛 ORCHESTRATOR 20 · remote-system';
+  const one = await desktopSession(s, 'derived-one', process.pid, cli);
+  const two = await desktopSession(s, title, process.ppid);
+  t.after(one.close);
+  t.after(two.close);
+  desktopTitle(s, cli, title);
+  const db = s.open();
+  db.prepare('INSERT INTO seats (seat, owner_host, owner_name, epoch, expires_at) VALUES (?, ?, ?, ?, ?)')
+    .run('orchestrator', 'mac', title, 1, Date.now() + 60000);
+  db.close();
+  const r = await send(s, 'orchestrator remote-system');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.resolvedVia, 'title');
+  assert.equal(r.body.resolvedTarget, 'claude-desktop:id:' + cli);
+  assert.match(one.frames.join(''), /ping/);
+  assert.equal(two.frames.length, 0);
+});
+
+test('a nonmatching app title retains legacy CLI name resolution', async (t) => {
+  const s = await deck(t);
+  const cli = crypto.randomUUID();
+  const seat = await desktopSession(s, '🔬 RESEARCHER 3 · legacy', process.pid, cli);
+  t.after(seat.close);
+  desktopTitle(s, cli, 'Unrelated app title');
+  const r = await send(s, 'researcher 3');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.resolvedVia, 'seat');
+  assert.equal(r.body.resolvedTarget, 'claude-desktop:🔬 RESEARCHER 3 · legacy');
+  assert.equal(r.body.status, 'delivered');
+});
+
+test('unique app title delivers by ID even when derived CLI names collide', async (t) => {
+  const s = await deck(t);
+  const a = crypto.randomUUID(), b = crypto.randomUUID();
+  const one = await desktopSession(s, 'same-derived-name', process.pid, a);
+  const two = await desktopSession(s, 'same-derived-name', process.ppid, b);
+  t.after(one.close);
+  t.after(two.close);
+  desktopTitle(s, a, '🎨 DESIGN 14');
+  desktopTitle(s, b, '🎨 DESIGN 140');
+  const r = await send(s, 'design 14');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.resolvedTarget, 'claude-desktop:id:' + a);
+  assert.equal(r.body.status, 'delivered');
+  assert.match(one.frames.join(''), /ping/);
+  assert.equal(two.frames.length, 0);
+});
+
+test('store titles cannot make a dead pid or a missing socket live', async (t) => {
+  const s = await deck(t);
+  for (const pid of [999999, process.pid]) {
+    const cli = crypto.randomUUID();
+    fs.writeFileSync(path.join(s.dir, 'sessions', pid + '.json'), JSON.stringify({
+      pid, sessionId: cli, name: 'derived-' + pid,
+      messagingSocketPath: pid === 999999 ? s.file : path.join(s.dir, 'missing.sock'),
+    }));
+    desktopTitle(s, cli, '🌐 GLOBAL');
+  }
+  const r = await send(s, 'global');
+  assert.equal(r.status, 409, r.text);
+  assert.equal(r.body.error, 'seat_unaddressable');
+  assert.deepEqual(r.body.consideredTitles, []);
+});
+
+test('tailnet title lookup stays behind notify auth and reveals only considered titles', async (t) => {
+  const s = await deck(t, [], true);
+  const cli = crypto.randomUUID();
+  const seat = await desktopSession(s, 'derived-name', process.pid, cli);
+  t.after(seat.close);
+  desktopTitle(s, cli, '🌐 GLOBAL', { privateExtra: 'secret-fixture-marker' });
+  const log = path.join(s.dir, 'store-reads.log');
+  const b = { to: 'global', from: 'FD-test', text: 'ping' };
+  const auth = { authorization: 'Bearer ' + TOKEN };
+  assert.equal(fs.existsSync(log), false, 'server boot must not scan the app store');
+  assert.equal((await s.tailPost('/api/notify', b)).status, 401);
+  assert.equal((await s.tailPost('/api/notify', b, { authorization: 'Bearer wrong' })).status, 401);
+  assert.equal((await s.tailGet('/api/desktop-sessions', auth)).status, 404);
+  assert.equal((await s.tailGet('/api/notify', auth)).status, 404);
+  assert.equal((await s.tailGet('/api/notify/unknown', auth)).status, 404);
+  assert.equal((await s.tailPost('/api/notify/unknown/ack', { from: 'FD-test' }, auth)).status, 404);
+  assert.equal(fs.existsSync(log), false, 'denied and metadata routes must not scan the store');
+  const remote = await s.tailPost('/api/notify', b, auth);
+  assert.equal(remote.status, 200, remote.text);
+  assert.equal(remote.body.resolvedVia, 'title');
+  assert.equal(remote.body.status, 'delivered');
+  const reads = fs.readFileSync(log, 'utf8');
+  assert.match(reads, /readFileSync/);
+  const local = await send(s, 'global');
+  assert.equal(local.body.resolvedTarget, remote.body.resolvedTarget);
+  assert.equal(local.body.resolvedVia, 'title');
+  assert.equal(fs.readFileSync(log, 'utf8'), reads, 'loopback shares the same warm cache');
+  const missing = await s.tailPost('/api/notify', { ...b, to: 'design 14' }, auth);
+  assert.equal(missing.status, 409, missing.text);
+  assert.equal(missing.body.error, 'seat_unaddressable');
+  assert.deepEqual(missing.body.consideredTitles, ['🌐 GLOBAL']);
+  assert.equal(missing.body.owner, null);
+  assert.doesNotMatch(missing.text, /cwd|private|secret-fixture|sessionId|messagingSocketPath/);
 });
 
 test('orchestrator <project> matches the seat title with spelling drift, else the lease owner', async (t) => {
