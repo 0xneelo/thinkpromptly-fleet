@@ -84,3 +84,24 @@ test('duplicate active store keys fail closed instead of choosing a title by fil
   fs.writeFileSync(path.join(f.org, 'local_other.json'), JSON.stringify({ cliSessionId: CLI, title: '🌐 GLOBAL' }));
   assert.equal(f.titles.get().get(CLI), null);
 });
+
+test('oversized title records are skipped before reading and recover after replacement', (t) => {
+  const f = fixture(t);
+  const limit = 16 * 1024 * 1024;
+  f.write();
+  fs.appendFileSync(f.file, Buffer.alloc(limit - fs.statSync(f.file).size, 0x20));
+  assert.equal(f.titles.get().get(CLI).title, '🎛 ORCHESTRATOR 20 · remote-system', 'the exact byte limit is allowed');
+  fs.appendFileSync(f.file, ' ');
+  const readFile = fs.readFileSync;
+  let oversizedReads = 0;
+  t.mock.method(fs, 'readFileSync', function (file, ...args) {
+    if (file === f.file) oversizedReads++;
+    return readFile.call(this, file, ...args);
+  });
+  f.advance(5000);
+  assert.equal(f.titles.get().has(CLI), false);
+  assert.equal(oversizedReads, 0, 'an oversized record must be rejected before loading it');
+  f.write();
+  f.advance(5000);
+  assert.equal(f.titles.get().get(CLI).title, '🎛 ORCHESTRATOR 20 · remote-system');
+});

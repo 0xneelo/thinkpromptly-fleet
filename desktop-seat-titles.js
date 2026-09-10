@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { uuid } = require('./desktop-sessions');
+const MAX_BYTES = 16 * 1024 * 1024; // same byte ceiling as the desktop metadata collector
 
 function entries(dir) {
   try { return fs.readdirSync(dir, { withFileTypes: true }); }
@@ -30,7 +31,11 @@ class DesktopSeatTitles {
         for (const file of entries(orgDir)) {
           if (!file.isFile() || !/^local_[A-Za-z0-9_-]{1,160}\.json$/.test(file.name)) continue;
           try {
-            const row = JSON.parse(fs.readFileSync(path.join(orgDir, file.name), 'utf8'));
+            const full = path.join(orgDir, file.name);
+            if (fs.statSync(full).size > MAX_BYTES) continue;
+            const raw = fs.readFileSync(full);
+            if (raw.length > MAX_BYTES) continue; // a writer may grow it after stat
+            const row = JSON.parse(raw.toString('utf8'));
             const id = uuid(row?.cliSessionId);
             if (!id || row.isArchived === true) continue;
             // A duplicated CLI identity cannot safely choose one app title.

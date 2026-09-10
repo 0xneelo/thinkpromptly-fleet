@@ -112,12 +112,14 @@ POSTs require the bearer token.
 **Notify seat titles.** Local desktop sessions join the process registry's `sessionId`
 to the app store's `cliSessionId`. The title index refreshes lazily every five seconds;
 archived records and ambiguous duplicate keys supply no title. Missing or unreadable
-stores leave the existing CLI session names available.
+stores leave the existing CLI session names available. Store files above 16 MiB are skipped.
 Seat aliases (`orchestrator <project>`, `global`, `design <N>`, `researcher <N>`,
 `coordinator <N>`) match app titles first (`resolvedVia: "title"`), then CLI names,
 then the existing orchestrator lease owner. Title matches address the stable
-`claude-desktop:id:<cliSessionId>` peer. Multiple matches still return 409 `ambiguous`;
-409 `seat_unaddressable` includes `consideredTitles` (titles only, no store paths or cwd).
+`claude-desktop:id:<cliSessionId>` peer. Multiple matches still return 409 `ambiguous`,
+with each candidate's app title included when present. On loopback, 409 `seat_unaddressable`
+includes up to 100 `consideredTitles` (titles only, no store paths or cwd); tailnet callers
+receive `consideredTitles: null`, just as the seat owner is withheld.
 
 | Environment variable | Default | Purpose |
 |---|---|---|

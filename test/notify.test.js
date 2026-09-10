@@ -436,6 +436,7 @@ test('two live app titles for one seat remain ambiguous even when a CLI name mat
   assert.equal(r.status, 409, r.text);
   assert.equal(r.body.error, 'ambiguous');
   assert.deepEqual(r.body.candidates.map((c) => c.name).sort(), ['derived-two', '🎨 DESIGN 14 · legacy']);
+  assert.deepEqual(r.body.candidates.map((c) => c.title), ['🎨 DESIGN 14', '🎨 DESIGN 14']);
   assert.equal(one.frames.length + two.frames.length, 0);
   assert.deepEqual((await s.get('/api/notify')).body.notifies, []);
 });
@@ -507,7 +508,7 @@ test('store titles cannot make a dead pid or a missing socket live', async (t) =
   assert.deepEqual(r.body.consideredTitles, []);
 });
 
-test('tailnet title lookup stays behind notify auth and reveals only considered titles', async (t) => {
+test('tailnet title lookup stays behind notify auth and redacts considered titles', async (t) => {
   const s = await deck(t, [], true);
   const cli = crypto.randomUUID();
   const seat = await desktopSession(s, 'derived-name', process.pid, cli);
@@ -537,9 +538,42 @@ test('tailnet title lookup stays behind notify auth and reveals only considered 
   const missing = await s.tailPost('/api/notify', { ...b, to: 'design 14' }, auth);
   assert.equal(missing.status, 409, missing.text);
   assert.equal(missing.body.error, 'seat_unaddressable');
-  assert.deepEqual(missing.body.consideredTitles, ['🌐 GLOBAL']);
+  assert.equal(missing.body.consideredTitles, null);
   assert.equal(missing.body.owner, null);
-  assert.doesNotMatch(missing.text, /cwd|private|secret-fixture|sessionId|messagingSocketPath/);
+  assert.doesNotMatch(missing.text, /🌐 GLOBAL|cwd|private|secret-fixture|sessionId|messagingSocketPath/);
+  const localMissing = await send(s, 'design 14');
+  assert.equal(localMissing.status, 409, localMissing.text);
+  assert.deepEqual(localMissing.body.consideredTitles, ['🌐 GLOBAL']);
+  assert.doesNotMatch(localMissing.text, /cwd|private|secret-fixture|sessionId|messagingSocketPath/);
+});
+
+test('considered-title diagnostics stop at 100 without limiting seat resolution', async (t) => {
+  const s = await deck(t);
+  const seat = await desktopSession(s, 'fixture-source');
+  t.after(seat.close);
+  const registry = path.join(s.dir, 'sessions');
+  const row = JSON.parse(fs.readFileSync(path.join(registry, process.pid + '.json'), 'utf8'));
+  fs.unlinkSync(path.join(registry, process.pid + '.json'));
+  // Only metadata enumeration is under test: all fixture rows use the test's live
+  // pid/socket, with distinct registry filenames and session identities.
+  let last;
+  for (let i = 0; i <= 100; i++) {
+    last = crypto.randomUUID();
+    fs.writeFileSync(path.join(registry, (10000 + i) + '.json'), JSON.stringify({
+      ...row, name: 'derived-' + i, sessionId: last,
+    }));
+    desktopTitle(s, last, i === 100 ? '🌐 GLOBAL' : 'Fixture seat ' + i);
+  }
+  const missing = await send(s, 'design 14');
+  assert.equal(missing.status, 409, missing.text);
+  assert.equal(missing.body.consideredTitles.length, 100);
+  assert.equal(missing.body.consideredTitles[0], 'Fixture seat 0');
+  assert.equal(missing.body.consideredTitles[99], 'Fixture seat 99');
+  const found = await send(s, 'global');
+  assert.equal(found.status, 200, found.text);
+  assert.equal(found.body.resolvedTarget, 'claude-desktop:id:' + last);
+  assert.equal(found.body.resolvedVia, 'title');
+  assert.equal(found.body.status, 'delivered');
 });
 
 test('orchestrator <project> matches the seat title with spelling drift, else the lease owner', async (t) => {

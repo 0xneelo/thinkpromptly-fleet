@@ -3284,7 +3284,9 @@ function resolveNotifyTarget(to) {
     if (live.length > 1) {
       const error = new Error('ambiguous');
       error.code = 409;
-      error.candidates = live.map((s) => ({ host: 'mac', name: s.name, worker: '', label: seat }));
+      error.candidates = live.map((s) => ({
+        host: 'mac', name: s.name, ...(s.title !== null ? { title: s.title } : {}), worker: '', label: seat,
+      }));
       throw error;
     }
     // A derived CLI name can collide or change. Title matches have a joined stable ID,
@@ -3298,7 +3300,7 @@ function resolveNotifyTarget(to) {
       seat,
       seatKey,
       unaddressable: !live.length,
-      consideredTitles: considered.map((s) => s.title).filter((title) => title !== null),
+      consideredTitles: considered.map((s) => s.title).filter((title) => title !== null).slice(0, 100),
     };
   }
   if (alias.includes(':')) {
@@ -3386,12 +3388,12 @@ async function notifySend(b, remote) {
     const row = seatKey ? seatRow.get(seatKey) : null;
     const error = new Error('seat_unaddressable');
     error.code = 409;
-    // Over the tailnet the owner is withheld: /api/seats is loopback-only (M13), and this reply
-    // must not become a side door to it.
+    // Owner and the fleet-wide title diagnostic stay on loopback: a bus-token holder
+    // must not use a missing alias to enumerate desktop seats across projects.
     error.detail = {
       seat,
       owner: row && !remote ? { host: row.owner_host, name: row.owner_name, fenced: row.epoch !== null } : null,
-      consideredTitles,
+      consideredTitles: remote ? null : consideredTitles,
       hint: 'no live Claude Desktop session matches this seat by app title or CLI name; start or title it, or open its chat and resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.',
     };
     throw error;
