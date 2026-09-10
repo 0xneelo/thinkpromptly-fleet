@@ -49,3 +49,15 @@ M2 pushed a17053c21e3ceca6f93e7a5043a2e239f6ec504e. M3 artifacts and 16/16 offli
 checks are described in REPORT.md. All reads/edits/reviews performed directly by Ivo.
 Linear retry still oauth_token_invalid_grant; no comments or state changes posted.
 Signed: Ivo
+
+## M4 local completion — 2026-09-10
+
+M3 pushed 9da5f1a02dc08ebd5f0f3b4a1e70f9fa040eec5e. M4: 23/23 unit/route tests and
+offline Playwright proof pass. Linear retry still oauth_token_invalid_grant. Would-be
+completion comment is in REPORT.md; nothing posted to Linear. Signed: Ivo
+
+Pending needs:general — existing v2 desktop shell crowds out the keys panel at 390px.
+The isolated mint card fits; shell responsive layout is outside this security lane.
+Reproduce /app#keys at 390px with shell panels open. Keep scope outside CA rotation.
+Labels: project:remote-system, subproject:deploy-keys, agent:agent-ivo, session:cli-worker.
+Signed: Ivo

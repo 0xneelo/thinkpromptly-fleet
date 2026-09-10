@@ -165,17 +165,25 @@ test('every box chip carries the login that actually opens it', () => {
   assert.ok(keys.BOXES.every((b) => b.title && b.title.length), 'a title per box');
 });
 
-test('principalsFor — the three root boxes collapse to one principal', () => {
-  // The cert says root once, whichever of the three is picked, because that is all a
-  // principal can say: one login name, matched by every box that logs in under it.
-  assert.deepStrictEqual(keys.principalsFor({ ivy: true }), ['root']);
-  assert.deepStrictEqual(keys.principalsFor({ ivy: true, promptly: true, onboarding: true }), ['root']);
-  // And picking ivy DOES open promptly — the chip titles say so, because the cert cannot
-  // tell the three apart. Scoping one of them means changing that box's CA trust line.
-  assert.deepStrictEqual(keys.principalsFor({ 'rog-strix': true, german: true, ivy: true }), [
-    'misterisley', 'vibe', 'root',
+test('principalsFor: Daily default cannot inherit Admin box choices', () => {
+  assert.deepStrictEqual(keys.principalsFor({ ivy: true }), ['deploy']);
+  assert.deepStrictEqual(keys.principalsFor({ ivy: true, promptly: true }, 'daily'), ['deploy']);
+  assert.deepStrictEqual(keys.principalsFor({}, 'admin'), ['admin']);
+});
+
+test('Admin principals are role plus validated box tags; unknown sixth host grants nothing', () => {
+  assert.deepStrictEqual(keys.principalsFor({ 'rog-strix': true, german: true, ivy: true, 'vibes-asus': true }, 'admin'), [
+    'admin', 'rog-only', 'german-only', 'ivy-only',
   ]);
-  assert.deepStrictEqual(keys.principalsFor({}), []);
+  assert.strictEqual(keys.BOXES.find(b => b.id === 'vibes-asus').tag, null);
+  assert.match(keys.BOXES.find(b => b.id === 'vibes-asus').title, /trust unknown/);
+});
+
+test('mint requests couple each profile to its fixed duration', () => {
+  assert.deepStrictEqual(keys.mintRequest(), { profile: 'daily', ttl: '8h', extraTags: [] });
+  assert.deepStrictEqual(keys.mintRequest('daily', { ivy: true }), { profile: 'daily', ttl: '8h', extraTags: [] });
+  assert.deepStrictEqual(keys.mintRequest('admin', { ivy: true }), { profile: 'admin', ttl: '1h', extraTags: ['ivy-only'] });
+  assert.deepStrictEqual(keys.PROFILES, { daily: { label: 'Daily cert', ttl: '8h' }, admin: { label: 'Admin cert', ttl: '1h' } });
 });
 
 test('the kill confirmation is verbatim', () => {
@@ -201,7 +209,7 @@ test('requiring the screen in Node exports the pure half and starts no timer', (
   // polls before any screen is entered.
   assert.strictEqual(typeof document, 'undefined');
   assert.deepStrictEqual(Object.keys(keys).sort(), [
-    'COPIED_MS', 'KILL_CONFIRM', 'BOXES', 'BOX_IDS', 'principalsFor', 'POLL_MS', 'TICK_MS', 'TTLS',
+    'COPIED_MS', 'KILL_CONFIRM', 'BOXES', 'BOX_IDS', 'principalsFor', 'mintRequest', 'PROFILES', 'POLL_MS', 'TICK_MS', 'TTLS',
     'httpBody', 'left', 'pad', 'sshOpts', 'unwrapError',
   ].sort());
   // The registered surface is inert until a screen is entered. (The L7.1 test

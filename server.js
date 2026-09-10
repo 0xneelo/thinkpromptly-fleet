@@ -2681,7 +2681,20 @@ async function sshkeys() {
 }
 
 const TTL_MS = { '1h': 3600e3, '4h': 4 * 3600e3, '8h': 8 * 3600e3 };
-const SAFE_PRINCIPALS = /^[a-z0-9_][a-z0-9_.,-]*$/i;
+const ADMIN_CERT_TAGS = new Set(['promptly-only', 'onboarding-only', 'ivy-only', 'german-only', 'rog-only']);
+function mintArguments(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  if (Object.keys(input).some(k => !['profile', 'ttl', 'extraTags'].includes(k))) return null;
+  const profile = input.profile === undefined ? 'daily' : input.profile;
+  if (profile !== 'daily' && profile !== 'admin') return null;
+  const ttl = profile === 'daily' ? '8h' : '1h';
+  if (input.ttl !== undefined && input.ttl !== ttl) return null;
+  const tags = input.extraTags === undefined ? [] : input.extraTags;
+  if (!Array.isArray(tags) || tags.length > ADMIN_CERT_TAGS.size ||
+      tags.some(tag => typeof tag !== 'string' || !ADMIN_CERT_TAGS.has(tag)) ||
+      new Set(tags).size !== tags.length || (profile === 'daily' && tags.length)) return null;
+  return ['--' + profile, '-t', ttl, '-n', profile === 'daily' ? 'deploy' : ['admin', ...tags].join(',')];
+}
 
 // The signature comes from the 1Password agent, which pops an approval on this Mac —
 // the timeout has to outlast a human walking back to the keyboard.
@@ -2690,9 +2703,9 @@ const MINT_TIMEOUT = 120000;
 // detached puts the script in its own process group, so the timeout kill (-pid) also takes
 // down the ssh-keygen still blocked on the 1Password prompt. execFile's own timeout kills
 // only the script, leaving that child free to mint a cert after we already answered 502.
-function mint(ttl, principals) {
+function mint(args) {
   return new Promise((resolve) => {
-    const child = spawn(MINT_SH, ['-t', ttl, '-n', principals], {
+    const child = spawn(MINT_SH, args, {
       detached: true,
       env: { ...process.env, SSH_AUTH_SOCK: OP_AGENT_SOCK },
     });
@@ -3463,9 +3476,9 @@ const server = http.createServer(async (req, res) => {
         const r = deleteCertDir(b.dir);
         return json(res, r.body, r.code);
       }
-      if (!TTL_MS[b.ttl] || typeof b.principals !== 'string' || !SAFE_PRINCIPALS.test(b.principals))
-        return json(res, { ok: false, error: 'ttl must be 1h, 4h or 8h; principals must be names like root or root,vibe' }, 400);
-      const r = await mint(b.ttl, b.principals);
+      const args = mintArguments(b);
+      if (!args) return json(res, { ok: false, error: 'choose daily (8h) or admin (1h); extraTags must be approved admin box tags' }, 400);
+      const r = await mint(args);
       return json(res, r.body, r.code);
     }
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, false);

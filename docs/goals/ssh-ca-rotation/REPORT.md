@@ -61,6 +61,30 @@ disables a newly created account and retains its files. Windows restores saved A
 21 pass, 0 fail, 1 opt-in real-signing test unrun. All six changed/new shell entry scripts
 are ShellCheck clean; PowerShell parser clean. Self-review by Ivo, no subagents: corrected
 rollback account disabling and ACL restoration, and preserved Linux existing file modes.
-M3 push SHA: pending. Linear retry remains oauth_token_invalid_grant.
+M3 pushed and independently verified SHA: `9da5f1a02dc08ebd5f0f3b4a1e70f9fa040eec5e`. Linear retry remains oauth_token_invalid_grant.
+
+Signed: Ivo
+
+## M4
+
+Daily/Admin profile controls and additive Admin tag chips shipped in the v2 keys screen.
+Daily defaults to deploy/8h; Admin to admin/1h. Unknown vibes-asus is disabled.
+Label-keyed chip join preserved. The server rejects unknown fields/tags, duplicate tags,
+profile/TTL conflicts, arbitrary principals, and caller-supplied CA paths before spawning.
+The existing Origin fence is unchanged. Legacy API payloads with principals now return 400;
+operator CLI legacy -n remains available for transition. logic.js was mirrored by hand;
+the compiler was not run. Impeccable product guidance used with the existing screen and
+the user's prescribed controls; no broader design/context setup was introduced.
+
+23/23 unit/actual-route tests pass. Playwright offline browser proof passes: Daily default,
+Admin tags, label join, unknown host disabled, mocked request bodies, no page errors, and
+the isolated mint card at 390px. No request reached a live API and no mint process ran.
+Phone-width full-shell layout is an existing limitation, not claimed fixed by this lane.
+Self-review by Ivo, no subagents: API payload and DOM chip joins checked; no remaining M4
+findings. M4 push SHA: pending. Linear retry still oauth_token_invalid_grant.
+
+Direct pre-M4 suite after native dependency build: 750 tests, 748 pass, 1 exempt credits
+failure (3 !== 1), 1 skipped signing integration. npm pretest title drift remains separately
+recorded. Initial missing native node-pty module was resolved locally by npm rebuild node-pty.
 
 Signed: Ivo
