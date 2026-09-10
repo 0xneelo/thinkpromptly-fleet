@@ -101,6 +101,13 @@ macOS bridge once, then send from Codex, Claude, scripts, or the Bus panel:
     bin/fleet-message.js --to claude-desktop:current --from codex-desktop "hello from Codex"
     bin/fleet-message.js --to mac:local-agent --from claude-desktop "hello local CLI"
     bin/fleet-message.js --to german-box:LC-worker --from orchestrator "check the handoff"
+    bin/fleet-message.js --to fleetdeck-ui --from claude-desktop:"🎛 ORCHESTRATOR 28" "ACK BUS"
+
+`--to fleetdeck-ui` is the way back: the deck stores the row and the Bus panel shows it as a
+reply in the sender's thread, so a session with no chat or pane to answer into still lands
+here. The sender must be an address the deck could answer — `HOST:SESSION` for a tmux worker
+on a configured host, `claude-desktop:NAME` (the ListAgents name) for a live desktop session —
+or the reply is refused rather than threaded nowhere.
 
 The Claude bridge uses macOS Accessibility, posts into Claude's current Code session, and
 restores the previously focused app. Grant Accessibility access when macOS first asks. Remote

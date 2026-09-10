@@ -558,3 +558,71 @@ test('delivering to an unknown target still refreshes, in case the rail is stale
   assert.ok(after > before, 'a poll was kicked off: ' + before + ' -> ' + after);
   assert.strictEqual(bus._state().errs.x9, 'Delivery failed: unknown target');
 });
+
+// ---------------------------------------------------------------------------
+// The way back: a reply POSTed --to fleetdeck-ui by a desktop session is sourced
+// claude-desktop:<name>. It threads under the desktop row of that name, and the
+// composer answers it on the desktop socket, not a tmux host called
+// "claude-desktop".
+// ---------------------------------------------------------------------------
+const SEAT = '🎛 ORCHESTRATOR 28 = O45';
+
+function seatReply(text) {
+  const now = new Date().toISOString();
+  return {
+    targets: [],
+    messages: [{
+      id: 'seat-reply', source: 'claude-desktop:' + SEAT,
+      target: { type: 'fleetdeck-ui', session: 'bus' },
+      text, status: 'delivered', error: null, created_at: now, updated_at: now, delivered_at: now,
+    }].concat(MESSAGES.messages),
+  };
+}
+
+test('a desktop seat reply to fleetdeck-ui threads under that seat as an inbound Claude Desktop row', async () => {
+  const { bus, FD, calls } = await boot({ messages: seatReply('ACK BUS') });
+  const row = FD.fixture.busSessions.find((r) => r.id === SEAT);
+  assert.ok(row, 'the seat has a rail row');
+  assert.strictEqual(row.kind, 'claude-desktop');
+  assert.strictEqual(row.name, 'Claude Desktop · ' + SEAT);
+  assert.strictEqual(row.host, '');
+  assert.strictEqual(row.live, false, 'not offered by the server, so not live');
+  const th = FD.fixture.seedThreads[SEAT];
+  assert.strictEqual(th.length, 1);
+  assert.strictEqual(th[0].dir, 'in');
+  assert.strictEqual(th[0].text, 'ACK BUS');
+  assert.strictEqual(FD.fixture.busUnreadDefault[SEAT], 1);
+
+  // Answering that thread goes to the desktop session by name.
+  bus.deliver({ sid: SEAT, key: 'x1', text: 'thanks', index: 0, source: 'fleetdeck-ui' });
+  await settle();
+  const post = calls.find((c) => c.method === 'POST' && c.url.startsWith('/api/messages'));
+  assert.ok(post, 'the reply was POSTed');
+  assert.deepStrictEqual(post.body.target, { type: 'claude-desktop', session: SEAT });
+});
+
+test('a desktop-sourced reply never captures the rail row of a live tmux worker of the same name', async () => {
+  const worker = SESSIONS.sessions.find((s) => s.live);
+  assert.ok(worker, 'the fixture has a live tmux session');
+  const now = new Date().toISOString();
+  const messages = {
+    targets: [],
+    messages: [{
+      id: 'name-clash', source: 'claude-desktop:' + worker.name,
+      target: { type: 'fleetdeck-ui', session: 'bus' },
+      text: 'not really the worker', status: 'delivered', error: null, created_at: now, updated_at: now, delivered_at: now,
+    }].concat(MESSAGES.messages),
+  };
+  const { bus, FD, calls } = await boot({ messages });
+  const row = FD.fixture.busSessions.find((r) => r.id === worker.name);
+  assert.strictEqual(row.kind, 'tmux');
+  assert.strictEqual(row.host, worker.host);
+  assert.strictEqual(row.live, true);
+  assert.ok(FD.fixture.seedThreads[worker.name].some((m) => m.dir === 'in' && m.text === 'not really the worker'),
+    'the row still threads by name');
+
+  bus.deliver({ sid: worker.name, key: 'x1', text: 'to the worker', index: 0, source: 'fleetdeck-ui' });
+  await settle();
+  const post = calls.find((c) => c.method === 'POST' && c.url.startsWith('/api/messages'));
+  assert.deepStrictEqual(post.body.target, { type: 'tmux', host: worker.host, session: worker.name });
+});

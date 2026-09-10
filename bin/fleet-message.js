@@ -4,7 +4,8 @@ const fs = require('fs');
 
 function usage(message) {
   if (message) console.error('error: ' + message);
-  console.error('usage: fleet-message --to claude-desktop:current|HOST:SESSION [--from SOURCE] [--for RECIPIENT] [TEXT]');
+  console.error('usage: fleet-message --to claude-desktop:current|claude-desktop:NAME|HOST:SESSION|fleetdeck-ui [--from SOURCE] [--for RECIPIENT] [TEXT]');
+  console.error('  --to fleetdeck-ui replies into the Bus panel; --from must then be HOST:SESSION or claude-desktop:NAME');
   process.exit(2);
 }
 
@@ -25,11 +26,14 @@ for (let i = 0; i < args.length; i++) {
 if (!to) usage('--to is required');
 
 let target;
-if (to === 'claude-desktop:current')
+if (to === 'fleetdeck-ui') target = { type: 'fleetdeck-ui', session: 'bus' };
+else if (to === 'claude-desktop:current')
   target = { type: 'claude-desktop', session: 'current', ...(recipient ? { label: recipient } : {}) };
+else if (to.startsWith('claude-desktop:'))
+  target = { type: 'claude-desktop', session: to.slice('claude-desktop:'.length) };
 else {
   const split = to.indexOf(':');
-  if (split < 1 || split === to.length - 1) usage('--to must be claude-desktop:current or HOST:SESSION');
+  if (split < 1 || split === to.length - 1) usage('--to must be claude-desktop:current, claude-desktop:NAME, HOST:SESSION or fleetdeck-ui');
   target = { type: 'tmux', host: to.slice(0, split), session: to.slice(split + 1) };
 }
 

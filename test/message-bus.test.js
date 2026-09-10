@@ -63,3 +63,28 @@ test('rejects empty and oversized messages before persistence', async () => {
   await assert.rejects(() => bus.send({ ...base, text: 'x'.repeat(65 * 1024) }), /64 KiB/);
   assert.deepEqual(bus.list(), []);
 });
+
+test('hands the validator the source too, so a target may depend on who is sending', async () => {
+  const db = new DatabaseSync(':memory:');
+  const seen = [];
+  const bus = new MessageBus(db, async () => {}, (value, source) => {
+    seen.push(source);
+    return value;
+  });
+  await bus.send({ source: 'german-box:FD-1', target: { type: 'fleetdeck-ui', session: 'bus' }, text: 'ack' });
+  assert.deepEqual(seen, ['german-box:FD-1']);
+});
+
+test('accepts a Claude Desktop session name as a source, newline-free but otherwise free-form', async () => {
+  const db = new DatabaseSync(':memory:');
+  const bus = new MessageBus(db, async () => {}, (value) => value);
+  const ok = await bus.send({ source: 'claude-desktop:🎛 ORCHESTRATOR 28 = O45', target: { type: 'fleetdeck-ui', session: 'bus' }, text: 'ack' });
+  assert.equal(ok.status, 'delivered');
+  for (const source of ['claude-desktop:a\nb', 'claude-desktop:<x>', 'german-box:with space', 'x'.repeat(81)]) {
+    await assert.rejects(
+      bus.send({ source, target: { type: 'fleetdeck-ui', session: 'bus' }, text: 'ack' }),
+      (e) => e.code === 400,
+      source
+    );
+  }
+});

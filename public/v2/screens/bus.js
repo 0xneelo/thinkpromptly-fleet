@@ -144,6 +144,8 @@
     list.forEach(function (m) {
       var id = threadIdOf(m);
       if (!id) return;
+      // A reply sourced claude-desktop:<name> is noted in 3c, after the live tmux merge.
+      if (inboundOf(m) && sourceHost(m.source) === DESKTOP) return;
       if (inboundOf(m)) noteTarget(id, { type: TMUX, host: sourceHost(m.source), session: id }, TMUX);
       else noteTarget(id, m.target, (m.target && m.target.type) || TMUX);
     });
@@ -155,6 +157,16 @@
       if (!s || !s.name || !s.live) return;
       liveSet[s.host + ' ' + s.name] = true;
       noteTarget(s.name, { type: TMUX, host: s.host, session: s.name }, TMUX);
+    });
+
+    // 3c. A reply from a desktop session (source claude-desktop:<name>, target
+    //     fleetdeck-ui) threads under the desktop row of that name, so the composer
+    //     answers it on the desktop socket. Noted last: a thread is keyed by name
+    //     alone, and a live tmux worker of the same name must keep its row and
+    //     its reply route — a desktop-sourced row can only add, never override.
+    list.forEach(function (m) {
+      if (!inboundOf(m) || sourceHost(m.source) !== DESKTOP) return;
+      noteTarget(sourceSession(m.source), { type: DESKTOP, session: sourceSession(m.source) }, DESKTOP);
     });
 
     // 3b. Targets opened through FD.screens.bus.open() that the server does not

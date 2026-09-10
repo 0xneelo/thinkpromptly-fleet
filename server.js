@@ -2211,8 +2211,39 @@ function messageFailure(code, message) {
   throw error;
 }
 
-function validateMessageTarget(target) {
+// The live desktop sessions a bus address names. The sessions page addresses a stable CLI ID
+// (`id:<uuid>`); everything else is a ListAgents name. A rename, a duplicate display name, or a
+// tab called "current" must never redirect a message to another conversation, so a caller
+// wants exactly one match.
+function liveDesktopMatches(name) {
+  const id = name.startsWith('id:') ? desktopUuid(name.slice(3)) : null;
+  return desktopSessions().filter((s) => (id ? s.sessionId === id : s.name === name));
+}
+
+// A reply into the Bus panel is keyed into a thread by its source address (public/v2/data.js
+// isSessionSource): claude-desktop:<name> for a desktop session, host:session for a tmux
+// worker. The address is self-asserted, as every bus source is, so it is held to the same
+// rule as the matching TARGET — a live desktop session, or a configured host and a safe
+// session name — and a reply from anything else is refused rather than threaded nowhere.
+function validReplySource(source) {
+  const at = typeof source === 'string' ? source.indexOf(':') : -1;
+  if (at < 1) return false;
+  const host = source.slice(0, at);
+  const name = source.slice(at + 1);
+  if (host === 'claude-desktop') return name.length > 0 && liveDesktopMatches(name).length > 0;
+  return (host === 'mac' || HOSTS().includes(host)) && SAFE_NAME.test(name);
+}
+
+function validateMessageTarget(target, source) {
   if (!target || typeof target !== 'object') messageFailure(400, 'target must be an object');
+  if (target.type === 'fleetdeck-ui') {
+    // The deck itself. The row IS the delivery: the Bus panel polls /api/messages and shows it
+    // as an inbound message in the sender's thread — the way back for a session that has no
+    // desktop chat or tmux pane to answer into.
+    if (!validReplySource(source))
+      messageFailure(400, 'a fleetdeck-ui reply must come from a live claude-desktop:<session name> or a configured host:session');
+    return { type: 'fleetdeck-ui', session: 'bus' };
+  }
   if (target.type === 'claude-desktop') {
     // "current" is the fronted chat (AX bridge); anything else is a session's ListAgents name,
     // resolved to its socket at delivery so a restarted session with a new pid still gets it.
@@ -2227,7 +2258,7 @@ function validateMessageTarget(target) {
       messageFailure(400, 'tmux target must name a configured host and safe session');
     return { type: 'tmux', host: target.host, session: target.session };
   }
-  messageFailure(400, 'target type must be tmux or claude-desktop');
+  messageFailure(400, 'target type must be tmux, claude-desktop or fleetdeck-ui');
 }
 
 function deliveryError(action, result) {
@@ -2267,10 +2298,7 @@ async function deliverTmux(message) {
 // looks identical either way, so nothing downstream can tell a drop from a delivery.
 function deliverDesktopSession(message) {
   const name = message.target.session;
-  // The sessions page addresses a stable CLI ID. A rename, duplicate display name, or a
-  // tab called "current" must never redirect its message to another conversation.
-  const id = name.startsWith('id:') ? desktopUuid(name.slice(3)) : null;
-  const matches = desktopSessions().filter((s) => id ? s.sessionId === id : s.name === name);
+  const matches = liveDesktopMatches(name);
   const row = matches.length === 1 ? matches[0] : null;
   if (!row) throw new Error('Claude Desktop session "' + name + '" is not live');
   const key = fs.readdirSync(CLAUDE_SESSIONS_DIR).find((f) => f.startsWith(row.pid + '.') && f.endsWith('.key'));
@@ -2324,6 +2352,7 @@ async function deliverClaudeDesktop(message) {
 }
 
 async function deliverMessage(message) {
+  if (message.target.type === 'fleetdeck-ui') return; // stored is delivered; the panel polls it
   if (message.target.type === 'tmux') return deliverTmux(message);
   return deliverClaudeDesktop(message);
 }

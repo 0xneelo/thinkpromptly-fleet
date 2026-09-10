@@ -1,6 +1,11 @@
 const crypto = require('crypto');
 
 const SOURCE_RE = /^[A-Za-z0-9._:@/-]{1,80}$/;
+// A Claude Desktop session is addressed by its ListAgents name (server.js validateMessageTarget:
+// anything but a newline), so a reply FROM one carries that same name, emoji and spaces included.
+// Quotes and angle brackets stay out because the name is interpolated into the
+// <cross-session-message from=…> tag when the deck relays to another desktop session.
+const DESKTOP_SOURCE_RE = /^claude-desktop:[^\r\n"<>]{1,300}$/;
 const ID_RE = /^[A-Za-z0-9_-]{8,80}$/;
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -80,14 +85,14 @@ class MessageBus {
   normalize(input) {
     if (!input || typeof input !== 'object') fail(400, 'message must be an object');
     const source = input.source === undefined ? 'unknown' : input.source;
-    if (typeof source !== 'string' || !SOURCE_RE.test(source))
-      fail(400, 'source must be 1-80 safe identifier characters');
+    if (typeof source !== 'string' || !(SOURCE_RE.test(source) || DESKTOP_SOURCE_RE.test(source)))
+      fail(400, 'source must be 1-80 safe identifier characters, or claude-desktop:<session name>');
     const id = input.id || crypto.randomUUID();
     if (typeof id !== 'string' || !ID_RE.test(id)) fail(400, 'id must be 8-80 safe identifier characters');
     const text = input.text;
     if (typeof text !== 'string' || !text.trim()) fail(400, 'text must be a non-empty string');
     if (Buffer.byteLength(text) > MAX_BODY_BYTES) fail(413, 'text exceeds 64 KiB');
-    const target = this.validateTarget(input.target);
+    const target = this.validateTarget(input.target, source);
     return { id, source, target, text };
   }
 
