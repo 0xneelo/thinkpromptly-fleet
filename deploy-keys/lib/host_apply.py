@@ -166,6 +166,28 @@ def validate_and_reload(args, conf, desired=False):
     run(['systemctl', 'reload', args.service])
 
 
+def validate_baseline(args, conf, already_current=False):
+    # A transition may not silently replace a host-specific trust/principal policy.
+    # Retirement is a separate explicit operation against this script's own policy.
+    managed = '# BEGIN CA ROTATION DEPLOY' in read(conf)
+    allow_managed = managed and (already_current or getattr(args, 'retire_legacy', False))
+    for user in ['root', 'deploy']:
+        for source in ['127.0.0.1', '10.0.0.1', '192.0.2.1', '2001:db8::1']:
+            effective = run([args.sshd, '-T', '-f', str(conf), '-C', 'user=' + user + ',host=localhost,addr=' + source])
+            values = dict(line.split(' ', 1) for line in effective.splitlines() if ' ' in line)
+            if values.get('trustedusercakeys') != '/etc/ssh/deploy_ca.pub':
+                raise ValueError('baseline trust path differs; owner must reconcile existing trust before rotation')
+            if args.mode == 'principals':
+                expected = '/etc/ssh/principals/%u' if allow_managed else 'none'
+                if values.get('authorizedprincipalsfile') != expected or values.get('authorizedprincipalscommand', 'none') != 'none':
+                    raise ValueError('baseline principals policy exists or differs; owner must reconcile it before S3')
+
+
+def assert_v1_overlap(text):
+    if not any(fingerprint(line) == 'SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0' for line in text.splitlines()):
+        raise ValueError('planned trust file must retain v1; only --retire-v1 may remove it')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('mode', choices=['trust', 'principals'])
@@ -259,8 +281,10 @@ def plan_and_apply(args, root, parser):
         print('- ACCOUNT deploy: lock, expire, and set nologin; retain home for owner review')
     if create_deploy:
         print('+ ACCOUNT deploy: useradd --create-home --user-group --shell /bin/bash --password * deploy (no usable password, no sudo)')
-    print('PLAN: sshd -t; systemctl reload ' + args.service + '; restore previous files if validation/reload fails')
+    print('PLAN: locked baseline sshd -T policy refusal checks (IPv4/IPv6), then sshd -t; systemctl reload ' + args.service + '; restore previous files if validation/reload fails')
     planned_ca = changes.get(ca, read(ca))
+    if args.mode == 'trust' and not args.retire_v1 and not args.rollback:
+        assert_v1_overlap(planned_ca or '')
     for line in (planned_ca or '').splitlines():
         if line.strip() and not line.lstrip().startswith('#'):
             print('CA fingerprint: ' + fingerprint(line))
@@ -278,6 +302,8 @@ def plan_and_apply(args, root, parser):
             raise ValueError('Existing principals file must be mode 0644: ' + str(policy_path))
         if policy_path.exists() and policy_path.name == 'principals' and policy_path.stat().st_mode & 0o777 != 0o755:
             raise ValueError('Existing principals directory must be mode 0755: ' + str(policy_path))
+    if not args.rollback:
+        validate_baseline(args, conf, already_current=not changed and not create_deploy)
     if not changed and not create_deploy and not disable_deploy:
         print('Already current; no reload')
         return

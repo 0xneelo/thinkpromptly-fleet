@@ -15,6 +15,43 @@ mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
 
 class TransactionTest(unittest.TestCase):
+    def test_baseline_refuses_alternate_trust_and_existing_principals_before_writes(self):
+        with tempfile.TemporaryDirectory(prefix='ivo-baseline-') as directory:
+            conf = Path(directory) / 'sshd_config'
+            conf.write_text('Port 22\n')
+            args = SimpleNamespace(sshd='test-sshd', mode='trust', retire_legacy=False)
+            calls = []
+            def effective(argv):
+                calls.append(argv)
+                trust = '/custom/v1.pub' if 'addr=10.0.0.1' in argv[-1] else '/etc/ssh/deploy_ca.pub'
+                return 'trustedusercakeys ' + trust + '\nauthorizedprincipalsfile none\n'
+            with patch.object(mod, 'run', effective), self.assertRaisesRegex(ValueError, 'baseline trust'):
+                mod.validate_baseline(args, conf)
+            self.assertEqual(conf.read_text(), 'Port 22\n')
+            self.assertTrue(all('-T' in call for call in calls))
+            args.mode = 'principals'
+            policy = 'trustedusercakeys /etc/ssh/deploy_ca.pub\nauthorizedprincipalsfile /custom/principals/%u\n'
+            with patch.object(mod, 'run', return_value=policy), self.assertRaisesRegex(ValueError, 'baseline principals'):
+                mod.validate_baseline(args, conf)
+            good = 'trustedusercakeys /etc/ssh/deploy_ca.pub\nauthorizedprincipalsfile none\n'
+            with patch.object(mod, 'run', return_value=good) as fake:
+                mod.validate_baseline(args, conf)
+                self.assertEqual(fake.call_count, 8)
+            conf.write_text('# BEGIN CA ROTATION DEPLOY\n')
+            ours = good.replace('none', '/etc/ssh/principals/%u')
+            with patch.object(mod, 'run', return_value=ours):
+                with self.assertRaisesRegex(ValueError, 'baseline principals'):
+                    mod.validate_baseline(args, conf)
+                mod.validate_baseline(args, conf, already_current=True)
+                args.retire_legacy = True
+                mod.validate_baseline(args, conf)
+
+    def test_planned_overlap_requires_v1_public_fingerprint(self):
+        v1 = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIO4jL5PZycHkKIWlwaenerKq6VcuVk1PiqlyrrU18E4G'
+        mod.assert_v1_overlap(v1 + '\n')
+        with self.assertRaisesRegex(ValueError, 'retain v1'):
+            mod.assert_v1_overlap('# no trusted CA\n')
+
     def test_deploy_match_precedes_address_match_and_includes_cannot_hide_one(self):
         before = 'Port 22\nMatch Address 10.0.0.0/8\n PasswordAuthentication yes\n'
         after = mod.deploy_policy(before)
