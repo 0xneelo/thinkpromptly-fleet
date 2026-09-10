@@ -302,7 +302,9 @@ class AppLogic extends Sub {
     if (!m) return;
     // L9: the 60 s poll only runs while this screen is on. logic.js owns the active-screen
     // flag, so it passes it rather than letting the screen sniff the DOM for it.
-    const screen = this.state.screen ?? this.props.screen ?? 'bus';
+    // Same fallback chain as _fdWriteUrl and renderVals: a direct load of /app#machines has
+    // no state.screen yet, and without the URL here the poll never starts (2026-09-10).
+    const screen = this.state.screen ?? fdAsked('screen') ?? this.props.screen ?? 'bus';
     if (typeof m.sync === 'function') m.sync(screen === 'machines');
     if (typeof m.afterRender === 'function') m.afterRender();
   }
@@ -1097,8 +1099,8 @@ class AppLogic extends Sub {
       };
     };
     const mOpen = this.state.mOpen || {};
-    // L9: live cards default to expanded (today's table is always visible, improvised.md
-    // I-L9-03); the fixture's seed keeps the mock's collapsed cards, so the gate is unmoved.
+    // Every card opens collapsed, live or fixture (operator 2026-09-10, reverting improvised.md
+    // I-L9-03); only a click opens one.
     const mLive = FD.fixture.machinesLive;
     const mCard = (mach, idx) => {
       // DESIGN-35 binding instruction 1 (S2 shim audit F1, 2026-09-08): sc-for rows are
@@ -1106,7 +1108,7 @@ class AppLogic extends Sub {
       // a machine dropping out of /api/machines must not hand its open state to its
       // neighbour. Names are unique per fleet; the index is only the last resort.
       const mKey = mach.name || String(idx);
-      const open = mOpen[mKey] === undefined ? !!mLive : !!mOpen[mKey];
+      const open = !!mOpen[mKey];
       const rows = [];
       mach.cols.forEach((c) => c.sections.forEach((s) => {
         if (s.primary === '—') return;

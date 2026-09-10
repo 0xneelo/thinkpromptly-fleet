@@ -348,25 +348,22 @@ the node is reused by key, so it binds once. It is inert on every other screen: 
 early unless the Machines block is in the DOM. If the shell later claims that button, this listener
 should be deleted in favour of the shell's hook — noted for L2/L11.
 
-### I-L9-03 — live cards default to expanded
+### I-L9-03 — live cards default to expanded (REVERTED 2026-09-10)
 
 **Serves:** `README.md` §Scope 2 ("default expanded (improvise + document)").
 **Screenshot:** `improvised/l9-default-expanded.png`.
 
-Today's Machines page is a table with every fact visible at once; the mock's cards start collapsed,
-showing one summary line per row. Opening six cards by hand to see what the old page showed on load
-would be a regression in a screen whose whole job is a fleet-wide glance.
-
-**Decision.** On live data a card is open unless the operator has closed it; the fixture's seed
-keeps the mock's collapsed cards, so the pixel gate is unmoved.
+**Reverted.** The operator ruled on 2026-09-10 that the page always opens with every card
+collapsed. Live and fixture now share the mock's rule: a card is open only after a click.
 
 ```js
-const open = mOpen[idx] === undefined ? !!mLive : !!mOpen[idx];
+const open = !!mOpen[mKey];
 ```
 
-`mOpen[idx]` is only ever set by a click, so the first click on a live card closes it and the
-mock's collapsed look is one click away. No new state key and no storage: today's screen has no
-`localStorage` at all (BEHAVIOUR §3) and this adds none.
+Original reasoning, kept for the record: today's Machines page was a table with every fact visible
+at once, and opening six cards by hand looked like a regression. The operator preferred the
+collapsed glance. No new state key and no storage: today's screen has no `localStorage` at all
+(BEHAVIOUR §3) and this adds none.
 
 ### I-L9-04 — the machine-level facts lead the card as one status cell
 
