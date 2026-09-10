@@ -104,3 +104,11 @@ Roll hook + summary + timer to onboarding-box and ivy-box with the same env cont
 - `/etc/ssh-alert.env` written by seat 20 on the operator's direct instruction ("test the alerts"), the lowcap seat 36 being held mid-turn; seat 36 informed, its queued write superseded. 2 lines, root 600.
 - `ssh-daily-summary` rc 0, `pinned-message-id=4`. `ssh-login-alert` rc 0 for 192.0.2.99, test IP removed, known-ips 35 lines.
 - Both lowcap sessions reported to. Remaining: operator confirms the two messages arrived in the chat, then G3 → done.
+
+## Addendum 2026-09-10 ~19:15Z — onboarding-box rollout is owned elsewhere
+
+Session "Lowcap-connector VPS security hardening" (onboarding-app repo, `local_4e2146fb-25e8-4c9e-972f-67d5a4528763`) is porting the kit to onboarding-box (root@178.104.80.26, `ob-deploy`) itself: sshd hardening + fail2ban were done 17:31–17:34Z; the login-alert hook is live with 28 known IPs; it is adding `ssh-daily-summary` + timer and piping `/etc/ssh-alert.env` box-to-box from the lowcap VPS, same bot and chat. One writer: seat 20 does not touch onboarding-box. Seat 20 confirms its test results when reported. ivy-box remains unassigned.
+
+## Defect 2026-09-10 ~19:20Z — chat id carried an annotation (found by great-wescoff)
+
+Seat 20's poll wrote `MEGAN_TELEGRAM_CHAT_ID=<id> private <name>` (zsh does not word-split an unquoted `$var`; memory `bash-tool-is-zsh-no-word-split`). The same value went onto the lowcap VPS at ~18:54Z. Telegram accepted it (`getChat` 200), so the tests passed, but the parser keeps everything after the first `=`. Fix: Mac file trimmed to digits-only at ~19:22Z (shape verified: numeric). The VPS copy: the lowcap session is asking the operator; seat 20 rewrites it on the operator's word with the same stdin recipe. Also noted by the lowcap session, theirs to fix: the login hook's curl lacks `--fail`, so a rejected send is silent; and the onboarding-box port is blocked by that session's permission classifier and was handed to the operator.

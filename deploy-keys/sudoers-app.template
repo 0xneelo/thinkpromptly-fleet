@@ -1,0 +1,5 @@
+# OWNER TEMPLATE ONLY: substitute an exact approved unit name and systemctl path.
+# Do not install with placeholders; validate using visudo -cf before install.
+# deploy has no sudo by default. No wildcard, daemon-reload, editor, shell, or unit-file write.
+# The unit and all executed code/config must be protected against writes by deploy.
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart @APP@.service

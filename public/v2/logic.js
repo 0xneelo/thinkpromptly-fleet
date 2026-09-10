@@ -256,7 +256,7 @@ class LandLogic extends Sub {
   }
 }
 class AppLogic extends Sub {
-  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, ttl: '1h', prin: { 'rog-strix': true, 'vibes-asus': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
+  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, sshProfile: null, legacyTtl: '8h', ttl: '1h', prin: { 'rog-strix': true, 'vibes-asus': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
   isDark() {
     if (this.state.dark != null) return this.state.dark;
     try { const s = localStorage.getItem('fd-landing-dark'); if (s != null) return s === '1'; } catch (e) {}
@@ -1048,6 +1048,8 @@ class AppLogic extends Sub {
     // Keys screen chips
     const ttl = this.state.ttl;
     const prin = this.state.prin;
+    const keysLive = !!(FD.screens && FD.screens.keys && FD.screens.keys.sync && Array.isArray(FD.screens.keys.boxes));
+    const sshProfile = ['legacy','daily','admin'].includes(this.state.sshProfile) ? this.state.sshProfile : 'legacy';
     const selChip = (on) => ({ borderRadius: '9999px', border: '1px solid ' + (on ? t.navActBorder : t.line), background: on ? t.navActBg : 'transparent', color: on ? t.ink : t.ink60, padding: '8px 16px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s', fontWeight: on ? 500 : 400 });
     // L7: the GitHub-train and Certificates cards carry no bindings in the mock,
     // so screens/keys.js paints them from the mock's own nodes after each flush.
@@ -1062,7 +1064,7 @@ class AppLogic extends Sub {
     // app down with it is not acceptable.
     try {
       if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({
-        t, dark, isKeys: screen === 'keys', ttl, prin, logic: this,
+        t, dark, isKeys: screen === 'keys', ttl, prin, profile: sshProfile, legacyTtl: this.state.legacyTtl, logic: this,
         pills: {
           good: chipTone('good'), goodDot: dot(t.good),
           dim: { ...chipTone('neutral'), color: t.ink45 }, dimDot: dot(t.ink35),
@@ -1436,8 +1438,14 @@ class AppLogic extends Sub {
         navBadgeText: leftOpen ? String(FD.fixture.l2Badge) : '',
       }),
       // keys
-      ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
-      prinChips: ['rog-strix', 'vibes-asus', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
+      ttlChips: keysLive
+        ? ['legacy', 'daily', 'admin'].map((v) => ({ t: {legacy:'Legacy cert',daily:'Daily cert',admin:'Admin cert'}[v], style: selChip(sshProfile === v), set: () => this.setState({ sshProfile: v }) })).concat(sshProfile === 'legacy'
+          ? ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(this.state.legacyTtl === v), set: () => this.setState({ legacyTtl: v }) })) : [])
+        : ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
+      prinChips: ['rog-strix', 'vibes-asus', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => {
+        const box = keysLive && FD.screens.keys.boxes.find((b) => b.id === v);
+        return { t: box ? (box.tag || box.id) : v, style: { ...selChip(!!prin[v]), ...(keysLive ? { display: 'none' } : {}) }, set: () => { if (!box || box.tag) this.setState({ prin: { ...prin, [v]: !prin[v] } }); } };
+      }),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: FD.fixture.keyRows,
       // accounts (fd-v2 L8) — the mock's seed, or the live rows that

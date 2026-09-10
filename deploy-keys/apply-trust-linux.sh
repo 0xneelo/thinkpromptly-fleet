@@ -1,0 +1,5 @@
+#!/bin/sh
+# HOST OWNER ONLY. Use --dry-run first; --rollback <printed-backup> restores files.
+set -eu
+here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+exec python3 "$here/lib/host_apply.py" trust "$@"

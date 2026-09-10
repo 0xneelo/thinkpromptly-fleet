@@ -2650,11 +2650,52 @@ async function sshkeys() {
     )
   ).filter(Boolean);
   keys.sort((a, b) => a.name.localeCompare(b.name));
-  return { certs, keys };
+  return { certs, keys, policy: sshCertPolicy() };
 }
 
 const TTL_MS = { '1h': 3600e3, '4h': 4 * 3600e3, '8h': 8 * 3600e3 };
-const SAFE_PRINCIPALS = /^[a-z0-9_][a-z0-9_.,-]*$/i;
+const ADMIN_CERT_TAGS = new Set(['promptly-only', 'onboarding-only', 'ivy-only', 'german-only', 'rog-only']);
+const LEGACY_CERT_PRINCIPALS = ['root', 'vibe', 'misterisley', 'tabor'];
+const LEGACY_ALIAS_USERS = { 'vps-deploy':'root', 'ob-deploy':'root', 'ivybox-deploy':'root', 'gb-deploy':'vibe', 'rs-deploy':'misterisley' };
+function sshCertPolicy() {
+  const policy = { defaultProfile:'legacy', legacyPrincipals:[...LEGACY_CERT_PRINCIPALS], requiredLogins:[], error:null };
+  try {
+    const rotation = (process.env.SSH_ROTATION_STATE || fs.readFileSync(path.join(__dirname, 'deploy-keys/ROTATION-STATE'), 'utf8')).trim();
+    if (!['legacy','s3-applied'].includes(rotation)) throw new Error('unknown rotation state');
+    policy.defaultProfile = rotation === 's3-applied' ? 'daily' : 'legacy';
+    const config = JSON.parse(fs.readFileSync(MACHINES_FILE, 'utf8'));
+    if (!Array.isArray(config.machines)) throw new Error('invalid machines config');
+    for (const m of config.machines) {
+      if (!m || m.route !== 'ssh') continue;
+      // Existing rows identify login users through their documented aliases.
+      // Explicit metadata supports new rows without reading the owner's SSH config.
+      const user = m.user !== undefined ? m.user : m.sshUser !== undefined ? m.sshUser : LEGACY_ALIAS_USERS[m.ssh];
+      if (typeof user !== 'string' || !/^[a-z_][a-z0-9_-]*$/.test(user)) throw new Error('unknown machine login');
+      if (!policy.requiredLogins.includes(user)) policy.requiredLogins.push(user);
+    }
+    if (policy.requiredLogins.some(user => !LEGACY_CERT_PRINCIPALS.includes(user))) throw new Error('Legacy omits a configured login');
+  } catch {
+    policy.error = 'Legacy mint blocked: cannot cover every SSH login in machines.json; owner must reconcile the login policy';
+  }
+  return policy;
+}
+function mintArguments(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  if (Object.keys(input).some(k => !['profile', 'ttl', 'extraTags'].includes(k))) return null;
+  const policy = sshCertPolicy();
+  const profile = input.profile === undefined ? policy.defaultProfile : input.profile;
+  if (!['legacy','daily','admin'].includes(profile)) return null;
+  const ttl = profile === 'daily' ? '8h' : profile === 'legacy' ? (input.ttl === undefined ? '1h' : input.ttl) : '1h';
+  if (typeof ttl !== 'string' || !Object.hasOwn(TTL_MS, ttl)) return null;
+  if (input.ttl !== undefined && input.ttl !== ttl) return null;
+  const tags = input.extraTags === undefined ? [] : input.extraTags;
+  if (!Array.isArray(tags) || tags.length > ADMIN_CERT_TAGS.size ||
+      tags.some(tag => typeof tag !== 'string' || !ADMIN_CERT_TAGS.has(tag)) ||
+      new Set(tags).size !== tags.length || (profile !== 'admin' && tags.length)) return null;
+  if (profile === 'legacy' && policy.error) return null;
+  const principals = profile === 'legacy' ? LEGACY_CERT_PRINCIPALS.join(',') : profile === 'daily' ? 'deploy' : ['admin', ...tags].join(',');
+  return ['--' + profile, '-t', ttl, '-n', principals];
+}
 
 // The signature comes from the 1Password agent, which pops an approval on this Mac —
 // the timeout has to outlast a human walking back to the keyboard.
@@ -2663,9 +2704,9 @@ const MINT_TIMEOUT = 120000;
 // detached puts the script in its own process group, so the timeout kill (-pid) also takes
 // down the ssh-keygen still blocked on the 1Password prompt. execFile's own timeout kills
 // only the script, leaving that child free to mint a cert after we already answered 502.
-function mint(ttl, principals) {
+function mint(args) {
   return new Promise((resolve) => {
-    const child = spawn(MINT_SH, ['-t', ttl, '-n', principals], {
+    const child = spawn(MINT_SH, args, {
       detached: true,
       env: { ...process.env, SSH_AUTH_SOCK: OP_AGENT_SOCK },
     });
@@ -2701,13 +2742,14 @@ function deleteCertDir(input) {
   if (!dir.startsWith(CERTS_DIR + path.sep) || !fs.existsSync(dir) || !fs.lstatSync(dir).isDirectory())
     return { code: 400, body: { ok: false, error: 'not a cert directory' } };
   fs.rmSync(dir, { recursive: true, force: true });
-  // If the vps-deploy/gb-deploy alias pointer targeted this dir, remove it too so
-  // ssh fails with a clear missing-file error instead of a dangling symlink.
-  const cur = path.join(CERTS_DIR, 'current');
-  try {
-    if (path.resolve(CERTS_DIR, fs.readlinkSync(cur)) === dir) fs.unlinkSync(cur);
-  } catch (e) {
-    // no symlink present — nothing to clean
+  // Remove only profile pointers targeting this directory; other profiles retain theirs.
+  for (const name of ['current', 'current-daily', 'current-admin']) {
+    const cur = path.join(CERTS_DIR, name);
+    try {
+      if (path.resolve(CERTS_DIR, fs.readlinkSync(cur)) === dir) fs.unlinkSync(cur);
+    } catch (e) {
+      // no symlink present — nothing to clean
+    }
   }
   return { code: 200, body: { ok: true } };
 }
@@ -3529,9 +3571,9 @@ const server = http.createServer(async (req, res) => {
         const r = deleteCertDir(b.dir);
         return json(res, r.body, r.code);
       }
-      if (!TTL_MS[b.ttl] || typeof b.principals !== 'string' || !SAFE_PRINCIPALS.test(b.principals))
-        return json(res, { ok: false, error: 'ttl must be 1h, 4h or 8h; principals must be names like root or root,vibe' }, 400);
-      const r = await mint(b.ttl, b.principals);
+      const args = mintArguments(b);
+      if (!args) return json(res, { ok: false, error: 'choose legacy (1h/4h/8h, all configured logins), daily (8h), or admin (1h); extraTags must be approved admin box tags' }, 400);
+      const r = await mint(args);
       return json(res, r.body, r.code);
     }
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, false);
