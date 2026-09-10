@@ -1,11 +1,11 @@
 {
-  "_comment": "Machines page. route local = run on the deck's own mac; ssh = pipe box/fleet-logins.sh over `ssh <ssh> [wsl] sh -s` (no install on the box); push = the machine runs `sh fleet-logins.sh push http://<tailnet-ip>:3131/api/machines <id>` on a cron. `ssh` is a deploy-cert alias from ~/.ssh/deploy-certs/current, never a 1Password-agent or static-key alias. `host` is the deck's own host key (hosts.json, plus `mac` for the deck itself) where the machine has one, so a machines row joins to that host's sessions and leases.",
+  "_comment": "Machines page. route local = run on the deck's own mac; ssh = pipe box/fleet-logins.sh over `ssh <ssh> [wsl] sh -s` (no install on the box); push = the machine runs `sh fleet-logins.sh push http://<tailnet-ip>:3131/api/machines <id>` on a cron. Until S3, existing aliases use deploy-certs/current with the legacy user below. After the owner completes S3, role aliases use current-daily for deploy and current-admin for privileged logins; only Legacy mints update current. user is public login metadata for the Legacy coverage guard, not an instruction to change a host. The owner updates it when activating role aliases. `host` joins the machine to hosts.json sessions and leases.",
   "machines": [
     { "id": "macbook", "host": "mac", "label": "MacBook Pro", "os": "macos", "route": "local", "desktop_sessions": true },
-    { "id": "german-box", "host": "german-box", "label": "german-box", "os": "windows+wsl", "route": "ssh", "ssh": "gb-deploy", "sshUser": "vibe", "wsl": true, "desktop_sessions": true },
-    { "id": "onboarding-vps", "host": "onboarding-box", "label": "onboarding-vps", "os": "linux", "route": "ssh", "ssh": "ob-deploy", "sshUser": "root" },
-    { "id": "thinkpromptly-vps", "label": "thinkpromptly-vps", "os": "linux", "route": "ssh", "ssh": "vps-deploy", "sshUser": "root" },
-    { "id": "ivy-vps", "label": "ivy-vps", "os": "linux", "route": "ssh", "ssh": "ivybox-deploy", "sshUser": "root" },
-    { "id": "rog-strix", "label": "ROG Strix", "os": "windows+wsl", "route": "ssh", "ssh": "rs-deploy", "sshUser": "misterisley", "wsl": true }
+    { "id": "german-box", "host": "german-box", "label": "german-box", "os": "windows+wsl", "route": "ssh", "ssh": "gb-deploy", "user": "vibe", "wsl": true, "desktop_sessions": true },
+    { "id": "onboarding-vps", "host": "onboarding-box", "label": "onboarding-vps", "os": "linux", "route": "ssh", "ssh": "ob-deploy", "user": "root" },
+    { "id": "thinkpromptly-vps", "label": "thinkpromptly-vps", "os": "linux", "route": "ssh", "ssh": "vps-deploy", "user": "root" },
+    { "id": "ivy-vps", "label": "ivy-vps", "os": "linux", "route": "ssh", "ssh": "ivybox-deploy", "user": "root" },
+    { "id": "rog-strix", "label": "ROG Strix", "os": "windows+wsl", "route": "ssh", "ssh": "rs-deploy", "user": "misterisley", "wsl": true }
   ]
 }

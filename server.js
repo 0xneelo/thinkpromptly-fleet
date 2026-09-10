@@ -2687,9 +2687,9 @@ const LEGACY_ALIAS_USERS = { 'vps-deploy':'root', 'ob-deploy':'root', 'ivybox-de
 function sshCertPolicy() {
   const policy = { defaultProfile:'legacy', legacyPrincipals:[...LEGACY_CERT_PRINCIPALS], requiredLogins:[], error:null };
   try {
-    const rotation = (process.env.SSH_CA_ROTATION_STATE || fs.readFileSync(path.join(__dirname, 'deploy-keys/ROTATION-STATE'), 'utf8')).trim();
-    if (!['legacy','roles'].includes(rotation)) throw new Error('unknown rotation state');
-    policy.defaultProfile = rotation === 'roles' ? 'daily' : 'legacy';
+    const rotation = (process.env.SSH_ROTATION_STATE || fs.readFileSync(path.join(__dirname, 'deploy-keys/ROTATION-STATE'), 'utf8')).trim();
+    if (!['legacy','s3-applied'].includes(rotation)) throw new Error('unknown rotation state');
+    policy.defaultProfile = rotation === 's3-applied' ? 'daily' : 'legacy';
     const config = JSON.parse(fs.readFileSync(MACHINES_FILE, 'utf8'));
     if (!Array.isArray(config.machines)) throw new Error('invalid machines config');
     for (const m of config.machines) {
@@ -2769,13 +2769,14 @@ function deleteCertDir(input) {
   if (!dir.startsWith(CERTS_DIR + path.sep) || !fs.existsSync(dir) || !fs.lstatSync(dir).isDirectory())
     return { code: 400, body: { ok: false, error: 'not a cert directory' } };
   fs.rmSync(dir, { recursive: true, force: true });
-  // If the vps-deploy/gb-deploy alias pointer targeted this dir, remove it too so
-  // ssh fails with a clear missing-file error instead of a dangling symlink.
-  const cur = path.join(CERTS_DIR, 'current');
-  try {
-    if (path.resolve(CERTS_DIR, fs.readlinkSync(cur)) === dir) fs.unlinkSync(cur);
-  } catch (e) {
-    // no symlink present — nothing to clean
+  // Remove only profile pointers targeting this directory; other profiles retain theirs.
+  for (const name of ['current', 'current-daily', 'current-admin']) {
+    const cur = path.join(CERTS_DIR, name);
+    try {
+      if (path.resolve(CERTS_DIR, fs.readlinkSync(cur)) === dir) fs.unlinkSync(cur);
+    } catch (e) {
+      // no symlink present — nothing to clean
+    }
   }
   return { code: 200, body: { ok: true } };
 }

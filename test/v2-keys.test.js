@@ -193,7 +193,7 @@ test('Legacy mint refuses missing login coverage and unknown policy', () => {
   assert.match(keys.legacyGuard(keys.principalsFor(),null),/policy is loaded/);
   assert.ok(keys.legacyGuard(keys.principalsFor(),{requiredLogins:['new-user']}));
   const fleet=require('../machines.json').machines.filter(m=>m.route==='ssh');
-  const actual={requiredLogins:[...new Set(fleet.map(m=>m.sshUser))]};
+  const actual={requiredLogins:[...new Set(fleet.map(m=>m.user))]};
   assert.ok(actual.requiredLogins.every(user=>typeof user==='string'));
   assert.equal(keys.legacyGuard(keys.principalsFor(),actual),'');
   for(const user of actual.requiredLogins) assert.ok(keys.legacyGuard(keys.principalsFor().filter(p=>p!==user),actual),user);
