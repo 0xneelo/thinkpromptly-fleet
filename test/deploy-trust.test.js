@@ -63,3 +63,14 @@ test('Windows audit regressions: precedence, mutex, atomic writes and malformed-
   assert.equal(r.status, 0, r.stdout + r.stderr);
   for (const finding of ['A1','A2','A5','A7']) assert.match(r.stdout, new RegExp('PASS ' + finding));
 });
+
+test('rog-strix command printer permits Windows backslash-n paths and refuses real line breaks in both modes', () => {
+  for(const flag of ['--dry-run','--rollback']) {
+    const good=spawnSync('sh',['deploy-keys/bootstrap-rog-strix.sh',flag,'C:\\new-ca.pub'],{encoding:'utf8'});
+    assert.equal(good.status,0,good.stderr);assert.ok(good.stdout.includes('C:\\new-ca.pub'));
+    for(const invalid of ['C:\\one\ntwo.pub','C:\\one\rtwo.pub',"C:\\quote'file.pub"]) {
+      const r=spawnSync('sh',['deploy-keys/bootstrap-rog-strix.sh',flag,invalid],{encoding:'utf8'});
+      assert.equal(r.status,2);assert.match(r.stderr,/invalid path/);
+    }
+  }
+});
