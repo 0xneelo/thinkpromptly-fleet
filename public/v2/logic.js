@@ -256,7 +256,7 @@ class LandLogic extends Sub {
   }
 }
 class AppLogic extends Sub {
-  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, ttl: '1h', prin: { 'rog-strix': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
+  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, ttl: '1h', prin: { 'rog-strix': true, 'vibes-asus': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
   isDark() {
     if (this.state.dark != null) return this.state.dark;
     try { const s = localStorage.getItem('fd-landing-dark'); if (s != null) return s === '1'; } catch (e) {}
@@ -1432,7 +1432,7 @@ class AppLogic extends Sub {
       }),
       // keys
       ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
-      prinChips: ['rog-strix', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
+      prinChips: ['rog-strix', 'vibes-asus', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: FD.fixture.keyRows,
       // accounts (fd-v2 L8) — the mock's seed, or the live rows that
