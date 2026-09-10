@@ -146,6 +146,92 @@
   }
 
   var HIDE_KEY = 'adhd-unblock:hide';
+  var REPO_KEY = 'adhd-unblock:repo';
+
+  // The list pages by the operator's calendar day, not by UTC: a sheet posted at 23:30 belongs
+  // to the evening the operator remembers, not to tomorrow.
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+  function keyOf(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+
+  function dayKey(iso) {
+    var at = Date.parse(iso || '');
+    return isNaN(at) ? '' : keyOf(new Date(at));
+  }
+
+  function repoOf(sheet) {
+    var p = sheet && sheet.source && sheet.source.project;
+    return typeof p === 'string' ? p : '';
+  }
+
+  // Every repo the seats post from, plus whether any sheet names none. Built from ALL sheets, so
+  // the selector keeps offering a repo whose sheets the day pager happens to be past.
+  function repoOptions(sheets) {
+    var repos = [];
+    var none = false;
+    (Array.isArray(sheets) ? sheets : []).forEach(function (s) {
+      var r = repoOf(s);
+      if (!r) none = true;
+      else if (repos.indexOf(r) < 0) repos.push(r);
+    });
+    return { repos: repos.sort(function (a, b) { return a.localeCompare(b, undefined, { sensitivity: 'base' }); }), none: none };
+  }
+
+  // The days the paginator walks, newest first, and how many sheets each holds. A sheet with no
+  // stamp has no day and no page — the server stamps every one it accepts.
+  function dayPages(sheets) {
+    var pages = [];
+    (Array.isArray(sheets) ? sheets : []).forEach(function (s) {
+      var k = dayKey(s && s.created_at);
+      if (!k) return;
+      var hit = pages.filter(function (p) { return p.key === k; })[0];
+      if (hit) hit.count++;
+      else pages.push({ key: k, count: 1 });
+    });
+    return pages.sort(function (a, b) { return a.key < b.key ? 1 : a.key > b.key ? -1 : 0; });
+  }
+
+  // A filter change, a poll or a new day can take the chosen day away. The newest one steps in
+  // quietly rather than leaving the operator on a page that no longer exists.
+  function pickDay(pages, wanted) {
+    var list = pages || [];
+    var here = list.filter(function (p) { return p.key === wanted; })[0];
+    return here ? here.key : list[0] ? list[0].key : '';
+  }
+
+  function dayLabel(key, nowIso) {
+    if (!key) return '';
+    var at = nowIso ? Date.parse(nowIso) : Date.now();
+    var now = new Date(isNaN(at) ? Date.now() : at);
+    if (key === keyOf(now)) return 'Today';
+    // From the calendar, not from minus 24 hours: across a DST change that is still one day back.
+    if (key === keyOf(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))) return 'Yesterday';
+    var p = key.split('-');
+    return new Date(+p[0], +p[1] - 1, +p[2])
+      .toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' });
+  }
+
+  // Every page the arrows walk, as the select reads them: newest first, each labelled the way the
+  // label between the arrows used to read. No days is still one option, so the select is never blank.
+  function dayOptions(pages, nowIso) {
+    var list = pages || [];
+    if (!list.length) return [{ value: '', label: 'No days' }];
+    return list.map(function (p) {
+      return { value: p.key, label: dayLabel(p.key, nowIso) + ' \u00b7 ' + p.count };
+    });
+  }
+
+  // What the list rows pass: the closed toggle, then one repo, then one day. repo '' is every
+  // repo and '-' is the sheets that name none; day '' is every day.
+  function filterSheets(sheets, opts) {
+    var o = opts || {};
+    return visibleSheets(sheets, o.showClosed).filter(function (s) {
+      var r = repoOf(s);
+      if (o.repo === '-' && r) return false;
+      if (o.repo && o.repo !== '-' && r !== o.repo) return false;
+      return !o.day || dayKey(s && s.created_at) === o.day;
+    });
+  }
 
   // The sample the pixel gate renders: one open sheet, two questions, one of them answered and
   // not yet sent. Deterministic — no clock, no fetch.
@@ -196,7 +282,9 @@
     safeText: safeText, explainTokens: explainTokens, isDirty: isDirty, answeredIds: answeredIds,
     pendingIds: pendingIds, chipText: chipText, fmt: fmt, whenLine: whenLine, payloadText: payloadText,
     visibleSheets: visibleSheets, options: options,
-    STANDARD: STANDARD, INLINE: INLINE, HIDE_KEY: HIDE_KEY, FIXTURE_VIEW: FIXTURE_VIEW,
+    dayKey: dayKey, repoOf: repoOf, repoOptions: repoOptions, dayPages: dayPages, pickDay: pickDay,
+    dayLabel: dayLabel, dayOptions: dayOptions, filterSheets: filterSheets,
+    STANDARD: STANDARD, INLINE: INLINE, HIDE_KEY: HIDE_KEY, REPO_KEY: REPO_KEY, FIXTURE_VIEW: FIXTURE_VIEW,
   };
 
   FD.screens.unblock = Object.assign(FD.screens.unblock || {}, { _: pure });
@@ -235,9 +323,19 @@
     sheets: [], sheet: null, answers: {}, id: '',
     error: '', loading: false, sending: false, blocked: null,
     showClosed: false, hideAnswered: false, fresh: '', noteDraft: {}, noteTimer: {},
+    // '' is every repo, '-' the sheets that name none. The day is not remembered: a new session
+    // starts on the newest day there is.
+    repo: '', day: '',
   };
 
   try { state.hideAnswered = root.localStorage.getItem(HIDE_KEY) === '1'; } catch (e) { /* no storage */ }
+  try { state.repo = root.localStorage.getItem(REPO_KEY) || ''; } catch (e) { /* no storage */ }
+
+  function setRepo(repo) {
+    state.repo = repo;
+    if (isFixture()) return;   // the fixture's sheets must never rewrite the operator's saved filter
+    try { root.localStorage.setItem(REPO_KEY, repo); } catch (e) { /* no storage */ }
+  }
 
   function questions() {
     return (state.sheet && Array.isArray(state.sheet.questions) && state.sheet.questions) || [];
@@ -431,6 +529,57 @@
     box.appendChild(b);
   }
 
+  // The row under the title: one repo, one day. Neither touches the open sheet below — a deep
+  // link stays readable however the list is filtered.
+  function filterRow(opts, pages, day) {
+    var t = tok();
+    var row = el('div', ROW);
+
+    var pill = 'border-radius:9999px;border:1px solid ' + t.line + ';background:transparent;color:' +
+      t.ink75 + ';padding:4px 10px;font-size:12px;cursor:pointer;';
+    var add = function (sel, label, value) {
+      var o = el('option', null, label);
+      o.value = value;
+      sel.appendChild(o);
+    };
+
+    var repo = el('select', pill);
+    add(repo, 'All repositories', '');
+    opts.repos.forEach(function (r) { add(repo, r, r); });
+    if (opts.none) add(repo, '(no repository)', '-');
+    repo.value = state.repo;
+    repo.disabled = isFixture();
+    repo.onchange = function () { setRepo(repo.value); paint(); };
+    row.appendChild(repo);
+
+    var at = pages.map(function (p) { return p.key; }).indexOf(day);
+    var arrow = function (glyph, to) {
+      var b = button(glyph, function () {
+        if (!pages[to]) return;
+        state.day = pages[to].key;
+        paint();
+      }, { colour: t.ink60 });
+      b.disabled = !pages[to] || isFixture();
+      if (b.disabled) b.setAttribute('style', b.getAttribute('style') + 'opacity:.45;cursor:default;');
+      return b;
+    };
+    // Newest first, so the newer day is one step back up the list.
+    row.appendChild(arrow('\u2039', at - 1));
+
+    // The day between the arrows is a jump as well as a step: the arrows walk it one page at a
+    // time, the select goes straight there. Not remembered — a new day is the one to land on.
+    var days = el('select', pill);
+    dayOptions(pages).forEach(function (o) { add(days, o.label, o.value); });
+    if (!pages.length) days.firstChild.disabled = true;
+    days.value = day;
+    days.disabled = !pages.length || isFixture();
+    days.onchange = function () { state.day = days.value; paint(); };
+    row.appendChild(days);
+
+    row.appendChild(arrow('\u203a', at + 1));
+    return row;
+  }
+
   function sheetList(box, v) {
     var t = tok();
     var c = card();
@@ -450,10 +599,27 @@
     head.appendChild(right);
     c.appendChild(head);
 
-    var rows = visibleSheets(v.sheets, state.showClosed);
-    if (!rows.length) {
+    var opts = repoOptions(v.sheets);
+    // A remembered repo that no sheet uses any more would empty the list with nothing to say why.
+    // Only once there are sheets to judge it against: the first paint runs before the list lands.
+    if ((v.sheets || []).length && state.repo &&
+      (state.repo === '-' ? !opts.none : opts.repos.indexOf(state.repo) < 0)) setRepo('');
+    // The pager reads the repo-filtered set, so the count beside the day is the count of the rows.
+    var pages = dayPages(filterSheets(v.sheets, { showClosed: state.showClosed, repo: state.repo }));
+    var day = pickDay(pages, state.day);
+    c.appendChild(filterRow(opts, pages, day));
+
+    var pool = visibleSheets(v.sheets, state.showClosed);
+    var rows = filterSheets(v.sheets, { showClosed: state.showClosed, repo: state.repo, day: day });
+    if (!pool.length) {
       c.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink45 + ';',
         'No open unblock sheets. Seats post them with `POST /api/unblock`.'));
+      box.appendChild(c);
+      return;
+    }
+    if (!rows.length) {
+      c.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink45 + ';',
+        state.repo ? 'No sheets for this repository on this day.' : 'No sheets on this day.'));
       box.appendChild(c);
       return;
     }
@@ -733,7 +899,7 @@
   function typing() {
     var a = document.activeElement;
     var box = mount();
-    return !!(a && box && box.contains(a) && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA'));
+    return !!(a && box && box.contains(a) && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT'));
   }
 
   function tick() {

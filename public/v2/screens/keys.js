@@ -50,12 +50,15 @@
   var SHARED_ROOT = ' · root login, so this also reaches ';
   var BOXES = [
     { id: 'rog-strix', user: 'misterisley', title: 'rog-strix (Windows) · logs in as misterisley' },
+    { id: 'vibes-asus', user: 'tabor', title: 'vibes-asus (Windows) · logs in as tabor' },
     { id: 'german', user: 'vibe', title: 'german-box · logs in as vibe' },
     { id: 'onboarding', user: 'root', title: 'onboarding-app-box' + SHARED_ROOT + 'promptly and ivy' },
     { id: 'promptly', user: 'root', title: 'think-box' + SHARED_ROOT + 'onboarding and ivy' },
     { id: 'ivy', user: 'root', title: 'ivy-box' + SHARED_ROOT + 'onboarding and promptly' },
   ];
   var BOX_IDS = BOXES.map(function (b) { return b.id; });
+  var BOX_BY_ID = {};
+  BOXES.forEach(function (b) { BOX_BY_ID[b.id] = b; });
 
   // What a set of chosen boxes actually mints: the logins behind them, deduped
   // and in chip order. Three boxes collapsing to one `root` is the whole reason
@@ -314,9 +317,13 @@
     var row = kids(card)[1];
     if (!row) return;
     var btns = kids(row).filter(function (n) { return n.tagName === 'BUTTON'; });
-    var boxBtns = btns.slice(TTLS.length, TTLS.length + BOXES.length);
-    boxBtns.forEach(function (b, i) {
-      var box = BOXES[i];
+    // Joined by label — logic.js renders each chip's text as the box id — not
+    // by position. A positional slice mislabelled every chip the day a box was
+    // added to BOXES and not to logic.js's prinChips (2026-09-10); the label
+    // join cannot shift, and test/v2-keys.test.js pins the two lists equal.
+    btns.forEach(function (b) {
+      var box = BOX_BY_ID[b.textContent.trim()];
+      if (!box) return;
       b.title = box.title;
       b.setAttribute('aria-pressed', String(!!chosen[box.id]));
     });

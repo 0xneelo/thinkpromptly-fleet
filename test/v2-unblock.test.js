@@ -121,3 +121,77 @@ test('the fixture sample is the deterministic screen the pixel gate renders', ()
   assert.deepStrictEqual(_.pendingIds(v.sheet.questions, v.answers), ['deploy-route'], 'and not yet sent');
   assert.ok(v.sheet.questions.every((qq) => qq.options.some((o) => o.recommended)), 'every card has a ⭐');
 });
+
+test('a stamp lands on the operator\'s calendar day, and a broken one on none', () => {
+  const local = new Date(2026, 8, 10, 13, 30).toISOString();
+  assert.strictEqual(_.dayKey(local), '2026-09-10');
+  assert.strictEqual(_.dayKey('not a date'), '');
+  assert.strictEqual(_.dayKey(null), '');
+});
+
+const sheet = (id, project, at, status) => ({
+  id, status: status || 'open', created_at: at,
+  source: project === undefined ? undefined : { seat: 'S', project },
+});
+const D1 = new Date(2026, 8, 10, 9, 0).toISOString();
+const D0 = new Date(2026, 8, 9, 22, 0).toISOString();
+const SHEETS = [
+  sheet('a', 'remote-system', D1), sheet('b', 'lowcap', D1), sheet('c', undefined, D0),
+  sheet('d', 'remote-system', D0, 'closed'),
+];
+
+test('the selector offers every repo the seats posted from, sorted, plus the ones with none', () => {
+  assert.deepStrictEqual(_.repoOptions(SHEETS), { repos: ['lowcap', 'remote-system'], none: true });
+  assert.deepStrictEqual(_.repoOptions([sheet('a', 'lowcap', D1)]), { repos: ['lowcap'], none: false });
+  assert.deepStrictEqual(_.repoOptions(undefined), { repos: [], none: false }, 'no sheets is not a throw');
+  assert.strictEqual(_.repoOf(sheet('a', 42, D1)), '', 'a non-string project is no repository');
+  assert.strictEqual(_.repoOf({}), '');
+});
+
+test('the pager walks the days newest first, counting the sheets on each', () => {
+  assert.deepStrictEqual(_.dayPages(SHEETS), [
+    { key: '2026-09-10', count: 2 }, { key: '2026-09-09', count: 2 },
+  ]);
+  assert.deepStrictEqual(_.dayPages([sheet('a', 'lowcap', 'not a date')]), [], 'an unstamped sheet has no day');
+});
+
+test('a day that is no longer there falls back to the newest one', () => {
+  const pages = _.dayPages(SHEETS);
+  assert.strictEqual(_.pickDay(pages, '2026-09-09'), '2026-09-09', 'a day still there is kept');
+  assert.strictEqual(_.pickDay(pages, '2026-09-01'), '2026-09-10', 'a day the filter dropped is not');
+  assert.strictEqual(_.pickDay(pages, ''), '2026-09-10', 'and nothing chosen means the newest');
+  assert.strictEqual(_.pickDay([], ''), '');
+});
+
+test('the day label says Today and Yesterday before it says a date', () => {
+  const now = new Date(2026, 8, 10, 12, 0).toISOString();
+  assert.strictEqual(_.dayLabel('2026-09-10', now), 'Today');
+  assert.strictEqual(_.dayLabel('2026-09-09', now), 'Yesterday');
+  assert.strictEqual(_.dayLabel('2026-09-04', now),
+    new Date(2026, 8, 4).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }));
+  assert.strictEqual(_.dayLabel('', now), '');
+});
+
+test('the day selector offers every page the arrows walk, newest first, counted', () => {
+  const now = new Date(2026, 8, 10, 12, 0).toISOString();
+  assert.deepStrictEqual(_.dayOptions(_.dayPages(SHEETS), now), [
+    { value: '2026-09-10', label: 'Today · 2' }, { value: '2026-09-09', label: 'Yesterday · 2' },
+  ]);
+  const none = [{ value: '', label: 'No days' }];
+  assert.deepStrictEqual(_.dayOptions([], now), none, 'no days is still one thing to read');
+  assert.deepStrictEqual(_.dayOptions(undefined, now), none);
+});
+
+test('the list rows pass the closed toggle, then the repo, then the day', () => {
+  const ids = (o) => _.filterSheets(SHEETS, o).map((s) => s.id);
+  assert.deepStrictEqual(ids({}), ['a', 'b', 'c'], 'closed stays behind its toggle');
+  assert.deepStrictEqual(ids({ showClosed: true, day: '2026-09-09' }), ['c', 'd']);
+  assert.deepStrictEqual(ids({ repo: 'remote-system' }), ['a']);
+  assert.deepStrictEqual(ids({ repo: '-' }), ['c'], '- is the sheets that name no repository');
+  assert.deepStrictEqual(ids({ repo: 'lowcap', day: '2026-09-09' }), [], 'and both together can be empty');
+  assert.deepStrictEqual(ids({ showClosed: true, repo: 'remote-system', day: '2026-09-09' }), ['d']);
+});
+
+test('the repo choice is remembered under its own key', () => {
+  assert.strictEqual(_.REPO_KEY, 'adhd-unblock:repo');
+});

@@ -256,7 +256,7 @@ class LandLogic extends Sub {
   }
 }
 class AppLogic extends Sub {
-  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, ttl: '1h', prin: { 'rog-strix': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
+  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, ttl: '1h', prin: { 'rog-strix': true, 'vibes-asus': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
   isDark() {
     if (this.state.dark != null) return this.state.dark;
     try { const s = localStorage.getItem('fd-landing-dark'); if (s != null) return s === '1'; } catch (e) {}
@@ -1226,6 +1226,9 @@ class AppLogic extends Sub {
     // survives, the colour no longer claims it is current.
     const accBar = (b) => ({
       label: b.label,
+      // The number itself rides along: the closed-row rule below compares the weeklies by
+      // it, and without it every weekly tied and "7 day" always won (observed 2026-09-10).
+      pct: b.pct, last: b.last,
       resets: b.resets || '',
       fillStyle: { display: 'block', height: '100%', width: Math.max(0, Math.min(100, (b.pct == null ? b.last : b.pct) || 0)) + '%', borderRadius: '2px', background: b.pct == null ? t.ink35 : accTone(b.level) },
       right: b.right,
@@ -1434,7 +1437,7 @@ class AppLogic extends Sub {
       }),
       // keys
       ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
-      prinChips: ['rog-strix', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
+      prinChips: ['rog-strix', 'vibes-asus', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: FD.fixture.keyRows,
       // accounts (fd-v2 L8) — the mock's seed, or the live rows that
@@ -1480,7 +1483,10 @@ class AppLogic extends Sub {
         // "7 day Fable" — never the 5 hour one: the weekly is what actually constrains an
         // account (operator, 2026-09-09). improvised.md I-L8-10.
         const weekly = a.bars.filter((b) => /^7 day/.test(b.label));
-        weekly.sort((x, y) => (y.pct == null ? -1 : y.pct) - (x.pct == null ? -1 : x.pct));
+        // An aged-out weekly still carries the number it last held, and "was 100%" says more
+        // than a current 57%.
+        const used = (b) => (b.pct != null ? b.pct : b.last != null ? b.last : -1);
+        weekly.sort((x, y) => used(y) - used(x));
         const primary = weekly[0] || a.bars[0];
         return {
           ...a, open,
