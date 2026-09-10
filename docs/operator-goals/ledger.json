@@ -162,6 +162,36 @@
      "note": "added"
     }
    ]
+  },
+  {
+   "id": "G5",
+   "goal": "Fleet ssh trust rotated to a CA that exists only in 1Password, with deploy/admin role certs, and the on-disk CA key and four static keys gone or chained",
+   "why": "the deploy CA private key sat unencrypted at ~/.ssh/id_ed25519 since 2026-07-21; any local process could mint fleet-wide root certs without Touch ID (RESEARCHER 3, 2026-09-10)",
+   "asks": [],
+   "theme": "security",
+   "asked": "2026-09-10",
+   "status": "active",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "docs/research/ssh-ca-rotation-2026-09-10.md; docs/goals/ssh-ca-rotation/; lane Ivo FD-ssh-ca-rotation"
+    },
+    {
+     "ref": "branch agent-ssh-ca-rotation"
+    }
+   ],
+   "sources": [
+    "operator via RESEARCHER 3: 'package it and notify the orchestrator to get it launched'"
+   ],
+   "updated": "2026-09-10",
+   "log": [
+    {
+     "at": "2026-09-10",
+     "note": "added"
+    }
+   ]
   }
  ]
 }
