@@ -105,7 +105,22 @@ previews and Windows v1 retirement coverage. No production applies/mints perform
 
 Focused checks: 47 tests, 46 pass, 0 fail, 1 opt-in signing test unrun. All six changed/new
 .sh entry scripts ShellCheck clean; all delivered PowerShell files parse clean. Full
-suite result will be recorded in the final receipt. M5 push SHA: pending.
+suite result will be recorded in the final receipt. M5 pushed and independently verified SHA: `9d65bca6e4f026408db7d72f16da96c0bc5193a4`.
 Linear retry remains oauth_token_invalid_grant; no comments or state changes posted.
 
 Signed: Ivo
+
+## Final self-review corrections
+
+Ivo's final security audit found missing directory ACL inheritance for Windows SYSTEM
+recovery files. Explicit container/object inheritance now protects and makes recovery
+files readable by SYSTEM/Administrators. Existing policy files/directories writable by
+unprivileged users are refused before apply on both platforms, including no-op cases.
+18/18 offline trust/principals tests and PowerShell parse pass after this correction.
+
+The first post-M4 full suite exposed 9 bus fixture regressions: the new keysLive guard
+assumed FD.screens existed. Added the missing presence/shape guard. Existing bus regression
+coverage is green again: 32/32 bus/keys/mint-route tests, plus offline browser proof.
+That failed run was 745 pass / 10 fail (9 corrected regressions + 1 exempt credits) /
+1 skipped. A full suite rerun is in progress; these failures are not exempted.
+Supplementary hardening push SHA: pending. Signed: Ivo

@@ -200,6 +200,11 @@ def main():
         return
     if os.geteuid() != 0:
         raise ValueError('apply requires root; use --dry-run for review')
+    for policy_path in [conf.parent, conf.parent / 'principals', conf.parent / 'ca-rotation-backups', *changes]:
+        if policy_path.exists() and (policy_path.stat().st_uid != 0 or policy_path.stat().st_mode & 0o022):
+            raise ValueError('SSH policy must be root-owned and not group/world writable: ' + str(policy_path))
+        if policy_path.exists() and policy_path.parent.name == 'principals' and policy_path.stat().st_mode & 0o777 != 0o644:
+            raise ValueError('Existing principals file must be mode 0644: ' + str(policy_path))
     if not changed and not create_deploy and not disable_deploy:
         print('Already current; no reload')
         return

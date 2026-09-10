@@ -54,7 +54,10 @@ Before touching one host:
 All apply entry points accept a dry-run (`--dry-run`, `-DryRun`, or `-WhatIf`). Dry-runs
 write no files, users, ACLs, services, tasks, or backups. They show the full file changes,
 account actions, and planned validation/reload. Linux `--root` is allowed only for offline
-previews. Ordinary reruns are idempotent. Existing symlink/reparse targets are refused.
+previews. Ordinary reruns are idempotent. Existing symlink/reparse targets are refused. Applies also refuse SSH policy files/directories
+owned by or writable to unprivileged users; owners must resolve unsafe directory permissions
+before retrying. Windows backup-directory ACLs explicitly inherit Administrators/SYSTEM
+permissions so the detached recovery task can read its manifest and backup files.
 
 On apply, scripts validate the baseline, save a private-to-admin **public-configuration**
 backup, install changes, validate again, and reload/restart only sshd. Linux automatically

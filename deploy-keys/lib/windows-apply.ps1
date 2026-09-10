@@ -59,13 +59,29 @@ function Set-StrictAcl([string]$Path, [bool]$Readable = $false) {
     $acl.SetAccessRuleProtection($true, $false)
     $admin = [Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
     $acl.SetOwner($admin)
+    $inherit = if ($item.PSIsContainer) { [Security.AccessControl.InheritanceFlags]'ContainerInherit,ObjectInherit' } else { [Security.AccessControl.InheritanceFlags]::None }
     foreach ($sid in @('S-1-5-32-544', 'S-1-5-18')) {
-        $rule = [Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid), 'FullControl', 'Allow')
+        $rule = [Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new($sid), 'FullControl', $inherit, 'None', 'Allow')
         $acl.AddAccessRule($rule)
     }
-    if ($Readable) { $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), 'ReadAndExecute', 'Allow')) }
+    if ($Readable) { $acl.AddAccessRule([Security.AccessControl.FileSystemAccessRule]::new([Security.Principal.SecurityIdentifier]::new('S-1-5-32-545'), 'ReadAndExecute', $inherit, 'None', 'Allow')) }
     Set-Acl -LiteralPath $Path -AclObject $acl
 
+}
+function Assert-ProtectedPolicyPath([string]$Path) {
+    if (-not (Test-Path -LiteralPath $Path)) { return }
+    Assert-PlainPath $Path
+    $acl = Get-Acl -LiteralPath $Path
+    $trusted = @('S-1-5-32-544', 'S-1-5-18')
+    $owner = [Security.Principal.NTAccount]::new($acl.Owner).Translate([Security.Principal.SecurityIdentifier]).Value
+    if ($owner -notin $trusted) { throw "SSH policy owner must be Administrators or SYSTEM: $Path" }
+    $writes = [Security.AccessControl.FileSystemRights]'Write,Delete,DeleteSubdirectoriesAndFiles,ChangePermissions,TakeOwnership'
+    foreach ($rule in $acl.Access) {
+        $sid = $rule.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value
+        if ($rule.AccessControlType -eq 'Allow' -and ($rule.FileSystemRights -band $writes) -and $sid -notin $trusted) {
+            throw "SSH policy permits writes outside Administrators/SYSTEM: $Path"
+        }
+    }
 }
 function Invoke-WindowsApply {
     param([System.Collections.IDictionary]$Changes, [string]$Root, [string]$Sshd, [bool]$Preview, [string]$Entry,
@@ -92,10 +108,14 @@ function Invoke-WindowsApply {
     if ([IO.Path]::GetFullPath($Root).TrimEnd('\') -ne [IO.Path]::GetFullPath("$env:ProgramData\ssh").TrimEnd('\')) { throw 'Custom Root is allowed only for offline dry-runs' }
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Apply requires an elevated owner terminal' }
+    foreach ($directory in @($Root, (Join-Path $Root 'principals'), (Join-Path $Root 'ca-rotation-backups'))) { Assert-ProtectedPolicyPath $directory }
+    foreach ($policyFile in $Changes.Keys) { Assert-ProtectedPolicyPath $policyFile }
     Test-Sshd $Sshd $conf
     if (-not $changed.Count -and -not $CreateDeploy -and -not $DisableDeploy) { Write-Output 'Already current; no restart'; return }
     $backup = Join-Path $Root ('ca-rotation-backups\' + [guid]::NewGuid().ToString('N'))
     Assert-PlainPath $backup
+    $backupParent = Split-Path -Parent $backup
+    if (-not (Test-Path -LiteralPath $backupParent)) { New-Item -ItemType Directory -Path $backupParent | Out-Null; Set-StrictAcl $backupParent }
     New-Item -ItemType Directory -Path $backup -Force | Out-Null
     Set-StrictAcl $backup
     $manifest = @()

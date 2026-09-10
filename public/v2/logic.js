@@ -1047,7 +1047,7 @@ class AppLogic extends Sub {
     // Keys screen chips
     const ttl = this.state.ttl;
     const prin = this.state.prin;
-    const keysLive = !!(FD.screens.keys && FD.screens.keys.sync);
+    const keysLive = !!(FD.screens && FD.screens.keys && FD.screens.keys.sync && Array.isArray(FD.screens.keys.boxes));
     const sshProfile = this.state.sshProfile === 'admin' ? 'admin' : 'daily';
     const selChip = (on) => ({ borderRadius: '9999px', border: '1px solid ' + (on ? t.navActBorder : t.line), background: on ? t.navActBg : 'transparent', color: on ? t.ink : t.ink60, padding: '8px 16px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s', fontWeight: on ? 500 : 400 });
     // L7: the GitHub-train and Certificates cards carry no bindings in the mock,
