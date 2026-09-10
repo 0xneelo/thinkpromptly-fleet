@@ -203,3 +203,25 @@ Self-review by Ysolde: no unresolved merge findings. Linear retry still returns
 supersedes the acceptance hold earlier in this ledger. Acceptance 2 stays with seat 20.
 
 Signed: Ysolde
+
+### PENDING-M2 — review completion comment (2026-09-10)
+
+Per `O20-YSOLDE-REVIEW-2`, fixed remote diagnostic disclosure on the merged branch:
+tailnet `seat_unaddressable` returns `consideredTitles: null`; loopback keeps the
+titles. Ambiguous seat candidates now include the app title when present. Updated
+the README and tailnet test. Also capped diagnostics at 100 titles without limiting
+resolution and skipped desktop title files above 16 MiB, including replacement
+recovery coverage. This supersedes the earlier M3 tailnet diagnostic behavior.
+
+Pushed SHA: `0df8959893ad9df428eb775de3fce8760de7c05d`. A fresh broker-authenticated
+remote check matched. The four targeted tests failed before implementation; the
+focused suite now passes **41/41**. Full suite: pretest passed, **770 passed,
+1 failed, 0 skipped** of 771 tests. Only the credits host-wide `3 !== 1` failure
+remains, covered by `o20-ysolde-ruling-1`.
+
+Ysolde performed the reads, edits and full diff review directly, as instructed for
+this Codex worker; no subagents and no unresolved findings. Syntax and whitespace
+checks passed. Linear retry still returns `oauth_token_invalid_grant`, so this
+signed comment remains pending. Seat 20 owns the weave and live-Mac Acceptance 2.
+
+Signed: Ysolde

@@ -206,3 +206,45 @@ completion comment is preserved in `LINEAR-PENDING.md`. Seat 20 still owns the w
 restart and live-Mac Acceptance 2. The worker did not perform those operations.
 
 Signed: **Ysolde**
+
+## Review fixes — O20-YSOLDE-REVIEW-2 (2026-09-10)
+
+Implemented both requested fixes on the merged branch. Remote/tailnet
+`seat_unaddressable` replies now return `consideredTitles: null`, like `owner`;
+loopback retains the title diagnostic. Ambiguous seat candidates retain their
+existing fields and include `title` when present. This supersedes the earlier M3
+behavior that exposed the diagnostic title list to authenticated tailnet callers.
+The README and tailnet regression test now document and enforce the redaction.
+
+Both optional limits are included: diagnostic lists stop at 100 titles, and desktop
+store files above 16 MiB are skipped before reading, with a second byte check before
+parsing. The diagnostic limit does not restrict the title search: a fixture with
+101 seats still resolves the last seat by its title. The exact file-size boundary
+and recovery after an oversized record is replaced are covered by a unit test.
+
+Pushed fix commit:
+[`0df8959893ad9df428eb775de3fce8760de7c05d`](https://github.com/0xneelo/thinkpromptly-fleet/commit/0df8959893ad9df428eb775de3fce8760de7c05d).
+A separate fresh broker-authenticated `git ls-remote` matched the full SHA. The
+authorized main merge remains in this branch's ancestry.
+
+Validation:
+
+- Before implementation, the four targeted regressions produced **0 passes,
+  4 failures** for remote disclosure, missing candidate titles, the uncapped list,
+  and oversized-file loading.
+- Focused suite: **41 passed, 0 failed, 0 skipped**.
+- Full `npm test`, using the integration addendum's fixture setup: pretest
+  **passed**; **771 tests, 770 passed, 1 failed, 0 skipped**, 136,035 ms. The only
+  failure is credits host-wide discovery `3 !== 1` at `test/machines.test.js:1739`,
+  covered by `o20-ysolde-ruling-1`. No new baseline exception is needed.
+- Syntax and whitespace checks passed. Ysolde performed the reads, edits and full
+  diff review directly, per the Codex worker instruction; no subagents were used
+  and no unresolved review findings remain.
+
+Linear was retried for this review and still returned `oauth_token_invalid_grant`;
+the signed completion comment is preserved in `LINEAR-PENDING.md`. Acceptance 1
+holds with the existing ruling, and Acceptances 3 and 4 remain satisfied. Seat 20
+owns the weave, restart and live-Mac Acceptance 2 using the commands above; inspect
+`consideredTitles` from loopback if that verification returns 409.
+
+Signed: **Ysolde**
