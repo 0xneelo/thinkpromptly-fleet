@@ -44,7 +44,25 @@ Self-review: full M3 diff reviewed by Ysolde; no unresolved notify findings. The
 two baseline repair issues are recorded here, without expanding this lane. Linear
 retry still requires reauthentication. Acceptance 1's baseline-exception ruling
 is pending; no full-suite green claim is made.
-Pushed SHA will be recorded after push in the next ledger update and final report.
+Pushed SHA: `a03de4568e954659cd81242a2397ef11df105747`. A fresh broker-authenticated
+`git ls-remote` matched the full SHA after push.
+
+Signed: Ysolde
+
+### PENDING-M4 — completion comment (2026-09-10)
+
+Added the docs-only `seats-per-project.md` decision note, tagged `operator:decision`.
+It compares the three requested options and recommends (b), project-specific seat
+IDs and project-bound authority checks, for a separately authorized follow-up.
+It explicitly records that bootstrap bypasses fencing only before any seat exists,
+and that per-project epoch counters cannot safely use today's epoch-only verifier.
+
+Self-review: Ysolde checked the note against the current schema, seat claim, epoch,
+fence and notify fallback code. No unresolved findings. This milestone changes docs
+only, with no migration, fencing change or per-project implementation. Linear retry
+still requires reauthentication. The decision itself remains open for the operator;
+authoring the note completes M4's worker deliverable.
+Pushed SHA will be recorded after push in the final ledger/report update.
 
 Signed: Ysolde
 
