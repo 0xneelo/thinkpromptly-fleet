@@ -1239,6 +1239,7 @@ const creditsGetId = db.prepare('SELECT payload FROM credits WHERE kind = ? AND 
 const historyInsert = db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu) VALUES (?, ?, ?, ?, ?)');
 const historyPrune = db.prepare('DELETE FROM credits_history WHERE t < ?');
 const historyGet = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t');
+const historyLast = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t DESC LIMIT 1');
 const HISTORY_KEEP = 60 * 86400; // a trend older than two months answers no question anyone asks
 const HISTORY_POINTS = 120; // enough shape for a sparkline; the rest is payload weight
 
@@ -1606,6 +1607,26 @@ function creditsWrite(rows) {
   return written;
 }
 
+// The usage call is made once an hour at most; the desktop app samples an account as it is
+// used, every few minutes. A sample newer than the row's own numbers is the truer reading of
+// the windows it covers, so those percentages are taken from it (operator, 2026-09-10). What
+// the sample cannot supply stays the live read's: reset stamps, the model weeklies, credits.
+function freshen(r) {
+  if (r.kind !== 'claude' || !r.org) return r;
+  const s = historyLast.get(r.org);
+  if (!s || !(s.t > (dataTs(r) ?? r.updated_at ?? 0))) return r;
+  // Each refreshed window is dated by the sample it came from (`at`); the row's own date is
+  // untouched, so a window the sample does not cover still ages by the read that made it.
+  const windows = { ...(r.windows || {}) };
+  const names = [];
+  for (const [k, n] of [['fh', 'five_hour'], ['sd', 'seven_day'], ['xu', 'extra']]) {
+    if (!Number.isFinite(s[k])) continue;
+    windows[n] = { ...(windows[n] || { resets_at: null }), pct: s[k], at: s.t };
+    names.push(n);
+  }
+  return names.length ? { ...r, windows, fresh: { t: s.t, windows: names } } : r;
+}
+
 function agedOut(r, now) {
   // What the numbers describe, dated: a desktop row by the sample it read, a codex row by
   // the rollout, an oauth row by nothing — a live read has no stamp but its own read time.
@@ -1614,10 +1635,11 @@ function agedOut(r, now) {
   // span it describes, with nothing on screen saying so.
   const t = dataTs(r) ?? r.updated_at;
   if (!t) return r;
-  const age = now - t;
   const windows = {};
   let any = false;
   for (const [n, w] of Object.entries(r.windows || {})) {
+    // A window refreshed from a desktop sample (freshen) carries that sample's own date.
+    const age = now - (w.at ?? t);
     if (age > windowAge(n)) {
       // The number is no longer a current figure, but "—" tells the reader nothing at all.
       // Kept as `last`, the view can still show it greyed, with its age beside it.
@@ -1636,7 +1658,7 @@ function creditsRows() {
     .prepare('SELECT * FROM credits')
     .all()
     .map((r) => {
-      const row = agedOut(JSON.parse(r.payload), nowSec);
+      const row = agedOut(freshen(JSON.parse(r.payload)), nowSec);
       // A hold is news only while it is current: half a day on, the row's own age says more
       // than a pause nobody has re-reported since.
       if (row.hold && nowSec - (row.hold.at || 0) > RANK_STALE) delete row.hold;

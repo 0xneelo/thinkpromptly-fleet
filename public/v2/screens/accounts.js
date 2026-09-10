@@ -177,10 +177,13 @@
 
   // The header's source text: 'live' / 'desktop snapshot' / 'push', plus whose numbers
   // are actually on show when the live reply carried none. accounts.js:135-137.
-  function sourceText(r) {
+  // A desktop sample newer than the live read supplies the windows it covers (server.js
+  // freshen); the row stays the live read's, so the header names exactly those windows.
+  function sourceText(r, now) {
     if (!r.source) return '';
     return (SOURCE[r.source] || r.source) +
-      (r.windows_from ? ' · usage from ' + (SOURCE[r.windows_from] || r.windows_from) : '');
+      (r.windows_from ? ' · usage from ' + (SOURCE[r.windows_from] || r.windows_from) : '') +
+      (r.fresh ? ' · ' + r.fresh.windows.map(label).join(', ') + ' from a desktop sample ' + ago(r.fresh.t, now).text : '');
   }
 
   // accounts.js:154-166. An expired token still leaves whatever another source reported,
@@ -274,7 +277,7 @@
       // Eight characters is enough to match a row against credits-accounts.json by eye.
       id: r.org ? String(r.org).slice(0, 8) : '',
       plan: (tier || '') + (r.kind === 'codex' && r.plan ? (tier ? ' ' : '') + r.plan : ''),
-      live: sourceText(r),
+      live: sourceText(r, now),
       unconfirmed: !r.confirmed,
       right: r.updated_at ? a.text + ' · ' + (r.source === 'push' ? 'push' : r.host) : '',
       // Body.
