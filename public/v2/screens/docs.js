@@ -356,9 +356,11 @@
     // dates the sweep in millis, which Date.parse would read as 1970.
     var when = at(view.swept_at);
     var age = isFixture() ? '2 min ago' : when ? fmtAge(Date.now() - when.getTime()) : '';
-    var swept = view.sweeping ? 'sweeping…' : age ? 'swept ' + age : '';
-    line.appendChild(el('span', 'margin-left:auto;font-size:11.5px;color:' + t.ink45 + ';',
-      countText(view) + (swept ? ' · ' + swept : '')));
+    var swept = view.sweeping ? 'sweeping…' : view.sweep_error ? 'sweep failed' : age ? 'swept ' + age : '';
+    var meta = el('span', 'margin-left:auto;font-size:11.5px;color:' + t.ink45 + ';',
+      countText(view) + (swept ? ' · ' + swept : ''));
+    if (view.sweep_error) meta.title = String(view.sweep_error);
+    line.appendChild(meta);
     c.appendChild(line);
     c.appendChild(dayChips(view, f));
     box.appendChild(c);

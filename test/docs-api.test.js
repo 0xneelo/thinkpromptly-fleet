@@ -356,3 +356,13 @@ test('a deleted file leaves the list on the next refresh', async (t) => {
   assert.deepEqual(fresh.body.docs.map((x) => x.kind), ['unblock', 'goals', 'session', 'eli5']);
   assert.deepEqual(fresh.body.days, [{ day: TODAY, n: 2 }, { day: '2026-09-08', n: 1 }, { day: '2026-09-07', n: 1 }]);
 });
+
+test('a sweep that fails is reported on the view, never as a 500', async (t) => {
+  const d = deck(t, seedTree());
+  d.m.docsIndex.run = async () => { throw new Error('boom'); };
+  const r = await d.get('?refresh=1');
+  assert.equal(r.status, 200);
+  assert.equal(r.body.ok, true);
+  assert.equal(r.body.sweep_error, 'boom');
+  assert.equal(r.body.swept_at, null, 'no stamp, so the next GET sweeps again');
+});

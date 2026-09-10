@@ -254,6 +254,12 @@ class DocsIndex {
       await this.inflight;
       // Stamped only on success: a sweep that failed halfway must not count as fresh.
       this.at = this.clock();
+      this.error = null;
+    } catch (e) {
+      // A failed sweep is news on the screen, never a 500: the table still answers, the
+      // stamp stays unset so the next GET tries again, and the reason lands in the log.
+      this.error = e.message;
+      console.error('[docs] sweep failed: ' + e.message);
     } finally {
       this.inflight = null;
     }
@@ -382,7 +388,7 @@ class DocsIndex {
   }
 
   view(filters) {
-    return { ok: true, ...this.list(filters), swept_at: this.at, sweeping: !!this.inflight };
+    return { ok: true, ...this.list(filters), swept_at: this.at, sweeping: !!this.inflight, sweep_error: this.error || null };
   }
 }
 
