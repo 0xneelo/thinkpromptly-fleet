@@ -1,41 +1,61 @@
 # deploy-keys
 
-Short-lived deploy credentials for headless deployers.
+Repository tools for operator-approved, short-lived deploy credentials. SSH rotation is
+prepared here; host application is gated in [RUNBOOK.md](../docs/goals/ssh-ca-rotation/RUNBOOK.md).
+See [AGENT.md](AGENT.md) for roles, the five-host map, unknown sixth host, and chained-key policy.
+Nothing in these files establishes a live host trust state.
 
-## What this is
+## SSH CA rotation
 
-One mint step, done while 1Password is unlocked, produces credentials that die on their own.
+The intended CA is born inside 1Password and its private half never leaves it. Only the
+public half is distributed to trust stores. During transition both v1 and v2 are trusted;
+legacy login-name principals remain until the owner's final retirement proof.
 
-- `mint-deploy-cert.sh` — an OpenSSH certificate for our own hosts. `sshd` enforces the `-V` expiry.
-- `mint-github-token.sh` — a GitHub App installation token for github.com. GitHub enforces the 1h expiry.
+| Tool | Purpose |
+|---|---|
+| mint-deploy-cert.sh | operator mint, --daily (deploy/8h/PTY only) or --admin (admin/1h/default extensions), CA_PUB / --ca-pub, non-minting --dry-run |
+| apply-trust-linux.sh | local owner append/retire trust, --dry-run, --rollback, validation and reload |
+| setup-german-box-ca.ps1 / setup-rog-strix-ca.ps1 | local Windows owner trust, -DryRun/-WhatIf, -Rollback, SYSTEM restart with recovery |
+| bootstrap-rog-strix.sh | print local owner invocation only; original transport archived verbatim under goal inputs/ |
+| apply-principals-linux.sh / apply-principals-windows.ps1 | deploy accounts and per-login role principals, previews and rollback |
+| verify-cert.sh | owner-only fresh certificate-auth checks, role/scope refusal distinction, --dry-run |
+| render-sudoers.sh --app UNIT | pure exact-unit sudoers template renderer; no installation |
+| ssh-config.roles.example | staged Daily/Admin aliases; owner activates per host after S3 |
 
-No long-lived private key sits on disk. A locked 1Password agent no longer blocks a running deploy,
-because the deployer holds a finished credential, not an agent connection. At these TTLs no revocation
-infrastructure is needed — the credential outlives nothing.
+Five scoped hosts: think-box, onboarding-app-box, ivy-box, german-box, rog-strix.
+**vibes-asus is a sixth box with UNKNOWN trust**, excluded pending owner decision. The
+rog-strix bootstrap fingerprint `SHA256:JaxLCc5XTWKixVFdoHMCLQyzpsCTNTbMs6wO4hcvV/U`
+identifies the operator 1Password wsl-machine fallback, not CA v2. Both original rog-strix
+inputs remain verbatim in `docs/goals/ssh-ca-rotation/inputs/` as provenance; use the guarded
+entry scripts under deploy-keys. Windows trust goes above Match Group administrators;
+restart sshd via the generated SYSTEM task and inspect its result before proceeding.
 
-## One-time host setup (SSH)
+Operator examples (not executed by repository workers):
 
-On your Mac, pick the 1Password key that will act as the CA:
-
+```bash
+./deploy-keys/mint-deploy-cert.sh --daily --ca-pub /path/to/deploy-ca-v2.pub --dry-run
+./deploy-keys/mint-deploy-cert.sh --daily --ca-pub /path/to/deploy-ca-v2.pub
+./deploy-keys/mint-deploy-cert.sh --admin --ca-pub /path/to/deploy-ca-v2.pub
+./deploy-keys/mint-deploy-cert.sh --admin -n promptly-only --ca-pub /path/to/deploy-ca-v2.pub
 ```
-SSH_AUTH_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock" ssh-add -L
-```
 
-Copy the one line for that key into `~/.ssh/deploy-ca.pub`.
+CLI --ca-pub wins over CA_PUB; historical default is ~/.ssh/deploy-ca.pub. Non-v1 CAs get a
+`deployer-<stamp>-ca2` Key ID. Profiles fix TTLs at 8h/1h; explicit legacy `-n` retains the
+1h/4h/8h cap for transition. Admin with extra tags is a union, not restricted scope; omit
+admin for a tag-only cert. The keys UI defaults to Daily and hides tags until Admin is selected.
+Its loopback mint route accepts `{profile, ttl?, extraTags?}`; it rejects arbitrary principals,
+unknown/duplicate tags, duration overrides, and caller-supplied CA paths. Legacy API payloads
+must migrate to this schema; the operator CLI retains explicit legacy minting.
 
-On each server:
+The CA stays only in 1Password; a leaf private key is created in a new mode-700 output directory
+and expires with its certificate. The script refuses existing output directories. Never put
+credential contents in git/logs. Worker tests use public-config fixtures and fake transports.
+Real test signing is opt-in and is prohibited during this lane without a specific exception.
 
-1. Copy `~/.ssh/deploy-ca.pub` to `/etc/ssh/deploy_ca.pub`.
-2. Add to `/etc/ssh/sshd_config`:
+## GitHub credentials (separate from SSH rotation)
 
-   ```
-   TrustedUserCAKeys /etc/ssh/deploy_ca.pub
-   ```
-
-3. Reload: `systemctl reload sshd` (or `service ssh reload`).
-
-Certificate principals must match the login username. `-n` is required for exactly this reason —
-use `-n root` to log in as `root`.
+The following existing GitHub helper flow is not modified by this SSH lane. Ivo's pushes
+use freshly brokered GH_TOKEN in the environment only; no token URL, argv, or file.
 
 ## One-time GitHub App setup
 
@@ -56,19 +76,6 @@ export GH_APP_ID=123456
 export GH_APP_INSTALLATION_ID=7654321
 export GH_APP_KEY_OP=lowcap-deployer-pem
 ```
-
-## Usage
-
-Mint a 4h certificate for `root`:
-
-```
-outdir=$(./mint-deploy-cert.sh -n root -t 4h)
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none \
-    -i "$outdir/deployer" -o CertificateFile="$outdir/deployer-cert.pub" \
-    root@your-host
-```
-
-The script also prints a matching `~/.ssh/config` Host block.
 
 Mint a token and push over https:
 
@@ -99,24 +106,5 @@ Without `--askpass` the token is printed on stdout and nothing else is:
 token=$(./mint-github-token.sh)
 ```
 
-## Safety notes
 
-- The throwaway SSH private key is unencrypted on disk, but it is useless once the certificate expires.
-- A crashed or abandoned deployer leaves nothing usable past the TTL.
-- The CA private key never leaves 1Password. `ssh-keygen -U` signs through the agent.
-- The GitHub token is never in argv and never in a git remote URL. In `--askpass` mode it **is**
-  written to one place: the helper file, mode 700, inside a mode-700 `mktemp` directory. The script
-  prints that directory path. Delete it when the deploy finishes. If you forget, the token is dead
-  server-side within 1h — GitHub enforces that expiry and it cannot be extended.
-
-## Rotation host inventory (repository preparation, not an applied-state claim)
-
-- rog-strix: `misterisley@100.124.95.60`, alias `rs-deploy`; owner seat 20 on operator word.
-- vibes-asus: sixth box; CA trust and rotation participation UNKNOWN. Owner decision pending.
-- Five scoped hosts: think-box, onboarding-app-box, ivy-box, german-box, rog-strix.
-- Windows trust is appended idempotently, globally above any `Match Group administrators`.
-  Validate sshd config, then restart using the generated SYSTEM task; keep rollback ready.
-- Original rog-strix inputs are archived verbatim in `docs/goals/ssh-ca-rotation/inputs/`.
-  The bootstrap public fingerprint `SHA256:JaxLCc5XTWKixVFdoHMCLQyzpsCTNTbMs6wO4hcvV/U`
-  identifies the operator's 1Password `wsl-machine` fallback, comment `misterislez-mac-to-wsl`.
-  It is not the CA and is not added or removed by the rotation scripts.
+Signed rotation documentation: Ivo

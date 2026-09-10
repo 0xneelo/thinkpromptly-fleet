@@ -133,14 +133,15 @@ def main():
         expected = root / 'etc/ssh/ca-rotation-backups'
         if backup.parent != expected or backup.is_symlink():
             raise ValueError('rollback must name a direct child of ' + str(expected))
-        manifest = json.loads((backup / 'manifest.json').read_text())
+        checked_path(root, str(backup.relative_to(root)))
+        manifest = json.loads(checked_path(backup, 'manifest.json').read_text())
         changes = {}
         disable_deploy = bool(manifest.get('created_deploy'))
         for relative, existed in manifest['files'].items():
             if relative not in ['etc/ssh/deploy_ca.pub', 'etc/ssh/sshd_config', 'etc/ssh/principals/deploy', 'etc/ssh/principals/root']:
                 raise ValueError('unexpected rollback path')
             path = checked_path(root, relative)
-            changes[path] = (backup / relative).read_text() if existed else None
+            changes[path] = checked_path(backup, relative).read_text() if existed else None
     elif args.mode == 'principals':
         if not args.box:
             parser.error('--box is required')
@@ -165,7 +166,7 @@ def main():
                 groups = set(run(['id', '-nG', 'deploy']).split())
                 if groups.intersection({'sudo', 'wheel', 'admin', 'docker', 'lxd', 'disk'}):
                     raise ValueError('existing deploy user has privileged groups; owner must resolve')
-                if shutil.which('sudo'):
+                if shutil.which('sudo') and not args.retire_legacy:
                     check = subprocess.run(['sudo', '-n', '-l', '-U', 'deploy'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     if check.returncode == 0:
                         raise ValueError('existing deploy user has sudo rights; owner must resolve')

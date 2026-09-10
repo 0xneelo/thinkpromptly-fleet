@@ -61,3 +61,11 @@ The isolated mint card fits; shell responsive layout is outside this security la
 Reproduce /app#keys at 390px with shell panels open. Keep scope outside CA rotation.
 Labels: project:remote-system, subproject:deploy-keys, agent:agent-ivo, session:cli-worker.
 Signed: Ivo
+
+## M5 local completion — 2026-09-10
+
+M4 pushed 51b95537ce9e03ea30c965d24fc29cc23f4a90b6. RUNBOOK.md and final-state docs
+prepared; 46 focused passes, no failures, one intentionally unrun signing integration.
+The signing test requires clarification of the hard no-minting rule; no exception has
+been received and none is inferred. Linear retry: oauth_token_invalid_grant.
+Would-be milestone/final comments are in REPORT.md; nothing posted. Signed: Ivo

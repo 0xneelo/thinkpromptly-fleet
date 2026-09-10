@@ -1,41 +1,64 @@
-# SSH access for agents — read this first
+# SSH access for agents
 
-SSH to our hosts uses short-lived OpenSSH certificates. Not static keys. Not the 1Password agent. Certs work from any sandboxed shell.
+Target state after the owner applies [RUNBOOK.md](../docs/goals/ssh-ca-rotation/RUNBOOK.md).
+These repository artifacts do not mean any host was changed. Check the owner's receipt.
+Project remote-system / deploy-keys. Rotation worker Ivo, tag agent-ivo.
 
-## Connect
+## Two profiles
 
-Easiest path — five config aliases that always use the newest cert (via the `~/.ssh/deploy-certs/current` symlink): `ssh vps-deploy` (root@think-box), `ssh ob-deploy` (root@onboarding-app-box), `ssh ivybox-deploy` (root@ivy-box), `ssh gb-deploy` (vibe@german-box), `ssh rs-deploy` (misterisley@rog-strix). If they fail with a missing-file or permission error, the current cert expired, was killed, or lacks your principal — ask the operator for a fresh `root,vibe,misterisley` mint. A principal must match the login username, so a `root,vibe` cert reaches every box except rog-strix.
+- **Daily**: `deploy`, 8h, PTY only (forwarding and user-rc extensions cleared).
+  Login as the standard/no-sudo deploy user using the five `*-deploy` aliases.
+- **Admin**: `admin`, 1h, default OpenSSH extensions. Privileged logins use `*-admin`.
+  Optional box tags are additive. `admin,promptly-only` still grants fleet-wide Admin.
+  A genuinely box-restricted cert carries only the chosen tag, with no admin principal.
 
-Manual form: certs live in `~/.ssh/deploy-certs/<timestamp>/` — two files: `deployer` (private key) and `deployer-cert.pub` (certificate).
+The CA private key must exist only inside 1Password. The operator mints through its agent
+and approves in 1Password. An agent worker never mints, uses ssh-add, connects an agent socket,
+or generates/uploads its own keys. The short-lived leaf private key is a separate credential
+on the operator's disk; never paste/copy its contents or a certificate blob into reports.
+Ask the operator for the least privilege and duration required. Check metadata locally with
+`ssh-keygen -Lf <dir>/deployer-cert.pub`; record only public fingerprints and status.
+Use `--ca-pub <v2-public-file>` or CA_PUB after v1 retirement: the historical default path
+`~/.ssh/deploy-ca.pub` is intentionally not silently changed by the script.
 
-```bash
-ssh -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes \
-  -i <dir>/deployer -o CertificateFile=<dir>/deployer-cert.pub <user>@<host>
-```
+## Five approved hosts
 
-Hosts and login users (only CA-trusting hosts accept certs):
-- `root@138.199.198.246` — think-box (thinkpromptly.com / lowcapsxyz.com — lowcaps deploys; Hetzner "promptly"). Trusts the CA.
-- `vibe@100.80.44.86` — german-box (worker lane; Windows OpenSSH; default shell is cmd, tmux runs inside WSL). Trusts the CA.
-- `root@178.104.80.26` — onboarding-app-box (vibe.permissionless.credit; Hetzner "vibe-onboarding-app"). Trusts the CA (since 2026-08-27).
-- `root@168.119.52.183` — ivy-box (ivy.market; Hetzner "ivy-market"). Trusts the CA (since 2026-08-27).
+| Host | Address | Daily alias / login | Admin alias / login | Host tag |
+|---|---|---|---|---|
+| think-box (promptly) | 138.199.198.246 | vps-deploy / deploy | vps-admin / root | promptly-only |
+| onboarding-app-box | 178.104.80.26 | ob-deploy / deploy | ob-admin / root | onboarding-only |
+| ivy-box | 168.119.52.183 | ivybox-deploy / deploy | ivybox-admin / root | ivy-only |
+| german-box | 100.80.44.86 | gb-deploy / deploy | gb-admin / vibe | german-only |
+| rog-strix | 100.124.95.60 | rs-deploy / deploy | rs-admin / misterisley | rog-only |
 
-Not SSH targets: the Mac itself (orchestrator — CA, 1Password, fleetdeck) and the GitHub train (github.com as `0xneelo`, token flow below).
+**vibes-asus: sixth machine, trust UNKNOWN, outside this rotation.** No guessed template/tag.
+Mac is the operator/1Password/deck machine, not an SSH target for this lane.
+Before S3, existing deploy aliases still use root/vibe/misterisley; the owner stages the
+User changes from `ssh-config.roles.example` per host only after verification.
 
-## Pick a cert
+AuthorizedPrincipalsFile: `/etc/ssh/principals/%u` on Linux,
+`__PROGRAMDATA__/ssh/principals/%u` on Windows. Deploy accepts only deploy. Privileged files
+accept admin and the corresponding host tag. Legacy login-name principals stay during S3,
+then are removed explicitly in S5. Both CAs stay trusted until the final retirement gate.
+Windows trust must be global, above Match Group administrators. Validate sshd, then use a
+SYSTEM task for detached restart and check its result; never restart the Mac deck.
 
-Check before use — the cert's principal must match the login user, and it must not be expired:
+The archived rog-strix bootstrap public fingerprint
+`SHA256:JaxLCc5XTWKixVFdoHMCLQyzpsCTNTbMs6wO4hcvV/U` is the operator's 1Password
+wsl-machine fallback (misterislez-mac-to-wsl), not a CA. Rotation leaves it unchanged.
 
-```bash
-ssh-keygen -Lf <dir>/deployer-cert.pub
-```
+## Chained or retired static keys (owner must fill actual state)
 
-Read the `Valid:` and `Principals:` lines. Expired or wrong principal → `Permission denied`. Newest dir is usually the right one: `ls -dt ~/.ssh/deploy-certs/*/ | head -1`.
+| Key | Consumer | Required final state |
+|---|---|---|
+| ivy-deploy | TO-DISCOVER (Mac-side) | exact forced command + source restriction, or retired |
+| lowcap_backup_pull | TO-DISCOVER (Mac-side); backup-pull launchd job lead | exact backup command + source restriction, or retired |
+| onboarding-box | TO-DISCOVER (Mac-side) | exact forced command + source restriction, or retired |
+| vps-onboarding-app-sync | TO-DISCOVER (Mac-side) | exact sync command + source restriction, or retired |
 
-## You cannot mint
-
-Minting requires the operator's 1Password approval — no agent can do it. If no valid cert exists for your target, stop and ask the operator: "mint me a 1h/4h/8h cert for `<principals>`" (they use the fleetdeck SSH-keys page at `localhost:3131/app#keys` or `~/remote-system/deploy-keys/mint-deploy-cert.sh`).
-
-Never: `ssh-add`, touching the 1Password agent socket, generating or uploading your own SSH keys, copying cert files off this machine.
+Retained robot keys additionally prohibit PTY, port/agent/X11 forwarding. A passphrase-less
+key is acceptable only after its command/source restrictions pass live negative tests.
+Never delete or constrain a key before the owner discovers and approves its consumer.
 
 ## GitHub push (1-hour App tokens — self-serve while a train runs)
 
@@ -57,14 +80,5 @@ On the german-box — or any machine on the tailnet — the deck brokers the sam
 
 Never put the token itself in a URL, argv, or any file; the askpass helper handles it. Delete the helper dir (printed to stderr) when done. The operator's 1Password git-push route is unaffected.
 
-## Rotation host inventory (repository preparation, not an applied-state claim)
 
-- rog-strix: `misterisley@100.124.95.60`, alias `rs-deploy`; owner seat 20 on operator word.
-- vibes-asus: sixth box; CA trust and rotation participation UNKNOWN. Owner decision pending.
-- Five scoped hosts: think-box, onboarding-app-box, ivy-box, german-box, rog-strix.
-- Windows trust is appended idempotently, globally above any `Match Group administrators`.
-  Validate sshd config, then restart using the generated SYSTEM task; keep rollback ready.
-- Original rog-strix inputs are archived verbatim in `docs/goals/ssh-ca-rotation/inputs/`.
-  The bootstrap public fingerprint `SHA256:JaxLCc5XTWKixVFdoHMCLQyzpsCTNTbMs6wO4hcvV/U`
-  identifies the operator's 1Password `wsl-machine` fallback, comment `misterislez-mac-to-wsl`.
-  It is not the CA and is not added or removed by the rotation scripts.
+Signed rotation documentation: Ivo

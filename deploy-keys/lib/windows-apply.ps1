@@ -89,6 +89,7 @@ function Invoke-WindowsApply {
     Write-Output 'PLAN: protected ACLs; sshd -t; detached SYSTEM task restarts sshd; restores backup on failure'
     if ($Preview) { Write-Output 'DRY-RUN: no files, accounts, ACLs, tasks, or services changed'; return }
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { throw 'Apply requires Windows' }
+    if ([IO.Path]::GetFullPath($Root).TrimEnd('\') -ne [IO.Path]::GetFullPath("$env:ProgramData\ssh").TrimEnd('\')) { throw 'Custom Root is allowed only for offline dry-runs' }
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Apply requires an elevated owner terminal' }
     Test-Sshd $Sshd $conf
@@ -179,6 +180,8 @@ function Get-RollbackChanges([string]$Backup, [string]$Root) {
     foreach ($f in $m.files) {
         $allowed = @((Join-Path $Root 'deploy_ca.pub'), (Join-Path $Root 'sshd_config'), (Join-Path $Root 'principals/deploy'), (Join-Path $Root 'principals/vibe'), (Join-Path $Root 'principals/misterisley'))
         if ($f.path -notin $allowed) { throw 'Unexpected rollback path' }
+        if ([IO.Path]::GetFullPath((Split-Path -Parent $f.saved)) -ne [IO.Path]::GetFullPath($Backup)) { throw 'Unexpected saved rollback path' }
+        Assert-PlainPath $f.saved
         $changes[$f.path] = if ($f.existed) { [IO.File]::ReadAllText($f.saved) } else { $null }
     }
     $script:RollbackDisableDeploy = [bool]$m.createdDeploy

@@ -71,3 +71,26 @@ test('sudoers renderer permits only an exact unit and never a shell or wildcard'
   assert.match(render('onboarding').stdout,/deploy ALL=\(root\) NOPASSWD: \/usr\/bin\/systemctl restart onboarding.service/);
   for (const app of ['*','foo;id','../foo','foo bar','$(id)']) assert.notEqual(render(app).status,0);
 });
+test('Linux rollback preview restores exact snapshot and disables newly created deploy without writes', () => fixtures(root => {
+  const backup=path.join(root,'etc/ssh/ca-rotation-backups/example');
+  fs.mkdirSync(path.join(backup,'etc/ssh'),{recursive:true});
+  fs.writeFileSync(path.join(backup,'etc/ssh/sshd_config'),'Port 2222\n');
+  fs.writeFileSync(path.join(backup,'manifest.json'),JSON.stringify({created_deploy:true,files:{'etc/ssh/sshd_config':true,'etc/ssh/principals/deploy':false}}));
+  const before=fixtures.snapshot(root);
+  const r=spawnSync('sh',['deploy-keys/apply-principals-linux.sh','--root',root,'--rollback',backup,'--dry-run'],{encoding:'utf8'});
+  assert.equal(r.status,0,r.stderr);assert.match(r.stdout,/\+Port 2222/);assert.match(r.stdout,/- ACCOUNT deploy: lock, expire/);
+  assert.deepEqual(fixtures.snapshot(root),before);
+}));
+test('Windows retirement and rollback preview retain v2 and restore saved public config/ACL', {skip:!process.env.PWSH_BIN}, () => fixtures(root => {
+  const ssh=path.join(root,'etc/ssh');fs.appendFileSync(path.join(ssh,'deploy_ca.pub'),fixtures.other+'\n');
+  const backup=path.join(ssh,'ca-rotation-backups/example');fs.mkdirSync(backup,{recursive:true});
+  const saved=path.join(backup,'0.bak');fs.writeFileSync(saved,'Port 2222\n');
+  fs.writeFileSync(path.join(backup,'manifest.json'),JSON.stringify({createdDeploy:true,files:[{path:path.join(ssh,'sshd_config'),saved,existed:true,acl:'public-fixture-sddl'}]}));
+  const before=fixtures.snapshot(root);
+  const run=(file,args)=>spawnSync(process.env.PWSH_BIN,['-NoProfile','-File','deploy-keys/'+file,'-Root',ssh,...args],{encoding:'utf8'});
+  const retire=run('setup-rog-strix-ca.ps1',['-RetireV1','-DryRun']);assert.equal(retire.status,0,retire.stderr);
+  assert.doesNotMatch(retire.stdout,/CA fingerprint: SHA256:Sg4T/);assert.match(retire.stdout,/CA fingerprint: SHA256:JaxL/);
+  const rollback=run('apply-principals-windows.ps1',['-Rollback',backup,'-WhatIf']);assert.equal(rollback.status,0,rollback.stderr);
+  assert.match(rollback.stdout,/\+Port 2222/);assert.match(rollback.stdout,/- ACCOUNT deploy: disable/);assert.match(rollback.stdout,/ACL RESTORE .*public-fixture-sddl/);
+  assert.deepEqual(fixtures.snapshot(root),before);
+}));

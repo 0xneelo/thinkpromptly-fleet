@@ -81,10 +81,31 @@ Admin tags, label join, unknown host disabled, mocked request bodies, no page er
 the isolated mint card at 390px. No request reached a live API and no mint process ran.
 Phone-width full-shell layout is an existing limitation, not claimed fixed by this lane.
 Self-review by Ivo, no subagents: API payload and DOM chip joins checked; no remaining M4
-findings. M4 push SHA: pending. Linear retry still oauth_token_invalid_grant.
+findings. M4 pushed and independently verified SHA: `51b95537ce9e03ea30c965d24fc29cc23f4a90b6`. Linear retry still oauth_token_invalid_grant.
 
 Direct pre-M4 suite after native dependency build: 750 tests, 748 pass, 1 exempt credits
 failure (3 !== 1), 1 skipped signing integration. npm pretest title drift remains separately
 recorded. Initial missing native node-pty module was resolved locally by npm rebuild node-pty.
+
+Signed: Ivo
+
+## M5
+
+RUNBOOK.md covers S1 through S5 in owner order, all five local apply/preview/rollback
+commands, fresh cert-only verification matrices, think-box and backup-pull collision
+holds, Mac-only discovery and deletion gates, and the four TO-DISCOVER consumer rows.
+AGENT.md and README.md document the desired final state without claiming live changes.
+Runbook review found every referenced script exists (9 distinct entry scripts).
+
+Final integration self-review by Ivo tightened rollback snapshot path checks, blocked
+non-preview Windows fixture-root applies, retained operator-approved narrow sudo rules
+when retiring legacy principals, normalized relative mint output paths, and corrected
+the opt-in signing test's OpenSSH validity-skew expectation. Added Linux/Windows rollback
+previews and Windows v1 retirement coverage. No production applies/mints performed.
+
+Focused checks: 47 tests, 46 pass, 0 fail, 1 opt-in signing test unrun. All six changed/new
+.sh entry scripts ShellCheck clean; all delivered PowerShell files parse clean. Full
+suite result will be recorded in the final receipt. M5 push SHA: pending.
+Linear retry remains oauth_token_invalid_grant; no comments or state changes posted.
 
 Signed: Ivo

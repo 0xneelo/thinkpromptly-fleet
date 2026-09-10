@@ -58,10 +58,16 @@ test('isolated file signer: ssh-keygen -L proves real principals, validity, Key 
     const r = run(dir, ['--' + profile, '--ca-pub', key + '.pub', '-o', out], { SSH_CA_TEST_MODE: '1', SSH_CA_TEST_SIGNER: hook, SSH_CA_TEST_KEY: key });
     assert.equal(r.status, 0, 'test signing failed (credential output suppressed)');
     const info = spawnSync('ssh-keygen', ['-L', '-f', path.join(out, 'deployer-cert.pub')], { encoding: 'utf8' }).stdout;
+    const fp = spawnSync('ssh-keygen', ['-lf', key + '.pub', '-E', 'sha256'], { encoding: 'utf8' }).stdout.split(/\s+/)[1];
+    assert.ok(info.includes('Signing CA: ED25519 ' + fp), 'throwaway CA fingerprint matches');
     assert.match(info, /Key ID: "deployer-.*-ca2"/);
     assert.match(info, new RegExp('Principals:\\s+' + (profile === 'daily' ? 'deploy' : 'admin') + '\\s+Critical Options:'));
     const times = info.match(/Valid: from (\S+) to (\S+)/);
-    assert.ok(times); assert.equal(Date.parse(times[2]) - Date.parse(times[1]), (profile === 'daily' ? 8 : 1) * 3600000);
+    assert.ok(times); const ttlMs = (profile === 'daily' ? 8 : 1) * 3600000;
+    const span = Date.parse(times[2]) - Date.parse(times[1]);
+    // OpenSSH backdates the implicit start to allow clock skew and rounds to a minute.
+    assert.ok(span >= ttlMs && span <= ttlMs + 120000, 'profile validity cap plus OpenSSH start skew');
+    assert.ok(Math.abs(Date.parse(times[2]) - Date.now() - ttlMs) < 10000, 'expiration is profile TTL from signing time');
     assert.match(info, /permit-pty/);
     if (profile === 'daily') assert.doesNotMatch(info, /permit-(agent-forwarding|port-forwarding|X11-forwarding|user-rc)/);
     else assert.match(info, /permit-agent-forwarding/);

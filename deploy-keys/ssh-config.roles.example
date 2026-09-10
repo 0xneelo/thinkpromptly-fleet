@@ -47,4 +47,3 @@ Host rs-deploy
 Host rs-admin
     HostName 100.124.95.60
     User misterisley
-

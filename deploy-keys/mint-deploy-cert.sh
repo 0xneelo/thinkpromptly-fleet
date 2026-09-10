@@ -61,6 +61,7 @@ outdir=${outdir:-$HOME/.ssh/deploy-certs/$stamp}
 umask 077
 # Refuse an existing directory: never overwrite an active credential or follow its symlink.
 mkdir -p "$(dirname "$outdir")"
+outdir=$(cd "$(dirname "$outdir")" && pwd)/$(basename "$outdir")
 mkdir -m 700 "$outdir" || fail 'output directory must be new'
 ssh-keygen -t ed25519 -f "$outdir/deployer" -N '' -C deployer-cert -q
 sign_args=(-I "$key_id" -n "$principals" -V "+$ttl" -z "$(date +%s)" "${options[@]}" "$outdir/deployer.pub")
