@@ -11,6 +11,7 @@ const pty = require('node-pty');
 const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
 const { coordinatorRoute } = require('./coordinator-api');
 const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
+const { DesktopSeatTitles } = require('./desktop-seat-titles');
 const { DocsIndex, defaultRoots } = require('./docs-index');
 const { createUnblock } = require('./unblock');
 
@@ -520,6 +521,9 @@ const CLAUDE_BRIDGE = process.env.CLAUDE_BRIDGE || path.join(__dirname, '.fleetd
 // presents on that socket. Observed on 2.1.259 (peerProtocol 1); the .key is read only at
 // delivery and never leaves this process.
 const CLAUDE_SESSIONS_DIR = process.env.CLAUDE_SESSIONS_DIR || path.join(HOME, '.claude', 'sessions');
+const CLAUDE_DESKTOP_STORE_DIR = process.env.CLAUDE_DESKTOP_STORE_DIR ||
+  path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
+const desktopSeatTitles = new DesktopSeatTitles({ dir: CLAUDE_DESKTOP_STORE_DIR });
 
 // Live desktop sessions: a registry file whose pid is alive and whose socket exists. A stale
 // file from a crashed session is skipped, never an error.
@@ -538,7 +542,9 @@ function desktopSessions() {
       if (typeof j.name !== 'string' || typeof j.messagingSocketPath !== 'string') continue;
       process.kill(j.pid, 0);
       if (!fs.existsSync(j.messagingSocketPath)) continue;
-      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId: desktopUuid(j.sessionId) });
+      const sessionId = desktopUuid(j.sessionId);
+      const title = sessionId ? desktopSeatTitles.get().get(sessionId)?.title ?? null : null;
+      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId, title });
     } catch {}
   }
   return live;
@@ -1148,15 +1154,20 @@ async function health() {
   };
 }
 
-// --- Credits: per-account AI usage. box/fleet-credits.sh runs on each machine and reports
-// two things: a live usage read for whichever account that machine's CLI is logged into
-// (its own token, read and used only there), and the Claude desktop app's usage history,
-// which covers every org that app has sampled — that is how accounts with no login on the
-// fleet are still seen. Only derived numbers come back (percentages, reset stamps, plan,
-// email, org uuid, hostname). No token is ever stored in fleet.db, logged, or sent to a
-// browser, and the desktop app's token cache is never read at all.
+// --- Credits: per-account AI usage. A row carries only what a live read of that account's
+// own token returned — the logins sweep, a Codex rollout, or a machine's push. The Claude
+// desktop app's samples feed the trend line below and nothing else: they never supply a
+// row's numbers (operator, 2026-09-11). An account nobody has read says so instead. Only
+// derived numbers come back (percentages, reset stamps, plan, email, org uuid, hostname).
+// No token is ever stored in fleet.db, logged, or sent to a browser, and the desktop app's
+// token cache is never read at all.
 db.exec(
   `CREATE TABLE IF NOT EXISTS credits (kind TEXT, id TEXT, email TEXT, org TEXT, host TEXT, payload TEXT, updated_at INTEGER, PRIMARY KEY (kind, id))`
+);
+// Rows a desktop sample once supplied, and windows one lent to a live read that carried
+// none: no source writes either any more, so what is still stored goes at the restart.
+db.exec(
+  `DELETE FROM credits WHERE json_extract(payload, '$.source') = 'desktop' OR json_extract(payload, '$.windows_from') = 'desktop'`
 );
 // The desktop app samples usage as it is used, so the trend it keeps is the only history
 // the fleet has. A sample is immutable — same org and second means same reading, whichever
@@ -1178,9 +1189,9 @@ const ACCOUNTS_FILE = path.join(__dirname, 'credits-accounts.json');
 const CODEX_EMAIL = 'admin@deus.finance';
 const CREDIT_STATES = new Set(['ok', 'token_expired', 'rate_limited', 'error', 'absent']);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// A live read carries real reset stamps, so it beats a desktop sample describing the same
-// account in the same collect; both beat nothing.
-const SOURCE_RANK = { oauth: 3, push: 2, codex: 2, desktop: 1 };
+// The logins sweep reads the account's own token, so it beats a push or a rollout describing
+// the same account in the same collect; all three beat nothing.
+const SOURCE_RANK = { oauth: 3, push: 2, codex: 2 };
 // A better source wins, but only while it is still reporting: once its row is half a day
 // old a weaker fresh one takes over, so a machine that stops pushing cannot pin a row.
 const RANK_STALE = 12 * 3600;
@@ -1191,9 +1202,9 @@ const safeParse = (s) => {
     return null;
   }
 };
-// When a row's numbers are from: a desktop row dates them by the sample it read, a Codex
-// row by the rollout it read. An oauth row has neither — its updated_at IS the read time.
-const dataTs = (r) => r.sample_ts ?? r.snapshot_ts ?? null;
+// When a row's numbers are from: a Codex row dates them by the rollout it read. An oauth or
+// pushed row has no such stamp — its updated_at IS the read time.
+const dataTs = (r) => r.snapshot_ts ?? null;
 const beats = (a, b, now = Math.floor(Date.now() / 1000)) => {
   if (!b) return true;
   const ra = SOURCE_RANK[a.source] || 0;
@@ -1206,15 +1217,14 @@ const beats = (a, b, now = Math.floor(Date.now() / 1000)) => {
   if (b.state === 'ok' && a.state !== 'ok' && at - bt < RANK_STALE) return false;
   // The other way round it takes effect at once — but only for numbers still worth
   // asserting. A failure carries none, so displacing it is right; displacing it with a
-  // sample weeks past its own window's age would throw away the last real reading and put
+  // reading weeks past its own window's age would throw away the last real one and put
   // in its place a number agedOut() only greys back out. vouches() is that same bar, and
   // it is the bar the borrow step below already holds every lender to.
   if (a.state === 'ok' && b.state !== 'ok' && !allAgedOut(a, now)) return true;
   // Two rows of the same rank describe the same account from different machines, and
-  // updated_at is only when each machine was asked. So the mac's twelve-minute-old desktop
-  // sample and a box's nine-day-old one tie on rank, as do the mac's Codex 74% and a box's
-  // month-old 0%, and the row flipped to whichever ssh reply happened to finish last. The
-  // newer numbers are the truer ones either way.
+  // updated_at is only when each machine was asked. So the mac's Codex 74% and a box's
+  // month-old 0% tie on rank, and the row flipped to whichever ssh reply happened to finish
+  // last. The newer numbers are the truer ones either way.
   const ad = dataTs(a);
   const bd = dataTs(b);
   if (ra === rb && Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd) return ad > bd;
@@ -1222,10 +1232,10 @@ const beats = (a, b, now = Math.floor(Date.now() / 1000)) => {
   if (ra > rb) return true;
   // A weaker source takes over a row whose better source stopped reporting half a day ago —
   // but only with numbers newer than the ones it would replace. updated_at is when a machine
-  // was asked, not how old its numbers are: the mac's desktop sample from three days back,
-  // read just now, displaced this morning's live 90% the moment that reading turned twelve
-  // hours old, and put on the page a figure agedOut() had already greyed. A live reading is
-  // dated by its read; a sample by itself.
+  // was asked, not how old its numbers are: a month-old rollout, read just now, displaced
+  // this morning's live 90% the moment that reading turned twelve hours old, and put on the
+  // page a figure agedOut() had already greyed. A live reading is dated by its read; a
+  // rollout by itself.
   return at - bt > RANK_STALE && (ad ?? at) > (bd ?? bt);
 };
 
@@ -1241,7 +1251,6 @@ const creditsGetId = db.prepare('SELECT payload FROM credits WHERE kind = ? AND 
 const historyInsert = db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu) VALUES (?, ?, ?, ?, ?)');
 const historyPrune = db.prepare('DELETE FROM credits_history WHERE t < ?');
 const historyGet = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t');
-const historyLast = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t DESC LIMIT 1');
 const HISTORY_KEEP = 60 * 86400; // a trend older than two months answers no question anyone asks
 const HISTORY_POINTS = 120; // enough shape for a sparkline; the rest is payload weight
 
@@ -1407,18 +1416,6 @@ function codexRow(c) {
   };
 }
 
-// The desktop app's sample: fh/sd/xu are already 0-100, and it carries no reset stamps.
-// sample_ts is what matters — an org sampled six days ago is stale data, not 0% usage.
-function desktopRow(s) {
-  const u = s.u && typeof s.u === 'object' ? s.u : {};
-  const windows = {};
-  for (const [k, name] of [['fh', 'five_hour'], ['sd', 'seven_day'], ['xu', 'extra']]) {
-    const pct = pctOf(u[k]);
-    if (pct !== null) windows[name] = { pct, resets_at: null };
-  }
-  return { state: 'ok', windows, sample_ts: epochOf(s.t) };
-}
-
 // The file names the accounts; a CLI login on any machine proves one, so it wins and
 // confirms. An org can change hands on a shared box, which is why rows key on the uuid.
 function creditsMap(accounts) {
@@ -1457,9 +1454,10 @@ function ident(org, email, map) {
   };
 }
 
-// One emitted line -> candidate rows: the live read for this machine's CLI account, one
-// per org the desktop app has sampled, and its Codex login. Nothing outside the whitelist
-// each *Row builder produces is kept.
+// One emitted line -> candidate rows: the live read for this machine's CLI account and its
+// Codex login. The line's desktop samples are not among them — they are history, and
+// creditsHistoryWrite is the only thing that reads them. Nothing outside the whitelist each
+// *Row builder produces is kept.
 function creditsCandidates(d, host, map, push) {
   if (!d || typeof d !== 'object') return [];
   // Never later than now: a future stamp — a skewed clock, or a push claiming someone
@@ -1475,15 +1473,6 @@ function creditsCandidates(d, host, map, push) {
     if (id) out.push({ kind, id, host: h, updated_at: t, source: push ? 'push' : source, ...i, ...payload });
   };
   if (d.claude && typeof d.claude === 'object') add('claude', d.claude.org, d.claude.email, 'oauth', claudeRow(d.claude));
-  // One row per org, and a machine sees a handful: the slice is what stops a push from
-  // turning a long list into as many stored rows.
-  for (const s of (Array.isArray(d.desktop) ? d.desktop : []).slice(0, HISTORY_ORGS))
-    if (s && typeof s === 'object' && typeof s.org === 'string') {
-      const ds = desktopRow(s);
-      // Clamped like the Codex snapshot below: a future sample stamp would win every tie and never age.
-      if (ds.sample_ts > t) ds.sample_ts = t;
-      add('claude', s.org, null, 'desktop', ds);
-    }
   if (d.codex && typeof d.codex === 'object') {
     const cx = codexRow(d.codex);
     // Never later than now, for the same reason: the snapshot stamp breaks a same-rank tie,
@@ -1494,9 +1483,9 @@ function creditsCandidates(d, host, map, push) {
   return out;
 }
 
-// How long a sample may still be quoted as a current figure. Not the window's own length:
-// the desktop source carries no reset stamp, so a seven-day reading days old may sit on
-// the far side of a reset and read "at the limit" for an account now at zero. These are
+// How long a reading may still be quoted as a current figure. Not the window's own length:
+// a source that carries no reset stamp leaves a seven-day reading days old sitting on the
+// far side of a reset, reading "at the limit" for an account now at zero. These are
 // the ages within which the number is still worth asserting; past them the reading becomes
 // no reading, and only the trend line keeps it, which is honestly historical.
 const WINDOW_AGE = { five_hour: 2 * 3600, seven_day: 24 * 3600, extra: 7 * 86400 };
@@ -1511,7 +1500,7 @@ const windowAge = (n) => WINDOW_AGE[n] ?? (n.startsWith('seven_day') ? WINDOW_AG
 const hasSignal = (r) =>
   Object.entries(r.windows || {}).some(([n, w]) => n !== 'extra' && w && (w.pct > 0 || w.resets_at !== null));
 // ...but only a source still inside its own window's age may vouch. An eight-day-old
-// desktop sample describes a week that has since reset; lending it here would answer a
+// reading describes a week that has since reset; lending it here would answer a
 // profile-proved 0% with a number the view then ages back out into "stale", which is
 // worse than the zero. Nothing fresher to contradict it means the zero IS the reading.
 // Every window a row carries already older than the span that window describes: it asserts
@@ -1520,7 +1509,7 @@ const hasSignal = (r) =>
 // failed read of a better source would otherwise invite it to do.
 const allAgedOut = (r, now) => {
   const names = Object.keys(r.windows || {}).filter((n) => n !== 'extra');
-  const t = r.sample_ts ?? r.updated_at ?? 0;
+  const t = r.updated_at ?? 0;
   return names.length > 0 && names.every((n) => now - t > windowAge(n));
 };
 const vouches = (r, now) =>
@@ -1529,7 +1518,7 @@ const vouches = (r, now) =>
       n !== 'extra' &&
       w &&
       (w.pct > 0 || w.resets_at !== null) &&
-      now - (r.sample_ts ?? r.updated_at ?? 0) <= windowAge(n)
+      now - (r.updated_at ?? 0) <= windowAge(n)
   );
 
 // What a losing failed read leaves on the row it could not displace. The collector states the
@@ -1567,15 +1556,15 @@ function creditsWrite(rows) {
           (SOURCE_RANK[b.source] || 0) - (SOURCE_RANK[a.source] || 0) ||
           (dataTs(b) ?? b.updated_at) - (dataTs(a) ?? a.updated_at)
       )[0];
-    if (alt) best.set(k, { ...r, windows: alt.windows, sample_ts: alt.sample_ts, windows_from: alt.source });
+    if (alt) best.set(k, { ...r, windows: alt.windows, windows_from: alt.source });
   }
   // A collect carries no pushed rows, so without comparing against what is already stored
   // a local snapshot would clobber a better report an off-fleet machine pushed earlier.
   let written = 0;
   for (const [k, r] of best) {
     // A failed read must not displace good numbers (beats() saw to that), but it knows the
-    // one thing the numbers cannot: this account's live read is on hold. One sweep carries the
-    // mac's desktop sample and the box's refusal for the same account in the same batch, so
+    // one thing the numbers cannot: this account's live read is on hold. One sweep can carry
+    // one box's good read and another's refusal for the same account in the same batch, so
     // the refusal is looked for among the whole group, not only in the candidate that won.
     const held = (groups.get(k) || [])
       .filter((o) => o.state !== 'ok')
@@ -1597,11 +1586,13 @@ function creditsWrite(rows) {
     for (const c of groups.get(k))
       if (!seen.some((s) => s.host === c.host && s.source === c.source)) seen.push({ host: c.host, source: c.source });
     // A hold rides with the row until a live read of this account answers: a row whose
-    // numbers carry their own date (a desktop sample, a rollout) is not that read, and the
-    // mac re-reports its sample every minute, so without this the hold lasted a minute.
+    // numbers carry their own date (a rollout) is not that read, and a machine re-reports the
+    // same rollout every minute, so without this the hold lasted a minute.
     const live = r.state === 'ok' && dataTs(r) == null;
     const carried = !held && !live && stored && stored.hold ? stored.hold : null;
-    const hold = held && r.state === 'ok' ? { hold: holdOf(held) } : carried ? { hold: carried } : {};
+    // The refusal may be the winner itself: an account nothing has ever read live has no ok
+    // row for it to lose to, and then the hold is the only thing its row has to say.
+    const hold = held ? { hold: holdOf(held) } : carried ? { hold: carried } : {};
     creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify({ ...r, seen, ...hold }), r.updated_at);
     if (r.email && r.org) creditsDropId.run(r.kind, 'org:' + r.org);
     written++;
@@ -1609,29 +1600,9 @@ function creditsWrite(rows) {
   return written;
 }
 
-// The usage call is made once an hour at most; the desktop app samples an account as it is
-// used, every few minutes. A sample newer than the row's own numbers is the truer reading of
-// the windows it covers, so those percentages are taken from it (operator, 2026-09-10). What
-// the sample cannot supply stays the live read's: reset stamps, the model weeklies, credits.
-function freshen(r) {
-  if (r.kind !== 'claude' || !r.org) return r;
-  const s = historyLast.get(r.org);
-  if (!s || !(s.t > (dataTs(r) ?? r.updated_at ?? 0))) return r;
-  // Each refreshed window is dated by the sample it came from (`at`); the row's own date is
-  // untouched, so a window the sample does not cover still ages by the read that made it.
-  const windows = { ...(r.windows || {}) };
-  const names = [];
-  for (const [k, n] of [['fh', 'five_hour'], ['sd', 'seven_day'], ['xu', 'extra']]) {
-    if (!Number.isFinite(s[k])) continue;
-    windows[n] = { ...(windows[n] || { resets_at: null }), pct: s[k], at: s.t };
-    names.push(n);
-  }
-  return names.length ? { ...r, windows, fresh: { t: s.t, windows: names } } : r;
-}
-
 function agedOut(r, now) {
-  // What the numbers describe, dated: a desktop row by the sample it read, a codex row by
-  // the rollout, an oauth row by nothing — a live read has no stamp but its own read time.
+  // What the numbers describe, dated: a codex row by the rollout it read, an oauth row by
+  // nothing — a live read has no stamp but its own read time.
   // Exempting a row because that field is absent is what let a three-hour-old oauth reading
   // sit on the page as a current figure, its five-hour window an hour and a half past the
   // span it describes, with nothing on screen saying so.
@@ -1640,8 +1611,7 @@ function agedOut(r, now) {
   const windows = {};
   let any = false;
   for (const [n, w] of Object.entries(r.windows || {})) {
-    // A window refreshed from a desktop sample (freshen) carries that sample's own date.
-    const age = now - (w.at ?? t);
+    const age = now - t;
     if (age > windowAge(n)) {
       // The number is no longer a current figure, but "—" tells the reader nothing at all.
       // Kept as `last`, the view can still show it greyed, with its age beside it.
@@ -1660,7 +1630,7 @@ function creditsRows() {
     .prepare('SELECT * FROM credits')
     .all()
     .map((r) => {
-      const row = agedOut(freshen(JSON.parse(r.payload)), nowSec);
+      const row = agedOut(JSON.parse(r.payload), nowSec);
       // A hold is news only while it is current: half a day on, the row's own age says more
       // than a pause nobody has re-reported since.
       if (row.hold && nowSec - (row.hold.at || 0) > RANK_STALE) delete row.hold;
@@ -2204,9 +2174,9 @@ function machinesUsage(rows, now = Math.floor(Date.now() / 1000)) {
     if (!r || (r.kind !== 'claude' && r.kind !== 'codex')) continue;
     const key = r.kind === 'claude' ? r.org : String(r.email || r.id || '').toLowerCase();
     if (!key) continue;
-    // Only a desktop-sourced Claude row is stamped with sample_ts; an oauth or codex row
-    // dates itself with updated_at, and a row with neither is the configured-but-unreported
-    // blank, which is still a legitimate entry.
+    // No source stamps a stored row with sample_ts any more; an oauth or codex row dates
+    // itself with updated_at, and a row with neither is the configured-but-unreported blank,
+    // which is still a legitimate entry.
     const sampleTs = r.sample_ts ?? r.updated_at ?? null;
     let windows = windowsOf(r);
     let staleWindows = !!r.stale_windows;
@@ -3196,8 +3166,7 @@ async function messageRoute(req, res, p, url) {
 
 // --- notify: alias -> target, delivery with auto-retry, and the ACK the sender waits on.
 
-// Desktop seats have no address of their own: delivery lands in whichever chat is open.
-// A seat is a Claude Desktop session, found by the title the operator gave it (/rename
+// A seat is a Claude Desktop session, found by the app title the operator gave it (or /rename
 // `🎛 ORCHESTRATOR <N> · <project> · <topic>` and kin). Each row: alias pattern, the seat name the
 // receiver reads, the seats-table key, and the title test. Project spelling drifts
 // (lowcap-connector / lowcapconnector / lowcap), so it is compared with punctuation stripped.
@@ -3217,15 +3186,17 @@ const NOTIFY_SEATS = [
   [/^coordinator[\s-]+(\d+)$/i, (m) => '🧭 COORDINATOR ' + m[1], null, (m) => numbered('🧭 COORDINATOR', m[1])],
 ];
 
-// The orchestrator seat also has a lease row whose owner_name is the session's ListAgents name
-// even when it was never renamed — the fallback when no title matches.
-function seatSessions(seatKey, matches) {
-  const live = desktopSessions();
-  const titled = live.filter((s) => matches(s.name));
-  if (titled.length || seatKey !== 'orchestrator') return titled;
+// Prefer app titles across all live sessions before trying legacy CLI names. The
+// orchestrator lease owner remains the last fallback when neither title nor name matches.
+function seatSessions(seatKey, matches, live) {
+  const titled = live.filter((s) => s.title !== null && matches(s.title));
+  if (titled.length) return { sessions: titled, resolvedVia: 'title' };
+  const named = live.filter((s) => matches(s.name));
+  if (named.length || seatKey !== 'orchestrator') return { sessions: named, resolvedVia: 'seat' };
   const row = seatRow.get('orchestrator');
-  if (!row || row.epoch === null || row.suspect_at !== null || row.expires_at < msNow()) return [];
-  return live.filter((s) => s.name === row.owner_name);
+  const sessions = !row || row.epoch === null || row.suspect_at !== null || row.expires_at < msNow()
+    ? [] : live.filter((s) => s.name === row.owner_name);
+  return { sessions, resolvedVia: 'seat' };
 }
 
 // A worker is addressed by the human name the operator knows it by. Identity columns first
@@ -3272,21 +3243,28 @@ function resolveNotifyTarget(to) {
     const match = pattern.exec(alias);
     if (!match) continue;
     const seat = seatLabel(match);
-    const live = seatSessions(seatKey, matcher(match));
+    const considered = desktopSessions();
+    const { sessions: live, resolvedVia } = seatSessions(seatKey, matcher(match), considered);
     if (live.length > 1) {
       const error = new Error('ambiguous');
       error.code = 409;
-      error.candidates = live.map((s) => ({ host: 'mac', name: s.name, worker: '', label: seat }));
+      error.candidates = live.map((s) => ({
+        host: 'mac', name: s.name, ...(s.title !== null ? { title: s.title } : {}), worker: '', label: seat,
+      }));
       throw error;
     }
-    const session = live.length ? live[0].name : 'current';
+    // A derived CLI name can collide or change. Title matches have a joined stable ID,
+    // which the existing delivery path revalidates against the live process/socket.
+    const session = !live.length ? 'current'
+      : resolvedVia === 'title' ? 'id:' + live[0].sessionId : live[0].name;
     return {
       target: validateMessageTarget({ type: 'claude-desktop', session, label: seat }),
       resolvedTarget: 'claude-desktop:' + session,
-      resolvedVia: 'seat',
+      resolvedVia,
       seat,
       seatKey,
       unaddressable: !live.length,
+      consideredTitles: considered.map((s) => s.title).filter((title) => title !== null).slice(0, 100),
     };
   }
   if (alias.includes(':')) {
@@ -3369,17 +3347,18 @@ async function notifySend(b, remote) {
   // Hand-rolled callers send false as a string or a 0 as often as a boolean; all mean no ACK.
   const expectAck = !(b.expectAck === false || b.expectAck === 0 || b.expectAck === 'false');
   const openChat = b.openChat === true || b.openChat === 1 || b.openChat === 'true';
-  const { target, resolvedTarget, resolvedVia, seat, seatKey, unaddressable } = resolveNotifyTarget(b.to);
+  const { target, resolvedTarget, resolvedVia, seat, seatKey, unaddressable, consideredTitles } = resolveNotifyTarget(b.to);
   if (unaddressable && !openChat) {
     const row = seatKey ? seatRow.get(seatKey) : null;
     const error = new Error('seat_unaddressable');
     error.code = 409;
-    // Over the tailnet the owner is withheld: /api/seats is loopback-only (M13), and this reply
-    // must not become a side door to it.
+    // Owner and the fleet-wide title diagnostic stay on loopback: a bus-token holder
+    // must not use a missing alias to enumerate desktop seats across projects.
     error.detail = {
       seat,
       owner: row && !remote ? { host: row.owner_host, name: row.owner_name, fenced: row.epoch !== null } : null,
-      hint: 'no live Claude Desktop session is titled for this seat (ListAgents name); start or /rename it, or open its chat and resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.',
+      consideredTitles: remote ? null : consideredTitles,
+      hint: 'no live Claude Desktop session matches this seat by app title or CLI name; start or title it, or open its chat and resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.',
     };
     throw error;
   }
@@ -3879,6 +3858,8 @@ module.exports = {
   // Test seams: which candidate wins a credits row, what that row ends up holding, and
   // what a reader is finally shown once ageing has had its say.
   creditsWrite, beats, creditsRows, machinesCredits, creditsCollect, creditsCandidates,
+  // Test seam: the trend line's own writer — the only thing that still reads a desktop sample.
+  creditsHistoryWrite,
   // Test seams: the hourly window the usage endpoint is read in, and the claim on it.
   usageDue, usageHoursOpen,
   // Test seams: the per-reply insert behind the Accounts page's usage-call log, and the
