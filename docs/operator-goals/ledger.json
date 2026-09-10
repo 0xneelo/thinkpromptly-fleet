@@ -109,7 +109,7 @@
    "asks": [],
    "theme": "ops",
    "asked": "2026-09-10",
-   "status": "active",
+   "status": "done",
    "health": "moving",
    "progress": "",
    "next": "",
@@ -126,6 +126,10 @@
     {
      "at": "2026-09-10",
      "note": "added"
+    },
+    {
+     "at": "2026-09-10",
+     "note": "status → done — 2026-09-10 ~19:00Z operator confirmed both Telegram messages arrived (pinned summary + fake-login alert); env file on VPS root 600"
     }
    ]
   }
