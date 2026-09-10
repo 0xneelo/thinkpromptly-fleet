@@ -22,7 +22,7 @@ const ROOT = resolve(HERE, '../../../../..');
 // (scripts/design-diff.mjs publish()), so this harness lives beside that
 // directory rather than inside it, and only writes its results there.
 // Run order matters: pixel gate first, then this.
-const OUT = join(ROOT, 'docs/design/fleetdeck-v2/verify/l7');
+const OUT = process.env.FLEET_L7_OUT || join(ROOT, 'docs/design/fleetdeck-v2/verify/l7');
 const PUBLIC = join(ROOT, 'public');
 const API = join(ROOT, 'docs/design/fleetdeck-v2/fixtures/api');
 const VIEWPORT = { width: 1440, height: 900 };
@@ -36,6 +36,7 @@ const NOW = 1788749914000 - 3_930_000;
 
 const json = (o) => JSON.stringify(o);
 const readApi = async (name) => JSON.parse(await readFile(join(API, name + '.json'), 'utf8'));
+const legacyPolicy = { defaultProfile:'legacy', requiredLogins:['root','vibe','misterisley'], error:null };
 
 // ---------------------------------------------------------------------------
 // Static server for public/, loopback only.
@@ -82,6 +83,7 @@ async function scenario(browser, port, opts, body) {
     permissions: ['clipboard-read', 'clipboard-write'],
   });
   context.setDefaultTimeout(TIMEOUT);
+  await context.routeWebSocket('**/*', socket => socket.close());
   const noise = [];
   await context.addInitScript(({ dark }) => {
     localStorage.setItem('fd-landing-dark', dark ? '1' : '0');
@@ -118,7 +120,7 @@ async function scenario(browser, port, opts, body) {
       // Read through opts, not the destructured copy: a scenario whose response
       // changes after a POST exposes it as a getter, and destructuring would
       // have frozen the pre-POST value.
-      return route.fulfill({ status: 200, contentType: 'application/json', body: json(opts.sshkeys) });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: json({policy:legacyPolicy,...opts.sshkeys}) });
     }
     if (path === '/api/ghtrain') {
       if (ghtrain && ghtrain.__status) {
@@ -192,15 +194,12 @@ async function main() {
       const mint = card(keys, MINT), train = card(keys, TRAIN), certs = card(keys, CERTS), table = card(keys, TABLE);
 
       const ttlBtns = mint.locator('button');
-      eq('L7-01', 'read the Mint card TTL chips', 'chips are 1h / 4h / 8h', (await ttlBtns.allTextContents()).slice(0, 3).join(','), '1h,4h,8h');
-
-      const prin = mint.locator('button').nth(3);
-      const prin2 = mint.locator('button').nth(4);
-      eq('L7-02', 'read the principal chips', 'chips are root and vibe', `${await text(prin)},${await text(prin2)}`, 'root,vibe');
-      eq('L7-03', 'read the root chip title', 'title is verbatim from BEHAVIOUR §2', await prin.getAttribute('title'), 'VPS boxes: think · onboarding · ivy');
-      eq('L7-04', 'read the vibe chip title', 'title is verbatim from BEHAVIOUR §2', await prin2.getAttribute('title'), 'german-box');
-      eq('L7-05', 'read the principal chips aria state', 'both principals selected by default', `${await prin.getAttribute('aria-pressed')},${await prin2.getAttribute('aria-pressed')}`, 'true,true');
-      eq('L7-06', 'read the Mint card hint', '1Password approval text verbatim', await text(mint.locator('p').first()), 'Minting pops a 1Password approval on the Mac — click Allow there.');
+      eq('L7-01', 'read the Mint card profiles', 'Legacy / Daily / Admin are available', (await ttlBtns.allTextContents()).slice(0, 3).join(','), 'Legacy cert,Daily cert,Admin cert');
+      eq('L7-02', 'read Legacy aria state', 'Legacy is the transition default', await mint.getByRole('button',{name:'Legacy cert',exact:true}).getAttribute('aria-pressed'), 'true');
+      check('L7-03', 'read Daily mode', 'Daily is available without changing the default', await mint.getByRole('button',{name:'Daily cert',exact:true}).isVisible());
+      check('L7-04', 'read Admin mode', 'Admin is available without changing the default', await mint.getByRole('button',{name:'Admin cert',exact:true}).isVisible());
+      eq('L7-05', 'inspect box scope controls', 'additive Admin box chips are removed', await mint.getByRole('button',{name:/^(rog-only|german-only|ivy-only|promptly-only|onboarding-only)$/}).count(), 0);
+      check('L7-06', 'read the Legacy hint', 'all four legacy logins remain visible', (await text(mint.locator('p').first())).includes('root, vibe, misterisley, tabor'));
 
       eq('L7-07', 'read the GitHub train pill', 'an open train reads ACTIVE', await text(train.locator('span').first()), 'ACTIVE');
       eq('L7-08', 'read the train countdown', 'over an hour formats as h:mm', await text(train.locator('> div > span').nth(1)), '1:05');
@@ -269,15 +268,10 @@ async function main() {
     }));
 
     // -- S7 mint guard -----------------------------------------------------
-    allNoise.push(...await scenario(browser, server.port, { sshkeys: baseKeys, ghtrain: baseTrain }, async ({ page, keys, posts }) => {
+    allNoise.push(...await scenario(browser, server.port, { sshkeys: {...baseKeys,policy:{...legacyPolicy,requiredLogins:['uncovered-user']}}, ghtrain: baseTrain }, async ({ page, keys, posts }) => {
       const mint = card(keys, MINT);
-      await mint.locator('button').nth(3).click();
-      await mint.locator('button').nth(4).click();
-      await page.waitForTimeout(120);
-      await mint.getByRole('button', { name: 'Mint', exact: true }).click();
-      await page.waitForTimeout(200);
-      eq('L7-31', 'deselect both principals and press Mint', 'the guard text is verbatim', await text(mint.locator('[data-l7-notice]')), 'pick at least one principal');
-      check('L7-32', 'deselect both principals and press Mint', 'no mint request is sent', !posts.some((p) => p.path === '/api/sshkeys/mint'));
+      eq('L7-31', 'load a login outside Legacy coverage', 'the guard explains the missing login', await text(mint.locator('[data-l7-notice]')), 'Legacy mint would drop a login used by machines.json.');
+      check('L7-32', 'load a login outside Legacy coverage', 'mint is disabled and no request is sent', await mint.getByRole('button',{name:'Mint legacy cert',exact:true}).isDisabled() && !posts.some((p) => p.path === '/api/sshkeys/mint'));
     }));
 
     // -- S8 mint sends today's body ----------------------------------------
@@ -286,12 +280,10 @@ async function main() {
       onPost: (p) => p === '/api/sshkeys/mint' ? { status: 200, body: { ok: true, outdir: '/Users/misterislez/.ssh/deploy-certs/20260907-000000' } } : { status: 200, body: { ok: true } },
     }, async ({ page, keys, posts }) => {
       const mint = card(keys, MINT);
-      await mint.locator('button').nth(1).click();   // pick the 4h TTL
-      await page.waitForTimeout(120);
-      await mint.getByRole('button', { name: 'Mint', exact: true }).click();
+      await mint.getByRole('button', { name: 'Mint legacy cert', exact: true }).click();
       await page.waitForTimeout(300);
       const sent = posts.find((p) => p.path === '/api/sshkeys/mint');
-      eq('L7-33', 'pick 4h and press Mint', "the POST body is today's {ttl, principals}", json(sent && sent.body), json({ ttl: '4h', principals: 'root,vibe' }));
+      eq('L7-33', 'mint Legacy', 'the POST uses the profile schema', json(sent && sent.body), json({ profile:'legacy', ttl:'8h', extraTags:[] }));
     }));
 
     // -- S8b a successful mint flashes the cert it just created --------------
@@ -305,7 +297,7 @@ async function main() {
       ghtrain: baseTrain,
       onPost: (p) => { if (p === '/api/sshkeys/mint') { mintedYet = true; return { status: 200, body: { ok: true, outdir: minted.dir } }; } return { status: 200, body: { ok: true } }; },
     }, async ({ page, keys }) => {
-      await card(keys, MINT).getByRole('button', { name: 'Mint', exact: true }).click();
+      await card(keys, MINT).getByRole('button', { name: 'Mint legacy cert', exact: true }).click();
       await page.waitForTimeout(500);
       const rows = card(keys, CERTS).locator('> div');
       eq('L7-65', 'mint a cert successfully', 'the new cert appears at the top of the list', await text(rows.nth(0).locator('span').nth(2)), 'deployer-20260907-000000');
@@ -319,7 +311,7 @@ async function main() {
       onPost: (p) => p === '/api/sshkeys/mint' ? { status: 502, body: { ok: false, error: 'mint failed (exit 1)' } } : { status: 200, body: { ok: true } },
     }, async ({ page, keys }) => {
       const mint = card(keys, MINT);
-      await mint.getByRole('button', { name: 'Mint', exact: true }).click();
+      await mint.getByRole('button', { name: 'Mint legacy cert', exact: true }).click();
       await page.waitForTimeout(300);
       eq('L7-34', 'mint against a failing minter', "the server's error text is shown", await text(mint.locator('[data-l7-notice]')), 'mint failed (exit 1)');
     }));
@@ -330,7 +322,7 @@ async function main() {
       onPost: (p) => p === '/api/sshkeys/mint' ? { status: 403, contentType: 'text/plain', body: 'forbidden' } : { status: 200, body: { ok: true } },
     }, async ({ page, keys }) => {
       const mint = card(keys, MINT);
-      await mint.getByRole('button', { name: 'Mint', exact: true }).click();
+      await mint.getByRole('button', { name: 'Mint legacy cert', exact: true }).click();
       await page.waitForTimeout(300);
       eq('L7-35', 'mint against an origin-refused deck', 'a body that will not parse becomes HTTP 403', await text(mint.locator('[data-l7-notice]')), 'HTTP 403');
     }));
