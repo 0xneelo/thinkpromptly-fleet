@@ -18,6 +18,7 @@ Open items without a Linear ID (Linear MCP is not connected in this seat). Each 
 - operator · ivy-box ssh-alert rollout: unassigned (onboarding-box is owned by the onboarding-app hardening session) · G3.
 
 ## Watching
+- info · Aylin's org usage-endpoint 403/429 is a one-hour lockout renewed by EVERY call; the deck made 3 calls all day, so the renewals come from her own CLI /usage or desktop app, not the deck (live-usage-overview probe from rog-strix, 2026-09-11). d55373f: automatic read every 8 h (operator ruling), FLEET_USAGE_EVERY_SECS overrides.
 - seat 20 · G5 Ivo WOVEN bcd7ee6 (main, pushed 2026-09-11 ~02:05 local): all audit findings fixed (AUDIT-2026-09-11.md on the branch, 32 FIXED, 2 optional WONTFIX), Mac suites green, name released, badge cleared. Residual: the full suite was last run on the box before the audit fixes (Ivo's REPORT.md line ~156); rerun owed once a box session exists. Repo artifacts only; host applies gated per owner (think-box → lowcap seat D-90, onboarding-box → onboarding-app session, ivy-box → operator, german-box + rog-strix → seat 20 on word). Operator gates: S1 new CA in 1Password, S3 deploy users, S4 delete ~/.ssh/id_ed25519, S5 delete static keys.
 - seat 20 · G4 Ysolde WOVEN 7c10bbf (main, pushed 2026-09-11 ~01:1xZ); Acceptance 1 baseline exception granted (ruling o20-ysolde-ruling-1); review fixes 0df8959 in. Acceptance 2 met 2026-09-11 00:45 local (three aliases resolvedVia=title after restart pid 90303). G4 DONE.
 - seat 20 · onboarding-box test results from the onboarding-app hardening session (confirm only).
