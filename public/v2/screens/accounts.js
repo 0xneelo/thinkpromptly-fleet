@@ -179,11 +179,15 @@
   // are actually on show when the live reply carried none. accounts.js:135-137.
   // A desktop sample newer than the live read supplies the windows it covers (server.js
   // freshen); the row stays the live read's, so the header names exactly those windows.
+  // A held live read is named here too: a collapsed card shows its header and nothing
+  // else, and 'desktop snapshot' alone reads as if nobody had tried.
   function sourceText(r, now) {
     if (!r.source) return '';
     return (SOURCE[r.source] || r.source) +
       (r.windows_from ? ' · usage from ' + (SOURCE[r.windows_from] || r.windows_from) : '') +
-      (r.fresh ? ' · ' + r.fresh.windows.map(label).join(', ') + ' from a desktop sample ' + ago(r.fresh.t, now).text : '');
+      (r.fresh ? ' · ' + r.fresh.windows.map(label).join(', ') + ' from a desktop sample ' + ago(r.fresh.t, now).text : '') +
+      (r.hold ? ' · live read ' + (r.hold.state === 'rate_limited' ? 'throttled' : 'refused') + ' on ' + r.hold.host +
+        (r.hold.until ? ' until ' + hhmm(r.hold.until) : '') : '');
   }
 
   // accounts.js:154-166. An expired token still leaves whatever another source reported,

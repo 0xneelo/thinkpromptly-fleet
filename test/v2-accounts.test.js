@@ -198,6 +198,14 @@ test('sourceText: whose numbers are on show', () => {
   assert.equal(acct.sourceText({ source: 'oauth', windows_from: 'desktop' }), 'live · usage from desktop snapshot');
   // An unknown source shows verbatim rather than as nothing.
   assert.equal(acct.sourceText({ source: 'ssh' }), 'ssh');
+  // A held live read is named in the header, the only line a collapsed card shows.
+  const at = SEC(NOW);
+  assert.equal(
+    acct.sourceText({ source: 'desktop', hold: { state: 'rate_limited', host: 'rog-strix', note: null, at, until: at + 3600 } }),
+    'desktop snapshot · live read throttled on rog-strix until ' + acct.hhmm(at + 3600)
+  );
+  assert.equal(acct.sourceText({ source: 'desktop', hold: { state: 'token_expired', host: 'mac', note: null, at, until: null } }),
+    'desktop snapshot · live read refused on mac');
 });
 
 test('enrich: header identity, and the states the capture does not contain', () => {
