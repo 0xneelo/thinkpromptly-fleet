@@ -62,7 +62,12 @@ if [ -n "$CRED" ]; then
     '' | *[!0-9]*) ;;
     *) [ "$EXP" -lt "$((TS * 1000))" ] && STATE=token_expired ;;
   esac
-  if [ -n "$TOKEN" ] && [ "$STATE" != token_expired ]; then
+  # The deck reads the usage endpoint once an hour, inside its window (ruling 2026-09-10).
+  # A skipped read is not a failed one: this machine reports no live Claude row at all, the
+  # way it does with no CLI login here. The desktop samples and Codex parts below still travel.
+  if [ "${FLEET_READ_USAGE:-1}" = 0 ]; then
+    STATE=absent
+  elif [ -n "$TOKEN" ] && [ "$STATE" != token_expired ]; then
     HDR=$(umask 077; mktemp)
     BODY=$(umask 077; mktemp)
     trap 'rm -f "$HDR" "$BODY"' EXIT INT TERM

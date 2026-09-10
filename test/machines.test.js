@@ -76,9 +76,9 @@ async function fakeProfile(status, body, usage, token) {
 // profile server the script is calling lives in it. All three URLs are always overridden, or
 // a test would reach the real api.anthropic.com with the dummy token — and spend the dummy
 // refresh token at the real token endpoint.
-const collect = async (home, url, usageUrl, tokenUrl = url.replace(/\/profile$/, '/token')) =>
+const collect = async (home, url, usageUrl, tokenUrl = url.replace(/\/profile$/, '/token'), env = {}) =>
   (await promisify(execFile)('sh', [SCRIPT], {
-    env: { ...process.env, HOME: home, FLEET_PROFILE_URL: url, FLEET_USAGE_URL: usageUrl, FLEET_TOKEN_URL: tokenUrl },
+    env: { ...process.env, HOME: home, FLEET_PROFILE_URL: url, FLEET_USAGE_URL: usageUrl, FLEET_TOKEN_URL: tokenUrl, ...env },
     encoding: 'utf8',
     timeout: 30000,
   })).stdout.trim();
@@ -1585,4 +1585,96 @@ test('/api/credits — a future snapshot stamp is clamped, so it cannot pin the 
   assert.equal((await push(now, now, 30)).status, 200);
   assert.equal(row().weekly.pct, 30);
   assert.equal(row().snapshot_ts, now);
+});
+
+// --- The usage endpoint's hourly schedule (operator ruling 2026-09-10): read once an hour at
+// most, and only inside the deck's local window. A Refresh click always reads.
+const schedule = (t, env = {}) => {
+  const dir = tmpdir('usage-schedule');
+  const m = load({ FLEET_DB: path.join(dir, 'fleet.db'), FLEET_HOSTS_FILE: hostsFile(dir), ...env });
+  t.after(async () => {
+    await unload(m);
+    delete process.env.FLEET_NO_LISTEN;
+    delete process.env.FLEET_USAGE_HOURS;
+    delete process.env.FLEET_USAGE_EVERY_SECS;
+  });
+  return m;
+};
+const at = (h, min = 0) => new Date(2026, 8, 10, h, min, 0);
+
+test('usageHoursOpen — 11-3 wraps midnight, and a plain range does not', (t) => {
+  const { usageHoursOpen } = schedule(t);
+  for (const d of [at(11), at(23), at(2, 59)]) assert.equal(usageHoursOpen(d), true, d.toString());
+  for (const d of [at(3), at(10, 59)]) assert.equal(usageHoursOpen(d), false, d.toString());
+});
+
+test('usageHoursOpen — a non-wrapping window is the plain half-open range', (t) => {
+  const { usageHoursOpen } = schedule(t, { FLEET_USAGE_HOURS: '9-17' });
+  assert.equal(usageHoursOpen(at(9)), true);
+  assert.equal(usageHoursOpen(at(16, 59)), true);
+  assert.equal(usageHoursOpen(at(17)), false);
+  assert.equal(usageHoursOpen(at(8, 59)), false);
+});
+
+test('usageDue — one read an hour inside the window, and a Refresh whenever it is asked', (t) => {
+  const { usageDue } = schedule(t);
+  const open = at(12).getTime();
+  const shut = at(6).getTime();
+
+  // Inside the hours: the first sweep reads, the ones behind it in the same hour do not.
+  assert.equal(usageDue(false, open), true);
+  assert.equal(usageDue(false, open + 60000), false);
+  assert.equal(usageDue(false, open + 3599999), false);
+  assert.equal(usageDue(false, open + 3600000), true);
+
+  // Outside them nothing reads on its own — but a Refresh does, and it claims that hour.
+  assert.equal(usageDue(false, shut), false);
+  assert.equal(usageDue(true, shut), true);
+  assert.equal(usageDue(false, shut + 60000), false);
+});
+
+test('fleet-logins.sh — a sweep outside the hour proves the identity and asks for no usage', async (t) => {
+  const home = fakeHome();
+  const p = await fakeProfile(200, IDENTITY, [200, USAGE_BODY]);
+  t.after(() => p.close());
+  const claude = pick(JSON.parse(await collect(home, p.url, p.usage, undefined, { FLEET_READ_USAGE: '0' })), 'claude_cli');
+
+  assert.equal(claude.proof, 'profile');
+  assert.equal(claude.state, 'ok');
+  assert.equal(claude.email, 'aylianator@gmail.com');
+  assert.equal(p.calls.filter((c) => c.url === '/usage').length, 0, 'the usage endpoint was asked anyway');
+  // No numbers is not a failed read: the row claims no usage state, so machinesCredits()
+  // emits no candidate for it and the stored row keeps whatever it holds.
+  assert.equal(claude.usage_state, undefined);
+  assert.equal(claude.usage, undefined);
+  assert.equal(claude.note, 'usage read skipped this sweep (hourly schedule)');
+  assert.ok(!fs.existsSync(path.join(home, '.claude', '.fleet-usage-backoff')), 'a skipped read armed the throttle');
+});
+
+test('fleet-credits.sh — told to stand down it reports no live Claude row, and samples anyway', async (t) => {
+  // fleet-credits.sh has no overridable usage URL, so this runs it the only way a test may:
+  // with the read switched off. Anything else would spend a token at the real endpoint.
+  const home = fakeHome();
+  const appDir = path.join(home, 'Library', 'Application Support', 'Claude');
+  fs.mkdirSync(appDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(appDir, 'plan-usage-history.json'),
+    JSON.stringify({ samples: [{ org: CONFIG_ORG, t: 1757000000000, u: { fh: 12, sd: 34, xu: 5 } }] })
+  );
+  const out = (
+    await promisify(execFile)('sh', [path.join(ROOT, 'box', 'fleet-credits.sh')], {
+      env: { ...process.env, HOME: home, FLEET_READ_USAGE: '0' },
+      encoding: 'utf8',
+      timeout: 30000,
+    })
+  ).stdout.trim();
+  const d = JSON.parse(out.split('\n').pop());
+
+  // The same shape as a machine with no CLI login: no state to mistake for a failed read.
+  assert.equal(d.claude, null);
+  assert.equal(d.desktop.length, 1);
+  assert.equal(d.desktop[0].org, CONFIG_ORG);
+  assert.equal(d.history.length, 1);
+  assert.equal(d.accounts[0].email, 'lafayette@infinite-holdings.llc');
+  assert.ok(!out.includes(TOKEN), 'access token leaked into the reported line');
 });
