@@ -117,7 +117,8 @@ function defaultRoots(home = os.homedir()) {
     } catch (e) {
       return [];
     }
-  const project = path.basename(__dirname);
+  // A deck started from a worktree still files this repo's docs under the repo, not the lane.
+  const project = path.basename(__dirname.replace(/\/\.claude\/worktrees\/[^/]+$/, ''));
   return [
     { dir: path.join(home, '.claude', 'session-exports'), source: 'exports' },
     { dir: '/private/tmp/claude-501', source: 'scratchpad' },
