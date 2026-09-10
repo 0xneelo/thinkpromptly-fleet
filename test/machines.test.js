@@ -1112,7 +1112,7 @@ test('/api/machines — usage and sessions join onto the row, and no credential 
     'claude', 'aylianator@gmail.com', 'aylianator@gmail.com', ORG, 'mac',
     JSON.stringify({
       kind: 'claude', id: 'aylianator@gmail.com', email: 'aylianator@gmail.com', org: ORG,
-      host: 'mac', state: 'ok', source: 'desktop', updated_at: now - 120, sample_ts: now - 120,
+      host: 'mac', state: 'ok', source: 'oauth', updated_at: now - 120,
       windows: { five_hour: { pct: 42 }, seven_day: { pct: 7 } },
       access_token: SECRET,
     }),
@@ -1234,20 +1234,24 @@ const zeroOauth = (now) => ({
   host: 'mac', source: 'oauth', state: 'ok', updated_at: now,
   windows: { five_hour: { pct: 0, resets_at: null }, seven_day: { pct: 0, resets_at: null } },
 });
-const desktopAt = (now, age) => ({
+// The lender: a weaker source (rank 2) that did report numbers, so the zero-signal oauth
+// winner above can borrow them. Its own read time is what decides whether it may still vouch.
+const pushAt = (now, age) => ({
   kind: 'claude', id: 'borrow@example.invalid', email: 'borrow@example.invalid', org: ORG,
-  host: 'mac', source: 'desktop', state: 'ok', updated_at: now - age, sample_ts: now - age,
+  host: 'german-box', source: 'push', state: 'ok', updated_at: now - age,
   windows: { five_hour: { pct: 61, resets_at: null } },
 });
+// The stored good row every hold test needs: a live read of this account's own token.
+const liveAt = (now, age) => ({ ...pushAt(now, age), host: 'mac', source: 'oauth' });
 const storedRow = (m, id) =>
   JSON.parse(m.db.prepare('SELECT payload FROM credits WHERE kind = ? AND id = ?').get('claude', id).payload);
 
 test('creditsWrite — a stale alternate cannot lend its windows to a signal-free reply', (t) => {
   const m = seams(t);
   const now = Math.floor(Date.now() / 1000);
-  m.creditsWrite([zeroOauth(now), desktopAt(now, 8 * 86400)]);
+  m.creditsWrite([zeroOauth(now), pushAt(now, 8 * 86400)]);
 
-  // The desktop sample is eight days old: its five-hour window has reset many times over, so
+  // The pushed reading is eight days old: its five-hour window has reset many times over, so
   // it vouches for nothing. A profile-proved 0% with nothing fresher to contradict it IS 0%.
   const r = storedRow(m, 'borrow@example.invalid');
   assert.equal(r.source, 'oauth');
@@ -1258,11 +1262,11 @@ test('creditsWrite — a stale alternate cannot lend its windows to a signal-fre
 test('creditsWrite — a fresh alternate does lend its windows', (t) => {
   const m = seams(t);
   const now = Math.floor(Date.now() / 1000);
-  m.creditsWrite([zeroOauth(now), desktopAt(now, 600)]);
+  m.creditsWrite([zeroOauth(now), pushAt(now, 600)]);
 
   const r = storedRow(m, 'borrow@example.invalid');
   assert.equal(r.source, 'oauth');
-  assert.equal(r.windows_from, 'desktop');
+  assert.equal(r.windows_from, 'push');
   assert.equal(r.windows.five_hour.pct, 61);
 });
 
@@ -1282,28 +1286,18 @@ test('beats — on equal rank the newer rollout snapshot wins, not the reply tha
   assert.equal(beats(b2, a2), true);
 });
 
-test('beats — on equal rank the newer desktop sample wins, not the ssh reply that landed last', (t) => {
-  const { beats } = seams(t);
-  // The lafayette row: both desktop, both rank 1, and updated_at is only when each machine was
-  // asked — so a box's nine-day-old sample outlasted the mac's twelve-minute-old one.
-  const a = { source: 'desktop', state: 'ok', updated_at: NOW - 1, sample_ts: NOW - 720 };
-  const b = { source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 9 * 86400 };
-  assert.equal(beats(a, b), true);
-  assert.equal(beats(b, a), false);
-});
-
 test('beats — a failed read neither pins a row nor erases a good one, at any rank', (t) => {
   const { beats } = seams(t);
-  // The aylianator row: a six-hour-old oauth error (rank 3) held the row against fresh desktop
-  // samples (rank 1), so the page read "could not read usage" over a borrowed 14-day-old number.
+  // The aylianator row: a six-hour-old oauth error (rank 3) held the row against a machine's
+  // fresh push (rank 2), so the page read "could not read usage" over a stale number.
   const stale = { source: 'oauth', state: 'error', updated_at: NOW - 6 * 3600 };
-  const fresh = { source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 3 * 3600 };
+  const fresh = { source: 'push', state: 'ok', updated_at: NOW };
   assert.equal(beats(fresh, stale), true);
 
-  // And the other way: a rate-limited oauth call must not replace a minute-old desktop sample
+  // And the other way: a rate-limited oauth call must not replace a minute-old pushed reading
   // with a banner just because it outranks it.
   const failed = { source: 'oauth', state: 'rate_limited', updated_at: NOW };
-  const good = { source: 'desktop', state: 'ok', updated_at: NOW - 60, sample_ts: NOW - 60 };
+  const good = { source: 'push', state: 'ok', updated_at: NOW - 60 };
   assert.equal(beats(failed, good), false);
 });
 
@@ -1329,118 +1323,37 @@ test('creditsWrite — a live reading ages out too, on its own read time', (t) =
   assert.equal(row.stale_windows, true);
 });
 
-const liveRead = (now, age) => ({
-  kind: 'claude', id: 'fresh@example.invalid', email: 'fresh@example.invalid', org: ORG,
-  host: 'thinkpromptly-vps', source: 'oauth', state: 'ok', updated_at: now - age,
-  windows: {
-    five_hour: { pct: 57, resets_at: now + 5000 }, seven_day: { pct: 31, resets_at: now + 500000 },
-    seven_day_fable: { pct: 48, resets_at: now + 500000 },
-  },
-});
-const sampleAt = (m, t, fh, sd) =>
-  m.db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu) VALUES (?, ?, ?, ?, NULL)').run(ORG, t, fh, sd);
-
-test('creditsRows — a desktop sample newer than the live read supplies the windows it covers', (t) => {
-  const m = seams(t);
-  const now = Math.floor(Date.now() / 1000);
-  // The usage call is hourly at most; the desktop app sampled this account seven minutes ago.
-  // Observed on the deck 2026-09-10: the bar said 31% over a trend line ending at 30%.
-  m.creditsWrite([liveRead(now, 3600)]);
-  sampleAt(m, now - 7200, 10, 20);
-  sampleAt(m, now - 420, 51, 30);
-  const row = m.creditsRows().find((r) => r.email === 'fresh@example.invalid');
-  assert.equal(row.windows.five_hour.pct, 51);
-  assert.equal(row.windows.seven_day.pct, 30);
-  // What the sample cannot supply is still the live read's.
-  assert.equal(row.windows.five_hour.resets_at, now + 5000);
-  assert.equal(row.windows.seven_day_fable.pct, 48);
-  assert.deepEqual(row.fresh, { t: now - 420, windows: ['five_hour', 'seven_day'] });
-  // The row is still the live read's, dated by it: nothing pretends the sample read everything.
-  assert.equal(row.windows_from, undefined);
-  assert.equal(row.sample_ts, undefined);
-  assert.equal(row.source, 'oauth');
-});
-
-test('creditsRows — a refreshed window ages by its sample, an untouched one by the read', (t) => {
-  const m = seams(t);
-  const now = Math.floor(Date.now() / 1000);
-  // A thirty-hour-old read, and a sample three minutes ago that knows nothing about Fable.
-  m.creditsWrite([liveRead(now, 30 * 3600)]);
-  sampleAt(m, now - 180, 51, 30);
-  const row = m.creditsRows().find((r) => r.email === 'fresh@example.invalid');
-  assert.equal(row.windows.five_hour.pct, 51);
-  assert.equal(row.windows.seven_day.pct, 30);
-  assert.equal(row.windows.seven_day_fable.pct, null);
-  assert.equal(row.windows.seven_day_fable.last, 48);
-  assert.equal(row.windows.seven_day_fable.stale, true);
-  assert.equal(row.stale_windows, true);
-});
-
-test('creditsRows — a desktop sample older than the live read changes nothing', (t) => {
-  const m = seams(t);
-  const now = Math.floor(Date.now() / 1000);
-  m.creditsWrite([liveRead(now, 420)]);
-  sampleAt(m, now - 3600, 51, 30);
-  const row = m.creditsRows().find((r) => r.email === 'fresh@example.invalid');
-  assert.equal(row.windows.five_hour.pct, 57);
-  assert.equal(row.windows.seven_day.pct, 31);
-  assert.equal(row.fresh, undefined);
-  assert.equal(row.sample_ts, undefined);
-});
-
 test('beats — a weaker source read just now takes over a half-day-old live row only with newer numbers', (t) => {
   const { beats } = seams(t);
-  // This morning's live reading, twelve hours old. The mac reads its desktop history now,
-  // but that history's newest sample is three days old — older than the live numbers.
+  // This morning's live reading, twelve hours old. A box reads its Codex rollouts now, but
+  // the newest of them is three days old — older than the live numbers.
   const live = { source: 'oauth', state: 'ok', updated_at: NOW - 13 * 3600 };
-  const staleSample = { source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 3 * 86400 };
-  assert.equal(beats(staleSample, live, NOW), false, 'older numbers displaced a live reading');
-  // A sample newer than the live read is the fresher truth, and the rank-stale rule stands.
-  const freshSample = { source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 600 };
-  assert.equal(beats(freshSample, live, NOW), true);
+  const staleSnap = { source: 'codex', state: 'ok', updated_at: NOW, snapshot_ts: NOW - 3 * 86400 };
+  assert.equal(beats(staleSnap, live, NOW), false, 'older numbers displaced a live reading');
+  // A rollout newer than the live read is the fresher truth, and the rank-stale rule stands.
+  const freshSnap = { source: 'codex', state: 'ok', updated_at: NOW, snapshot_ts: NOW - 600 };
+  assert.equal(beats(freshSnap, live, NOW), true);
   // Under twelve hours the better source is simply still reporting: no takeover either way.
   const recentLive = { source: 'oauth', state: 'ok', updated_at: NOW - 3600 };
-  assert.equal(beats(freshSample, recentLive, NOW), false);
+  assert.equal(beats(freshSnap, recentLive, NOW), false);
 });
 
-test('beats — a sample past every window it carries cannot displace a failed read', (t) => {
+test('beats — a reading past every window it carries cannot displace a failed read', (t) => {
   const { beats } = seams(t);
-  // Rule 2 ("a reading that worked beats a failure") used to fire on state alone. So a desktop
-  // sample weeks past its own five-hour window won the batch against a failed oauth call and
-  // then overwrote the last row that still held real numbers — with a figure agedOut() only
-  // greys back out. A failed read asserts nothing; neither does this, so it must not win.
+  // Rule 2 ("a reading that worked beats a failure") used to fire on state alone. So a stored
+  // reading weeks past its own five-hour window won against a failed oauth call and stayed on
+  // the page as a current figure — one agedOut() only greys back out. A failed read asserts
+  // nothing; neither does this, so it must not win.
   const spent = {
-    source: 'desktop', state: 'ok', updated_at: NOW, sample_ts: NOW - 20 * 86400,
+    source: 'push', state: 'ok', updated_at: NOW - 20 * 86400,
     windows: { five_hour: { pct: 15, resets_at: null } },
   };
   const failed = { source: 'oauth', state: 'rate_limited', updated_at: NOW };
   assert.equal(beats(spent, failed, NOW), false);
 
-  // A sample still inside its window keeps the behaviour the rule was added for: the stale
+  // A reading still inside its window keeps the behaviour the rule was added for: the stale
   // failure of a better source does not get to pin the row against numbers that are real.
-  assert.equal(beats({ ...spent, sample_ts: NOW - 600 }, failed, NOW), true);
-});
-
-test('creditsWrite — a spent sample does not overwrite the last real reading', (t) => {
-  const m = seams(t);
-  const now = Math.floor(Date.now() / 1000);
-  // Yesterday's live reading, already past RANK_STALE so nothing shields it by age alone.
-  m.creditsWrite([
-    { ...zeroOauth(now - 13 * 3600), updated_at: now - 13 * 3600,
-      windows: { five_hour: { pct: 42, resets_at: 'x' }, seven_day: { pct: 7, resets_at: 'x' } } },
-  ]);
-  assert.equal(storedRow(m, 'borrow@example.invalid').windows.five_hour.pct, 42);
-
-  // This sweep: the token read fails, and the only other candidate is three weeks stale.
-  m.creditsWrite([
-    { ...zeroOauth(now), state: 'rate_limited', windows: {} },
-    // Read this sweep (updated_at = now) but describing a sample three weeks old — the shape
-    // a desktop history file actually has once that account stopped using the app.
-    { ...desktopAt(now, 20 * 86400), updated_at: now, windows: { five_hour: { pct: 15, resets_at: null } } },
-  ]);
-  // Whatever the row now says, it must not be the stale number: 42 stands or the failure is
-  // reported, but 15% was never true of this account at any point the deck can vouch for.
-  assert.notEqual(storedRow(m, 'borrow@example.invalid').windows.five_hour?.pct, 15);
+  assert.equal(beats({ ...spent, updated_at: NOW - 600 }, failed, NOW), true);
 });
 
 // --- The hold a failed read leaves behind. beats() still refuses to let it displace good
@@ -1473,13 +1386,13 @@ test('machinesCredits — a refused usage call is still a candidate, with the co
 test('creditsWrite — a losing throttled read marks the row it could not displace', (t) => {
   const m = seams(t);
   const now = Math.floor(Date.now() / 1000);
-  // Yesterday's desktop sample is what the page is showing. The mac's live read this sweep
+  // The mac's live read ten minutes ago is what the page is showing. The box's read this sweep
   // was refused: it carries no numbers, so it must not win — but it must be visible.
-  m.creditsWrite([desktopAt(now, 600)]);
+  m.creditsWrite([liveAt(now, 600)]);
   m.creditsWrite(m.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
 
   const r = storedRow(m, 'borrow@example.invalid');
-  assert.equal(r.source, 'desktop');
+  assert.equal(r.source, 'oauth');
   assert.equal(r.windows.five_hour.pct, 61, 'the last good numbers were lost');
   assert.equal(r.state, 'ok');
   assert.deepEqual(r.hold, {
@@ -1488,14 +1401,14 @@ test('creditsWrite — a losing throttled read marks the row it could not displa
   });
   // The other note the collector writes states the pause the same way round.
   const m2 = seams(t);
-  m2.creditsWrite([desktopAt(now, 600)]);
+  m2.creditsWrite([liveAt(now, 600)]);
   m2.creditsWrite(m2.machinesCredits(throttled(now, 'usage call skipped, endpoint asked for a 3147s pause'), 'ROG Strix', new Map(), false));
   assert.equal(storedRow(m2, 'borrow@example.invalid').hold.until, now + 3147);
-  // One sweep carries both: the mac's sample and the box's refusal land in the same write,
+  // One sweep carries both: the mac's reading and the box's refusal land in the same write,
   // where the refusal loses the candidate round before it ever meets the stored row.
   const m3 = seams(t);
   m3.creditsWrite([
-    desktopAt(now, 600),
+    liveAt(now, 600),
     ...m3.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false),
   ]);
   const r3 = storedRow(m3, 'borrow@example.invalid');
@@ -1506,24 +1419,78 @@ test('creditsWrite — a losing throttled read marks the row it could not displa
 test('creditsWrite — a read that works clears the hold, and a stale one is dropped on the way out', (t) => {
   const m = seams(t);
   const now = Math.floor(Date.now() / 1000);
-  m.creditsWrite([desktopAt(now, 600)]);
+  m.creditsWrite([liveAt(now, 600)]);
   m.creditsWrite(m.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
   assert.ok(storedRow(m, 'borrow@example.invalid').hold);
 
-  // The mac re-reports the same desktop sample a minute later: not a live read, so the
-  // hold rides along with the rewritten row.
-  m.creditsWrite([desktopAt(now + 60, 600)]);
-  assert.ok(storedRow(m, 'borrow@example.invalid').hold, 'a re-sample wiped the hold');
   // The next sweep reads live: the winning row is the fresh payload, which carries no hold.
   m.creditsWrite([{ ...zeroOauth(now), windows: { five_hour: { pct: 12, resets_at: null } } }]);
   assert.equal(storedRow(m, 'borrow@example.invalid').hold, undefined);
 
   // And a hold nobody has re-reported for half a day is no longer news.
   const old = seams(t);
-  old.creditsWrite([desktopAt(now - 13 * 3600, 600)]);
+  old.creditsWrite([liveAt(now - 13 * 3600, 600)]);
   old.creditsWrite(old.machinesCredits(throttled(now - 13 * 3600, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
   assert.ok(storedRow(old, 'borrow@example.invalid').hold);
   assert.equal(old.creditsRows().find((r) => r.email === 'borrow@example.invalid').hold, undefined);
+});
+
+test('creditsWrite — an account nothing could read is the refusal itself, with no numbers', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  // Nothing stored and nothing good in the batch: the refusal is the only fact about this
+  // account there is, so it is what the row says. Aylin's card used to fill that gap with a
+  // desktop sample and read as a live account (operator, 2026-09-11).
+  m.creditsWrite(m.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
+
+  const r = storedRow(m, 'borrow@example.invalid');
+  assert.equal(r.state, 'rate_limited');
+  assert.deepEqual(r.windows, {});
+  assert.deepEqual(r.hold, {
+    state: 'rate_limited', host: 'ROG Strix',
+    note: 'usage call refused with HTTP 429, pausing 3600s', at: now, until: now + 3600,
+  });
+  // And it survives to the page, where the card's header and banner both speak from it.
+  assert.ok(m.creditsRows().find((x) => x.email === 'borrow@example.invalid').hold);
+});
+
+test("creditsCandidates — a reply's desktop samples make no row; only the trend keeps them", (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  const d = {
+    host: 'mac', ts: now, claude: null, codex: null, accounts: [],
+    desktop: [{ org: ORG, t: (now - 300) * 1000, u: { fh: 61, sd: 12, xu: 0 } }],
+    history: [{ org: ORG, t: (now - 300) * 1000, fh: 61, sd: 12, xu: 0 }],
+  };
+  assert.deepEqual(m.creditsCandidates(d, 'mac', new Map(), false), []);
+  // The seven-day trend is history, labelled as such on the page, and it stays.
+  m.creditsHistoryWrite(d);
+  assert.deepEqual(
+    m.db.prepare('SELECT org, t, fh FROM credits_history').all().map((x) => [x.org, x.t, x.fh]),
+    [[ORG, now - 300, 61]]
+  );
+});
+
+test('boot — a stored desktop row, and a window one lent, do not survive the restart', async (t) => {
+  const dir = tmpdir('credits-purge');
+  const env = { FLEET_DB: path.join(dir, 'fleet.db'), FLEET_HOSTS_FILE: hostsFile(dir) };
+  const now = Math.floor(Date.now() / 1000);
+  const first = load(env);
+  const put = (id, payload) =>
+    first.db
+      .prepare('INSERT INTO credits (kind, id, email, org, host, payload, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      .run('claude', id, id, ORG, 'mac', JSON.stringify({ kind: 'claude', id, ...payload }), now);
+  put('sampled@example.invalid', { source: 'desktop', state: 'ok', sample_ts: now, windows: { five_hour: { pct: 61 } } });
+  put('borrowed@example.invalid', { source: 'oauth', state: 'ok', windows_from: 'desktop', windows: { five_hour: { pct: 61 } } });
+  put('kept@example.invalid', { source: 'oauth', state: 'ok', windows: { five_hour: { pct: 12 } } });
+  await unload(first);
+
+  const second = load(env);
+  t.after(async () => {
+    await unload(second);
+    delete process.env.FLEET_NO_LISTEN;
+  });
+  assert.deepEqual(second.db.prepare('SELECT id FROM credits ORDER BY id').all().map((r) => r.id), ['kept@example.invalid']);
 });
 
 test('creditsRows — an aged-out window keeps the number it last held', (t) => {
@@ -1543,28 +1510,6 @@ test('creditsRows — an aged-out window keeps the number it last held', (t) => 
   assert.equal(row.windows.five_hour.last, 42);
   // Nothing to keep means nothing invented.
   assert.equal('last' in row.windows.seven_day, false);
-});
-
-test('creditsWrite — the newer desktop sample is stored, whichever machine reported last', (t) => {
-  const now = Math.floor(Date.now() / 1000);
-  const mac = {
-    kind: 'claude', id: 'lafayette@example.invalid', email: 'lafayette@example.invalid', org: ORG,
-    host: 'mac', source: 'desktop', state: 'ok', updated_at: now - 2, sample_ts: now - 720,
-    windows: { five_hour: { pct: 59, resets_at: null }, seven_day: { pct: 52, resets_at: null } },
-  };
-  const box = {
-    kind: 'claude', id: 'lafayette@example.invalid', email: 'lafayette@example.invalid', org: ORG,
-    host: 'box', source: 'desktop', state: 'ok', updated_at: now, sample_ts: now - 9 * 86400,
-    windows: { five_hour: { pct: 0, resets_at: null }, seven_day: { pct: 30, resets_at: null } },
-  };
-  // Either arrival order: the sample's own age decides, not which ssh reply finished last.
-  for (const rows of [[mac, box], [box, mac]]) {
-    const m = seams(t);
-    m.creditsWrite(rows);
-    const r = storedRow(m, 'lafayette@example.invalid');
-    assert.equal(r.windows.seven_day.pct, 52);
-    assert.equal(r.sample_ts, now - 720);
-  }
 });
 
 // One stub for two local machines: FLEET_LOGINS_SH is a single path, so the two replies are

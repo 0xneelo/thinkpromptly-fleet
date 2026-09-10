@@ -135,14 +135,6 @@ test('banner: a held usage call speaks before the row\'s own state', () => {
     { text: 'usage call failed on german-box — figures below are the last good read', tone: 'notice' });
 });
 
-test('staleNote: the two sampled sentences, verbatim', () => {
-  assert.equal(acct.staleNote({ sample_ts: null }, NOW), null);
-  assert.deepEqual(acct.staleNote({ sample_ts: SEC(NOW - 8 * 864e5), stale_windows: true }, NOW),
-    { text: 'sampled 8d ago — older than the window it measured, so these have reset since', cls: 'age-red' });
-  assert.deepEqual(acct.staleNote({ sample_ts: SEC(NOW - 2 * 3600000) }, NOW),
-    { text: 'sampled 2h ago — no reset times in this source', cls: '' });
-});
-
 test('bars: window order and labels, extra last, empty rows still render', () => {
   const r = {
     kind: 'claude',
@@ -190,22 +182,20 @@ test('trend: time-scaled points, tooltip, last sample drives the colour', () => 
 test('sourceText: whose numbers are on show', () => {
   assert.equal(acct.sourceText({ source: null }), '');
   assert.equal(acct.sourceText({ source: 'oauth' }), 'live');
-  assert.equal(acct.sourceText({ source: 'desktop' }), 'desktop snapshot');
   assert.equal(acct.sourceText({ source: 'push' }), 'push');
-  // The windows a newer desktop sample refreshed are named, and dated by that sample.
-  assert.equal(acct.sourceText({ source: 'oauth', fresh: { t: SEC(NOW - 4 * 60000), windows: ['five_hour', 'seven_day'] } }, NOW),
-    'live · 5 hour, 7 day from a desktop sample 4m ago');
-  assert.equal(acct.sourceText({ source: 'oauth', windows_from: 'desktop' }), 'live · usage from desktop snapshot');
+  // The desktop app no longer names a row at all — no row is ever sourced from it.
+  assert.equal(acct.sourceText({ source: 'desktop' }), 'desktop');
+  assert.equal(acct.sourceText({ source: 'push', windows_from: 'codex' }), 'push · usage from live');
   // An unknown source shows verbatim rather than as nothing.
   assert.equal(acct.sourceText({ source: 'ssh' }), 'ssh');
   // A held live read is named in the header, the only line a collapsed card shows.
   const at = SEC(NOW);
   assert.equal(
-    acct.sourceText({ source: 'desktop', hold: { state: 'rate_limited', host: 'rog-strix', note: null, at, until: at + 3600 } }),
-    'desktop snapshot · live read throttled on rog-strix until ' + acct.hhmm(at + 3600)
+    acct.sourceText({ source: 'oauth', hold: { state: 'rate_limited', host: 'rog-strix', note: null, at, until: at + 3600 } }),
+    'live · live read throttled on rog-strix until ' + acct.hhmm(at + 3600)
   );
-  assert.equal(acct.sourceText({ source: 'desktop', hold: { state: 'token_expired', host: 'mac', note: null, at, until: null } }),
-    'desktop snapshot · live read refused on mac');
+  assert.equal(acct.sourceText({ source: 'oauth', hold: { state: 'token_expired', host: 'mac', note: null, at, until: null } }),
+    'live · live read refused on mac');
 });
 
 test('enrich: header identity, and the states the capture does not contain', () => {
@@ -272,11 +262,9 @@ test('toRows: the captured credits response, most constrained first', () => {
   assert.equal(rows[4].trendLevel, 'amber');
   assert.equal(fable.creditsText, '', 'the captured rows report no used/limit pair');
 
-  // The error row keeps its bars and carries both the banner and the sampled note.
+  // The error row keeps its bars and carries the banner.
   const errored = rows[4];
   assert.equal(errored.banner, 'could not read usage on rfc1918-internal');
-  assert.equal(errored.staleNote, 'sampled 15d ago — older than the window it measured, so these have reset since');
-  assert.equal(errored.staleCls, 'age-red');
   assert.deepEqual(errored.bars.map((b) => b.right), ['—', '—']);
 
   // Codex rows carry no sparkline at all.
