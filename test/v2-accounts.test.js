@@ -192,6 +192,9 @@ test('sourceText: whose numbers are on show', () => {
   assert.equal(acct.sourceText({ source: 'oauth' }), 'live');
   assert.equal(acct.sourceText({ source: 'desktop' }), 'desktop snapshot');
   assert.equal(acct.sourceText({ source: 'push' }), 'push');
+  // The windows a newer desktop sample refreshed are named, and dated by that sample.
+  assert.equal(acct.sourceText({ source: 'oauth', fresh: { t: SEC(NOW - 4 * 60000), windows: ['five_hour', 'seven_day'] } }, NOW),
+    'live · 5 hour, 7 day from a desktop sample 4m ago');
   assert.equal(acct.sourceText({ source: 'oauth', windows_from: 'desktop' }), 'live · usage from desktop snapshot');
   // An unknown source shows verbatim rather than as nothing.
   assert.equal(acct.sourceText({ source: 'ssh' }), 'ssh');

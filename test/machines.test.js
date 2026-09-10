@@ -1329,6 +1329,65 @@ test('creditsWrite — a live reading ages out too, on its own read time', (t) =
   assert.equal(row.stale_windows, true);
 });
 
+const liveRead = (now, age) => ({
+  kind: 'claude', id: 'fresh@example.invalid', email: 'fresh@example.invalid', org: ORG,
+  host: 'thinkpromptly-vps', source: 'oauth', state: 'ok', updated_at: now - age,
+  windows: {
+    five_hour: { pct: 57, resets_at: now + 5000 }, seven_day: { pct: 31, resets_at: now + 500000 },
+    seven_day_fable: { pct: 48, resets_at: now + 500000 },
+  },
+});
+const sampleAt = (m, t, fh, sd) =>
+  m.db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu) VALUES (?, ?, ?, ?, NULL)').run(ORG, t, fh, sd);
+
+test('creditsRows — a desktop sample newer than the live read supplies the windows it covers', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  // The usage call is hourly at most; the desktop app sampled this account seven minutes ago.
+  // Observed on the deck 2026-09-10: the bar said 31% over a trend line ending at 30%.
+  m.creditsWrite([liveRead(now, 3600)]);
+  sampleAt(m, now - 7200, 10, 20);
+  sampleAt(m, now - 420, 51, 30);
+  const row = m.creditsRows().find((r) => r.email === 'fresh@example.invalid');
+  assert.equal(row.windows.five_hour.pct, 51);
+  assert.equal(row.windows.seven_day.pct, 30);
+  // What the sample cannot supply is still the live read's.
+  assert.equal(row.windows.five_hour.resets_at, now + 5000);
+  assert.equal(row.windows.seven_day_fable.pct, 48);
+  assert.deepEqual(row.fresh, { t: now - 420, windows: ['five_hour', 'seven_day'] });
+  // The row is still the live read's, dated by it: nothing pretends the sample read everything.
+  assert.equal(row.windows_from, undefined);
+  assert.equal(row.sample_ts, undefined);
+  assert.equal(row.source, 'oauth');
+});
+
+test('creditsRows — a refreshed window ages by its sample, an untouched one by the read', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  // A thirty-hour-old read, and a sample three minutes ago that knows nothing about Fable.
+  m.creditsWrite([liveRead(now, 30 * 3600)]);
+  sampleAt(m, now - 180, 51, 30);
+  const row = m.creditsRows().find((r) => r.email === 'fresh@example.invalid');
+  assert.equal(row.windows.five_hour.pct, 51);
+  assert.equal(row.windows.seven_day.pct, 30);
+  assert.equal(row.windows.seven_day_fable.pct, null);
+  assert.equal(row.windows.seven_day_fable.last, 48);
+  assert.equal(row.windows.seven_day_fable.stale, true);
+  assert.equal(row.stale_windows, true);
+});
+
+test('creditsRows — a desktop sample older than the live read changes nothing', (t) => {
+  const m = seams(t);
+  const now = Math.floor(Date.now() / 1000);
+  m.creditsWrite([liveRead(now, 420)]);
+  sampleAt(m, now - 3600, 51, 30);
+  const row = m.creditsRows().find((r) => r.email === 'fresh@example.invalid');
+  assert.equal(row.windows.five_hour.pct, 57);
+  assert.equal(row.windows.seven_day.pct, 31);
+  assert.equal(row.fresh, undefined);
+  assert.equal(row.sample_ts, undefined);
+});
+
 test('beats — a weaker source read just now takes over a half-day-old live row only with newer numbers', (t) => {
   const { beats } = seams(t);
   // This morning's live reading, twelve hours old. The mac reads its desktop history now,

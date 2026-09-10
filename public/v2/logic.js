@@ -1222,6 +1222,9 @@ class AppLogic extends Sub {
     // survives, the colour no longer claims it is current.
     const accBar = (b) => ({
       label: b.label,
+      // The number itself rides along: the closed-row rule below compares the weeklies by
+      // it, and without it every weekly tied and "7 day" always won (observed 2026-09-10).
+      pct: b.pct, last: b.last,
       resets: b.resets || '',
       fillStyle: { display: 'block', height: '100%', width: Math.max(0, Math.min(100, (b.pct == null ? b.last : b.pct) || 0)) + '%', borderRadius: '2px', background: b.pct == null ? t.ink35 : accTone(b.level) },
       right: b.right,
@@ -1475,7 +1478,10 @@ class AppLogic extends Sub {
         // "7 day Fable" — never the 5 hour one: the weekly is what actually constrains an
         // account (operator, 2026-09-09). improvised.md I-L8-10.
         const weekly = a.bars.filter((b) => /^7 day/.test(b.label));
-        weekly.sort((x, y) => (y.pct == null ? -1 : y.pct) - (x.pct == null ? -1 : x.pct));
+        // An aged-out weekly still carries the number it last held, and "was 100%" says more
+        // than a current 57%.
+        const used = (b) => (b.pct != null ? b.pct : b.last != null ? b.last : -1);
+        weekly.sort((x, y) => used(y) - used(x));
         const primary = weekly[0] || a.bars[0];
         return {
           ...a, open,
