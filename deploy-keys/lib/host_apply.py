@@ -2,6 +2,7 @@
 """Local Linux host-owner transaction. Dry-runs read public configuration only."""
 import argparse
 import base64
+import hashlib
 import difflib
 import json
 import os
@@ -29,6 +30,14 @@ def public_key(text):
     if raw[:19] != struct.pack('>I', 11) + b'ssh-ed25519' + struct.pack('>I', 32) or len(raw) != 51:
         raise ValueError('invalid ed25519 public key')
     return ' '.join(fields)
+
+
+def fingerprint(line):
+    if not line.strip() or line.lstrip().startswith('#'):
+        return ''
+    key = public_key(line)
+    raw = base64.b64decode(key.split()[1])
+    return 'SHA256:' + base64.b64encode(hashlib.sha256(raw).digest()).decode().rstrip('=')
 
 
 def append_ca(before, key):
@@ -77,21 +86,39 @@ def atomic_write(path, text, mode=0o644):
             os.unlink(name)
 
 
-def validate_and_reload(args, conf):
+def validate_and_reload(args, conf, desired=False):
     run([args.sshd, '-t', '-f', str(conf)])
+    if desired and getattr(args, 'mode', None) and not getattr(args, 'rollback', None):
+        for user in (['deploy', 'root'] if args.mode == 'principals' else ['root']):
+            effective = run([args.sshd, '-T', '-f', str(conf), '-C', 'user=' + user + ',host=localhost,addr=127.0.0.1'])
+            values = dict(line.split(' ', 1) for line in effective.splitlines() if ' ' in line)
+            if args.mode == 'trust' and values.get('trustedusercakeys') != '/etc/ssh/deploy_ca.pub':
+                raise ValueError('effective trust path differs; inspect Includes/Match before applying')
+            if args.mode == 'principals':
+                if values.get('authorizedprincipalsfile') != '/etc/ssh/principals/%u' or values.get('authorizedprincipalscommand', 'none') != 'none':
+                    raise ValueError('effective principal policy differs; inspect Includes/Match')
+                if user == 'deploy' and any(values.get(k) != 'no' for k in ['passwordauthentication', 'kbdinteractiveauthentication']):
+                    raise ValueError('effective deploy password policy differs')
     run(['systemctl', 'reload', args.service])
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=['trust'])
+    parser.add_argument('mode', choices=['trust', 'principals'])
     parser.add_argument('public_key', nargs='?')
+    parser.add_argument('--box', choices=['think-box', 'onboarding-app-box', 'ivy-box'])
+    parser.add_argument('--retire-legacy', action='store_true')
+    parser.add_argument('--retire-v1', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--root', default='/', help='offline fixture root; dry-run only')
     parser.add_argument('--service', choices=['ssh', 'sshd'], default='ssh')
     parser.add_argument('--sshd', default='/usr/sbin/sshd')
     parser.add_argument('--rollback', help='backup directory printed by an earlier apply')
     args = parser.parse_args()
+    if args.mode == 'trust' and (args.box or args.retire_legacy):
+        parser.error('principal options require the principals entry script')
+    if args.mode == 'principals' and (args.public_key or args.retire_v1):
+        parser.error('CA options require the trust entry script')
     root = Path(args.root).absolute()
     if root != Path('/') and not args.dry_run:
         raise ValueError('--root is for offline dry-run only')
@@ -99,6 +126,8 @@ def main():
     ca = checked_path(root, 'etc/ssh/deploy_ca.pub')
     if not conf.is_file():
         raise ValueError('sshd_config missing')
+    create_deploy = False
+    disable_deploy = False
     if args.rollback:
         backup = Path(args.rollback).absolute()
         expected = root / 'etc/ssh/ca-rotation-backups'
@@ -106,11 +135,48 @@ def main():
             raise ValueError('rollback must name a direct child of ' + str(expected))
         manifest = json.loads((backup / 'manifest.json').read_text())
         changes = {}
+        disable_deploy = bool(manifest.get('created_deploy'))
         for relative, existed in manifest['files'].items():
-            if relative not in ['etc/ssh/deploy_ca.pub', 'etc/ssh/sshd_config']:
+            if relative not in ['etc/ssh/deploy_ca.pub', 'etc/ssh/sshd_config', 'etc/ssh/principals/deploy', 'etc/ssh/principals/root']:
                 raise ValueError('unexpected rollback path')
             path = checked_path(root, relative)
             changes[path] = (backup / relative).read_text() if existed else None
+    elif args.mode == 'principals':
+        if not args.box:
+            parser.error('--box is required')
+        templates = Path(__file__).resolve().parents[1] / 'principals' / args.box
+        changes = {conf: directive(read(conf), 'AuthorizedPrincipalsFile', '/etc/ssh/principals/%u')}
+        # Disable password/keyboard-interactive for deploy without weakening other accounts.
+        config = changes[conf]
+        begin, end = '# BEGIN CA ROTATION DEPLOY', '# END CA ROTATION DEPLOY'
+        config = re.sub(re.escape(begin) + r'.*?' + re.escape(end) + r'\n?', '', config, flags=re.S)
+        changes[conf] = config + begin + '\nMatch User deploy\n    PasswordAuthentication no\n    KbdInteractiveAuthentication no\nMatch all\n' + end + '\n'
+        for user in ['deploy', 'root']:
+            content = (templates / user).read_text()
+            if args.retire_legacy and user != 'deploy':
+                content = ''.join(line + '\n' for line in content.splitlines() if line != user)
+            changes[checked_path(root, 'etc/ssh/principals/' + user)] = content
+        if root == Path('/'):
+            try:
+                run(['id', '-u', 'deploy'])
+            except subprocess.CalledProcessError:
+                create_deploy = True
+            if not create_deploy:
+                groups = set(run(['id', '-nG', 'deploy']).split())
+                if groups.intersection({'sudo', 'wheel', 'admin', 'docker', 'lxd', 'disk'}):
+                    raise ValueError('existing deploy user has privileged groups; owner must resolve')
+                if shutil.which('sudo'):
+                    check = subprocess.run(['sudo', '-n', '-l', '-U', 'deploy'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    if check.returncode == 0:
+                        raise ValueError('existing deploy user has sudo rights; owner must resolve')
+        else:
+            create_deploy = not any(line.startswith('deploy:') for line in read(root / 'etc/passwd').splitlines())
+    elif args.retire_v1:
+        v1 = 'SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0'
+        kept = [line for line in read(ca).splitlines(keepends=True) if fingerprint(line) != v1]
+        if not any(line.strip() and not line.lstrip().startswith('#') for line in kept):
+            raise ValueError('refusing to remove the last CA')
+        changes = {ca: ''.join(kept)}
     else:
         if not args.public_key:
             parser.error('public key file is required')
@@ -119,40 +185,62 @@ def main():
     changed = {p: value for p, value in changes.items() if value != (p.read_text() if p.exists() else None)}
     for path, value in changed.items():
         diff(path, read(path), value or '')
+    if disable_deploy:
+        print('- ACCOUNT deploy: lock, expire, and set nologin; retain home for owner review')
+    if create_deploy:
+        print('+ ACCOUNT deploy: useradd --create-home --user-group --shell /bin/bash --password * deploy (no usable password, no sudo)')
     print('PLAN: sshd -t; systemctl reload ' + args.service + '; restore previous files if validation/reload fails')
+    planned_ca = changes.get(ca, read(ca))
+    for line in (planned_ca or '').splitlines():
+        if line.strip() and not line.lstrip().startswith('#'):
+            print('CA fingerprint: ' + fingerprint(line))
     if args.dry_run:
         print('DRY-RUN: no files, accounts, services, or backups changed')
         return
     if os.geteuid() != 0:
         raise ValueError('apply requires root; use --dry-run for review')
-    if not changed:
+    if not changed and not create_deploy and not disable_deploy:
         print('Already current; no reload')
         return
-    apply_changes(changed, root, args, conf, ca)
+    apply_changes(changed, root, args, conf, ca, create_deploy, disable_deploy)
 
 
-def apply_changes(changed, root, args, conf, ca):
+def apply_changes(changed, root, args, conf, ca, create_deploy=False, disable_deploy=False):
     # Validate the baseline before doing anything and keep a recovery snapshot for rollback itself.
     run([args.sshd, '-t', '-f', str(conf)])
     parent = checked_path(root, 'etc/ssh/ca-rotation-backups')
     parent.mkdir(mode=0o700, exist_ok=True)
-    backup = Path(tempfile.mkdtemp(prefix='trust-', dir=parent))
-    manifest = {'files': {str(p.relative_to(root)): p.exists() for p in changed}}
+    backup = Path(tempfile.mkdtemp(prefix='rotation-', dir=parent))
+    manifest = {'created_deploy': create_deploy, 'files': {str(p.relative_to(root)): p.exists() for p in changed}}
     for path in changed:
         if path.exists():
             dest = backup / path.relative_to(root)
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, dest)
     (backup / 'manifest.json').write_text(json.dumps(manifest))
-    print('ROLLBACK: sudo deploy-keys/apply-trust-linux.sh --rollback ' + str(backup) + ' --service ' + args.service, flush=True)
+    entry = 'apply-principals-linux.sh' if getattr(args, 'mode', 'trust') == 'principals' else 'apply-trust-linux.sh'
+    print('ROLLBACK: sudo deploy-keys/' + entry + ' --rollback ' + str(backup) + ' --service ' + args.service, flush=True)
+    created = False
     try:
+        if create_deploy:
+            run(['useradd', '--create-home', '--user-group', '--shell', '/bin/bash', '--password', '*', 'deploy'])
+            created = True
+            if shutil.which('sudo'):
+                rights = subprocess.run(['sudo', '-n', '-l', '-U', 'deploy'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if rights.returncode == 0:
+                    raise ValueError('new deploy user inherits sudo rights; account will be disabled')
         for path, value in changed.items():
             if value is None:
                 path.unlink(missing_ok=True)
             else:
-                atomic_write(path, value)
-        validate_and_reload(args, conf)
+                atomic_write(path, value, (path.stat().st_mode & 0o777) if path.exists() else 0o644)
+        if disable_deploy:
+            run(['usermod', '--lock', '--expiredate', '1', '--shell', '/usr/sbin/nologin', 'deploy'])
+        validate_and_reload(args, conf, desired=True)
     except Exception:
+        if created:
+            run(['usermod', '--lock', '--expiredate', '1', '--shell', '/usr/sbin/nologin', 'deploy'])
+            print('New deploy account locked; home retained for owner review')
         for path in changed:
             saved = backup / path.relative_to(root)
             if saved.exists():

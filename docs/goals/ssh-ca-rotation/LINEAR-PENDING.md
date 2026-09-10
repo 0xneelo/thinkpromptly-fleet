@@ -42,3 +42,10 @@ Pending needs:general — inherited npm pretest extractor/fixture titles disagre
 goals/unblock on the launch base. Reproduce: npm test, before Node tests execute.
 Project remote-system / deploy-keys; agent:agent-ivo; session:cli-worker.
 Keep outside CA rotation implementation. Signed: Ivo
+
+## M3 local completion — 2026-09-10
+
+M2 pushed a17053c21e3ceca6f93e7a5043a2e239f6ec504e. M3 artifacts and 16/16 offline
+checks are described in REPORT.md. All reads/edits/reviews performed directly by Ivo.
+Linear retry still oauth_token_invalid_grant; no comments or state changes posted.
+Signed: Ivo

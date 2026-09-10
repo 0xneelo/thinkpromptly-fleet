@@ -40,10 +40,27 @@ The rog-strix inputs stay verbatim in inputs/. Their deploy-keys counterparts ne
 change beyond append logic to meet the binding dry-run/rollback/no-transport constraints:
 bootstrap now prints a local owner command; rotation never adds the bootstrap fallback.
 Its public fingerprint identifies 1Password wsl-machine, not the CA.
-M2 push SHA: pending. Linear retry still oauth_token_invalid_grant; entries remain pending.
+M2 pushed and independently verified SHA: `a17053c21e3ceca6f93e7a5043a2e239f6ec504e`. Linear retry still oauth_token_invalid_grant; entries remain pending.
 
 Baseline prerequisite finding: npm test stops at pretest fixture title drift (goals/unblock).
 The direct test suite is running separately. No exemption is assumed for this preflight;
 it will be reported and queued if outside this lane.
+
+Signed: Ivo
+
+## M3
+
+Five principal template directories, Linux/Windows local account/config apply, explicit
+legacy-principal and v1 retirement modes, certificate-only verify script, staged SSH alias
+example, and exact-unit sudoers template/renderer added. Existing machines.json already
+uses the five deploy aliases; alias User changes are staged for owners, not activated.
+No guessed sixth-host trust. Linux effective policy is checked before reload. Rollback
+disables a newly created account and retains its files. Windows restores saved ACLs.
+
+16/16 trust/principal/verify/renderer tests pass on offline fixtures; combined with M1:
+21 pass, 0 fail, 1 opt-in real-signing test unrun. All six changed/new shell entry scripts
+are ShellCheck clean; PowerShell parser clean. Self-review by Ivo, no subagents: corrected
+rollback account disabling and ACL restoration, and preserved Linux existing file modes.
+M3 push SHA: pending. Linear retry remains oauth_token_invalid_grant.
 
 Signed: Ivo

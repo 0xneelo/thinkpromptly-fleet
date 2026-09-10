@@ -69,7 +69,7 @@ function Set-StrictAcl([string]$Path, [bool]$Readable = $false) {
 }
 function Invoke-WindowsApply {
     param([System.Collections.IDictionary]$Changes, [string]$Root, [string]$Sshd, [bool]$Preview, [string]$Entry,
-          [bool]$CreateDeploy = $false)
+          [bool]$CreateDeploy = $false, [bool]$DisableDeploy = $false, [hashtable]$RestoreAcls = @{})
     $conf = Join-Path $Root 'sshd_config'
     $changed = [ordered]@{}
     foreach ($p in $Changes.Keys) {
@@ -80,14 +80,19 @@ function Invoke-WindowsApply {
             Show-FileDiff $p $before $Changes[$p]
         }
     }
+    if ($DisableDeploy) { Write-Output '- ACCOUNT deploy: disable newly created account; retain its files' }
+    foreach ($p in $RestoreAcls.Keys) { Write-Output "ACL RESTORE $p : $($RestoreAcls[$p])" }
     if ($CreateDeploy) { Write-Output '+ ACCOUNT deploy: standard Users group only, no password login; certificate authentication' }
+    $caPath = Join-Path $Root 'deploy_ca.pub'
+    $caText = if ($Changes.Contains($caPath)) { $Changes[$caPath] } else { Read-PublicConfig $caPath }
+    foreach ($line in ($caText -split '\r?\n')) { if ($line.Trim() -and -not $line.Trim().StartsWith('#')) { Write-Output ('CA fingerprint: ' + (Get-CaFingerprint $line)) } }
     Write-Output 'PLAN: protected ACLs; sshd -t; detached SYSTEM task restarts sshd; restores backup on failure'
     if ($Preview) { Write-Output 'DRY-RUN: no files, accounts, ACLs, tasks, or services changed'; return }
     if ($PSVersionTable.PSEdition -eq 'Core' -and -not $IsWindows) { throw 'Apply requires Windows' }
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
     if (-not ([Security.Principal.WindowsPrincipal]::new($identity)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Apply requires an elevated owner terminal' }
     Test-Sshd $Sshd $conf
-    if (-not $changed.Count -and -not $CreateDeploy) { Write-Output 'Already current; no restart'; return }
+    if (-not $changed.Count -and -not $CreateDeploy -and -not $DisableDeploy) { Write-Output 'Already current; no restart'; return }
     $backup = Join-Path $Root ('ca-rotation-backups\' + [guid]::NewGuid().ToString('N'))
     Assert-PlainPath $backup
     New-Item -ItemType Directory -Path $backup -Force | Out-Null
@@ -115,8 +120,11 @@ function Invoke-WindowsApply {
             $parent = Split-Path -Parent $p
             if (-not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent | Out-Null; Set-StrictAcl $parent $true }
             [IO.File]::WriteAllText($p, $changed[$p], [Text.UTF8Encoding]::new($false))
-            Set-StrictAcl $p
+            if ($RestoreAcls.ContainsKey($p)) {
+                $acl = Get-Acl -LiteralPath $p; $acl.SetSecurityDescriptorSddlForm($RestoreAcls[$p]); Set-Acl -LiteralPath $p -AclObject $acl
+            } else { Set-StrictAcl $p ($p -match '[\\/]principals[\\/]') }
         }
+        if ($DisableDeploy) { Disable-LocalUser -Name deploy }
         Test-Sshd $Sshd $conf
         # Keep restart/rollback independent of an SSH parent process. Never restart the deck.
         $restart = Join-Path $backup 'restart.ps1'
@@ -173,6 +181,23 @@ function Get-RollbackChanges([string]$Backup, [string]$Root) {
         if ($f.path -notin $allowed) { throw 'Unexpected rollback path' }
         $changes[$f.path] = if ($f.existed) { [IO.File]::ReadAllText($f.saved) } else { $null }
     }
-    if ($m.createdDeploy) { Write-Warning 'Rollback restores files; disable the newly created deploy user after leaving its sessions. Do not delete its data.' }
+    $script:RollbackDisableDeploy = [bool]$m.createdDeploy
+    $script:RollbackAcls = @{}
+    foreach ($f in $m.files) { if ($f.existed) { $script:RollbackAcls[$f.path] = $f.acl } }
     return $changes
+}
+
+function Get-CaFingerprint([string]$Key) {
+    $parts = $Key.Trim() -split '\s+'
+    if ($parts.Count -lt 2 -or $parts[0] -ne 'ssh-ed25519') { throw 'Trust file contains an unsupported public key' }
+    $raw = [Convert]::FromBase64String($parts[1])
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return 'SHA256:' + [Convert]::ToBase64String($sha.ComputeHash($raw)).TrimEnd('=') }
+    finally { $sha.Dispose() }
+}
+function Remove-LegacyCa([string]$Before) {
+    $lines = @($Before -split '\r?\n' | Where-Object { $_.Trim() })
+    $kept = @($lines | Where-Object { $_.Trim().StartsWith('#') -or (Get-CaFingerprint $_) -ne 'SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0' })
+    if (-not @($kept | Where-Object { -not $_.Trim().StartsWith('#') }).Count) { throw 'Refusing to remove last CA' }
+    return ($kept -join "`r`n") + "`r`n"
 }

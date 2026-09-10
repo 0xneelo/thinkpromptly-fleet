@@ -1,0 +1,50 @@
+# OWNER TEMPLATE: install only after S3 on the target host; replace duplicate alias blocks.
+# Do not activate globally ahead of host rollout. Keep one recovery session open.
+# machines.json already uses these five *-deploy aliases; it requires no runtime rewrite.
+Host vps-deploy vps-admin ob-deploy ob-admin ivybox-deploy ivybox-admin gb-deploy gb-admin rs-deploy rs-admin
+    IdentitiesOnly yes
+    IdentityAgent none
+    IdentityFile ~/.ssh/deploy-certs/current/deployer
+    CertificateFile ~/.ssh/deploy-certs/current/deployer-cert.pub
+    ForwardAgent no
+
+Host vps-deploy
+    HostName 138.199.198.246
+    User deploy
+
+Host vps-admin
+    HostName 138.199.198.246
+    User root
+
+Host ob-deploy
+    HostName 178.104.80.26
+    User deploy
+
+Host ob-admin
+    HostName 178.104.80.26
+    User root
+
+Host ivybox-deploy
+    HostName 168.119.52.183
+    User deploy
+
+Host ivybox-admin
+    HostName 168.119.52.183
+    User root
+
+Host gb-deploy
+    HostName 100.80.44.86
+    User deploy
+
+Host gb-admin
+    HostName 100.80.44.86
+    User vibe
+
+Host rs-deploy
+    HostName 100.124.95.60
+    User deploy
+
+Host rs-admin
+    HostName 100.124.95.60
+    User misterisley
+
