@@ -1,6 +1,6 @@
 {
  "project": "remote-system",
- "updated": "2026-09-10",
+ "updated": "2026-09-11",
  "goals": [
   {
    "id": "G1",
@@ -155,11 +155,15 @@
    "sources": [
     "operator word 'gpt xhigh' 2026-09-10 on seat 20's plan; finding O20-SEATS-1 from lowcap 🎛 36"
    ],
-   "updated": "2026-09-10",
+   "updated": "2026-09-11",
    "log": [
     {
      "at": "2026-09-10",
      "note": "added"
+    },
+    {
+     "at": "2026-09-11",
+     "note": "status → active — 2026-09-11 woven into main as 7c10bbf; live Acceptance 2 check pending the deck restart"
     }
    ]
   },
