@@ -11,6 +11,7 @@ const pty = require('node-pty');
 const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
 const { coordinatorRoute } = require('./coordinator-api');
 const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
+const { DesktopSeatTitles } = require('./desktop-seat-titles');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -518,6 +519,9 @@ const CLAUDE_BRIDGE = process.env.CLAUDE_BRIDGE || path.join(__dirname, '.fleetd
 // presents on that socket. Observed on 2.1.259 (peerProtocol 1); the .key is read only at
 // delivery and never leaves this process.
 const CLAUDE_SESSIONS_DIR = process.env.CLAUDE_SESSIONS_DIR || path.join(HOME, '.claude', 'sessions');
+const CLAUDE_DESKTOP_STORE_DIR = process.env.CLAUDE_DESKTOP_STORE_DIR ||
+  path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
+const desktopSeatTitles = new DesktopSeatTitles({ dir: CLAUDE_DESKTOP_STORE_DIR });
 
 // Live desktop sessions: a registry file whose pid is alive and whose socket exists. A stale
 // file from a crashed session is skipped, never an error.
@@ -536,7 +540,9 @@ function desktopSessions() {
       if (typeof j.name !== 'string' || typeof j.messagingSocketPath !== 'string') continue;
       process.kill(j.pid, 0);
       if (!fs.existsSync(j.messagingSocketPath)) continue;
-      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId: desktopUuid(j.sessionId) });
+      const sessionId = desktopUuid(j.sessionId);
+      const title = sessionId ? desktopSeatTitles.get().get(sessionId)?.title ?? null : null;
+      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId, title });
     } catch {}
   }
   return live;
