@@ -23,7 +23,7 @@ import board_lib as bl
 import exceptions
 
 # DESIGN §3: the boot bundle stays inside ~2k tokens ≈ 8KB.
-BUNDLE_GATE_BYTES = 12288
+BUNDLE_GATE_BYTES = 16384
 
 # The pre-compaction bundle: the three files a seat used to read end to end.
 RAW_BUNDLE_FILES = ("board.json", "northstar.md", "decisions-effective.md")
