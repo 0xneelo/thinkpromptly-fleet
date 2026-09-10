@@ -441,6 +441,10 @@ def selftest_bundle(now, checked):
     check(str(size) in text.splitlines()[-1], "the footer must state the bundle's own size")
     checked += ["bundle: fixed section order", "bundle: decisions referenced not inlined",
                 "bundle: footer states its own size"]
+    check(bundle.footer(16384)
+          == "-- bundle 16384 bytes · 0 bytes headroom under the 16384-byte gate (100%)",
+          "D-318: the footer must use the 16384-byte gate")
+    checked.append("bundle: footer uses the 16384-byte gate (D-318)")
 
     # A lane with no exception and no live state gets one summary line; a live one does not.
     quiet = fixture_board([fixture_lane("L1", state="done-verified",
@@ -454,7 +458,7 @@ def selftest_bundle(now, checked):
     checked += ["bundle: quiet lane summarised", "bundle: live lane in full"]
 
     # The gate still trips on a genuinely oversized board.
-    huge = fixture_board([fixture_lane("L1", goal="x " * 6000)])
+    huge = fixture_board([fixture_lane("L1", goal="x " * bundle.BUNDLE_GATE_BYTES)])
     size, headroom, _ = bundle.gate_report(huge, now, bl.default_board_path())
     check(headroom < 0, "an oversized board must trip the gate, got %d bytes" % size)
     fails, warns = [], []
