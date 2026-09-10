@@ -201,8 +201,8 @@ plus per-machine collection status. Org labels come from `credits-accounts.json`
 
 **Docs.** `/app#docs` lists every document the sessions produce — published Artifacts,
 ELI5 explainers, unblock sheets, session digests, reports, and any `.html`/`.md` a session
-writes — newest first, filterable by day (date picker or day chips), by session, by kind, and
-by text. The filter lives in the hash (`#docs?session=<cli-uuid>&day=2026-09-10`), and each
+writes — newest first, filterable by day (date picker or day chips), by session, by kind, by
+source (a sticky "No scratchpads" choice), and by text. The filter lives in the hash (`#docs?session=<cli-uuid>&day=2026-09-10`), and each
 Desktop sessions row has a Docs icon that opens the list for that session. The index is a
 `docs` table in `fleet.db`, swept from `~/.claude/session-exports`, the session scratchpads
 under `/private/tmp/claude-501/*/*/scratchpad/`, and this repo's `docs/{reports,research,unblocks}`

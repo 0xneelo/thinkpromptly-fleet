@@ -64,10 +64,10 @@
     return Math.floor(m / 1440) + ' d ago';
   }
 
-  var FILTERS = ['session', 'day', 'kind', 'q'];
+  var FILTERS = ['session', 'day', 'kind', 'source', 'q'];
 
-  // Only the four filters this screen owns, and only the ones that are set: an empty value
-  // has to leave the hash entirely, or clearing a filter would still name it in the link.
+  // Only the filters this screen owns, and only the ones that are set: an empty value has
+  // to leave the hash entirely, or clearing a filter would still name it in the link.
   function paramsOf(route) {
     var from = (route && route.params) || {};
     var out = {};
@@ -114,6 +114,8 @@
     days: [{ day: '2026-09-10', n: 3 }, { day: '2026-09-09', n: 2 }, { day: '2026-09-08', n: 1 }],
     kinds: [{ kind: 'artifact', n: 1 }, { kind: 'eli5', n: 1 }, { kind: 'md', n: 1 },
       { kind: 'report', n: 1 }, { kind: 'session', n: 1 }, { kind: 'unblock', n: 1 }],
+    sources: [{ source: 'exports', n: 2 }, { source: 'hook', n: 1 }, { source: 'repo', n: 1 },
+      { source: 'scratchpad', n: 2 }],
     total: 6,
     swept_at: '2026-09-10T09:45:00Z',
     sweeping: false,
@@ -136,7 +138,7 @@
 
   var MOUNT = 'fd-docs-root';
   var DAY_CHIPS = 21; // three weeks of chips; older days stay reachable through the date input
-  var EMPTY = { docs: [], days: [], kinds: [] };
+  var EMPTY = { docs: [], days: [], kinds: [], sources: [] };
 
   // Mirrors FD.data.isFixture() so this file can still decide when FD.data is absent.
   function isFixture() {
@@ -144,6 +146,22 @@
     try { if (root.localStorage.getItem('fd-fixture') === '1') return true; } catch (e) { /* no storage */ }
     var search = root.location && root.location.search;
     return typeof search === 'string' && /[?&]fixture=1(&|$)/.test(search);
+  }
+
+  // The source choice is the one filter that outlives a reload. The hash stays the single
+  // truth: a stored choice is applied by navigating once (enter()), never by filtering behind
+  // the link the operator copies. Guarded: a locked-down browser must not break the screen.
+  var SOURCE_KEY = 'fd-docs-source';
+
+  function storedSource() {
+    try { return root.localStorage.getItem(SOURCE_KEY) || ''; } catch (e) { return ''; }
+  }
+
+  function storeSource(v) {
+    try {
+      if (v) root.localStorage.setItem(SOURCE_KEY, v);
+      else root.localStorage.removeItem(SOURCE_KEY);
+    } catch (e) { /* no storage */ }
   }
 
   // Published by logic.js on every render, so the screen follows the theme toggle.
@@ -204,6 +222,21 @@
       ';padding:4px 12px;font-size:12px;cursor:pointer;white-space:nowrap;' + ((opts && opts.tail) || ''), text);
     b.onclick = onclick;
     return b;
+  }
+
+  // kind and source are the same control twice: one option list, one filter write.
+  function picker(options, value, onchange) {
+    var t = tok();
+    var s = el('select', 'border-radius:9999px;border:1px solid ' + t.line + ';background:transparent;color:' +
+      t.ink + ';padding:6px 10px;font-size:12.5px;');
+    options.forEach(function (o) {
+      var opt = el('option', '', o.label);
+      opt.value = o.value;
+      s.appendChild(opt);
+    });
+    s.value = value;
+    s.addEventListener('change', function () { onchange(s.value); });
+    return s;
   }
 
   function card() {
@@ -288,18 +321,16 @@
     date.addEventListener('change', function () { setFilter('day', date.value); });
     line.appendChild(date);
 
-    var kind = el('select', 'border-radius:9999px;border:1px solid ' + t.line + ';background:transparent;color:' +
-      t.ink + ';padding:6px 10px;font-size:12.5px;');
-    [{ value: '', label: 'All kinds' }].concat((view.kinds || []).map(function (k) {
+    line.appendChild(picker([{ value: '', label: 'All kinds' }].concat((view.kinds || []).map(function (k) {
       return { value: safeText(k.kind), label: safeText(k.kind) + ' · ' + safeText(k.n) };
-    })).forEach(function (o) {
-      var opt = el('option', '', o.label);
-      opt.value = o.value;
-      kind.appendChild(opt);
-    });
-    kind.value = f.kind || '';
-    kind.addEventListener('change', function () { setFilter('kind', kind.value); });
-    line.appendChild(kind);
+    })), f.kind || '', function (v) { setFilter('kind', v); }));
+
+    // 'No scratchpads' is the choice the operator actually wants: the scratchpads are the noisy
+    // half of the index. It is remembered, so it does not have to be made on every load.
+    line.appendChild(picker([{ value: '', label: 'All sources' }, { value: '-scratchpad', label: 'No scratchpads' }]
+      .concat((view.sources || []).map(function (x) {
+        return { value: safeText(x.source), label: safeText(x.source) + ' · ' + safeText(x.n) };
+      })), f.source || '', function (v) { storeSource(v); setFilter('source', v); }));
 
     if (f.session) {
       var s = el('span', 'border-radius:9999px;border:1px solid ' + t.line + ';background:' + t.hoverBg +
@@ -443,7 +474,10 @@
   function enter() {
     if (!active()) return;
     if (isFixture()) return paint();
-    if (state.key !== query(filters()) || (!state.view && !state.loading)) load();
+    var f = filters();
+    // Only the router can put it on the hash; without one there is no hash to fix.
+    if (FD.router && !f.source && storedSource()) return setFilter('source', storedSource());
+    if (state.key !== query(f) || (!state.view && !state.loading)) load();
     else paint();
   }
 

@@ -183,6 +183,7 @@ test('a refreshed GET lists every swept doc newest first, with its session and p
 
   assert.deepEqual(body.days, [{ day: TODAY, n: 2 }, { day: '2026-09-07', n: 1 }]);
   assert.deepEqual(body.kinds, [{ kind: 'eli5', n: 1 }, { kind: 'md', n: 1 }, { kind: 'unblock', n: 1 }]);
+  assert.deepEqual(body.sources, [{ source: 'exports', n: 1 }, { source: 'scratchpad', n: 2 }]);
   assert.ok(body.swept_at > 0);
   assert.equal(body.sweeping, false);
 });
@@ -199,6 +200,18 @@ test('day and session are filters; the pickers keep offering every day and kind'
   assert.deepEqual((await d.get('?kind=md')).body.docs.map((x) => x.title), ['Notes for the deck']);
   assert.deepEqual((await d.get('?q=market')).body.docs.map((x) => x.kind), ['eli5']);
   assert.equal((await d.get('?day=1999-01-01')).body.docs.length, 0);
+});
+
+test('source is a filter a leading dash negates, and a value that is not a source name is ignored', async (t) => {
+  const d = deck(t, seedTree());
+  await d.get('?refresh=1');
+  assert.deepEqual((await d.get('?source=scratchpad')).body.docs.map((x) => x.kind), ['md', 'unblock']);
+  assert.deepEqual((await d.get('?source=-scratchpad')).body.docs.map((x) => x.kind), ['eli5'],
+    'the operator hiding the scratchpads still sees the exports');
+  assert.equal((await d.get('?source=bogus!')).body.docs.length, 3, 'not a source name: no filter at all');
+  const facet = [{ source: 'exports', n: 1 }, { source: 'scratchpad', n: 2 }];
+  assert.deepEqual((await d.get('?source=scratchpad')).body.sources, facet,
+    'a source picker that hid the other sources could never leave this one');
 });
 
 test('the tailnet listener has no /api/docs at all', async (t) => {

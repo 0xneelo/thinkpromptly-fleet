@@ -45,9 +45,10 @@ test('an artifact opens at its own URL; every other row opens by id', () => {
   assert.strictEqual(_.openHref(null), '/api/docs/open?id=');
 });
 
-test('only the four filters this screen owns are read off the hash', () => {
-  const params = { session: 'abc', day: '2026-09-10', kind: 'eli5', q: 'train', view: 'deck', evil: '1' };
-  assert.deepStrictEqual(_.paramsOf({ params }), { session: 'abc', day: '2026-09-10', kind: 'eli5', q: 'train' });
+test('only the filters this screen owns are read off the hash', () => {
+  const params = { session: 'abc', day: '2026-09-10', kind: 'eli5', source: '-scratchpad', q: 'train', view: 'deck', evil: '1' };
+  assert.deepStrictEqual(_.paramsOf({ params }),
+    { session: 'abc', day: '2026-09-10', kind: 'eli5', source: '-scratchpad', q: 'train' });
   assert.deepStrictEqual(_.paramsOf({ params: { session: '  ', kind: 'md' } }), { kind: 'md' },
     'a cleared filter leaves the hash instead of naming itself empty');
   assert.deepStrictEqual(_.paramsOf(null), {}, 'no route is no filter, never a throw');
@@ -80,6 +81,11 @@ test('the fixture sample is the deterministic screen the pixel gate renders', ()
   assert.deepStrictEqual(v.days.map((d) => [d.day, d.n]), [['2026-09-10', 3], ['2026-09-09', 2], ['2026-09-08', 1]]);
   assert.deepStrictEqual(Object.fromEntries(v.days.map((d) => [d.day, d.n])), perDay, 'the day counts match the rows');
   assert.deepStrictEqual(Object.fromEntries(v.kinds.map((k) => [k.kind, k.n])), perKind, 'the kind counts match the rows');
+  const perSource = {};
+  for (const d of v.docs) perSource[d.source] = (perSource[d.source] || 0) + 1;
+  assert.deepStrictEqual(Object.fromEntries(v.sources.map((x) => [x.source, x.n])), perSource,
+    'the source counts match the rows the source picker filters');
+  assert.strictEqual(v.sources.reduce((n, x) => n + x.n, 0), 6);
   assert.deepStrictEqual(v.kinds.map((k) => k.kind), ['artifact', 'eli5', 'md', 'report', 'session', 'unblock']);
 });
 

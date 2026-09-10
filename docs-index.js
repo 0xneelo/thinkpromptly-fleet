@@ -224,6 +224,7 @@ class DocsIndex {
     this.markGone = db.prepare('UPDATE docs SET gone = 1 WHERE id = ?');
     this.days = db.prepare('SELECT day, COUNT(*) AS n FROM docs WHERE gone = 0 GROUP BY day ORDER BY day DESC');
     this.kinds = db.prepare('SELECT kind, COUNT(*) AS n FROM docs WHERE gone = 0 GROUP BY kind ORDER BY kind');
+    this.sources = db.prepare('SELECT source, COUNT(*) AS n FROM docs WHERE gone = 0 GROUP BY source ORDER BY source');
   }
 
   async sweep(force = false) {
@@ -319,7 +320,7 @@ class DocsIndex {
     return this.byPath.get(target);
   }
 
-  list({ day, session, kind, q, limit = 500 } = {}) {
+  list({ day, session, kind, source, q, limit = 500 } = {}) {
     const where = ['gone = 0'];
     const args = [];
     for (const [col, value] of [['day', day], ['session', session], ['kind', kind]])
@@ -327,6 +328,12 @@ class DocsIndex {
         where.push(col + ' = ?');
         args.push(col === 'session' ? value.toLowerCase() : value);
       }
+    // A leading `-` negates, which is what the screen's "No scratchpads" choice sends. Anything
+    // that is not a source name is ignored rather than answered with an empty list.
+    if (typeof source === 'string' && /^-?[a-z]+$/.test(source)) {
+      where.push(source[0] === '-' ? 'source != ?' : 'source = ?');
+      args.push(source.replace(/^-/, ''));
+    }
     if (typeof q === 'string' && q.trim()) {
       where.push('(lower(title) LIKE ? OR lower(path) LIKE ?)');
       const like = '%' + q.trim().toLowerCase() + '%';
@@ -340,7 +347,7 @@ class DocsIndex {
     const { total } = this.db.prepare(`SELECT COUNT(*) AS total FROM docs WHERE ${where.join(' AND ')}`).get(...args);
     // The facets are unfiltered on purpose: they are the pickers, and a day picker that
     // only ever offered the day already selected could never leave it.
-    return { docs, total, days: this.days.all(), kinds: this.kinds.all() };
+    return { docs, total, days: this.days.all(), kinds: this.kinds.all(), sources: this.sources.all() };
   }
 
   get(id) {

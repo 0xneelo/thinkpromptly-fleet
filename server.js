@@ -3460,7 +3460,7 @@ async function docsRoute(req, res, url) {
     else Promise.resolve(sweep).catch(() => {});
     const q = url.searchParams;
     return json(res, docsIndex.view({
-      day: q.get('day'), session: q.get('session'), kind: q.get('kind'), q: q.get('q'),
+      day: q.get('day'), session: q.get('session'), kind: q.get('kind'), source: q.get('source'), q: q.get('q'),
       limit: q.get('limit') || undefined,
     }));
   }

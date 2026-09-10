@@ -153,3 +153,7 @@ arrives here: it deep-links `#docs?session=<CLI uuid>`, which is the one id both
 The mock has no Docs screen, so `template.dc.html` carries only the mount node `#fd-docs-root` and
 `public/v2/screens/docs.js` draws the whole screen in plain DOM (createElement/textContent only —
 a title comes from a file some session wrote and must never be parsed as markup). Nothing polls.
+
+`?source=` filters the same way, and a leading `-` negates it (`source=-scratchpad`), which is the
+screen's "No scratchpads" choice — the only filter that is remembered (`localStorage['fd-docs-source']`),
+and it is remembered by navigating once so the hash stays the single truth.
