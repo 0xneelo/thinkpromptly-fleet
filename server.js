@@ -2258,6 +2258,231 @@ async function machinesRoute(req, res) {
   return json(res, { ok: true, id });
 }
 
+// --- Goals: the red thread the 🥅 goalkeeper and the operator keep together.
+// The seat's git jail is the store; this deck only READS it. Every write goes through
+// goalkeeper.py, which is the only thing allowed to touch that working tree — it commits
+// each change, and a direct write here would leave the jail dirty under the seat's feet.
+const goalkeeperHome = () => process.env.GOALKEEPER_HOME || path.join(os.homedir(), 'goalkeeper');
+const goalkeeperPy = () =>
+  process.env.GOALKEEPER_PY || path.join(os.homedir(), '.claude', 'skills', 'goalkeeper', 'goalkeeper.py');
+
+// `### T-2026-09-10-2 · Thu 2026-09-10 · week · lowcapsxyz`, then a blank line, then the
+// operator's own words until the next header. Lines before the first header are preamble.
+const THREAD_HEAD = /^### (T-\d{4}-\d{2}-\d{2}-\d{1,3}) · (.+?) · (day|week) · (.+)$/;
+
+function threadParse(text) {
+  const out = [];
+  for (const line of text.split('\n')) {
+    const m = THREAD_HEAD.exec(line);
+    if (m) out.push({ id: m[1], date: m[2], horizon: m[3], project: m[4], text: [] });
+    else if (out.length) out[out.length - 1].text.push(line);
+  }
+  return out.map((e) => ({ ...e, text: e.text.join('\n').trim() }));
+}
+
+// The seat writes its summary above the first `---`; the lines it wants relayed by hand say
+// "Verdict:" or name a relay. Both are capped so one long audit cannot flood the response.
+function auditRead(home) {
+  let names = [];
+  try {
+    names = fs.readdirSync(path.join(home, 'audits')).filter((f) => /^\d{4}-\d{2}-\d{2}\.md$/.test(f)).sort();
+  } catch (e) {
+    return null;
+  }
+  const file = names[names.length - 1];
+  if (!file) return null;
+  let text = '';
+  try {
+    text = fs.readFileSync(path.join(home, 'audits', file), 'utf8');
+  } catch (e) {
+    return null;
+  }
+  const lines = text.split('\n');
+  const end = lines.findIndex((l) => l.trim() === '---');
+  return {
+    date: file.slice(0, -3),
+    file: 'audits/' + file,
+    head: lines.slice(0, end === -1 ? lines.length : end).slice(0, 40),
+    verdicts: lines.filter((l) => /verdict|relay/i.test(l)).slice(0, 20),
+  };
+}
+
+function goalsGit(home) {
+  return run('git', ['-C', home, 'log', '-1', '--format=%h%x1f%aI%x1f%ae%x1f%s'], { timeout: 5000 }).then(
+    ({ err, stdout }) => {
+      if (err) return null;
+      const [sha, at, author, subject] = stdout.trim().split('\x1f');
+      return sha ? { sha, at, author, subject } : null;
+    }
+  );
+}
+
+// Read fresh every call: the seat commits into this jail from its own session, and a cached
+// answer would show the operator a thread that has already moved on.
+async function goalsView(home) {
+  const warnings = [];
+  const readJson = (name, fallback) => {
+    let raw;
+    try {
+      raw = fs.readFileSync(path.join(home, name), 'utf8');
+    } catch (e) {
+      return fallback; // absent is normal: no goals yet
+    }
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      warnings.push(name + ' malformed');
+      return fallback;
+    }
+  };
+  let thread = [];
+  try {
+    thread = threadParse(fs.readFileSync(path.join(home, 'thread.md'), 'utf8'));
+  } catch (e) {
+    warnings.push('thread.md unreadable');
+  }
+  const goalsFile = readJson('goals.json', {});
+  const goals = Array.isArray(goalsFile.goals) ? goalsFile.goals : [];
+  if (goalsFile.goals !== undefined && !Array.isArray(goalsFile.goals)) warnings.push('goals.json malformed');
+  const projectsFile = readJson('projects.json', {});
+  const projects = (Array.isArray(projectsFile.projects) ? projectsFile.projects : [])
+    .map((p) => p && p.alias)
+    .filter((a) => typeof a === 'string');
+  return {
+    ok: true,
+    home,
+    updated: typeof goalsFile.updated === 'string' ? goalsFile.updated : null,
+    projects,
+    thread,
+    goals,
+    audit: auditRead(home),
+    git: await goalsGit(home),
+    warnings,
+  };
+}
+
+const GOAL_ID = /^GK-\d{1,6}$/;
+const THREAD_ID = /^T-\d{4}-\d{2}-\d{2}-\d{1,3}$/;
+const GOAL_STATUS = new Set(['open', 'done', 'parked', 'dropped']);
+// A ref may not start with `-`: it is passed to argparse, which would read it as a flag.
+const GOAL_REF = /^[A-Za-z0-9._:#][A-Za-z0-9._:#-]{0,39}$/;
+const HORIZON = new Set(['day', 'week']);
+
+// Every op's arguments, checked before anything is spawned. Returns the argv for
+// goalkeeper.py or a string, which is the 400 the operator sees.
+function goalsArgs(b, projects) {
+  const op = b && b.op;
+  const text = b && b.text;
+  const okText = typeof text === 'string' && text.trim().length >= 1 && text.length <= 4000;
+  const okProject = typeof b.project === 'string' && (b.project === 'all' || projects.includes(b.project));
+  const okHorizon = typeof b.horizon === 'string' && HORIZON.has(b.horizon);
+  const refs = b.refs === undefined || b.refs === null ? [] : b.refs;
+  const okRefs = Array.isArray(refs) && refs.length <= 20 && refs.every((r) => typeof r === 'string' && GOAL_REF.test(r));
+  // '' and null both mean "no link": on goal.set that is the clear, on goal.add it is simply none.
+  const okThread = b.thread === undefined || b.thread === null || b.thread === '' ||
+    (typeof b.thread === 'string' && THREAD_ID.test(b.thread));
+  const okId = typeof b.id === 'string' && GOAL_ID.test(b.id);
+
+  if (op === 'thread.add') {
+    if (!okText) return 'text must be 1..4000 characters';
+    if (!okHorizon) return 'horizon must be day or week';
+    if (!okProject) return 'project must be a known alias or all';
+    return ['thread', 'add', '--horizon=' + b.horizon, '--project=' + b.project, '--by=operator', '--', text];
+  }
+  if (op === 'goal.add') {
+    if (!okText) return 'text must be 1..4000 characters';
+    if (!okProject) return 'project must be a known alias or all';
+    if (!okHorizon) return 'horizon must be day or week';
+    if (!okThread) return 'thread must be a T-YYYY-MM-DD-n id';
+    if (!okRefs) return 'refs must be at most 20 short tags';
+    return [
+      'goals', 'add', '--project=' + b.project, '--horizon=' + b.horizon,
+      ...(b.thread ? ['--thread=' + b.thread] : []),
+      ...(refs.length ? ['--refs=' + refs.join(',')] : []),
+      '--by=operator', '--', text,
+    ];
+  }
+  if (op === 'goal.set') {
+    if (!okId) return 'id must look like GK-1';
+    const set = [];
+    if (b.status !== undefined) {
+      if (!GOAL_STATUS.has(b.status)) return 'status must be open, done, parked or dropped';
+      set.push('--status=' + b.status);
+    }
+    if (b.state !== undefined) {
+      if (typeof b.state !== 'string' || b.state.length > 2000) return 'state must be a string of at most 2000 characters';
+      set.push('--state=' + b.state);
+    }
+    if (b.refs !== undefined) {
+      if (!okRefs) return 'refs must be at most 20 short tags';
+      set.push('--refs=' + refs.join(','));
+    }
+    if (b.thread !== undefined) {
+      if (!okThread) return 'thread must be a T-YYYY-MM-DD-n id';
+      set.push('--thread=' + (b.thread || ''));
+    }
+    if (!set.length) return 'goal.set needs at least one of status, state, refs or thread';
+    return ['goals', 'set', b.id, ...set, '--by=operator'];
+  }
+  if (op === 'goal.note') {
+    if (!okId) return 'id must look like GK-1';
+    if (!okText) return 'text must be 1..4000 characters';
+    return ['goals', 'note', b.id, '--by=operator', '--', text];
+  }
+  return 'unknown op';
+}
+
+// One chain for every write on this deck: goalkeeper.py commits into a git working tree, and
+// two clicks a moment apart would otherwise run two `git commit`s over the same index.
+let goalsWrite = Promise.resolve();
+function goalsRun(home, args) {
+  const next = goalsWrite.then(() =>
+    run('python3', [goalkeeperPy(), ...args], {
+      env: { ...process.env, GOALKEEPER_HOME: home },
+      timeout: 15000,
+    })
+  );
+  goalsWrite = next.catch(() => {});
+  return next;
+}
+
+// Loopback only, and deliberately absent from tailnetHandler: the goalkeeper seat is
+// isolated by design — no coordinator, orchestrator or box worker may reach it.
+//
+// POST REQUIRES an Origin this deck allows (a missing one is rejected too, unlike the
+// machines push). This is the OPERATOR'S BROWSER write path and nothing else: a seat or a
+// box worker must never be able to add to the red thread or close a goal through the deck,
+// and the goalkeeper itself writes with its own CLI inside its jail, never over HTTP.
+async function goalsRoute(req, res) {
+  if (req.method !== 'GET' && req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  if (req.method === 'POST' && !ALLOWED_ORIGINS.has(req.headers.origin))
+    return send(res, 403, 'text/plain', 'forbidden');
+  const home = goalkeeperHome();
+  if (!fs.existsSync(home)) return json(res, { ok: false, error: 'goalkeeper home not found', home }, 503);
+  if (req.method === 'GET') return json(res, await goalsView(home));
+
+  const b = await body(req, 16384).catch(() => null);
+  if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+  const projectsRaw = (() => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(home, 'projects.json'), 'utf8')).projects || [];
+    } catch (e) {
+      return [];
+    }
+  })();
+  const args = goalsArgs(b, projectsRaw.map((p) => p && p.alias).filter(Boolean));
+  if (!Array.isArray(args)) return json(res, { ok: false, error: args }, 400);
+
+  const { err, stdout, stderr } = await goalsRun(home, args);
+  if (err) return json(res, { ok: false, error: String(stderr || err.message).slice(-300) }, 502);
+  // The CLI prints the id it minted; a set/note prints nothing, and then there is none.
+  const id = (stdout.trim().split('\n').pop() || '').trim();
+  return json(res, {
+    ...(GOAL_ID.test(id) || THREAD_ID.test(id) ? { id } : {}),
+    ...(await goalsView(home)),
+  });
+}
+
 // ssh-keygen -Lf prints one indented block per cert; every field is optional on a
 // hand-made cert, so a miss is null rather than a throw.
 function parseCert(dir, out) {
@@ -3098,6 +3323,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, r.body, r.code);
     }
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, false);
+    if (p === '/api/goals') return await goalsRoute(req, res);
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     // Loopback only, and deliberately absent from tailnetHandler (M13).
     // The epoch is deliberately withheld: it is the credential fenceCheck trusts, and this

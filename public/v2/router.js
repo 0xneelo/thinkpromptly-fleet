@@ -15,6 +15,7 @@
     'keys',
     'accounts',
     'machines',
+    'goals',
     'desktop',
   ]);
   const DEFAULT_VIEW = 'app'; // inside /v2/; '/' becomes the landing page in L11

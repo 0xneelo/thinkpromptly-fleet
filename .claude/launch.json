@@ -38,6 +38,16 @@
       ],
       "port": 3140,
       "autoPort": true
+    },
+    {
+      "name": "deck-goals-preview",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "FLEET_DB=${TMPDIR:-/tmp}/fleetdeck-preview.db GOALKEEPER_HOME=${TMPDIR:-/tmp}/gk-preview exec node server.js"
+      ],
+      "port": 3141,
+      "autoPort": true
     }
   ]
 }

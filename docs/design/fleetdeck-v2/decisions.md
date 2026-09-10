@@ -81,3 +81,23 @@ S0's; Inter = one variable woff2 covering 400-700, documented in MANIFEST); gate
 max 0.033 % (registry dark); `network.json` zero external hosts; design-seat spot check of registry-dark and
 message-bus-light screenshots against the baselines: identical to the eye. Ledger: D01/D02/D07 ✅, P1 half of D03–D19 ✅.
 Waldemar released. Julius (S2) told to merge `70c32bb` before his final gate run.
+
+## 2026-09-10 · the `#goals` screen reads the goalkeeper jail, and only its CLI writes to it
+
+New screen `/app#goals` plus `GET/POST /api/goals`. The screen READS the 🥅 goalkeeper seat's git jail
+(`$GOALKEEPER_HOME`, default `~/goalkeeper`) — `thread.md`, `goals.json`, `projects.json`, the newest
+`audits/<date>.md` — fresh on every call, and it never writes a file there: every write spawns
+`goalkeeper.py … --by operator`, the seat's own CLI, which commits inside the jail. A direct file write
+from the deck would leave that working tree dirty under the seat's feet and lose the authorship the
+thread exists to preserve.
+
+POST is the OPERATOR'S BROWSER path and nothing else: the route is registered on the loopback listener
+only (absent from `tailnetHandler`, like `/api/seats`) and an allowed `Origin` header is REQUIRED, so a
+seat, a box worker or a coordinator cannot add to the red thread or close a goal through the deck. The
+goalkeeper itself never posts — it writes with its CLI, in its jail. Writes are serialised through one
+promise chain so two quick clicks cannot run two `git commit`s over the same index.
+
+The mock has no Goals screen, so `template.dc.html` carries only the mount node `#fd-goals-root` and
+`public/v2/screens/goals.js` draws the whole screen in plain DOM (createElement/textContent only — a
+dictated direction must never be parsed as markup). Nothing polls: it loads on entering the screen and
+on Refresh, because the jail changes when the goalkeeper commits.
