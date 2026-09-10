@@ -31,6 +31,32 @@ directly, without subagents, as explicitly required by the Codex launch override
 
 Signed: Ysolde
 
+### PENDING-ACCEPTANCE — operator gate (2026-09-10T19:22:44Z)
+
+Title: `[Ysolde · backend-developer] rule on baseline exceptions for notify Acceptance 1`
+
+Labels: `operator:gate`, `agent:ysolde`, `agent:agent-ysolde`,
+`project:remote-system`, `subproject:fleetdeck-notify`, `session:cli-worker`.
+Linear Project: `remote-system`. Intended status: open, blocking goal acceptance.
+Unfiled because Linear requires reauthentication.
+
+Concrete result: M1–M4 are pushed, all 39 focused tests pass, and the full suite
+has 704 passes plus two failures reproduced on base `34287bf`. The fixture pretest
+also fails unchanged. All receipts and reproductions are in `REPORT.md` and
+`verification.md`; repair issues are recorded above/below in this ledger.
+
+Requested ruling: accept these documented baseline exceptions for Acceptance 1,
+or hold goal completion until their owning lanes fix them. The worker's asynchronous
+question is pending; no exception is assumed. This approval is needed because the
+goal requires suite success while its scope rules send unrelated repairs to pending
+issues. M1–M4 delivery is concrete and complete; full-goal acceptance remains held.
+
+Final implementation report: `docs/goals/notify-seat-aliases/REPORT.md`, signed Ysolde.
+It includes exact live-Mac join and CLI send commands, with expected title resolution,
+delivery and ACK responses for Acceptance 2. No live-Mac outcome is claimed.
+
+Signed: Ysolde
+
 ### PENDING-M3 — completion comment (2026-09-10T19:21:00Z)
 
 Implemented the complete fixture matrix in `test/notify.test.js` and recorded
@@ -62,7 +88,8 @@ fence and notify fallback code. No unresolved findings. This milestone changes d
 only, with no migration, fencing change or per-project implementation. Linear retry
 still requires reauthentication. The decision itself remains open for the operator;
 authoring the note completes M4's worker deliverable.
-Pushed SHA will be recorded after push in the final ledger/report update.
+Pushed SHA: `d863502bdde3d1dddf4dc12a1a23fef6a0cf3dc7`. A fresh broker-authenticated
+`git ls-remote` matched the full SHA after push.
 
 Signed: Ysolde
 
