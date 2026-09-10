@@ -1451,6 +1451,10 @@ test('creditsWrite — a read that works clears the hold, and a stale one is dro
   m.creditsWrite(m.machinesCredits(throttled(now, 'usage call refused with HTTP 429, pausing 3600s'), 'ROG Strix', new Map(), false));
   assert.ok(storedRow(m, 'borrow@example.invalid').hold);
 
+  // The mac re-reports the same desktop sample a minute later: not a live read, so the
+  // hold rides along with the rewritten row.
+  m.creditsWrite([desktopAt(now + 60, 600)]);
+  assert.ok(storedRow(m, 'borrow@example.invalid').hold, 'a re-sample wiped the hold');
   // The next sweep reads live: the winning row is the fresh payload, which carries no hold.
   m.creditsWrite([{ ...zeroOauth(now), windows: { five_hour: { pct: 12, resets_at: null } } }]);
   assert.equal(storedRow(m, 'borrow@example.invalid').hold, undefined);

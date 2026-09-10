@@ -1593,7 +1593,12 @@ function creditsWrite(rows) {
     const seen = [];
     for (const c of groups.get(k))
       if (!seen.some((s) => s.host === c.host && s.source === c.source)) seen.push({ host: c.host, source: c.source });
-    const hold = held && r.state === 'ok' ? { hold: holdOf(held) } : {};
+    // A hold rides with the row until a live read of this account answers: a row whose
+    // numbers carry their own date (a desktop sample, a rollout) is not that read, and the
+    // mac re-reports its sample every minute, so without this the hold lasted a minute.
+    const live = r.state === 'ok' && dataTs(r) == null;
+    const carried = !held && !live && stored && stored.hold ? stored.hold : null;
+    const hold = held && r.state === 'ok' ? { hold: holdOf(held) } : carried ? { hold: carried } : {};
     creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify({ ...r, seen, ...hold }), r.updated_at);
     if (r.email && r.org) creditsDropId.run(r.kind, 'org:' + r.org);
     written++;
