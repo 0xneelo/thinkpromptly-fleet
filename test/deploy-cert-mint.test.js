@@ -45,6 +45,37 @@ test('reject invalid profiles, principals, TTLs and conflicting options before w
 test('legacy explicit principals retain 1h/4h/8h cap', () => fixture(dir => {
   for (const ttl of ['1h', '4h', '8h']) assert.equal(run(dir, ['-n', 'root,vibe', '-t', ttl, '--dry-run']).status, 0);
 }));
+test('each profile previews its own current link; Legacy includes every transition login', () => fixture(dir => {
+  for(const profile of ['legacy','daily','admin']) {
+    const r=run(dir,['--'+profile,'--dry-run']);assert.equal(r.status,0,r.stderr);
+    assert.match(r.stdout,new RegExp('current_link=current'+(profile==='legacy'?'':'-'+profile)+'\\n'));
+    if(profile==='legacy') assert.match(r.stdout,/principals=root,vibe,misterisley,tabor/);
+  }
+  const aliases=fs.readFileSync('deploy-keys/ssh-config.roles.example','utf8');
+  assert.match(aliases,/Host vps-deploy ob-deploy ivybox-deploy gb-deploy rs-deploy\n    IdentityFile .*current-daily/);
+  assert.match(aliases,/Host vps-admin ob-admin ivybox-admin gb-admin rs-admin\n    IdentityFile .*current-admin/);
+  assert.doesNotMatch(aliases,/deploy-certs\/current\//);
+}));
+test('public CA snapshot is unchanged if the source changes after classification; all keygen/signing calls mocked', () => fixture(dir => {
+  const bin=path.join(dir,'bin');fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin,'ssh-keygen'),`#!/bin/sh
+case "$1" in
+  -lf) cat > "$SNAPSHOT_READ"; printf '%s\\n' "$REPLACEMENT_PUB" > "$CA_PUB"; echo '256 SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0 fixture';;
+  -t) : ;; # no credential generation or file output
+  -Lf) echo 'Valid: mocked metadata only';;
+  *) exit 99;;
+esac
+`,{mode:0o700});
+  const signer=path.join(dir,'signer-mock.sh');
+  fs.writeFileSync(signer,'#!/bin/sh\nset -eu\ncmp "$SSH_CA_PUBLIC_SNAPSHOT" "$SNAPSHOT_READ"\nstat -c %a "$SSH_CA_PUBLIC_SNAPSHOT" > "$SNAPSHOT_MODE"\nprintf "%s\\n" "$SSH_CA_PUBLIC_SNAPSHOT" > "$SNAPSHOT_PATH"\n',{mode:0o700});
+  const env={PATH:bin+':'+process.env.PATH,SSH_CA_TEST_MODE:'1',SSH_CA_TEST_SIGNER:signer,
+    REPLACEMENT_PUB:other,SNAPSHOT_READ:path.join(dir,'classified.pub'),SNAPSHOT_MODE:path.join(dir,'mode.txt'),SNAPSHOT_PATH:path.join(dir,'path.txt')};
+  const r=run(dir,['--daily','-o',path.join(dir,'mock-output')],env);assert.equal(r.status,0,r.stderr);
+  assert.equal(fs.readFileSync(path.join(dir,'ca.pub'),'utf8'),other+'\n');
+  assert.equal(fs.readFileSync(env.SNAPSHOT_MODE,'utf8').trim(),'600');
+  assert.equal(fs.existsSync(fs.readFileSync(env.SNAPSHOT_PATH,'utf8').trim()),false,'public snapshot cleaned');
+  assert.deepEqual(fs.readdirSync(path.join(dir,'mock-output')),[],'no key or certificate was generated');
+}));
 // Explicit operator opt-in only: this test generates and signs disposable credentials.
 // Never enabled by npm test or by a goal that prohibits minting.
 test('isolated file signer: ssh-keygen -L proves real principals, validity, Key ID and extensions', { skip: process.env.SSH_CA_ALLOW_TEST_MINT !== '1' }, () => fixture(dir => {

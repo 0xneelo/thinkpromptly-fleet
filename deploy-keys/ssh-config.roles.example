@@ -4,9 +4,15 @@
 Host vps-deploy vps-admin ob-deploy ob-admin ivybox-deploy ivybox-admin gb-deploy gb-admin rs-deploy rs-admin
     IdentitiesOnly yes
     IdentityAgent none
-    IdentityFile ~/.ssh/deploy-certs/current/deployer
-    CertificateFile ~/.ssh/deploy-certs/current/deployer-cert.pub
     ForwardAgent no
+
+Host vps-deploy ob-deploy ivybox-deploy gb-deploy rs-deploy
+    IdentityFile ~/.ssh/deploy-certs/current-daily/deployer
+    CertificateFile ~/.ssh/deploy-certs/current-daily/deployer-cert.pub
+
+Host vps-admin ob-admin ivybox-admin gb-admin rs-admin
+    IdentityFile ~/.ssh/deploy-certs/current-admin/deployer
+    CertificateFile ~/.ssh/deploy-certs/current-admin/deployer-cert.pub
 
 Host vps-deploy
     HostName 138.199.198.246
