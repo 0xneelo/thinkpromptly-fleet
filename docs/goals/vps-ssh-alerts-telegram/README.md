@@ -98,3 +98,9 @@ Roll hook + summary + timer to onboarding-box and ivy-box with the same env cont
   ```
 
   Expect `2 /etc/ssh-alert.env` and `root 600`. (`sed -n` with `\|` is GNU/BSD-portable here because macOS sed accepts `\|` inside `\( \)` groups only with `-E`; if it prints nothing, use `sed -E -n 's/^MEGAN_(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID)=/\1=/p'`.)
+
+## Result 2026-09-10 ~18:54Z — live
+
+- `/etc/ssh-alert.env` written by seat 20 on the operator's direct instruction ("test the alerts"), the lowcap seat 36 being held mid-turn; seat 36 informed, its queued write superseded. 2 lines, root 600.
+- `ssh-daily-summary` rc 0, `pinned-message-id=4`. `ssh-login-alert` rc 0 for 192.0.2.99, test IP removed, known-ips 35 lines.
+- Both lowcap sessions reported to. Remaining: operator confirms the two messages arrived in the chat, then G3 → done.
