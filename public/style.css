@@ -418,6 +418,53 @@ textarea { resize: vertical; min-height: 110px; }
   to { background: transparent; }
 }
 
+/* mint popup — every phase live, including the long wait on the 1Password prompt.
+   Only [open] carries display, or the UA's `dialog:not([open]) { display: none }`
+   would lose to it and the dialog would sit on the page while closed. */
+#mint-dialog {
+  width: min(560px, 92vw);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+}
+#mint-dialog[open] { display: flex; flex-direction: column; gap: 12px; }
+#mint-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+#mint-dialog h2 { margin: 0; font: 16px var(--serif); font-weight: 400; color: var(--text-strong); }
+.elapsed { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+.steps { display: flex; flex-direction: column; gap: 8px; }
+.step { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); }
+.step-dot {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
+}
+.step.active { color: var(--text-strong); }
+.step.active .step-dot {
+  border-color: var(--coral);
+  background: rgba(217, 119, 87, 0.25);
+  animation: step-pulse 1.2s ease-in-out infinite;
+}
+.step.done { color: var(--text); }
+.step.done .step-dot { border-color: #22c55e; color: #22c55e; }
+.step.failed { color: #f0836b; }
+.step.failed .step-dot { border-color: #ef4444; color: #ef4444; }
+/* the one step waiting on a human gets the loudest treatment */
+.step.sign.active { color: var(--coral); font-weight: 500; }
+@keyframes step-pulse {
+  50% { opacity: 0.3; }
+}
+.mint-result { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
+.dialog-actions { justify-content: flex-end; }
+
 /* credits page — one .acct per account, same divider rhythm as .cert */
 .acct {
   display: flex;

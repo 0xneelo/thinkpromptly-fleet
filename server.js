@@ -807,16 +807,32 @@ const MINT_TIMEOUT = 120000;
 // detached puts the script in its own process group, so the timeout kill (-pid) also takes
 // down the ssh-keygen still blocked on the 1Password prompt. execFile's own timeout kills
 // only the script, leaving that child free to mint a cert after we already answered 502.
-function mint(ttl, principals) {
+// onEvent, when given, turns on the script's stderr progress markers and gets one
+// {phase} per step — the popup needs them live, above all during the 1Password wait.
+function mint(ttl, principals, onEvent) {
   return new Promise((resolve) => {
     const child = spawn(MINT_SH, ['-t', ttl, '-n', principals], {
       detached: true,
-      env: { ...process.env, SSH_AUTH_SOCK: OP_AGENT_SOCK },
+      // Always overridden — an ambient MINT_PROGRESS on the server must not turn
+      // markers on for the legacy JSON route.
+      env: { ...process.env, SSH_AUTH_SOCK: OP_AGENT_SOCK, MINT_PROGRESS: onEvent ? '1' : '' },
     });
     let stdout = '';
     let stderr = '';
+    let valid = null;
+    let buf = ''; // a chunk can cut a marker line in half, so hold the tail back
+    const stderrLine = (l) => {
+      // Markers never belong in the error text, listener or not.
+      if (l.startsWith('::phase ')) return onEvent && onEvent({ phase: l.slice(8).trim() });
+      if (/^\s*Valid:/.test(l)) valid = l.trim();
+      stderr += l + '\n';
+    };
     child.stdout.on('data', (c) => (stdout += c));
-    child.stderr.on('data', (c) => (stderr += c));
+    child.stderr.on('data', (c) => {
+      const lines = (buf + c).split('\n');
+      buf = lines.pop();
+      for (const l of lines) stderrLine(l);
+    });
     const timer = setTimeout(() => {
       try {
         process.kill(-child.pid, 'SIGKILL');
@@ -828,7 +844,9 @@ function mint(ttl, principals) {
     // The script's own "1Password is probably locked" text must reach the UI verbatim.
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (code === 0) return resolve({ code: 200, body: { ok: true, outdir: stdout.trim().split('\n').pop() } });
+      if (buf) stderrLine(buf);
+      if (code === 0)
+        return resolve({ code: 200, body: { ok: true, outdir: stdout.trim().split('\n').pop(), valid } });
       resolve({ code: 502, body: { ok: false, error: stderr.trim() || 'mint failed (exit ' + code + ')' } });
     });
     child.on('error', (e) => {
@@ -1152,7 +1170,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/sessions') return json(res, await sessions());
     if (p === '/api/health') return json(res, await health());
     if (p === '/api/sshkeys' && req.method === 'GET') return json(res, await sshkeys());
-    if (p === '/api/sshkeys/mint' || p === '/api/sshkeys/delete') {
+    if (p === '/api/sshkeys/mint' || p === '/api/sshkeys/mint/stream' || p === '/api/sshkeys/delete') {
       if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
       // These sign keys and rm -rf, so the Origin check fails closed: a browser always
       // sends Origin on POST, and a curl POST without -H origin is meant to be rejected.
@@ -1166,6 +1184,19 @@ const server = http.createServer(async (req, res) => {
       }
       if (!TTL_MS[b.ttl] || typeof b.principals !== 'string' || !SAFE_PRINCIPALS.test(b.principals))
         return json(res, { ok: false, error: 'ttl must be 1h, 4h or 8h; principals must be names like root or root,vibe' }, 400);
+      if (p === '/api/sshkeys/mint/stream') {
+        // NDJSON, one line per phase as it happens. A closed popup must never abort a
+        // mint, so the child is left alone on disconnect — MINT_TIMEOUT still bounds it.
+        res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
+        res.on('error', () => {}); // a vanished reader is not a server error
+        const write = (o) => {
+          if (!res.destroyed) res.write(JSON.stringify(o) + '\n');
+        };
+        write({ phase: 'start' });
+        const r = await mint(b.ttl, b.principals, write);
+        write({ phase: r.body.ok ? 'done' : 'error', ...r.body });
+        return res.end();
+      }
       const r = await mint(b.ttl, b.principals);
       return json(res, r.body, r.code);
     }
@@ -1208,6 +1239,9 @@ const server = http.createServer(async (req, res) => {
       return json(res, r.body, r.code);
     }
   } catch (e) {
+    // The NDJSON stream has already sent its 200 — a second writeHead would throw
+    // inside this very catch, so close the stream instead of answering 500.
+    if (res.headersSent) return res.end();
     return send(res, 500, 'text/plain', String(e.message));
   }
   if (VENDOR[p]) return sendFile(res, require.resolve(VENDOR[p]));

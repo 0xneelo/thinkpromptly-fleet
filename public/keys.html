@@ -51,6 +51,18 @@
         <div id="pubkeys"></div>
       </section>
     </main>
+    <dialog id="mint-dialog">
+      <div class="row">
+        <h2>Minting a cert</h2>
+        <span id="mint-elapsed" class="mono elapsed">0:00</span>
+      </div>
+      <div id="mint-steps" class="steps"></div>
+      <div id="mint-result" class="mint-result" hidden></div>
+      <div id="mint-dialog-error" class="notice" hidden></div>
+      <div class="row dialog-actions">
+        <button id="mint-close" class="ghost">Close</button>
+      </div>
+    </dialog>
     <script src="/keys.js"></script>
   </body>
 </html>

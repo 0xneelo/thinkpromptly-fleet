@@ -44,6 +44,22 @@ function left(epoch) {
   return h ? h + ':' + pad(m) : pad(m) + ':' + pad(s % 60);
 }
 
+function copyLine(text) {
+  const line = el('div', 'copyline');
+  const code = el('code', null, text);
+  const copy = el('button', 'ghost', 'Copy');
+  copy.onclick = () =>
+    navigator.clipboard.writeText(code.textContent).then(
+      () => {
+        copy.textContent = 'Copied';
+        setTimeout(() => (copy.textContent = 'Copy'), 1500);
+      },
+      () => {}
+    );
+  line.append(code, copy);
+  return line;
+}
+
 function certCard(c) {
   const live = !!c.validToEpoch && c.validToEpoch > Date.now();
   const card = el('div', 'cert' + (c.dir === flashDir ? ' flash' : ''));
@@ -73,21 +89,7 @@ function certCard(c) {
   };
   head.append(del);
   card.append(head);
-  if (live) {
-    const line = el('div', 'copyline');
-    const code = el('code', null, sshOpts(c.dir));
-    const copy = el('button', 'ghost', 'Copy');
-    copy.onclick = () =>
-      navigator.clipboard.writeText(code.textContent).then(
-        () => {
-          copy.textContent = 'Copied';
-          setTimeout(() => (copy.textContent = 'Copy'), 1500);
-        },
-        () => {}
-      );
-    line.append(code, copy);
-    card.append(line);
-  }
+  if (live) card.append(copyLine(sshOpts(c.dir)));
   return card;
 }
 
@@ -193,6 +195,80 @@ for (const p of PRINCIPALS) {
   principalsEl.append(b);
 }
 
+// --- Mint popup: the script's stderr `::phase` markers, live, one row each ---
+// Most of a mint is the `signing` step, waiting on a human at the 1Password prompt.
+const MINT_STEPS = [
+  ['start', 'Sending request to fleetdeck'],
+  ['agent-ok', '1Password SSH agent found'],
+  ['keygen', 'Generating ephemeral ed25519 key'],
+  ['signing', '1Password approval — click Allow on the Mac'],
+  ['signed', 'Certificate signed'],
+  ['linked', 'deploy alias updated'],
+];
+const dialogEl = document.getElementById('mint-dialog');
+const stepsEl = document.getElementById('mint-steps');
+const resultEl = document.getElementById('mint-result');
+const dialogErrEl = document.getElementById('mint-dialog-error');
+const elapsedEl = document.getElementById('mint-elapsed');
+let stepEls = [];
+let activeIdx = 0;
+let mintTimer = null;
+let minting = false;
+
+// idx = the step in flight; everything above it is finished by definition, so a
+// marker lost to a partial read never leaves an earlier step stuck on the spinner.
+function markSteps(idx, failed) {
+  stepEls.forEach((s, j) => {
+    const state = j < idx ? 'done' : j === idx ? (failed ? 'failed' : 'active') : 'pending';
+    s.className = 'step ' + state + (MINT_STEPS[j][0] === 'signing' ? ' sign' : '');
+    s.firstChild.textContent = state === 'done' ? '✓' : state === 'failed' ? '✗' : '';
+  });
+}
+
+function openMintDialog() {
+  resultEl.replaceChildren();
+  resultEl.hidden = true;
+  dialogErrEl.hidden = true;
+  stepEls = MINT_STEPS.map(([, label]) => {
+    const s = el('div', 'step');
+    s.append(el('span', 'step-dot'), el('span', null, label));
+    return s;
+  });
+  stepsEl.replaceChildren(...stepEls);
+  markSteps((activeIdx = 0));
+  const t0 = Date.now();
+  elapsedEl.textContent = '0:00';
+  mintTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    elapsedEl.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }, 1000);
+  dialogEl.showModal();
+}
+
+// Closing the dialog does not cancel the mint, so these writes may land on a hidden
+// dialog — harmless, and the cert list still refreshes when the stream ends.
+function endMint(ev) {
+  if (!minting) return;
+  minting = false;
+  clearInterval(mintTimer);
+  mintBtn.disabled = false;
+  mintBtn.textContent = 'Mint';
+  if (ev.ok) {
+    markSteps(MINT_STEPS.length);
+    if (ev.valid) resultEl.append(el('div', 'muted', ev.valid));
+    resultEl.append(copyLine(sshOpts(ev.outdir)));
+    resultEl.hidden = false;
+    flashDir = ev.outdir;
+  } else {
+    markSteps(activeIdx, true);
+    dialogErrEl.textContent = ev.error || 'mint failed';
+    dialogErrEl.hidden = false;
+  }
+  load();
+}
+
+document.getElementById('mint-close').onclick = () => dialogEl.close();
+
 mintBtn.onclick = async () => {
   errEl.hidden = true;
   const picked = PRINCIPALS.filter((p) => principals.has(p));
@@ -203,15 +279,50 @@ mintBtn.onclick = async () => {
   }
   mintBtn.disabled = true;
   mintBtn.textContent = 'Minting…';
-  const r = await post('/api/sshkeys/mint', { ttl, principals: picked.join(',') });
-  mintBtn.disabled = false;
-  mintBtn.textContent = 'Mint';
-  if (r.ok) flashDir = r.outdir;
-  else {
-    errEl.textContent = r.error || 'mint failed';
-    errEl.hidden = false;
+  minting = true;
+  openMintDialog();
+  try {
+    const res = await fetch('/api/sshkeys/mint/stream', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ttl, principals: picked.join(',') }),
+    });
+    if (!res.ok) {
+      // The Origin/validation rejections answer plain JSON before the stream starts.
+      const b = await res.json().catch(() => null);
+      throw new Error((b && b.error) || 'HTTP ' + res.status);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const l of lines) {
+        if (!l.trim()) continue;
+        const ev = JSON.parse(l);
+        if (ev.phase === 'done' || ev.phase === 'error') endMint(ev);
+        else {
+          const i = MINT_STEPS.findIndex(([n]) => n === ev.phase);
+          if (i >= 0) markSteps((activeIdx = i));
+        }
+      }
+    }
+    // A cut connection can drop the final newline; the tail may still hold the result.
+    const tail = (buf + dec.decode()).trim();
+    if (tail) {
+      try {
+        const ev = JSON.parse(tail);
+        if (ev.phase === 'done' || ev.phase === 'error') endMint(ev);
+      } catch {}
+    }
+    endMint({ ok: false, error: 'mint stream ended without a result' });
+  } catch (e) {
+    endMint({ ok: false, error: e.message || 'mint failed' });
   }
-  load();
 };
 
 const trainTtlsEl = document.getElementById('train-ttls');

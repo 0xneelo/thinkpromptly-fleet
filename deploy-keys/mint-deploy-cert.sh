@@ -15,6 +15,10 @@ usage() {
 	exit 2
 }
 
+# Progress markers for a live UI, opt-in via MINT_PROGRESS=1 and stderr-only —
+# stdout stays exactly the outdir, which CLI callers capture.
+phase() { [ "${MINT_PROGRESS:-}" = 1 ] && echo "::phase $1" >&2 || true; }
+
 while getopts ':t:n:o:h' opt; do
 	case "$opt" in
 	t) ttl=$OPTARG ;;
@@ -59,14 +63,19 @@ if [ ! -f "$CA_PUB" ]; then
 	exit 1
 fi
 
+phase agent-ok
+
 mkdir -p -m 700 "$outdir"
 
 # Stale files would make ssh-keygen prompt "Overwrite?" and hang a headless run.
 rm -f "$outdir/deployer" "$outdir/deployer.pub" "$outdir/deployer-cert.pub"
 
+phase keygen
 ssh-keygen -t ed25519 -f "$outdir/deployer" -N "" -C "deployer-cert" -q
 chmod 600 "$outdir/deployer"
 
+# The 1Password approval pops the instant ssh-keygen -Us reaches the agent.
+phase signing
 if ! ssh-keygen -Us "$CA_PUB" \
 	-I "deployer-$stamp" \
 	-n "$principals" \
@@ -77,10 +86,13 @@ if ! ssh-keygen -Us "$CA_PUB" \
 	exit 1
 fi
 
+phase signed
+
 login=${principals%%,*}
 
 # Stable pointer for the vps-deploy / gb-deploy ssh aliases in ~/.ssh/config.
 ln -sfn "$outdir" "$HOME/.ssh/deploy-certs/current"
+phase linked
 ssh-keygen -Lf "$outdir/deployer-cert.pub" | grep -E '^[[:space:]]*Valid:' >&2 || true
 echo >&2
 echo "ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i \"$outdir/deployer\" -o CertificateFile=\"$outdir/deployer-cert.pub\" $login@<host>" >&2

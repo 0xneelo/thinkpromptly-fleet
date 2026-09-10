@@ -70,6 +70,9 @@ ssh -o IdentitiesOnly=yes -o IdentityAgent=none \
 
 The script also prints a matching `~/.ssh/config` Host block.
 
+With `MINT_PROGRESS=1` the script also writes `::phase <agent-ok|keygen|signing|signed|linked>`
+marker lines to stderr, which fleetdeck's mint popup renders live. stdout is unchanged either way.
+
 Mint a token and push over https:
 
 ```
