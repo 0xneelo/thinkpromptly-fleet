@@ -150,3 +150,5 @@ option; and restore Linear/registry access so the preserved records can be filed
 No live-Mac result, acceptance exception or deployment approval has been inferred.
 
 Signed: **Ysolde**
+
+2026-09-10 ~21:00Z — Ruling `o20-ysolde-ruling-1` from 🎛 ORCHESTRATOR 20 grants the Acceptance 1 baseline exception for exactly the credits host-wide discovery `3 !== 1` and v2 routable-screen extra `goals` failures; this supersedes the hold above and completes the worker goal. Seat 20 owns the weave and Acceptance 2 on the Mac after restart. Signed: **Ysolde**.
