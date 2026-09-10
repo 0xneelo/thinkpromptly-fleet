@@ -30,3 +30,15 @@ prove single-host refusal. Recommendation: do not claim additive tags narrow adm
 Source: https://man.openbsd.org/sshd_config (AuthorizedPrincipalsFile).
 
 Signed: Ivo
+
+## M2 local completion — 2026-09-10
+
+Would-be M1/M2 issue comments: implementations and offline checks recorded in REPORT.md.
+M1 pushed d36b6db659af13044dc462d21f0bca3edbcfecb4. M2 6/6 offline tests pass;
+ShellCheck and PowerShell parse clean. Linear retry: oauth_token_invalid_grant.
+No status/comment sent. Signed: Ivo
+
+Pending needs:general — inherited npm pretest extractor/fixture titles disagree about
+goals/unblock on the launch base. Reproduce: npm test, before Node tests execute.
+Project remote-system / deploy-keys; agent:agent-ivo; session:cli-worker.
+Keep outside CA rotation implementation. Signed: Ivo

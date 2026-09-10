@@ -108,3 +108,15 @@ token=$(./mint-github-token.sh)
   written to one place: the helper file, mode 700, inside a mode-700 `mktemp` directory. The script
   prints that directory path. Delete it when the deploy finishes. If you forget, the token is dead
   server-side within 1h — GitHub enforces that expiry and it cannot be extended.
+
+## Rotation host inventory (repository preparation, not an applied-state claim)
+
+- rog-strix: `misterisley@100.124.95.60`, alias `rs-deploy`; owner seat 20 on operator word.
+- vibes-asus: sixth box; CA trust and rotation participation UNKNOWN. Owner decision pending.
+- Five scoped hosts: think-box, onboarding-app-box, ivy-box, german-box, rog-strix.
+- Windows trust is appended idempotently, globally above any `Match Group administrators`.
+  Validate sshd config, then restart using the generated SYSTEM task; keep rollback ready.
+- Original rog-strix inputs are archived verbatim in `docs/goals/ssh-ca-rotation/inputs/`.
+  The bootstrap public fingerprint `SHA256:JaxLCc5XTWKixVFdoHMCLQyzpsCTNTbMs6wO4hcvV/U`
+  identifies the operator's 1Password `wsl-machine` fallback, comment `misterislez-mac-to-wsl`.
+  It is not the CA and is not added or removed by the rotation scripts.
