@@ -4,6 +4,9 @@ import argparse
 import base64
 import hashlib
 import difflib
+import fcntl
+import glob
+from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -54,6 +57,64 @@ def directive(before, name, value):
     return name + ' ' + value + '\n' + '\n'.join(lines) + ('\n' if lines else '')
 
 
+def deploy_policy(config, include_root=Path('/etc/ssh')):
+    begin, end = '# BEGIN CA ROTATION DEPLOY', '# END CA ROTATION DEPLOY'
+    config = re.sub(re.escape(begin) + r'.*?' + re.escape(end) + r'\n?', '', config, flags=re.S)
+    # Global-only directives must stay outside Match. Reject an Include hiding an
+    # earlier Match instead of guessing which source addresses it will match.
+    def check_includes(text, seen):
+        import shlex
+        for line in text.splitlines():
+            fields = shlex.split(line, comments=True)
+            if not fields:
+                continue
+            if fields[0].lower() == 'match':
+                raise ValueError('Include before deploy policy contains Match; owner must move that Match into sshd_config')
+            if fields[0].lower() == 'include':
+                for pattern in fields[1:]:
+                    pattern = str(include_root / pattern) if not os.path.isabs(pattern) else pattern
+                    for name in glob.glob(pattern):
+                        path = Path(name).resolve()
+                        if path in seen:
+                            raise ValueError('recursive sshd Include')
+                        check_includes(path.read_text(), seen | {path})
+    first_match = re.search(r'^\s*Match\s+', config, re.I | re.M)
+    split = first_match.start() if first_match else len(config)
+    prefix, suffix = config[:split], config[split:]
+    check_includes(prefix, set())
+    block = begin + '\nMatch User deploy\n    PasswordAuthentication no\n    KbdInteractiveAuthentication no\nMatch all\n' + end + '\n'
+    return prefix.rstrip('\n') + '\n' + block + suffix
+
+
+def assert_transition_policy(before, after, mode):
+    def values(text, name):
+        return re.findall(r'^\s*' + name + r'\s+([^\n#]+)', text, re.I | re.M)
+    if '/etc/ssh/deploy_ca.pub' not in [v.strip() for v in values(after, 'TrustedUserCAKeys')]:
+        raise ValueError('managed trust directive is missing; complete S2 before principals apply')
+    if mode == 'trust' and values(before, 'AuthorizedPrincipalsFile') != values(after, 'AuthorizedPrincipalsFile'):
+        raise ValueError('trust transaction must preserve the existing principals directive')
+
+
+@contextmanager
+def host_lock(root, preview=False):
+    if preview:
+        yield
+        return
+    path = checked_path(root, 'etc/ssh/ca-rotation.lock')
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        stat = os.fstat(fd)
+        if stat.st_uid != 0 or stat.st_mode & 0o077:
+            raise ValueError('apply lock must be root-owned and mode 0600')
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError('another CA rotation apply/rollback holds the host lock') from None
+        yield
+    finally:
+        os.close(fd)
+
+
 def checked_path(root, relative):
     path = root / relative
     for item in [path, *path.parents]:
@@ -75,6 +136,9 @@ def diff(path, before, after):
 
 def atomic_write(path, text, mode=0o644):
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+    if path.parent.name == 'principals':
+        os.chmod(path.parent, 0o755)
+        mode = 0o644
     fd, name = tempfile.mkstemp(prefix='.ca-rotation-', dir=path.parent)
     try:
         with os.fdopen(fd, 'w') as stream:
@@ -92,7 +156,7 @@ def validate_and_reload(args, conf, desired=False):
         for user in (['deploy', 'root'] if args.mode == 'principals' else ['root']):
             effective = run([args.sshd, '-T', '-f', str(conf), '-C', 'user=' + user + ',host=localhost,addr=127.0.0.1'])
             values = dict(line.split(' ', 1) for line in effective.splitlines() if ' ' in line)
-            if args.mode == 'trust' and values.get('trustedusercakeys') != '/etc/ssh/deploy_ca.pub':
+            if values.get('trustedusercakeys') != '/etc/ssh/deploy_ca.pub':
                 raise ValueError('effective trust path differs; inspect Includes/Match before applying')
             if args.mode == 'principals':
                 if values.get('authorizedprincipalsfile') != '/etc/ssh/principals/%u' or values.get('authorizedprincipalscommand', 'none') != 'none':
@@ -122,6 +186,14 @@ def main():
     root = Path(args.root).absolute()
     if root != Path('/') and not args.dry_run:
         raise ValueError('--root is for offline dry-run only')
+    if not args.dry_run and os.geteuid() != 0:
+        raise ValueError('apply requires root; use --dry-run for review')
+    # Every read used to construct a transaction occurs under the same host lock.
+    with host_lock(root, args.dry_run):
+        plan_and_apply(args, root, parser)
+
+
+def plan_and_apply(args, root, parser):
     conf = checked_path(root, 'etc/ssh/sshd_config')
     ca = checked_path(root, 'etc/ssh/deploy_ca.pub')
     if not conf.is_file():
@@ -148,10 +220,7 @@ def main():
         templates = Path(__file__).resolve().parents[1] / 'principals' / args.box
         changes = {conf: directive(read(conf), 'AuthorizedPrincipalsFile', '/etc/ssh/principals/%u')}
         # Disable password/keyboard-interactive for deploy without weakening other accounts.
-        config = changes[conf]
-        begin, end = '# BEGIN CA ROTATION DEPLOY', '# END CA ROTATION DEPLOY'
-        config = re.sub(re.escape(begin) + r'.*?' + re.escape(end) + r'\n?', '', config, flags=re.S)
-        changes[conf] = config + begin + '\nMatch User deploy\n    PasswordAuthentication no\n    KbdInteractiveAuthentication no\nMatch all\n' + end + '\n'
+        changes[conf] = deploy_policy(changes[conf], root / 'etc/ssh')
         for user in ['deploy', 'root']:
             content = (templates / user).read_text()
             if args.retire_legacy and user != 'deploy':
@@ -200,11 +269,15 @@ def main():
         return
     if os.geteuid() != 0:
         raise ValueError('apply requires root; use --dry-run for review')
+    if not args.rollback:
+        assert_transition_policy(read(conf), changes.get(conf, read(conf)), args.mode)
     for policy_path in [conf.parent, conf.parent / 'principals', conf.parent / 'ca-rotation-backups', *changes]:
         if policy_path.exists() and (policy_path.stat().st_uid != 0 or policy_path.stat().st_mode & 0o022):
             raise ValueError('SSH policy must be root-owned and not group/world writable: ' + str(policy_path))
         if policy_path.exists() and policy_path.parent.name == 'principals' and policy_path.stat().st_mode & 0o777 != 0o644:
             raise ValueError('Existing principals file must be mode 0644: ' + str(policy_path))
+        if policy_path.exists() and policy_path.name == 'principals' and policy_path.stat().st_mode & 0o777 != 0o755:
+            raise ValueError('Existing principals directory must be mode 0755: ' + str(policy_path))
     if not changed and not create_deploy and not disable_deploy:
         print('Already current; no reload')
         return
@@ -213,7 +286,9 @@ def main():
 
 def apply_changes(changed, root, args, conf, ca, create_deploy=False, disable_deploy=False):
     # Validate the baseline before doing anything and keep a recovery snapshot for rollback itself.
-    run([args.sshd, '-t', '-f', str(conf)])
+    rollback = getattr(args, 'rollback', None)
+    if not rollback:
+        run([args.sshd, '-t', '-f', str(conf)])
     parent = checked_path(root, 'etc/ssh/ca-rotation-backups')
     parent.mkdir(mode=0o700, exist_ok=True)
     backup = Path(tempfile.mkdtemp(prefix='rotation-', dir=parent))
@@ -224,6 +299,10 @@ def apply_changes(changed, root, args, conf, ca, create_deploy=False, disable_de
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, dest)
     (backup / 'manifest.json').write_text(json.dumps(manifest))
+    if rollback:
+        candidate = backup / 'rollback-candidate.conf'
+        candidate.write_text(changed.get(conf, read(conf)))
+        run([args.sshd, '-t', '-f', str(candidate)])
     entry = 'apply-principals-linux.sh' if getattr(args, 'mode', 'trust') == 'principals' else 'apply-trust-linux.sh'
     print('ROLLBACK: sudo deploy-keys/' + entry + ' --rollback ' + str(backup) + ' --service ' + args.service, flush=True)
     created = False
@@ -244,16 +323,28 @@ def apply_changes(changed, root, args, conf, ca, create_deploy=False, disable_de
             run(['usermod', '--lock', '--expiredate', '1', '--shell', '/usr/sbin/nologin', 'deploy'])
         validate_and_reload(args, conf, desired=True)
     except Exception:
-        if created:
-            run(['usermod', '--lock', '--expiredate', '1', '--shell', '/usr/sbin/nologin', 'deploy'])
-            print('New deploy account locked; home retained for owner review')
+        errors = []
         for path in changed:
-            saved = backup / path.relative_to(root)
-            if saved.exists():
-                shutil.copy2(saved, path)
-            else:
-                path.unlink(missing_ok=True)
-        validate_and_reload(args, conf)
+            try:
+                saved = backup / path.relative_to(root)
+                if saved.exists():
+                    atomic_write(path, saved.read_text(), saved.stat().st_mode & 0o777)
+                else:
+                    path.unlink(missing_ok=True)
+            except Exception as error:
+                errors.append('restore ' + str(path) + ': ' + str(error))
+        if created:
+            try:
+                run(['usermod', '--lock', '--expiredate', '1', '--shell', '/usr/sbin/nologin', 'deploy'])
+                print('New deploy account locked; home retained for owner review')
+            except Exception as error:
+                errors.append('disable deploy: ' + str(error))
+        try:
+            validate_and_reload(args, conf)
+        except Exception as error:
+            errors.append('restore validation/reload: ' + str(error))
+        for error in errors:
+            print('RECOVERY ERROR: ' + error, file=sys.stderr)
         raise
     if ca.exists():
         print(run(['ssh-keygen', '-lf', str(ca), '-E', 'sha256']).strip())
