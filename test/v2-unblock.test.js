@@ -192,6 +192,16 @@ test('the list rows pass the closed toggle, then the repo, then the day', () => 
   assert.deepStrictEqual(ids({ showClosed: true, repo: 'remote-system', day: '2026-09-09' }), ['d']);
 });
 
+test('the rail groups the rows by repository, with the unnamed ones last', () => {
+  const shape = _.groupByRepo(SHEETS).map((g) => [g.repo, g.rows.map((s) => s.id)]);
+  assert.deepStrictEqual(shape, [
+    ['lowcap', ['b']], ['remote-system', ['a', 'd']], ['(no repository)', ['c']],
+  ]);
+  assert.strictEqual(_.NO_REPO, '(no repository)', 'the bucket is named like the selector option');
+  assert.deepStrictEqual(_.groupByRepo([]), [], 'no sheets is no groups');
+  assert.deepStrictEqual(_.groupByRepo(undefined), []);
+});
+
 test('the repo choice is remembered under its own key', () => {
   assert.strictEqual(_.REPO_KEY, 'adhd-unblock:repo');
 });
