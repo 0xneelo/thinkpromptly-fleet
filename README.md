@@ -113,6 +113,11 @@ POSTs require the bearer token.
 to the app store's `cliSessionId`. The title index refreshes lazily every five seconds;
 archived records and ambiguous duplicate keys supply no title. Missing or unreadable
 stores leave the existing CLI session names available.
+Seat aliases (`orchestrator <project>`, `global`, `design <N>`, `researcher <N>`,
+`coordinator <N>`) match app titles first (`resolvedVia: "title"`), then CLI names,
+then the existing orchestrator lease owner. Title matches address the stable
+`claude-desktop:id:<cliSessionId>` peer. Multiple matches still return 409 `ambiguous`;
+409 `seat_unaddressable` includes `consideredTitles` (titles only, no store paths or cwd).
 
 | Environment variable | Default | Purpose |
 |---|---|---|

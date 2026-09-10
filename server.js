@@ -3165,8 +3165,7 @@ async function messageRoute(req, res, p, url) {
 
 // --- notify: alias -> target, delivery with auto-retry, and the ACK the sender waits on.
 
-// Desktop seats have no address of their own: delivery lands in whichever chat is open.
-// A seat is a Claude Desktop session, found by the title the operator gave it (/rename
+// A seat is a Claude Desktop session, found by the app title the operator gave it (or /rename
 // `🎛 ORCHESTRATOR <N> · <project> · <topic>` and kin). Each row: alias pattern, the seat name the
 // receiver reads, the seats-table key, and the title test. Project spelling drifts
 // (lowcap-connector / lowcapconnector / lowcap), so it is compared with punctuation stripped.
@@ -3186,15 +3185,17 @@ const NOTIFY_SEATS = [
   [/^coordinator[\s-]+(\d+)$/i, (m) => '🧭 COORDINATOR ' + m[1], null, (m) => numbered('🧭 COORDINATOR', m[1])],
 ];
 
-// The orchestrator seat also has a lease row whose owner_name is the session's ListAgents name
-// even when it was never renamed — the fallback when no title matches.
-function seatSessions(seatKey, matches) {
-  const live = desktopSessions();
-  const titled = live.filter((s) => matches(s.name));
-  if (titled.length || seatKey !== 'orchestrator') return titled;
+// Prefer app titles across all live sessions before trying legacy CLI names. The
+// orchestrator lease owner remains the last fallback when neither title nor name matches.
+function seatSessions(seatKey, matches, live) {
+  const titled = live.filter((s) => s.title !== null && matches(s.title));
+  if (titled.length) return { sessions: titled, resolvedVia: 'title' };
+  const named = live.filter((s) => matches(s.name));
+  if (named.length || seatKey !== 'orchestrator') return { sessions: named, resolvedVia: 'seat' };
   const row = seatRow.get('orchestrator');
-  if (!row || row.epoch === null || row.suspect_at !== null || row.expires_at < msNow()) return [];
-  return live.filter((s) => s.name === row.owner_name);
+  const sessions = !row || row.epoch === null || row.suspect_at !== null || row.expires_at < msNow()
+    ? [] : live.filter((s) => s.name === row.owner_name);
+  return { sessions, resolvedVia: 'seat' };
 }
 
 // A worker is addressed by the human name the operator knows it by. Identity columns first
@@ -3241,21 +3242,26 @@ function resolveNotifyTarget(to) {
     const match = pattern.exec(alias);
     if (!match) continue;
     const seat = seatLabel(match);
-    const live = seatSessions(seatKey, matcher(match));
+    const considered = desktopSessions();
+    const { sessions: live, resolvedVia } = seatSessions(seatKey, matcher(match), considered);
     if (live.length > 1) {
       const error = new Error('ambiguous');
       error.code = 409;
       error.candidates = live.map((s) => ({ host: 'mac', name: s.name, worker: '', label: seat }));
       throw error;
     }
-    const session = live.length ? live[0].name : 'current';
+    // A derived CLI name can collide or change. Title matches have a joined stable ID,
+    // which the existing delivery path revalidates against the live process/socket.
+    const session = !live.length ? 'current'
+      : resolvedVia === 'title' ? 'id:' + live[0].sessionId : live[0].name;
     return {
       target: validateMessageTarget({ type: 'claude-desktop', session, label: seat }),
       resolvedTarget: 'claude-desktop:' + session,
-      resolvedVia: 'seat',
+      resolvedVia,
       seat,
       seatKey,
       unaddressable: !live.length,
+      consideredTitles: considered.map((s) => s.title).filter((title) => title !== null),
     };
   }
   if (alias.includes(':')) {
@@ -3338,7 +3344,7 @@ async function notifySend(b, remote) {
   // Hand-rolled callers send false as a string or a 0 as often as a boolean; all mean no ACK.
   const expectAck = !(b.expectAck === false || b.expectAck === 0 || b.expectAck === 'false');
   const openChat = b.openChat === true || b.openChat === 1 || b.openChat === 'true';
-  const { target, resolvedTarget, resolvedVia, seat, seatKey, unaddressable } = resolveNotifyTarget(b.to);
+  const { target, resolvedTarget, resolvedVia, seat, seatKey, unaddressable, consideredTitles } = resolveNotifyTarget(b.to);
   if (unaddressable && !openChat) {
     const row = seatKey ? seatRow.get(seatKey) : null;
     const error = new Error('seat_unaddressable');
@@ -3348,7 +3354,8 @@ async function notifySend(b, remote) {
     error.detail = {
       seat,
       owner: row && !remote ? { host: row.owner_host, name: row.owner_name, fenced: row.epoch !== null } : null,
-      hint: 'no live Claude Desktop session is titled for this seat (ListAgents name); start or /rename it, or open its chat and resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.',
+      consideredTitles,
+      hint: 'no live Claude Desktop session matches this seat by app title or CLI name; start or title it, or open its chat and resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.',
     };
     throw error;
   }

@@ -31,6 +31,24 @@ directly, without subagents, as explicitly required by the Codex launch override
 
 Signed: Ysolde
 
+### PENDING-M2 — completion comment (2026-09-10)
+
+Seat regexes now match app titles first, then legacy CLI names, then the existing
+orchestrator lease fallback. App-title matches use `resolvedVia: "title"` and the
+existing stable ID delivery path; name and lease matches retain `resolvedVia: "seat"`.
+Ambiguity still returns 409. Unaddressable replies include `consideredTitles`, with
+no cwd, store metadata, peer keys or new owner disclosure.
+
+Regression evidence: the derived-name/title fixture returned 409 before the resolver
+change; afterward it delivers through the fixture peer socket and persists
+`resolved_via: "title"`. Focused suite: **25 passed, 0 failed, 0 skipped**.
+Self-review: full M2 diff reviewed by Ysolde; stable ID addressing avoids derived-name
+collisions while preserving legacy targets. No unresolved findings. Linear retry
+still requires reauthentication; this is the pending issue completion comment.
+Pushed SHA will be recorded after push in the next ledger update and final report.
+
+Signed: Ysolde
+
 ### PENDING-M1 — completion comment (2026-09-10)
 
 Implemented `desktop-seat-titles.js`, the five-second lazy title cache, and joined
@@ -42,6 +60,8 @@ because the new module was absent; after implementation, the new five tests plus
 
 Self-review: full M1 diff reviewed by Ysolde; no unresolved findings. No dependency
 or listener/auth changes. Linear milestone retry still requires reauthentication.
-Pushed SHA will be recorded after push in the next ledger update and final report.
+Pushed SHA: `5240d81de69d3430107fee2567061019794672ec`. Fresh broker-authenticated
+`git ls-remote` matched the full SHA. Both push and verification used broker tokens
+only through `GH_TOKEN`; the credential helper was selected through per-command env.
 
 Signed: Ysolde

@@ -38,6 +38,7 @@ async function deck(t, rows = []) {
       FLEETDECK_BUS_TOKEN: TOKEN,
       CLAUDE_BRIDGE: NO_BRIDGE,
       CLAUDE_SESSIONS_DIR: sessions,
+      CLAUDE_DESKTOP_STORE_DIR: path.join(dir, 'desktop-store'),
       FLEET_SSH_BIN: path.join(__dirname, 'fake-ssh.js'),
       FLEET_FAKE_SSH_STATE: state,
     },
@@ -51,14 +52,14 @@ async function deck(t, rows = []) {
 // process or its parent — a socket, and the 0600 key file named by the socket's sha256), plus a
 // listener that records the frames a sender writes. Socket paths must stay under the 104-byte
 // unix limit, so they live in the OS tmpdir, not the test dir.
-async function desktopSession(s, name, pid = process.pid) {
+async function desktopSession(s, name, pid = process.pid, sessionId) {
   const sockDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fd-'));
   const sock = path.join(sockDir, 'p.sock');
   const frames = [];
   const server = net.createServer((c) => c.on('data', (d) => frames.push(d.toString())));
   await new Promise((r) => server.listen(sock, r));
   const dir = path.join(s.dir, 'sessions');
-  fs.writeFileSync(path.join(dir, pid + '.json'), JSON.stringify({ pid, name, messagingSocketPath: sock }));
+  fs.writeFileSync(path.join(dir, pid + '.json'), JSON.stringify({ pid, name, sessionId, messagingSocketPath: sock }));
   fs.writeFileSync(
     path.join(dir, pid + '.' + crypto.createHash('sha256').update(sock).digest('hex') + '.key'),
     JSON.stringify({ peerToken: 'peer-token-' + pid })
@@ -345,6 +346,26 @@ test('a seat alias delivers to the live desktop session titled for it, over its 
   assert.match(m.message.content, new RegExp('\\[notify ' + r.body.id + '\\] from FD-test\\nping'));
   assert.match(m.message.content, /\/api\/notify\/n-[0-9a-f]+\/ack/);
   assert.equal(rest, '');
+});
+
+test('an app title joins a derived CLI name and delivers via the stable session ID', async (t) => {
+  const s = await deck(t);
+  const cli = 'd4f52004-39d2-433f-abbd-e93f240f6f85';
+  const seat = await desktopSession(s, 'v3-page-bugs-derived', process.pid, cli);
+  t.after(seat.close);
+  const org = path.join(s.dir, 'desktop-store', 'account', 'org');
+  fs.mkdirSync(org, { recursive: true });
+  fs.writeFileSync(path.join(org, 'local_11111111-1111-4111-8111-111111111111.json'), JSON.stringify({
+    sessionId: 'local_11111111-1111-4111-8111-111111111111', cliSessionId: cli,
+    title: '🎛 ORCHESTRATOR 20 · remote-system · notify', isArchived: false,
+  }));
+  const r = await send(s, 'orchestrator remote-system');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.body.resolvedVia, 'title');
+  assert.equal(r.body.resolvedTarget, 'claude-desktop:id:' + cli);
+  assert.equal(r.body.status, 'delivered');
+  assert.match(seat.frames.join(''), /ping/);
+  assert.equal((await s.get('/api/notify/' + r.body.id)).body.resolved_via, 'title');
 });
 
 test('orchestrator <project> matches the seat title with spelling drift, else the lease owner', async (t) => {
