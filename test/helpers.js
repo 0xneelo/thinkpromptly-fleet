@@ -68,7 +68,9 @@ function load(env = {}, opts = {}) {
     FLEET_FENCE: '',
     FLEET_TAILNET_KEY: '',
     FLEET_NAME_CLOSE_SCRIPT: '',
-    FLEET_TAILNET_BIND: '127.0.0.2',
+    // 127.0.0.2 needs an lo0 alias (sudo). Without one, FLEET_TEST_TAILNET_BIND=::1 still runs the
+    // in-process lease/reaper files; the tailnet-header tests keep needing the alias.
+    FLEET_TAILNET_BIND: process.env.FLEET_TEST_TAILNET_BIND || '127.0.0.2',
     ...env,
   };
   for (const [k, v] of Object.entries(full))

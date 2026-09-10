@@ -349,24 +349,75 @@ test('M6 — a simulated partition reaps nothing and raises one alert', async (t
 test('M6 — more than K sessions crossing in one tick is refused', async (t) => {
   const i = instance({ env: { FLEET_CASCADE_K: '1' } });
   t.after(() => i.stop());
-  await armed(i, 'EDITH-T-C3');
-  await armed(i, 'EDITH-T-C4');
+  const dead = ['EDITH-T-C3', 'EDITH-T-C4', 'EDITH-T-C9'];
+  for (const n of dead) await armed(i, n);
   const live = await armed(i, 'EDITH-T-C5'); // keeps the host from tripping the whole-host rule
 
   await sleep(1100);
   await i.beat({ name: 'EDITH-T-C5', epoch: live });
-  await i.tick(); // C3/C4 suspect + warned, C5 still active
+  await i.tick(); // C3/C4/C9 suspect + warned, C5 still active
   await sleep(1100);
   await i.beat({ name: 'EDITH-T-C5', epoch: live });
   const before = i.alerts().length;
   await i.tick();
 
-  for (const n of ['EDITH-T-C3', 'EDITH-T-C4'])
-    assert.equal(i.row(HOST, n).lease_state, 'suspect', n + ' was reaped past K=1');
+  for (const n of dead) assert.equal(i.row(HOST, n).lease_state, 'suspect', n + ' was reaped past K=1');
   assert.ok(!i.ssh().some((c) => /kill-session/.test(c)));
   const raised = i.alerts().slice(before);
   assert.equal(raised.length, 1, 'expected exactly the K trip: ' + JSON.stringify(raised));
-  assert.match(raised[0].message, /2 sessions would be reaped in one tick \(K=1\)/);
+  assert.match(raised[0].message, /3 sessions would be reaped in one tick \(K=1\)/);
+
+  // One suspect window later the rows are a backlog, not a cascade: they drain K per tick,
+  // oldest lease first. The hold's lift is one alert, the drain's start one more, and the
+  // ticks in between alert nothing while /api/health keeps the live count.
+  await sleep(1100);
+  await i.beat({ name: 'EDITH-T-C5', epoch: live });
+  const beforeDrain = i.alerts().length;
+  await i.tick();
+  assert.equal(i.row(HOST, 'EDITH-T-C3').lease_state, 'reaped', 'the oldest row did not drain');
+  for (const n of ['EDITH-T-C4', 'EDITH-T-C9'])
+    assert.equal(i.row(HOST, n).lease_state, 'suspect', 'more than K drained in one tick');
+  const drain = i.alerts().slice(beforeDrain).map((a) => a.message);
+  assert.equal(drain.length, 2, JSON.stringify(drain));
+  assert.ok(drain.some((m) => /cascade guard cleared/.test(m)), JSON.stringify(drain));
+  assert.ok(drain.some((m) => /3 sessions past their appeal window — reaping 1 per tick/.test(m)), JSON.stringify(drain));
+
+  await i.beat({ name: 'EDITH-T-C5', epoch: live });
+  await i.tick();
+  assert.equal(i.row(HOST, 'EDITH-T-C4').lease_state, 'reaped');
+  assert.equal(i.alerts().length, beforeDrain + 2, 'a running drain alerted again: ' + JSON.stringify(i.alerts().slice(beforeDrain)));
+  assert.match((await i.get('/api/health')).body.cascade_holds.join(' '), /^2 sessions past their appeal window/);
+
+  await i.beat({ name: 'EDITH-T-C5', epoch: live });
+  await i.tick();
+  assert.equal(i.row(HOST, 'EDITH-T-C9').lease_state, 'reaped', 'the backlog did not finish draining');
+  assert.equal(i.alerts().slice(-1)[0].message, 'backlog drained', JSON.stringify(i.alerts().slice(-3)));
+  assert.equal(i.row(HOST, 'EDITH-T-C5').lease_state, 'active', 'the beating session was swept with the backlog');
+});
+
+test('M6 — K=0 reaps nothing, ever', async (t) => {
+  const i = instance({ env: { FLEET_CASCADE_K: '0' } });
+  t.after(() => i.stop());
+  await armed(i, 'EDITH-T-Z1');
+  const live = await armed(i, 'EDITH-T-Z2');
+
+  await sleep(1100);
+  await i.beat({ name: 'EDITH-T-Z2', epoch: live });
+  await i.tick();
+  for (let round = 0; round < 3; round++) {
+    await sleep(1100);
+    await i.beat({ name: 'EDITH-T-Z2', epoch: live });
+    await i.tick();
+  }
+  assert.equal(i.row(HOST, 'EDITH-T-Z1').lease_state, 'suspect', 'K=0 reaped a row');
+  assert.ok(!i.ssh().some((c) => /kill-session/.test(c)));
+  // The one-window hold lifts as it does for any K; with K=0 the row then just sits, and
+  // no drain notice promises reaps that a K of zero will never make.
+  const msgs = i.alerts().map((a) => a.message);
+  assert.deepEqual(msgs.filter((m) => !/cascade guard/.test(m)), [], JSON.stringify(msgs));
+  assert.equal(msgs.length, 2, JSON.stringify(msgs));
+  assert.match(msgs[0], /1 sessions would be reaped in one tick \(K=0\)/);
+  assert.equal(msgs[1], 'cascade guard cleared');
 });
 
 test('M6 — a whole host crossing at once is refused even under K', async (t) => {
@@ -388,6 +439,42 @@ test('M6 — a whole host crossing at once is refused even under K', async (t) =
   assert.equal(raised.length, 1, 'expected exactly the whole-host trip: ' + JSON.stringify(raised));
   assert.match(raised[0].message, /every session on this host/);
   assert.equal(raised[0].host, HOST);
+
+  // The hold is one alert however many ticks it lasts, and /api/health carries it meanwhile.
+  await sleep(1100);
+  await i.tick();
+  assert.equal(i.alerts().length, before + 1, 'a standing hold alerted again: ' + JSON.stringify(i.alerts().slice(before)));
+  assert.deepEqual((await i.get('/api/health')).body.cascade_holds, [raised[0].message]);
+
+  // One beating session on the host is what tells dead rows from a broken beat path: the
+  // hold lifts with one alert, and the two rows drain.
+  await armed(i, 'EDITH-T-C8');
+  await i.tick();
+  for (const n of ['EDITH-T-C6', 'EDITH-T-C7'])
+    assert.equal(i.row(HOST, n).lease_state, 'reaped', n + ' did not drain once the host had a beating session');
+  const lifted = i.alerts().slice(before + 1);
+  assert.equal(lifted.length, 1, JSON.stringify(lifted));
+  assert.equal(lifted[0].host, HOST);
+  assert.match(lifted[0].message, /cascade guard cleared/);
+  assert.deepEqual((await i.get('/api/health')).body.cascade_holds, []);
+});
+
+test('M6 — desktop rows are tombstoned outside the guard: there is no kill to protect against', async (t) => {
+  const i = instance({ env: { FLEET_CASCADE_K: '1' } });
+  t.after(() => i.stop());
+  const names = ['EDITH-T-M1', 'EDITH-T-M2', 'EDITH-T-M3'];
+  for (const n of names)
+    assert.equal((await i.post('/api/lease/claim', { host: 'mac', name: n })).status, 200);
+
+  await sleep(1100);
+  await i.tick(); // suspect + warned — a mac warn is the 410 body, so it lands at once
+  await sleep(1100);
+  const before = i.alerts().length;
+  await i.tick();
+
+  for (const n of names) assert.equal(i.row('mac', n).lease_state, 'reaped', n + ' was held or capped');
+  assert.deepEqual(i.alerts().slice(before), []);
+  assert.ok(!i.ssh().some((c) => /kill-session/.test(c)), 'a desktop row was sent a tmux kill');
 });
 
 test('M6 — under the guard\'s limits the reap proceeds', async (t) => {

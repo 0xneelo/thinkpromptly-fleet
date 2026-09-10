@@ -798,6 +798,7 @@ const REAPER = {
   graceUntilMono: monoNow() + SUSPECT_WINDOW_MS,
   graceReason: 'boot',
   alerts: [],
+  guard: new Map(), // M6 holds in force right now: key -> { state, message }
   killing: new Set(), // host\0name with a kill in flight — at most one per row (M4)
 };
 
@@ -806,6 +807,23 @@ function raiseAlert(host, message) {
   REAPER.alerts.push({ at: msNow(), host, message });
   if (REAPER.alerts.length > ALERT_MAX) REAPER.alerts.shift();
   console.error('[lifecycle-alert] ' + now() + ' ' + (host || 'fleet') + ' ' + message);
+}
+
+// An M6 alert marks a change of state, not a tick: a hold that lasts a day is one line when
+// it starts and one when it lifts, not 2,880. What is held right now stays in REAPER.guard,
+// so /api/health shows a hold long after its alert has left the ring buffer.
+// Keys: 'host:<name>', 'fleet', 'drain' — prefixed so a host can be called anything.
+function guardSync(next) {
+  for (const key of new Set([...REAPER.guard.keys(), ...next.keys()])) {
+    const prev = REAPER.guard.get(key);
+    const cur = next.get(key);
+    // The entry is always refreshed (its message carries a count); the alert fires on state.
+    if (cur) REAPER.guard.set(key, cur);
+    else REAPER.guard.delete(key);
+    if ((prev && prev.state) === (cur && cur.state)) continue;
+    const host = key.startsWith('host:') ? key.slice(5) : null;
+    raiseAlert(host, cur ? cur.message : key === 'drain' ? 'backlog drained' : 'cascade guard cleared');
+  }
 }
 
 const leasedRows = db.prepare(
@@ -1014,50 +1032,83 @@ async function reaperTick() {
     );
 
     // 3. Cascade guard (M6). A partition, a sleeping Mac or a dead box looks exactly like a
-    //    fleet that all died at once; when it does, the reaper does nothing and says so.
+    //    fleet that all died at once; when it does, the reaper holds the rows and says so —
+    //    once when the hold starts and once when it lifts (guardSync). Three holds:
+    //      - a host whose ssh poll failed: nothing on it moves (unreachable is not dead);
+    //      - a host none of whose leased sessions still beats: nothing on it moves. A wrong
+    //        bearer key or a dead box looks like this, and one beating session is what tells
+    //        a broken beat path from a row of dead sessions;
+    //      - more than K sessions that became reapable within the last suspect window: they
+    //        wait one more window. A row that has waited that long is a backlog, not a
+    //        cascade, and drains K per tick, oldest lease first. The hold used to be on the
+    //        backlog itself, so above K it never shrank: the guard tripped on every tick from
+    //        the day it shipped (2026-08-29) to 2026-09-10 without one reap.
+    //    `mac` rows are tombstoned, never killed, so no hold and no cap applies to them.
+    const settledCut = wall - 2 * SUSPECT_WINDOW_MS;
     const perHost = new Map();
-    for (const r of candidates) perHost.set(r.host, (perHost.get(r.host) || 0) + 1);
+    for (const r of candidates)
+      if (r.host !== 'mac') perHost.set(r.host, (perHost.get(r.host) || 0) + 1);
     const livePerHost = new Map();
     for (const r of rows)
       if (r.lease_state !== 'reaped') livePerHost.set(r.host, (livePerHost.get(r.host) || 0) + 1);
 
-    const trips = [];
-    if (candidates.length > CASCADE_K)
-      trips.push([null, candidates.length + ' sessions would be reaped in one tick (K=' + CASCADE_K + ')']);
+    const holds = new Map(); // host -> why
     for (const [host, n] of perHost) {
       const s = sample.get(host);
-      if (host !== 'mac' && (!s || !s.ok)) trips.push([host, 'ssh poll is failing']);
+      if (!s || !s.ok) holds.set(host, 'ssh poll is failing');
       // `n > 1` is deliberate. M6 guards against a fleet-wide mass kill after a partition; read
       // literally, "every session on one host" would also cover a host with exactly one leased
       // session, and that host's last session could then never be reaped at all.
-      if (n > 1 && n >= (livePerHost.get(host) || 0))
-        trips.push([host, 'every session on this host would be reaped in one tick']);
+      else if (n > 1 && n >= (livePerHost.get(host) || 0))
+        holds.set(host, 'every session on this host would be reaped in one tick');
     }
-    if (trips.length) {
-      for (const [host, why] of trips) raiseAlert(host, 'cascade guard: ' + why + ' — no reaps this tick');
-    } else {
-      for (const r of candidates) {
-        // 4. Second liveness sample (M5), taken now rather than read from the tick's opening
-        //    poll. Heartbeat and tmux are independent evidence; a session with a dead pinger but
-        //    a live terminal is a broken pinger, not a corpse.
-        const fresh = await sampleSession(r.host, r.name);
-        if (!fresh.ok) {
-          lifecycleLog('reap-deferred', r.host, r.name, r.epoch, 'host stopped answering mid-tick');
-          continue;
-        }
-        const at = msNow();
-        if (fresh.activeAt !== undefined && at - fresh.activeAt < SUSPECT_WINDOW_MS) {
-          pingerDeadStmt.run(r.host, r.name, r.epoch);
-          raiseAlert(r.host, r.name + ' has a dead pinger but an active tmux session — not killed');
-          lifecycleLog('pinger-dead', r.host, r.name, r.epoch, 'tmux active ' + (at - fresh.activeAt) + 'ms ago');
-          continue;
-        }
-        if (!reapStmt.run(at, 'lease expired', r.host, r.name, r.epoch, cut, at).changes) continue;
-        lifecycleLog('reaped', r.host, r.name, r.epoch, 'no heartbeat, no tmux activity');
-        // Kill straight away, so the gap between the evidence and the kill stays as small as the
-        // ssh round trip. The pass below then only picks up rows an earlier tick left behind.
-        await killReaped(leaseRow.get(r.host, r.name));
+    const recent = candidates.filter((r) => r.host !== 'mac' && r.warned_at > settledCut);
+    const fleetHold = recent.length > CASCADE_K;
+
+    const eligible = candidates
+      .filter((r) => r.host === 'mac' || (!holds.has(r.host) && (!fleetHold || r.warned_at <= settledCut)))
+      .sort((a, b) => a.expires_at - b.expires_at);
+    const boxEligible = eligible.filter((r) => r.host !== 'mac');
+    // K box rows per tick: each costs two ssh round trips, and a tick must finish inside the
+    // tick interval or the sweep stalls (reaperLoop skips a tick that overlaps).
+    const batch = eligible.filter((r) => r.host === 'mac').concat(boxEligible.slice(0, CASCADE_K));
+
+    const next = new Map();
+    for (const [host, why] of holds)
+      next.set('host:' + host, { state: why, message: 'cascade guard: ' + why + ' — no reaps on this host' });
+    if (fleetHold)
+      next.set('fleet', {
+        state: 'over-k',
+        message: 'cascade guard: ' + recent.length + ' sessions would be reaped in one tick (K=' + CASCADE_K + ') — held for one suspect window',
+      });
+    if (CASCADE_K > 0 && boxEligible.length > CASCADE_K)
+      next.set('drain', {
+        state: 'draining',
+        message: boxEligible.length + ' sessions past their appeal window — reaping ' + CASCADE_K + ' per tick, oldest first',
+      });
+    guardSync(next);
+
+    for (const r of batch) {
+      // 4. Second liveness sample (M5), taken now rather than read from the tick's opening
+      //    poll. Heartbeat and tmux are independent evidence; a session with a dead pinger but
+      //    a live terminal is a broken pinger, not a corpse.
+      const fresh = await sampleSession(r.host, r.name);
+      if (!fresh.ok) {
+        lifecycleLog('reap-deferred', r.host, r.name, r.epoch, 'host stopped answering mid-tick');
+        continue;
       }
+      const at = msNow();
+      if (fresh.activeAt !== undefined && at - fresh.activeAt < SUSPECT_WINDOW_MS) {
+        pingerDeadStmt.run(r.host, r.name, r.epoch);
+        raiseAlert(r.host, r.name + ' has a dead pinger but an active tmux session — not killed');
+        lifecycleLog('pinger-dead', r.host, r.name, r.epoch, 'tmux active ' + (at - fresh.activeAt) + 'ms ago');
+        continue;
+      }
+      if (!reapStmt.run(at, 'lease expired', r.host, r.name, r.epoch, cut, at).changes) continue;
+      lifecycleLog('reaped', r.host, r.name, r.epoch, 'no heartbeat, no tmux activity');
+      // Kill straight away, so the gap between the evidence and the kill stays as small as the
+      // ssh round trip. The pass below then only picks up rows an earlier tick left behind.
+      await killReaped(leaseRow.get(r.host, r.name));
     }
 
     // 5. Retries for rows an earlier tick fenced but never confirmed killed (M4). Bounded two
@@ -1143,6 +1194,7 @@ async function health() {
     fence_mode: FENCE_MODE,
     ttl_s: TTL_S,
     alerts: REAPER.alerts.slice(-10),
+    cascade_holds: [...REAPER.guard.values()].map((g) => g.message),
   };
 }
 

@@ -41,8 +41,11 @@ States `active → suspect → reaped`. Every transition one synchronous conditi
   🪦 only (M4).
 - Second liveness sample: re-check tmux `session_activity` immediately pre-kill; recent
   activity ⇒ no kill, flag `pinger_dead` (M5).
-- Cascade guard: >K sessions (default 3) or a whole host crossing suspect→reaped in one
-  tick, or that host's ssh poll failing ⇒ skip all reaps, one host-level alert (M6).
+- Cascade guard: >K sessions (default 3) becoming reapable within one suspect window, a
+  host with no beating session left, or a host whose ssh poll fails ⇒ those rows are held;
+  one alert when the hold starts, one when it lifts (M6). A held row past a second suspect
+  window is a backlog, not a cascade: it drains K per tick, oldest lease first. (Amended
+  2026-09-10 — the hold used to cover the backlog itself, so above K it never lifted.)
 - Boot + clock-jump grace: no reaps for one full suspect window after start; monotonic
   tick source; wall-clock jump > TTL re-arms the grace (M7).
 - Two-phase warn, durable: suspect sets `suspect_at`; bus warn sets `warned_at`; restart
