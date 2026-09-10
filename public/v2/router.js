@@ -16,6 +16,7 @@
     'accounts',
     'machines',
     'goals',
+    'docs',
     'unblock',
     'desktop',
   ]);
@@ -40,10 +41,12 @@
     const [screen, query] = hashParts(here && here.hash);
     const params = {};
     new URLSearchParams(query).forEach((v, k) => { params[k] = v; });
+    const known = SCREENS.includes(screen);
     return {
       view: VIEWS.includes(view) ? view : DEFAULT_VIEW,
-      screen: SCREENS.includes(screen) ? screen : DEFAULT_SCREEN,
-      params,
+      screen: known ? screen : DEFAULT_SCREEN,
+      // An unknown screen's params die with it: the default screen must not inherit a stranger's params.
+      params: known ? params : {},
     };
   }
 

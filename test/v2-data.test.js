@@ -875,7 +875,7 @@ test('a screen carries its own parameters after the hash', () => {
 });
 
 test('every screen in the pack is routable', () => {
-  const expected = ['windows', 'org', 'registry', 'bus', 'keys', 'accounts', 'machines', 'goals', 'unblock', 'desktop'];
+  const expected = ['windows', 'org', 'registry', 'bus', 'keys', 'accounts', 'machines', 'goals', 'docs', 'unblock', 'desktop'];
   assert.deepStrictEqual([...router.SCREENS], expected);
   assert.deepStrictEqual([...router.VIEWS], ['land', 'app', 'deck']);
   for (const screen of expected) {

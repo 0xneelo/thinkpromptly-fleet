@@ -34,41 +34,35 @@
 
   // ---- constants, verbatim from today's keys.js ---------------------------
   var TTLS = ['1h', '4h', '8h'];
-  // The chips name boxes, not unix logins. A cert principal has to match the
-  // box's login username, and a cert missing one silently drops that box off
-  // the fleet — which is what happened to rog-strix from 2026-09-06 on, once
-  // mints moved from the CLI script to this screen and the screen only knew
-  // root and vibe. Naming the boxes is what the operator is actually choosing;
-  // this table is the part they should not have to carry in their head.
-  //
-  // promptly, onboarding and ivy all log in as root, so ONE principal reaches
-  // all three: picking any of them necessarily grants the other two, and their
-  // titles say so. Scoping a cert to one of them would mean giving each box its
-  // own principal in its CA trust line — a change on the boxes, not here.
-  // Ruling O9 wanted this from hosts.json, which carries no user field — see
-  // improvised.md I-L7-01. machines.json has the ssh aliases but no user either.
-  var SHARED_ROOT = ' · root login, so this also reaches ';
+  // Optional Admin tags are additive: admin itself grants every approved host.
+  // vibes-asus stays visible as unknown and cannot contribute a principal.
+  var PROFILES = { legacy: { label: 'Legacy cert', ttl: '8h' }, daily: { label: 'Daily cert', ttl: '8h' }, admin: { label: 'Admin cert', ttl: '1h' } };
+  var LEGACY_PRINCIPALS = ['root','vibe','misterisley','tabor'];
   var BOXES = [
-    { id: 'rog-strix', user: 'misterisley', title: 'rog-strix (Windows) · logs in as misterisley' },
-    { id: 'vibes-asus', user: 'tabor', title: 'vibes-asus (Windows) · logs in as tabor' },
-    { id: 'german', user: 'vibe', title: 'german-box · logs in as vibe' },
-    { id: 'onboarding', user: 'root', title: 'onboarding-app-box' + SHARED_ROOT + 'promptly and ivy' },
-    { id: 'promptly', user: 'root', title: 'think-box' + SHARED_ROOT + 'onboarding and ivy' },
-    { id: 'ivy', user: 'root', title: 'ivy-box' + SHARED_ROOT + 'onboarding and promptly' },
+    { id: 'rog-strix', user: 'misterisley', tag: 'rog-only', title: 'rog-strix, adds rog-only; admin still reaches all five hosts' },
+    { id: 'vibes-asus', user: 'tabor', tag: null, title: 'vibes-asus: trust unknown, owner decision pending' },
+    { id: 'german', user: 'vibe', tag: 'german-only', title: 'german-box, adds german-only; admin still reaches all five hosts' },
+    { id: 'onboarding', user: 'root', tag: 'onboarding-only', title: 'onboarding-app-box, adds onboarding-only; admin still reaches all five hosts' },
+    { id: 'promptly', user: 'root', tag: 'promptly-only', title: 'think-box, adds promptly-only; admin still reaches all five hosts' },
+    { id: 'ivy', user: 'root', tag: 'ivy-only', title: 'ivy-box, adds ivy-only; admin still reaches all five hosts' },
   ];
   var BOX_IDS = BOXES.map(function (b) { return b.id; });
   var BOX_BY_ID = {};
-  BOXES.forEach(function (b) { BOX_BY_ID[b.id] = b; });
+  BOXES.forEach(function (b) { BOX_BY_ID[b.tag || b.id] = b; });
 
-  // What a set of chosen boxes actually mints: the logins behind them, deduped
-  // and in chip order. Three boxes collapsing to one `root` is the whole reason
-  // this is a function and not the chip list itself.
-  function principalsFor(chosen) {
-    var out = [];
-    BOXES.forEach(function (b) {
-      if (chosen[b.id] && out.indexOf(b.user) === -1) out.push(b.user);
-    });
-    return out;
+  function principalsFor(chosen, profile) {
+    if (profile === 'daily') return ['deploy'];
+    if (profile === 'admin') return ['admin'];
+    return LEGACY_PRINCIPALS.slice();
+  }
+  function legacyGuard(principals, policy) {
+    if (!policy || policy.error || !Array.isArray(policy.requiredLogins)) return (policy && policy.error) || 'Legacy mint unavailable until the fleet login policy is loaded.';
+    if (policy.requiredLogins.some(function (user) { return principals.indexOf(user) < 0; })) return 'Legacy mint would drop a login used by machines.json.';
+    return '';
+  }
+  function mintRequest(profile, chosen, ttl) {
+    profile = Object.prototype.hasOwnProperty.call(PROFILES, profile) ? profile : 'legacy';
+    return { profile: profile, ttl: profile === 'legacy' && TTLS.indexOf(ttl) >= 0 ? ttl : PROFILES[profile].ttl, extraTags: [] };
   }
   var KILL_CONFIRM = 'Kill this cert now? Agents using it lose access immediately.';
   var POLL_MS = 30000;
@@ -115,7 +109,7 @@
   // The pure half is exported for test/v2-keys.test.js, which runs in Node with
   // no DOM. Everything below the guard needs a document and never loads there.
   if (typeof module === 'object' && module.exports) {
-    module.exports = { left: left, pad: pad, sshOpts: sshOpts, unwrapError: unwrapError, httpBody: httpBody, TTLS: TTLS, BOXES: BOXES, BOX_IDS: BOX_IDS, principalsFor: principalsFor, KILL_CONFIRM: KILL_CONFIRM, POLL_MS: POLL_MS, TICK_MS: TICK_MS, COPIED_MS: COPIED_MS };
+    module.exports = { left: left, pad: pad, sshOpts: sshOpts, unwrapError: unwrapError, httpBody: httpBody, TTLS: TTLS, BOXES: BOXES, BOX_IDS: BOX_IDS, principalsFor: principalsFor, legacyGuard: legacyGuard, mintRequest: mintRequest, PROFILES: PROFILES, KILL_CONFIRM: KILL_CONFIRM, POLL_MS: POLL_MS, TICK_MS: TICK_MS, COPIED_MS: COPIED_MS };
   }
 
   // Fixture mode renders the mock verbatim. Register nothing, start no timers,
@@ -145,11 +139,12 @@
   // there when this file runs (DECK-84 cut-over). The FD.data guard at the foot
   // of the file stays: without it, a page missing the data layer would throw.
   // ---- module state -------------------------------------------------------
-  var state = { certs: [], keys: [] };
+  var state = { certs: [], keys: [], policy: null };
   var train = { active: false, expiresAt: null };
-  var ttl = '1h';
+  var profile = 'legacy';
+  var legacyTtl = '8h';
   var chosen = {};                  // box id -> selected, the chip state this screen reads
-  BOX_IDS.forEach(function (id) { chosen[id] = true; });
+
   var flashDir = null;   // the dir just minted — its card flashes once
   var mintError = '';
   var trainError = '';
@@ -178,22 +173,12 @@
     sync: function (next) {
       if (!next) return;
       ctx = next;
-      // The TTL and principal chips stay bound to logic.js — it owns their
-      // state and their selected styling. This module only reads the choice.
-      if (next.ttl) ttl = next.ttl;
-      // BEHAVIOUR §2: every box is selected by default — one cert serves the whole
-      // fleet, which is the only way rs-deploy and gb-deploy work off one mint.
-      // Live mode restores that default once, on the first render (improvised.md
-      // I-L7-03), so a mock seeding fewer chips cannot become the live default.
-      // setState re-renders and this runs again with them all set.
+      legacyTtl = TTLS.indexOf(next.legacyTtl) >= 0 ? next.legacyTtl : '8h';
+      profile = Object.prototype.hasOwnProperty.call(PROFILES, next.profile) ? next.profile : 'legacy';
       if (!seeded && next.logic && next.prin) {
         seeded = true;
-        if (!BOX_IDS.every(function (id) { return next.prin[id]; })) {
-          var all = {};
-          BOX_IDS.forEach(function (id) { all[id] = true; });
-          next.logic.setState({ prin: all });
-          return;
-        }
+        next.logic.setState({ prin: {} });
+        return;
       }
       if (next.prin) chosen = next.prin;
       // BEHAVIOUR §3/§6: the 30 s poll and the 1 s tick belong to this screen,
@@ -206,6 +191,7 @@
       else if (!onScreen && was) stop();
       if (onScreen) queueRepaint();
     },
+    boxes: BOXES,
     // Exposed for verify/l7 and test/v2-keys.test.js, as org.js does.
     start: start,
     stop: stop,
@@ -322,19 +308,41 @@
     // added to BOXES and not to logic.js's prinChips (2026-09-10); the label
     // join cannot shift, and test/v2-keys.test.js pins the two lists equal.
     btns.forEach(function (b) {
-      var box = BOX_BY_ID[b.textContent.trim()];
+      var label = b.textContent.trim();
+      if (label === 'Legacy cert' || label === 'Daily cert' || label === 'Admin cert') {
+        b.setAttribute('aria-pressed', String(label === PROFILES[profile].label));
+        b.disabled = minting;
+        return;
+      }
+      if (TTLS.indexOf(label) >= 0) {
+        b.setAttribute('aria-pressed', String(label === legacyTtl));
+        b.disabled = minting;
+        return;
+      }
+      var box = BOX_BY_ID[label];
       if (!box) return;
       b.title = box.title;
-      b.setAttribute('aria-pressed', String(!!chosen[box.id]));
+      b.hidden = true; // Additive Admin tags were removed from the UI after audit B-M5.
+      b.disabled = minting || !box.tag;
+      b.setAttribute('aria-pressed', String(!!box.tag && !!chosen[box.id]));
     });
+    kids(row).filter(function (n) { return n.tagName === 'SPAN'; }).forEach(function (n) { n.hidden = true; });
+    var hint = kids(card)[2];
+    var guard = profile === 'legacy' ? legacyGuard(principalsFor({}, 'legacy'), state.policy) : '';
+    if (hint) hint.textContent = profile === 'legacy'
+      ? legacyTtl + '. Current fleet logins: root, vibe, misterisley, tabor. Keeps the shared legacy current link. Default until every host completes S3.'
+      : profile === 'daily'
+      ? '8 hours. Deploy user on five approved hosts, PTY only. Approve in 1Password on the Mac.'
+      : '1 hour. Admin access on all five hosts. Use the documented tag-only CLI flow for one-host access. Approve in 1Password on the Mac.';
     var mintBtn = btns[btns.length - 1];
     if (mintBtn) {
-      mintBtn.textContent = minting ? 'Minting…' : 'Mint';
-      mintBtn.disabled = minting;
+      mintBtn.textContent = minting ? 'Minting…' : 'Mint ' + profile + ' cert';
+      mintBtn.disabled = minting || !!guard;
       mintBtn.onclick = mint;
     }
     dropNotices(card);
     if (mintError) card.appendChild(notice(mintError, ctx.t.bad));
+    else if (guard) card.appendChild(notice(guard, ctx.t.bad));
   }
 
   // §3 GitHub train — three states, countdown, start chips, End train.
@@ -501,7 +509,10 @@
     ]).then(function (r) {
       var s = r[0], tr = r[1];
       if (!s || typeof s !== 'object' || (!s.certs && !s.keys)) return fail();
-      state = { certs: rows(s.certs), keys: rows(s.keys) };
+      state = { certs: rows(s.certs), keys: rows(s.keys), policy: s.policy || null };
+      if (state.policy && ctx && ctx.logic && ctx.logic.state && !ctx.logic.state.sshProfile) {
+        ctx.logic.setState({ sshProfile: state.policy.defaultProfile === 'daily' ? 'daily' : 'legacy' });
+      }
       // The deck answers /api/ghtrain as JSON today, but a proxy that hands back
       // a plain-text 503 would otherwise lose the broker's own sentence. Keep it.
       train = tr && typeof tr === 'object' ? tr
@@ -524,11 +535,15 @@
   // ---- actions ------------------------------------------------------------
   function mint() {
     mintError = '';
-    var picked = principalsFor(chosen);
-    if (!picked.length) { mintError = 'pick at least one box'; paint(); return; }
+    if (minting) return;
+    if (profile === 'legacy') {
+      mintError = legacyGuard(principalsFor({}, 'legacy'), state.policy);
+      if (mintError) { paint(); return; }
+    }
+    var request = mintRequest(profile, chosen, legacyTtl);
     minting = true;
     paint();
-    post(function () { return FD.data.mintCert({ ttl: ttl, principals: picked.join(',') }); })
+    post(function () { return FD.data.mintCert(request); })
       .then(function (r) {
         minting = false;
         if (r.ok) {

@@ -126,3 +126,45 @@ makes (`PUT …/answers/:qid`, `…/send`, `…/close`) requires an allowed `Ori
 its own questions through the deck. All routes are loopback-only: every seat that posts is a Claude
 Desktop session on this Mac. The screen polls every 20 s while open, because sheets arrive while the
 operator is looking at the list.
+## 2026-09-10 · the `#docs` screen
+
+New screen `/app#docs` over `GET /api/docs`. It lists what the sessions themselves produce —
+artifacts, ELI5s, unblock sheets, session digests, reports, loose HTML and markdown — newest
+first, filterable by day, session, kind and text. The data source is the deck's own sqlite index,
+swept from the session exports, the session scratchpads and each repo's `docs/`: a sweep of the
+file system is far too slow to do per keystroke, so the index is the thing the screen queries and
+Refresh (`?refresh=1`) is the only way to make it sweep again.
+
+The server does the filtering, so every filter change is one fetch; the `days` and `kinds` counts
+in the response are counts over the UNFILTERED index, which is what keeps a chip's number honest
+while a filter is on.
+
+Files are served BY ID ONLY, through `/api/docs/open?id=<id>`, on the loopback listener — a path
+never reaches the URL. What can be stored is gated on the way in: a POST registers only a real
+`.html`/`.md` file, and never one under a hidden directory (`~/.ssh`, `.secrets`, `~/.claude/*`)
+unless a swept root owns it. No seat or box worker on the tailnet can reach the route at all. A row of kind `artifact` is already a URL and opens
+directly. Every link opens in a new tab with `rel=noopener`.
+
+The filters live on the hash (`#docs?session=…&day=…&kind=…&q=…`), so a filtered screen is a link
+the operator can copy, and `router.route()` now returns `{ view, screen, params }` with
+`navigate(screen, params)` writing them back. That is also how the Desktop sessions row icon
+arrives here: it deep-links `#docs?session=<CLI uuid>`, which is the one id both screens share.
+
+The mock has no Docs screen, so `template.dc.html` carries only the mount node `#fd-docs-root` and
+`public/v2/screens/docs.js` draws the whole screen in plain DOM (createElement/textContent only —
+a title comes from a file some session wrote and must never be parsed as markup). Nothing polls.
+
+`?source=` filters the same way, and a leading `-` negates it (`source=-scratchpad`), which is the
+screen's "No scratchpads" choice — the only filter that is remembered (`localStorage['fd-docs-source']`),
+and it is remembered by navigating once so the hash stays the single truth.
+
+`?project=` filters the same way and is not remembered: which repo the operator is looking at
+changes with the work. A scratchpad row's project is decoded from the encoded cwd; an exports row
+learns it from the folder under the root, except for the buckets every project shares
+(`eli5-explainers`, `unblock-sheets`), where only `goals/board-<repo>.html` and
+`summary/<stamp>-<repo>/…` still name one.
+
+Each row's Open-in-app icon POSTs an id to `/api/docs/open-app` and the deck runs `open -a <App>`:
+the app map (`FLEET_DOCS_APPS` over html/Artifact → Google Chrome, md → Cursor) is the server's, so
+no page ever names an executable, and the Origin check fails closed — unlike `POST /api/docs`, which
+a shell hook posts to with no Origin, this route launches a local application.

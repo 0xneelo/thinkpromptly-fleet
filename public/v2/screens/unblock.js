@@ -233,6 +233,28 @@
     });
   }
 
+  // The rail's group header, and the bucket a sheet that names no repository falls into.
+  var NO_REPO = '(no repository)';
+
+  // The rail groups by project the way the bus groups sessions: named repos first, in the
+  // selector's own order, and the sheets that name none last. Row order inside a group is the
+  // order it was handed, which is the API's newest-first.
+  function groupByRepo(sheets) {
+    var by = {};
+    var names = [];
+    (Array.isArray(sheets) ? sheets : []).forEach(function (s) {
+      var r = repoOf(s) || NO_REPO;
+      if (!by[r]) { by[r] = []; names.push(r); }
+      by[r].push(s);
+    });
+    names.sort(function (a, b) {
+      if (a === NO_REPO) return 1;
+      if (b === NO_REPO) return -1;
+      return a.localeCompare(b, undefined, { sensitivity: 'base' });
+    });
+    return names.map(function (r) { return { repo: r, rows: by[r] }; });
+  }
+
   // The sample the pixel gate renders: one open sheet, two questions, one of them answered and
   // not yet sent. Deterministic — no clock, no fetch.
   var FIXTURE_VIEW = {
@@ -283,8 +305,9 @@
     pendingIds: pendingIds, chipText: chipText, fmt: fmt, whenLine: whenLine, payloadText: payloadText,
     visibleSheets: visibleSheets, options: options,
     dayKey: dayKey, repoOf: repoOf, repoOptions: repoOptions, dayPages: dayPages, pickDay: pickDay,
-    dayLabel: dayLabel, dayOptions: dayOptions, filterSheets: filterSheets,
-    STANDARD: STANDARD, INLINE: INLINE, HIDE_KEY: HIDE_KEY, REPO_KEY: REPO_KEY, FIXTURE_VIEW: FIXTURE_VIEW,
+    dayLabel: dayLabel, dayOptions: dayOptions, filterSheets: filterSheets, groupByRepo: groupByRepo,
+    STANDARD: STANDARD, INLINE: INLINE, HIDE_KEY: HIDE_KEY, REPO_KEY: REPO_KEY, NO_REPO: NO_REPO,
+    FIXTURE_VIEW: FIXTURE_VIEW,
   };
 
   FD.screens.unblock = Object.assign(FD.screens.unblock || {}, { _: pure });
@@ -326,6 +349,8 @@
     // '' is every repo, '-' the sheets that name none. The day is not remembered: a new session
     // starts on the newest day there is.
     repo: '', day: '',
+    // Set by the card's own ResizeObserver, exactly as the bus sets busNarrow.
+    narrow: false,
   };
 
   try { state.hideAnswered = root.localStorage.getItem(HIDE_KEY) === '1'; } catch (e) { /* no storage */ }
@@ -374,8 +399,51 @@
   var MONO = "font-family:ui-monospace,'SF Mono',Menlo,monospace;";
   var ROW = 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;';
 
-  function sectionTitle(text) {
-    return el('span', 'font-size:13px;font-weight:600;color:' + tok().ink + ';', text);
+  // --- the two-pane card -------------------------------------------------------
+  // Token for token the Message bus's own layout (logic.js busGridStyle / railStyle /
+  // threadBodyStyle): a rail of sheets on the left, the open sheet on the right. Under 620px of
+  // CARD — not of window — the rail folds into a 160px strip above the pane, which is the rule
+  // the bus's busRef measures. tok() carries no lineSoft/navAct*, so the rail divider is t.line
+  // and the selected row is t.hoverBg behind it.
+  var NARROW_AT = 620;
+
+  function gridStyle() {
+    var t = tok();
+    var n = state.narrow;
+    return 'display:grid;min-width:0;overflow:hidden;min-height:' + (n ? '0' : '520px') +
+      ';height:' + (n ? 'auto' : 'calc(100vh - 146px)') +
+      ';grid-template-columns:' + (n ? 'minmax(0,1fr)' : 'minmax(200px,28%) minmax(0,1fr)') +
+      ';grid-template-rows:' + (n ? '160px auto' : 'minmax(0,1fr)') +
+      ';border-radius:12px;border:1px solid ' + t.line + ';background:' + t.panel +
+      ';box-shadow:' + t.panelShadow +
+      ';backdrop-filter:blur(28px) saturate(150%);-webkit-backdrop-filter:blur(28px) saturate(150%);';
+  }
+
+  function railStyle() {
+    var t = tok();
+    return 'display:flex;flex-direction:column;min-height:0;min-width:0;' +
+      (state.narrow ? 'border-bottom:1px solid ' + t.line + ';' : 'border-right:1px solid ' + t.line + ';');
+  }
+
+  function paneBodyStyle() {
+    var n = state.narrow;
+    return 'flex:1;min-height:' + (n ? '260px' : '0') + ';max-height:' + (n ? '60vh' : 'none') +
+      ';overflow-y:auto;padding:18px 18px 10px 18px;display:flex;flex-direction:column;gap:10px;';
+  }
+
+  var sizer = null;
+
+  // The card is rebuilt by every repaint, so the observer follows it rather than outliving it.
+  function measure(node) {
+    if (sizer) { sizer.disconnect(); sizer = null; }
+    if (typeof ResizeObserver !== 'function') return;
+    sizer = new ResizeObserver(function () {
+      var n = node.clientWidth < NARROW_AT;
+      if (n === state.narrow) return;
+      state.narrow = n;
+      paint();
+    });
+    sizer.observe(node);
   }
 
   // --- network -----------------------------------------------------------------
@@ -413,11 +481,17 @@
       .then(function () { state.loading = false; paint(); });
   }
 
+  // A rail click while the poll's re-read of the old sheet is still in flight: whichever read
+  // was asked for last wins, the other is dropped on arrival.
+  var gen = 0;
+
   function loadSheet(id, quiet) {
     if (isFixture() || !id) return Promise.resolve();
+    var my = ++gen;
     if (!quiet) state.loading = true;
     return ask('/api/unblock/' + encodeURIComponent(id))
       .then(function (r) {
+        if (my !== gen) return;
         if (r.status !== 200) throw fail(r, 'cannot read that sheet');
         state.id = id;
         state.sheet = (r.body && r.body.sheet) || null;
@@ -426,7 +500,7 @@
         publish();
       })
       .catch(function (e) { state.error = safeText(e && e.message) || 'cannot reach fleetdeck'; })
-      .then(function () { state.loading = false; paint(); });
+      .then(function () { if (my !== gen) return; state.loading = false; paint(); });
   }
 
   // One answer at a time: the response is the row the server wrote, timestamps and all, so the
@@ -438,8 +512,8 @@
         if (r.status !== 200) throw fail(r, 'the answer did not save');
         state.answers[qid] = r.body;
         state.error = '';
-        refreshList();
-        publish();
+        if (!quiet) paint(); else stampCard(qid);   // the click shows at once…
+        return refreshList().then(publish);         // …and the rail's n/N follows on its own read
       })
       .catch(function (e) { state.error = safeText(e && e.message) || 'the answer did not save'; })
       .then(function () { if (!quiet) paint(); else stampCard(qid); });
@@ -529,11 +603,12 @@
     box.appendChild(b);
   }
 
-  // The row under the title: one repo, one day. Neither touches the open sheet below — a deep
-  // link stays readable however the list is filtered.
-  function filterRow(opts, pages, day) {
+  // The rail head, in the bus's own head row: one repo, one day, then the two list controls.
+  // None of them touch the open sheet on the right — a deep link stays readable however the rail
+  // is filtered.
+  function railHead(opts, pages, day) {
     var t = tok();
-    var row = el('div', ROW);
+    var row = el('div', 'display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:12px 12px 6px 12px;');
 
     var pill = 'border-radius:9999px;border:1px solid ' + t.line + ';background:transparent;color:' +
       t.ink75 + ';padding:4px 10px;font-size:12px;cursor:pointer;';
@@ -546,7 +621,7 @@
     var repo = el('select', pill);
     add(repo, 'All repositories', '');
     opts.repos.forEach(function (r) { add(repo, r, r); });
-    if (opts.none) add(repo, '(no repository)', '-');
+    if (opts.none) add(repo, NO_REPO, '-');
     repo.value = state.repo;
     repo.disabled = isFixture();
     repo.onchange = function () { setRepo(repo.value); paint(); };
@@ -563,8 +638,11 @@
       if (b.disabled) b.setAttribute('style', b.getAttribute('style') + 'opacity:.45;cursor:default;');
       return b;
     };
+    // The pager is one control in three parts, so it wraps as a whole rather than leaving an
+    // arrow stranded on the line above in a rail this narrow.
+    var pager = el('span', 'display:inline-flex;align-items:center;gap:6px;flex-shrink:0;');
     // Newest first, so the newer day is one step back up the list.
-    row.appendChild(arrow('\u2039', at - 1));
+    pager.appendChild(arrow('‹', at - 1));
 
     // The day between the arrows is a jump as well as a step: the arrows walk it one page at a
     // time, the select goes straight there. Not remembered — a new day is the one to land on.
@@ -574,20 +652,12 @@
     days.value = day;
     days.disabled = !pages.length || isFixture();
     days.onchange = function () { state.day = days.value; paint(); };
-    row.appendChild(days);
+    pager.appendChild(days);
 
-    row.appendChild(arrow('\u203a', at + 1));
-    return row;
-  }
+    pager.appendChild(arrow('›', at + 1));
+    row.appendChild(pager);
 
-  function sheetList(box, v) {
-    var t = tok();
-    var c = card();
-    var head = el('div', ROW);
-    head.appendChild(sectionTitle('🧠 Unblock'));
-    head.appendChild(el('span', 'font-size:12.5px;color:' + t.ink60 + ';', 'decision sheets the seats are waiting on'));
-    var right = el('span', 'margin-left:auto;' + ROW);
-    right.appendChild(button(state.showClosed ? 'Hide closed' : 'Show closed', function () {
+    row.appendChild(button(state.showClosed ? 'Hide closed' : 'Show closed', function () {
       state.showClosed = !state.showClosed;
       paint();
     }, { colour: t.ink60 }));
@@ -595,49 +665,100 @@
       loadList(function () { return loadSheet(state.id, true); });
     });
     refresh.disabled = !!state.loading || isFixture();
-    right.appendChild(refresh);
-    head.appendChild(right);
-    c.appendChild(head);
+    row.appendChild(refresh);
+    return row;
+  }
+
+  // The bus's group header: the bucket's name in small caps, its count on the far right.
+  function groupHead(label, count) {
+    var t = tok();
+    var h = el('div', 'display:flex;align-items:center;gap:6px;font-size:10px;text-transform:uppercase;' +
+      'letter-spacing:0.14em;color:' + t.ink45 + ';padding:12px 8px 6px 8px;');
+    h.appendChild(el('span', 'flex:1;min-width:0;', label));
+    h.appendChild(el('span', 'opacity:.55;', String(count)));
+    return h;
+  }
+
+  // One sheet, in the bus rail's two-line row: the title and the progress on top, the seat and
+  // what the sheet still owes underneath.
+  function sheetRow(s, here) {
+    var t = tok();
+    var row = el('div', 'display:flex;align-items:flex-start;gap:9px;width:100%;text-align:left;' +
+      'border-radius:10px;border:1px solid ' + (here ? t.line : 'transparent') + ';background:' +
+      (here ? t.hoverBg : 'transparent') + ';padding:8px 8px;cursor:pointer;box-sizing:border-box;color:' +
+      t.ink + ';transition:background .15s;');
+    row.setAttribute('role', 'button');
+    row.tabIndex = 0;
+    row.onclick = function () { select(s.id); };
+
+    var col = el('span', 'flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;');
+    var top = el('span', 'display:flex;align-items:baseline;gap:6px;min-width:0;');
+    top.appendChild(el('span', 'flex:1;min-width:0;font-size:12.5px;font-weight:500;color:' + t.ink +
+      ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;', safeText(s.title)));
+    top.appendChild(el('span', 'margin-left:auto;font-size:10.5px;color:' + t.ink45 +
+      ';white-space:nowrap;flex-shrink:0;', safeText(s.answered) + '/' + safeText(s.total)));
+    col.appendChild(top);
+
+    var meta = el('span', 'display:flex;align-items:center;gap:6px;min-width:0;flex-wrap:wrap;');
+    if (s.source && s.source.seat) meta.appendChild(chip(safeText(s.source.seat), t.ink60));
+    if (s.pending) meta.appendChild(chip(s.pending + ' not sent', t.warn));
+    if (s.status === 'closed') meta.appendChild(chip('closed', t.ink45));
+    if (meta.childElementCount) col.appendChild(meta);
+
+    row.appendChild(col);
+    return row;
+  }
+
+  // The left half: the head, then the sheets the filters left, grouped by the repository that
+  // posted them.
+  function railPane(v) {
+    var t = tok();
+    var rail = el('div', railStyle());
 
     var opts = repoOptions(v.sheets);
-    // A remembered repo that no sheet uses any more would empty the list with nothing to say why.
+    // A remembered repo that no sheet uses any more would empty the rail with nothing to say why.
     // Only once there are sheets to judge it against: the first paint runs before the list lands.
     if ((v.sheets || []).length && state.repo &&
       (state.repo === '-' ? !opts.none : opts.repos.indexOf(state.repo) < 0)) setRepo('');
     // The pager reads the repo-filtered set, so the count beside the day is the count of the rows.
     var pages = dayPages(filterSheets(v.sheets, { showClosed: state.showClosed, repo: state.repo }));
     var day = pickDay(pages, state.day);
-    c.appendChild(filterRow(opts, pages, day));
+    rail.appendChild(railHead(opts, pages, day));
 
+    var body = el('div', 'flex:1;min-height:0;overflow-y:auto;padding:0 8px 10px 8px;' +
+      'display:flex;flex-direction:column;gap:1px;');
+    body.setAttribute('data-fd-scroll', 'rail');
+    rail.appendChild(body);
+
+    var note = function (text) {
+      body.appendChild(el('p', 'margin:8px;font-size:12.5px;color:' + t.ink45 + ';', text));
+    };
     var pool = visibleSheets(v.sheets, state.showClosed);
     var rows = filterSheets(v.sheets, { showClosed: state.showClosed, repo: state.repo, day: day });
     if (!pool.length) {
-      c.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink45 + ';',
-        'No open unblock sheets. Seats post them with `POST /api/unblock`.'));
-      box.appendChild(c);
-      return;
+      note('No open unblock sheets. Seats post them with `POST /api/unblock`.');
+      return rail;
     }
     if (!rows.length) {
-      c.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink45 + ';',
-        state.repo ? 'No sheets for this repository on this day.' : 'No sheets on this day.'));
-      box.appendChild(c);
-      return;
+      note(state.repo ? 'No sheets for this repository on this day.' : 'No sheets on this day.');
+      return rail;
     }
 
-    rows.forEach(function (s) {
-      var here = s.id === (v.sheet && v.sheet.id);
-      var row = el('div', 'display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;padding:8px 10px;border-top:1px solid ' +
-        t.line + ';cursor:pointer;border-radius:8px;' + (here ? 'background:' + t.hoverBg + ';' : ''));
-      row.onclick = function () { select(s.id); };
-      row.appendChild(el('span', 'font-size:12.5px;color:' + t.ink + ';flex:1;min-width:200px;', safeText(s.title)));
-      if (s.source && s.source.seat) row.appendChild(chip(safeText(s.source.seat), t.ink60));
-      if (s.source && s.source.project) row.appendChild(chip(safeText(s.source.project), t.ink45));
-      row.appendChild(el('span', 'font-size:11.5px;color:' + t.ink45 + ';', safeText(s.answered) + '/' + safeText(s.total)));
-      if (s.pending) row.appendChild(chip(s.pending + ' not sent', t.warn));
-      if (s.status === 'closed') row.appendChild(chip('closed', t.ink45));
-      c.appendChild(row);
+    groupByRepo(rows).forEach(function (g) {
+      body.appendChild(groupHead(g.repo, g.rows.length));
+      g.rows.forEach(function (s) { body.appendChild(sheetRow(s, s.id === (v.sheet && v.sheet.id))); });
     });
-    box.appendChild(c);
+    return rail;
+  }
+
+  // The right half with nothing open. The bus says "No messages yet" in the same place.
+  function pickState(body) {
+    var t = tok();
+    var c = el('div', 'margin:auto;text-align:center;display:flex;flex-direction:column;gap:6px;max-width:320px;');
+    c.appendChild(el('span', 'font-size:13px;color:' + t.ink60 + ';', 'Pick a sheet'));
+    c.appendChild(el('span', 'font-size:12px;color:' + t.ink45 + ';line-height:1.5;',
+      'Sheets the seats post appear on the left; the one you open lands here.'));
+    body.appendChild(c);
   }
 
   // The sticky header, card for card with the standalone template: title, intro, progress,
@@ -648,7 +769,8 @@
     var total = qs.length;
     var done = answeredIds(qs, v.answers).length;
     var pending = pendingIds(qs, v.answers);
-    var c = card('position:sticky;top:8px;z-index:3;');
+    // Lives in the pane's head, above the scroll body, so no card ever rolls behind it.
+    var c = card('');
     c.appendChild(el('span', 'font-size:15px;font-weight:600;color:' + t.ink + ';', safeText(v.sheet.title)));
     if (v.sheet.intro)
       c.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink60 + ';', safeText(v.sheet.intro)));
@@ -832,33 +954,70 @@
     };
   }
 
+  // The rail list and the pane body are scroll containers that every repaint rebuilds; their
+  // offsets are carried across, or the 20 s poll would throw a long sheet back to its top. The
+  // pane's key carries the sheet id, so opening another sheet still starts at the top.
+  function keepScroll() {
+    var tops = {};
+    var box = mount();
+    if (box) box.querySelectorAll('[data-fd-scroll]').forEach(function (n) {
+      tops[n.getAttribute('data-fd-scroll')] = n.scrollTop;
+    });
+    return function () {
+      var b = mount();
+      if (b) b.querySelectorAll('[data-fd-scroll]').forEach(function (n) {
+        var top = tops[n.getAttribute('data-fd-scroll')];
+        if (top) n.scrollTop = top;
+      });
+    };
+  }
+
   function paint() {
     var box = mount();
     if (!box) return;
     var restore = keepCaret();
+    var rescroll = keepScroll();
     painting = true;
     box.replaceChildren();
     var v = view();
     var t = tok();
     banner(box);
-    sheetList(box, v);
+
+    // One card, two panes: which sheet on the left, that sheet on the right.
+    var grid = el('div', gridStyle());
+    grid.appendChild(railPane(v));
+    var pane = el('div', 'display:flex;flex-direction:column;min-height:0;min-width:0;');
+    // The sheet header sits in a head of its own, like the bus's thread toolbar: only the cards
+    // scroll, so nothing ever rolls behind the title, the progress and the Send buttons.
+    var head = el('div', 'flex:none;padding:18px 18px 0 18px;');
+    pane.appendChild(head);
+    var body = el('div', paneBodyStyle());
+    body.setAttribute('data-fd-scroll', 'pane:' + (state.id || ''));
+    pane.appendChild(body);
+    grid.appendChild(pane);
+    box.appendChild(grid);
+    measure(grid);
+
     if (v.sheet) {
-      sheetHeader(box, v);
+      sheetHeader(head, v);
       var qs = (v.sheet.questions || []);
       var shown = 0;
       qs.forEach(function (q, i) {
-        var before = box.childElementCount;
-        questionCard(box, q, i + 1, qs.length, v.answers[q.id]);
-        if (box.childElementCount > before) shown++;
+        var before = body.childElementCount;
+        questionCard(body, q, i + 1, qs.length, v.answers[q.id]);
+        if (body.childElementCount > before) shown++;
       });
       if (!shown && qs.length)
-        box.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink45 + ';text-align:center;',
+        body.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink45 + ';text-align:center;',
           '✅ All ' + qs.length + ' answered and hidden. Send new, or Show all to review.'));
-      blockedBox(box);
+      blockedBox(body);
     } else if (state.loading) {
-      box.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink45 + ';', 'reading the unblock sheets…'));
+      body.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink45 + ';', 'reading the unblock sheets…'));
+    } else {
+      pickState(body);
     }
     restore();
+    rescroll();
     if (observer) observer.takeRecords();
     painting = false;
   }
@@ -910,6 +1069,7 @@
   function enter() {
     if (!active()) {
       if (poller) { root.clearInterval(poller); poller = null; }
+      if (sizer) { sizer.disconnect(); sizer = null; }   // the card is gone with the screen
       return;
     }
     if (isFixture()) return paint();

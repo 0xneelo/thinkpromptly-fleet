@@ -95,7 +95,7 @@ test('loopback needs no bus token at all — which is the whole shape of XYZ-184
 
 const path = require('path');
 const { execFile } = require('child_process');
-const { TAILNET_BIND } = require('./http');
+const { TAILNET_HOST } = require('./http');
 
 const both = (t) => deck(t, { FLEET_TAILNET_KEY: KEY });
 
@@ -166,7 +166,7 @@ test('XYZ-1888 — the real bin/fleet-message.js gets through with both keys arm
         {
           env: {
             ...process.env,
-            FLEETDECK_URL: 'http://' + TAILNET_BIND + ':' + s.port,
+            FLEETDECK_URL: 'http://' + TAILNET_HOST + ':' + s.port,
             ...env,
           },
         },

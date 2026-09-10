@@ -241,15 +241,17 @@ test('a bind that is not loopback is refused at startup, not served', async () =
 });
 
 test('the loopback addresses a test legitimately needs are still accepted', async () => {
-  // 127.0.0.2 is the second loopback address test/http.js gives the tailnet listener; the
-  // guard must not be so tight that the harness cannot bind one. Spawned directly rather
-  // than through startBroker, whose client always connects to 127.0.0.1. The port is fixed
-  // and deliberately BELOW test/http.js's 20000-40000 random band: 127.0.0.2 is also the
-  // tailnet bind every deck in the suite uses, so a port inside that band would sometimes
-  // collide with a sibling test's listener and fail a lifecycle test far from here.
+  // 127.0.0.2 — or FLEET_TEST_TAILNET_BIND on a Mac without that lo0 alias — is the second
+  // loopback address test/http.js gives the tailnet listener; the guard must not be so tight
+  // that the harness cannot bind one. Spawned directly rather than through startBroker, whose
+  // client always connects to 127.0.0.1. The port is fixed and deliberately BELOW test/http.js's
+  // 20000-40000 random band: that address is also the tailnet bind every deck in the suite
+  // uses, so a port inside that band would sometimes collide with a sibling test's listener
+  // and fail a lifecycle test far from here.
+  const bind = process.env.FLEET_TEST_TAILNET_BIND || '127.0.0.2';
   const { spawn } = require('child_process');
   const child = spawn(process.execPath, [path.join(__dirname, '..', 'fleetdeck-train.js')], {
-    env: { ...process.env, FLEET_TRAIN_BIND: '127.0.0.2', FLEET_TRAIN_PORT: '18311' },
+    env: { ...process.env, FLEET_TRAIN_BIND: bind, FLEET_TRAIN_PORT: '18311' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
@@ -261,5 +263,5 @@ test('the loopback addresses a test legitimately needs are still accepted', asyn
   ]);
   child.kill('SIGKILL');
   assert.equal(started, 'running', 'the broker refused a legitimate loopback bind: ' + out);
-  assert.match(out, /fleetdeck-train http:\/\/127\.0\.0\.2:18311/);
+  assert.match(out, new RegExp('fleetdeck-train http://' + bind.replace(/\./g, '\\.') + ':18311'));
 });

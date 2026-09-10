@@ -165,17 +165,47 @@ test('every box chip carries the login that actually opens it', () => {
   assert.ok(keys.BOXES.every((b) => b.title && b.title.length), 'a title per box');
 });
 
-test('principalsFor — the three root boxes collapse to one principal', () => {
-  // The cert says root once, whichever of the three is picked, because that is all a
-  // principal can say: one login name, matched by every box that logs in under it.
-  assert.deepStrictEqual(keys.principalsFor({ ivy: true }), ['root']);
-  assert.deepStrictEqual(keys.principalsFor({ ivy: true, promptly: true, onboarding: true }), ['root']);
-  // And picking ivy DOES open promptly — the chip titles say so, because the cert cannot
-  // tell the three apart. Scoping one of them means changing that box's CA trust line.
-  assert.deepStrictEqual(keys.principalsFor({ 'rog-strix': true, german: true, ivy: true }), [
-    'misterisley', 'vibe', 'root',
+test('principalsFor: Legacy default preserves every login; Daily cannot inherit choices', () => {
+  assert.deepStrictEqual(keys.principalsFor({ ivy: true }), ['root','vibe','misterisley','tabor']);
+  assert.deepStrictEqual(keys.principalsFor({ ivy: true, promptly: true }, 'daily'), ['deploy']);
+  assert.deepStrictEqual(keys.principalsFor({}, 'admin'), ['admin']);
+});
+
+test('Admin box chips were removed: hidden choices grant no additional principals', () => {
+  assert.deepStrictEqual(keys.principalsFor({ 'rog-strix': true, german: true, ivy: true, 'vibes-asus': true }, 'admin'), [
+    'admin',
   ]);
-  assert.deepStrictEqual(keys.principalsFor({}), []);
+  assert.strictEqual(keys.BOXES.find(b => b.id === 'vibes-asus').tag, null);
+  assert.match(keys.BOXES.find(b => b.id === 'vibes-asus').title, /trust unknown/);
+});
+
+test('mint requests keep Daily/Admin fixed and default Legacy to eight hours', () => {
+  assert.deepStrictEqual(keys.mintRequest(), { profile: 'legacy', ttl: '8h', extraTags: [] });
+  assert.deepStrictEqual(keys.mintRequest('daily', { ivy: true }), { profile: 'daily', ttl: '8h', extraTags: [] });
+  assert.deepStrictEqual(keys.mintRequest('admin', { ivy: true }), { profile: 'admin', ttl: '1h', extraTags: [] });
+  assert.deepStrictEqual(keys.PROFILES, { legacy: { label: 'Legacy cert', ttl: '8h' }, daily: { label: 'Daily cert', ttl: '8h' }, admin: { label: 'Admin cert', ttl: '1h' } });
+});
+
+test('Legacy TTL selection reaches the request without changing role durations', () => {
+  for (const ttl of ['1h','4h','8h']) {
+    assert.deepStrictEqual(keys.mintRequest('legacy', {}, ttl), {profile:'legacy',ttl,extraTags:[]});
+    assert.equal(keys.mintRequest('daily', {}, ttl).ttl, '8h');
+    assert.equal(keys.mintRequest('admin', {}, ttl).ttl, '1h');
+  }
+  assert.equal(keys.mintRequest('legacy', {}, '24h').ttl, '8h');
+});
+
+test('Legacy mint refuses missing login coverage and unknown policy', () => {
+  const policy={requiredLogins:['root','vibe','misterisley'],error:null};
+  assert.equal(keys.legacyGuard(keys.principalsFor(),policy),'');
+  assert.match(keys.legacyGuard(['vibe','misterisley','tabor'],policy),/drop a login/);
+  assert.match(keys.legacyGuard(keys.principalsFor(),null),/policy is loaded/);
+  assert.ok(keys.legacyGuard(keys.principalsFor(),{requiredLogins:['new-user']}));
+  const fleet=require('../machines.json').machines.filter(m=>m.route==='ssh');
+  const actual={requiredLogins:[...new Set(fleet.map(m=>m.user))]};
+  assert.ok(actual.requiredLogins.every(user=>typeof user==='string'));
+  assert.equal(keys.legacyGuard(keys.principalsFor(),actual),'');
+  for(const user of actual.requiredLogins) assert.ok(keys.legacyGuard(keys.principalsFor().filter(p=>p!==user),actual),user);
 });
 
 test('the kill confirmation is verbatim', () => {
@@ -201,8 +231,8 @@ test('requiring the screen in Node exports the pure half and starts no timer', (
   // polls before any screen is entered.
   assert.strictEqual(typeof document, 'undefined');
   assert.deepStrictEqual(Object.keys(keys).sort(), [
-    'COPIED_MS', 'KILL_CONFIRM', 'BOXES', 'BOX_IDS', 'principalsFor', 'POLL_MS', 'TICK_MS', 'TTLS',
-    'httpBody', 'left', 'pad', 'sshOpts', 'unwrapError',
+    'COPIED_MS', 'KILL_CONFIRM', 'BOXES', 'BOX_IDS', 'principalsFor', 'mintRequest', 'PROFILES', 'POLL_MS', 'TICK_MS', 'TTLS',
+    'httpBody', 'left', 'legacyGuard', 'pad', 'sshOpts', 'unwrapError',
   ].sort());
   // The registered surface is inert until a screen is entered. (The L7.1 test
   // below installs its own FD; here the module was required with none, so the

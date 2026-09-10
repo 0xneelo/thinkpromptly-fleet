@@ -256,7 +256,7 @@ class LandLogic extends Sub {
   }
 }
 class AppLogic extends Sub {
-  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, ttl: '1h', prin: { 'rog-strix': true, 'vibes-asus': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
+  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, sshProfile: null, legacyTtl: '8h', ttl: '1h', prin: { 'rog-strix': true, 'vibes-asus': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
   isDark() {
     if (this.state.dark != null) return this.state.dark;
     try { const s = localStorage.getItem('fd-landing-dark'); if (s != null) return s === '1'; } catch (e) {}
@@ -548,6 +548,7 @@ class AppLogic extends Sub {
           .filter((d) => d.v),
         copy: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copy', r, e.currentTarget); try { navigator.clipboard.writeText(r.title + '\n' + path + '\n' + r.branch + '\ncli=' + cli + '\nsession=' + sid); } catch (e2) {} },
         copyConv: (e) => { e.stopPropagation(); if (dsAct) return dsAct('copyConv', r, e.currentTarget); try { navigator.clipboard.writeText('# ' + r.title + '\n' + r.model + ' · ' + r.turns + ' · ' + r.branch + '\n\n[conversation transcript for ' + sid + ']'); } catch (e2) {} },
+        docs: (e) => { e.stopPropagation(); if (FD.router) FD.router.navigate('docs', cli ? { session: cli } : {}); },
       };
     };
     // S2 oracle audit F2 (2026-09-08, binding instruction 2): a throw anywhere in
@@ -1047,6 +1048,8 @@ class AppLogic extends Sub {
     // Keys screen chips
     const ttl = this.state.ttl;
     const prin = this.state.prin;
+    const keysLive = !!(FD.screens && FD.screens.keys && FD.screens.keys.sync && Array.isArray(FD.screens.keys.boxes));
+    const sshProfile = ['legacy','daily','admin'].includes(this.state.sshProfile) ? this.state.sshProfile : 'legacy';
     const selChip = (on) => ({ borderRadius: '9999px', border: '1px solid ' + (on ? t.navActBorder : t.line), background: on ? t.navActBg : 'transparent', color: on ? t.ink : t.ink60, padding: '8px 16px', fontSize: '13px', cursor: 'pointer', transition: 'background .2s', fontWeight: on ? 500 : 400 });
     // L7: the GitHub-train and Certificates cards carry no bindings in the mock,
     // so screens/keys.js paints them from the mock's own nodes after each flush.
@@ -1061,7 +1064,7 @@ class AppLogic extends Sub {
     // app down with it is not acceptable.
     try {
       if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({
-        t, dark, isKeys: screen === 'keys', ttl, prin, logic: this,
+        t, dark, isKeys: screen === 'keys', ttl, prin, profile: sshProfile, legacyTtl: this.state.legacyTtl, logic: this,
         pills: {
           good: chipTone('good'), goodDot: dot(t.good),
           dim: { ...chipTone('neutral'), color: t.ink45 }, dimDot: dot(t.ink35),
@@ -1214,6 +1217,9 @@ class AppLogic extends Sub {
     // same tokens as the accounts chrome and follows the theme toggle with it.
     FD.screens.goals = FD.screens.goals || {};
     FD.screens.goals.tokens = FD.screens.accounts.tokens;
+    // The Docs screen does the same, in its own mount node.
+    FD.screens.docs = FD.screens.docs || {};
+    FD.screens.docs.tokens = FD.screens.accounts.tokens;
     // Unblock draws itself the same way, into #fd-unblock-root.
     FD.screens.unblock = FD.screens.unblock || {};
     FD.screens.unblock.tokens = FD.screens.accounts.tokens;
@@ -1271,7 +1277,7 @@ class AppLogic extends Sub {
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
       rowPadY: compact ? '7px' : '11px', cardPad: compact ? '14px 16px' : '18px 20px',
       isWindows: screen === 'windows', isOrg: screen === 'org', isRegistry: screen === 'registry',
-      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isGoals: screen === 'goals', isUnblock: screen === 'unblock', isDesktop: screen === 'desktop',
+      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isGoals: screen === 'goals', isDocs: screen === 'docs', isUnblock: screen === 'unblock', isDesktop: screen === 'desktop',
       goDesktop: () => this.setState({ screen: 'desktop' }), navDesktop: navBtn(screen === 'desktop'),
       dq: this.state.dq, setDq: (e) => this.setState({ dq: e.target.value }), resetDs: () => this.setState({ dq: '', dsExp: {} }),
       dsGroups, dsCount, dsLive,
@@ -1283,9 +1289,10 @@ class AppLogic extends Sub {
       goAccounts: () => this.setState({ screen: 'accounts' }),
       goMachines: () => this.setState({ screen: 'machines' }),
       goGoals: () => this.setState({ screen: 'goals' }),
+      goDocs: () => this.setState({ screen: 'docs' }),
       goUnblock: () => this.setState({ screen: 'unblock' }),
       navWindows: navBtn(screen === 'windows'), navOrg: navBtn(screen === 'org'), navRegistry: navBtn(screen === 'registry'),
-      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'), navGoals: navBtn(screen === 'goals'), navUnblock: navBtn(screen === 'unblock'),
+      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'), navGoals: navBtn(screen === 'goals'), navDocs: navBtn(screen === 'docs'), navUnblock: navBtn(screen === 'unblock'),
       toggleMode: () => {
         const next = !this.isDark();
         try { localStorage.setItem('fd-landing-dark', next ? '1' : '0'); } catch (e) {}
@@ -1431,8 +1438,14 @@ class AppLogic extends Sub {
         navBadgeText: leftOpen ? String(FD.fixture.l2Badge) : '',
       }),
       // keys
-      ttlChips: ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
-      prinChips: ['rog-strix', 'vibes-asus', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => ({ t: v, style: selChip(!!prin[v]), set: () => this.setState({ prin: { ...prin, [v]: !prin[v] } }) })),
+      ttlChips: keysLive
+        ? ['legacy', 'daily', 'admin'].map((v) => ({ t: {legacy:'Legacy cert',daily:'Daily cert',admin:'Admin cert'}[v], style: selChip(sshProfile === v), set: () => this.setState({ sshProfile: v }) })).concat(sshProfile === 'legacy'
+          ? ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(this.state.legacyTtl === v), set: () => this.setState({ legacyTtl: v }) })) : [])
+        : ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
+      prinChips: ['rog-strix', 'vibes-asus', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => {
+        const box = keysLive && FD.screens.keys.boxes.find((b) => b.id === v);
+        return { t: box ? (box.tag || box.id) : v, style: { ...selChip(!!prin[v]), ...(keysLive ? { display: 'none' } : {}) }, set: () => { if (!box || box.tag) this.setState({ prin: { ...prin, [v]: !prin[v] } }); } };
+      }),
       copyCmd: () => { try { navigator.clipboard.writeText('-o IdentitiesOnly=yes -o IdentityAgent=none -i /Users/misterislez/.ssh/deploy-certs/20260906-153509/deployer'); } catch (e) {} },
       keyRows: FD.fixture.keyRows,
       // accounts (fd-v2 L8) — the mock's seed, or the live rows that

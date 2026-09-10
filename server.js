@@ -11,6 +11,8 @@ const pty = require('node-pty');
 const { MessageBus, MAX_BODY_BYTES } = require('./message-bus');
 const { coordinatorRoute } = require('./coordinator-api');
 const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
+const { DesktopSeatTitles } = require('./desktop-seat-titles');
+const { DocsIndex, defaultRoots } = require('./docs-index');
 const { createUnblock } = require('./unblock');
 
 const PORT = Number(process.env.PORT) || 3131;
@@ -519,6 +521,9 @@ const CLAUDE_BRIDGE = process.env.CLAUDE_BRIDGE || path.join(__dirname, '.fleetd
 // presents on that socket. Observed on 2.1.259 (peerProtocol 1); the .key is read only at
 // delivery and never leaves this process.
 const CLAUDE_SESSIONS_DIR = process.env.CLAUDE_SESSIONS_DIR || path.join(HOME, '.claude', 'sessions');
+const CLAUDE_DESKTOP_STORE_DIR = process.env.CLAUDE_DESKTOP_STORE_DIR ||
+  path.join(HOME, 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
+const desktopSeatTitles = new DesktopSeatTitles({ dir: CLAUDE_DESKTOP_STORE_DIR });
 
 // Live desktop sessions: a registry file whose pid is alive and whose socket exists. A stale
 // file from a crashed session is skipped, never an error.
@@ -537,7 +542,9 @@ function desktopSessions() {
       if (typeof j.name !== 'string' || typeof j.messagingSocketPath !== 'string') continue;
       process.kill(j.pid, 0);
       if (!fs.existsSync(j.messagingSocketPath)) continue;
-      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId: desktopUuid(j.sessionId) });
+      const sessionId = desktopUuid(j.sessionId);
+      const title = sessionId ? desktopSeatTitles.get().get(sessionId)?.title ?? null : null;
+      live.push({ pid: j.pid, name: j.name, sock: j.messagingSocketPath, sessionId, title });
     } catch {}
   }
   return live;
@@ -1147,15 +1154,20 @@ async function health() {
   };
 }
 
-// --- Credits: per-account AI usage. box/fleet-credits.sh runs on each machine and reports
-// two things: a live usage read for whichever account that machine's CLI is logged into
-// (its own token, read and used only there), and the Claude desktop app's usage history,
-// which covers every org that app has sampled — that is how accounts with no login on the
-// fleet are still seen. Only derived numbers come back (percentages, reset stamps, plan,
-// email, org uuid, hostname). No token is ever stored in fleet.db, logged, or sent to a
-// browser, and the desktop app's token cache is never read at all.
+// --- Credits: per-account AI usage. A row carries only what a live read of that account's
+// own token returned — the logins sweep, a Codex rollout, or a machine's push. The Claude
+// desktop app's samples feed the trend line below and nothing else: they never supply a
+// row's numbers (operator, 2026-09-11). An account nobody has read says so instead. Only
+// derived numbers come back (percentages, reset stamps, plan, email, org uuid, hostname).
+// No token is ever stored in fleet.db, logged, or sent to a browser, and the desktop app's
+// token cache is never read at all.
 db.exec(
   `CREATE TABLE IF NOT EXISTS credits (kind TEXT, id TEXT, email TEXT, org TEXT, host TEXT, payload TEXT, updated_at INTEGER, PRIMARY KEY (kind, id))`
+);
+// Rows a desktop sample once supplied, and windows one lent to a live read that carried
+// none: no source writes either any more, so what is still stored goes at the restart.
+db.exec(
+  `DELETE FROM credits WHERE json_extract(payload, '$.source') = 'desktop' OR json_extract(payload, '$.windows_from') = 'desktop'`
 );
 // The desktop app samples usage as it is used, so the trend it keeps is the only history
 // the fleet has. A sample is immutable — same org and second means same reading, whichever
@@ -1177,9 +1189,9 @@ const ACCOUNTS_FILE = path.join(__dirname, 'credits-accounts.json');
 const CODEX_EMAIL = 'admin@deus.finance';
 const CREDIT_STATES = new Set(['ok', 'token_expired', 'rate_limited', 'error', 'absent']);
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-// A live read carries real reset stamps, so it beats a desktop sample describing the same
-// account in the same collect; both beat nothing.
-const SOURCE_RANK = { oauth: 3, push: 2, codex: 2, desktop: 1 };
+// The logins sweep reads the account's own token, so it beats a push or a rollout describing
+// the same account in the same collect; all three beat nothing.
+const SOURCE_RANK = { oauth: 3, push: 2, codex: 2 };
 // A better source wins, but only while it is still reporting: once its row is half a day
 // old a weaker fresh one takes over, so a machine that stops pushing cannot pin a row.
 const RANK_STALE = 12 * 3600;
@@ -1190,9 +1202,9 @@ const safeParse = (s) => {
     return null;
   }
 };
-// When a row's numbers are from: a desktop row dates them by the sample it read, a Codex
-// row by the rollout it read. An oauth row has neither — its updated_at IS the read time.
-const dataTs = (r) => r.sample_ts ?? r.snapshot_ts ?? null;
+// When a row's numbers are from: a Codex row dates them by the rollout it read. An oauth or
+// pushed row has no such stamp — its updated_at IS the read time.
+const dataTs = (r) => r.snapshot_ts ?? null;
 const beats = (a, b, now = Math.floor(Date.now() / 1000)) => {
   if (!b) return true;
   const ra = SOURCE_RANK[a.source] || 0;
@@ -1205,15 +1217,14 @@ const beats = (a, b, now = Math.floor(Date.now() / 1000)) => {
   if (b.state === 'ok' && a.state !== 'ok' && at - bt < RANK_STALE) return false;
   // The other way round it takes effect at once — but only for numbers still worth
   // asserting. A failure carries none, so displacing it is right; displacing it with a
-  // sample weeks past its own window's age would throw away the last real reading and put
+  // reading weeks past its own window's age would throw away the last real one and put
   // in its place a number agedOut() only greys back out. vouches() is that same bar, and
   // it is the bar the borrow step below already holds every lender to.
   if (a.state === 'ok' && b.state !== 'ok' && !allAgedOut(a, now)) return true;
   // Two rows of the same rank describe the same account from different machines, and
-  // updated_at is only when each machine was asked. So the mac's twelve-minute-old desktop
-  // sample and a box's nine-day-old one tie on rank, as do the mac's Codex 74% and a box's
-  // month-old 0%, and the row flipped to whichever ssh reply happened to finish last. The
-  // newer numbers are the truer ones either way.
+  // updated_at is only when each machine was asked. So the mac's Codex 74% and a box's
+  // month-old 0% tie on rank, and the row flipped to whichever ssh reply happened to finish
+  // last. The newer numbers are the truer ones either way.
   const ad = dataTs(a);
   const bd = dataTs(b);
   if (ra === rb && Number.isFinite(ad) && Number.isFinite(bd) && ad !== bd) return ad > bd;
@@ -1221,10 +1232,10 @@ const beats = (a, b, now = Math.floor(Date.now() / 1000)) => {
   if (ra > rb) return true;
   // A weaker source takes over a row whose better source stopped reporting half a day ago —
   // but only with numbers newer than the ones it would replace. updated_at is when a machine
-  // was asked, not how old its numbers are: the mac's desktop sample from three days back,
-  // read just now, displaced this morning's live 90% the moment that reading turned twelve
-  // hours old, and put on the page a figure agedOut() had already greyed. A live reading is
-  // dated by its read; a sample by itself.
+  // was asked, not how old its numbers are: a month-old rollout, read just now, displaced
+  // this morning's live 90% the moment that reading turned twelve hours old, and put on the
+  // page a figure agedOut() had already greyed. A live reading is dated by its read; a
+  // rollout by itself.
   return at - bt > RANK_STALE && (ad ?? at) > (bd ?? bt);
 };
 
@@ -1240,7 +1251,6 @@ const creditsGetId = db.prepare('SELECT payload FROM credits WHERE kind = ? AND 
 const historyInsert = db.prepare('INSERT OR IGNORE INTO credits_history (org, t, fh, sd, xu) VALUES (?, ?, ?, ?, ?)');
 const historyPrune = db.prepare('DELETE FROM credits_history WHERE t < ?');
 const historyGet = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t');
-const historyLast = db.prepare('SELECT t, fh, sd, xu FROM credits_history WHERE org = ? ORDER BY t DESC LIMIT 1');
 const HISTORY_KEEP = 60 * 86400; // a trend older than two months answers no question anyone asks
 const HISTORY_POINTS = 120; // enough shape for a sparkline; the rest is payload weight
 
@@ -1406,18 +1416,6 @@ function codexRow(c) {
   };
 }
 
-// The desktop app's sample: fh/sd/xu are already 0-100, and it carries no reset stamps.
-// sample_ts is what matters — an org sampled six days ago is stale data, not 0% usage.
-function desktopRow(s) {
-  const u = s.u && typeof s.u === 'object' ? s.u : {};
-  const windows = {};
-  for (const [k, name] of [['fh', 'five_hour'], ['sd', 'seven_day'], ['xu', 'extra']]) {
-    const pct = pctOf(u[k]);
-    if (pct !== null) windows[name] = { pct, resets_at: null };
-  }
-  return { state: 'ok', windows, sample_ts: epochOf(s.t) };
-}
-
 // The file names the accounts; a CLI login on any machine proves one, so it wins and
 // confirms. An org can change hands on a shared box, which is why rows key on the uuid.
 function creditsMap(accounts) {
@@ -1456,9 +1454,10 @@ function ident(org, email, map) {
   };
 }
 
-// One emitted line -> candidate rows: the live read for this machine's CLI account, one
-// per org the desktop app has sampled, and its Codex login. Nothing outside the whitelist
-// each *Row builder produces is kept.
+// One emitted line -> candidate rows: the live read for this machine's CLI account and its
+// Codex login. The line's desktop samples are not among them — they are history, and
+// creditsHistoryWrite is the only thing that reads them. Nothing outside the whitelist each
+// *Row builder produces is kept.
 function creditsCandidates(d, host, map, push) {
   if (!d || typeof d !== 'object') return [];
   // Never later than now: a future stamp — a skewed clock, or a push claiming someone
@@ -1474,15 +1473,6 @@ function creditsCandidates(d, host, map, push) {
     if (id) out.push({ kind, id, host: h, updated_at: t, source: push ? 'push' : source, ...i, ...payload });
   };
   if (d.claude && typeof d.claude === 'object') add('claude', d.claude.org, d.claude.email, 'oauth', claudeRow(d.claude));
-  // One row per org, and a machine sees a handful: the slice is what stops a push from
-  // turning a long list into as many stored rows.
-  for (const s of (Array.isArray(d.desktop) ? d.desktop : []).slice(0, HISTORY_ORGS))
-    if (s && typeof s === 'object' && typeof s.org === 'string') {
-      const ds = desktopRow(s);
-      // Clamped like the Codex snapshot below: a future sample stamp would win every tie and never age.
-      if (ds.sample_ts > t) ds.sample_ts = t;
-      add('claude', s.org, null, 'desktop', ds);
-    }
   if (d.codex && typeof d.codex === 'object') {
     const cx = codexRow(d.codex);
     // Never later than now, for the same reason: the snapshot stamp breaks a same-rank tie,
@@ -1493,9 +1483,9 @@ function creditsCandidates(d, host, map, push) {
   return out;
 }
 
-// How long a sample may still be quoted as a current figure. Not the window's own length:
-// the desktop source carries no reset stamp, so a seven-day reading days old may sit on
-// the far side of a reset and read "at the limit" for an account now at zero. These are
+// How long a reading may still be quoted as a current figure. Not the window's own length:
+// a source that carries no reset stamp leaves a seven-day reading days old sitting on the
+// far side of a reset, reading "at the limit" for an account now at zero. These are
 // the ages within which the number is still worth asserting; past them the reading becomes
 // no reading, and only the trend line keeps it, which is honestly historical.
 const WINDOW_AGE = { five_hour: 2 * 3600, seven_day: 24 * 3600, extra: 7 * 86400 };
@@ -1510,7 +1500,7 @@ const windowAge = (n) => WINDOW_AGE[n] ?? (n.startsWith('seven_day') ? WINDOW_AG
 const hasSignal = (r) =>
   Object.entries(r.windows || {}).some(([n, w]) => n !== 'extra' && w && (w.pct > 0 || w.resets_at !== null));
 // ...but only a source still inside its own window's age may vouch. An eight-day-old
-// desktop sample describes a week that has since reset; lending it here would answer a
+// reading describes a week that has since reset; lending it here would answer a
 // profile-proved 0% with a number the view then ages back out into "stale", which is
 // worse than the zero. Nothing fresher to contradict it means the zero IS the reading.
 // Every window a row carries already older than the span that window describes: it asserts
@@ -1519,7 +1509,7 @@ const hasSignal = (r) =>
 // failed read of a better source would otherwise invite it to do.
 const allAgedOut = (r, now) => {
   const names = Object.keys(r.windows || {}).filter((n) => n !== 'extra');
-  const t = r.sample_ts ?? r.updated_at ?? 0;
+  const t = r.updated_at ?? 0;
   return names.length > 0 && names.every((n) => now - t > windowAge(n));
 };
 const vouches = (r, now) =>
@@ -1528,7 +1518,7 @@ const vouches = (r, now) =>
       n !== 'extra' &&
       w &&
       (w.pct > 0 || w.resets_at !== null) &&
-      now - (r.sample_ts ?? r.updated_at ?? 0) <= windowAge(n)
+      now - (r.updated_at ?? 0) <= windowAge(n)
   );
 
 // What a losing failed read leaves on the row it could not displace. The collector states the
@@ -1566,15 +1556,15 @@ function creditsWrite(rows) {
           (SOURCE_RANK[b.source] || 0) - (SOURCE_RANK[a.source] || 0) ||
           (dataTs(b) ?? b.updated_at) - (dataTs(a) ?? a.updated_at)
       )[0];
-    if (alt) best.set(k, { ...r, windows: alt.windows, sample_ts: alt.sample_ts, windows_from: alt.source });
+    if (alt) best.set(k, { ...r, windows: alt.windows, windows_from: alt.source });
   }
   // A collect carries no pushed rows, so without comparing against what is already stored
   // a local snapshot would clobber a better report an off-fleet machine pushed earlier.
   let written = 0;
   for (const [k, r] of best) {
     // A failed read must not displace good numbers (beats() saw to that), but it knows the
-    // one thing the numbers cannot: this account's live read is on hold. One sweep carries the
-    // mac's desktop sample and the box's refusal for the same account in the same batch, so
+    // one thing the numbers cannot: this account's live read is on hold. One sweep can carry
+    // one box's good read and another's refusal for the same account in the same batch, so
     // the refusal is looked for among the whole group, not only in the candidate that won.
     const held = (groups.get(k) || [])
       .filter((o) => o.state !== 'ok')
@@ -1596,11 +1586,13 @@ function creditsWrite(rows) {
     for (const c of groups.get(k))
       if (!seen.some((s) => s.host === c.host && s.source === c.source)) seen.push({ host: c.host, source: c.source });
     // A hold rides with the row until a live read of this account answers: a row whose
-    // numbers carry their own date (a desktop sample, a rollout) is not that read, and the
-    // mac re-reports its sample every minute, so without this the hold lasted a minute.
+    // numbers carry their own date (a rollout) is not that read, and a machine re-reports the
+    // same rollout every minute, so without this the hold lasted a minute.
     const live = r.state === 'ok' && dataTs(r) == null;
     const carried = !held && !live && stored && stored.hold ? stored.hold : null;
-    const hold = held && r.state === 'ok' ? { hold: holdOf(held) } : carried ? { hold: carried } : {};
+    // The refusal may be the winner itself: an account nothing has ever read live has no ok
+    // row for it to lose to, and then the hold is the only thing its row has to say.
+    const hold = held ? { hold: holdOf(held) } : carried ? { hold: carried } : {};
     creditsUpsert.run(r.kind, r.id, r.email, r.org, r.host, JSON.stringify({ ...r, seen, ...hold }), r.updated_at);
     if (r.email && r.org) creditsDropId.run(r.kind, 'org:' + r.org);
     written++;
@@ -1608,29 +1600,9 @@ function creditsWrite(rows) {
   return written;
 }
 
-// The usage call is made once an hour at most; the desktop app samples an account as it is
-// used, every few minutes. A sample newer than the row's own numbers is the truer reading of
-// the windows it covers, so those percentages are taken from it (operator, 2026-09-10). What
-// the sample cannot supply stays the live read's: reset stamps, the model weeklies, credits.
-function freshen(r) {
-  if (r.kind !== 'claude' || !r.org) return r;
-  const s = historyLast.get(r.org);
-  if (!s || !(s.t > (dataTs(r) ?? r.updated_at ?? 0))) return r;
-  // Each refreshed window is dated by the sample it came from (`at`); the row's own date is
-  // untouched, so a window the sample does not cover still ages by the read that made it.
-  const windows = { ...(r.windows || {}) };
-  const names = [];
-  for (const [k, n] of [['fh', 'five_hour'], ['sd', 'seven_day'], ['xu', 'extra']]) {
-    if (!Number.isFinite(s[k])) continue;
-    windows[n] = { ...(windows[n] || { resets_at: null }), pct: s[k], at: s.t };
-    names.push(n);
-  }
-  return names.length ? { ...r, windows, fresh: { t: s.t, windows: names } } : r;
-}
-
 function agedOut(r, now) {
-  // What the numbers describe, dated: a desktop row by the sample it read, a codex row by
-  // the rollout, an oauth row by nothing — a live read has no stamp but its own read time.
+  // What the numbers describe, dated: a codex row by the rollout it read, an oauth row by
+  // nothing — a live read has no stamp but its own read time.
   // Exempting a row because that field is absent is what let a three-hour-old oauth reading
   // sit on the page as a current figure, its five-hour window an hour and a half past the
   // span it describes, with nothing on screen saying so.
@@ -1639,8 +1611,7 @@ function agedOut(r, now) {
   const windows = {};
   let any = false;
   for (const [n, w] of Object.entries(r.windows || {})) {
-    // A window refreshed from a desktop sample (freshen) carries that sample's own date.
-    const age = now - (w.at ?? t);
+    const age = now - t;
     if (age > windowAge(n)) {
       // The number is no longer a current figure, but "—" tells the reader nothing at all.
       // Kept as `last`, the view can still show it greyed, with its age beside it.
@@ -1659,7 +1630,7 @@ function creditsRows() {
     .prepare('SELECT * FROM credits')
     .all()
     .map((r) => {
-      const row = agedOut(freshen(JSON.parse(r.payload)), nowSec);
+      const row = agedOut(JSON.parse(r.payload), nowSec);
       // A hold is news only while it is current: half a day on, the row's own age says more
       // than a pause nobody has re-reported since.
       if (row.hold && nowSec - (row.hold.at || 0) > RANK_STALE) delete row.hold;
@@ -1779,11 +1750,11 @@ const MACHINES_FILE = process.env.FLEET_MACHINES_FILE || path.join(__dirname, 'm
 const LOGINS_SH = process.env.FLEET_LOGINS_SH || path.join(__dirname, 'box', 'fleet-logins.sh');
 const MACHINES_TTL =
   (Number(process.env.FLEET_MACHINES_TTL_SECS) > 0 ? Number(process.env.FLEET_MACHINES_TTL_SECS) : 300) * 1000;
-// The usage endpoint is read once an hour at most, and only between 11:00 and 03:00 in the
+// The usage endpoint is read once every eight hours at most, and only between 11:00 and 03:00 in the
 // deck's own local time (operator ruling 2026-09-10). A Refresh click reads at any hour and
 // counts as that hour's read; every other call the collectors make keeps its own cadence.
 const USAGE_EVERY_MS =
-  (Number(process.env.FLEET_USAGE_EVERY_SECS) > 0 ? Number(process.env.FLEET_USAGE_EVERY_SECS) : 3600) * 1000;
+  (Number(process.env.FLEET_USAGE_EVERY_SECS) > 0 ? Number(process.env.FLEET_USAGE_EVERY_SECS) : 8 * 3600) * 1000;
 const USAGE_HOURS = process.env.FLEET_USAGE_HOURS || '11-3';
 const [USAGE_FROM, USAGE_TO] = USAGE_HOURS.split('-').map(Number);
 // '11-3' wraps midnight, so it reads as 11:00 through 02:59; '9-17' does not wrap.
@@ -1863,6 +1834,8 @@ const desktopSessionStore = new DesktopSessions({
     return sshInput(machine.ssh, machine.wsl ? 'wsl sh -s' : 'sh -s', script, options);
   },
 });
+
+const docsIndex = new DocsIndex({ db, roots: defaultRoots() });
 
 const DESKTOP_TRANSCRIPT_SH = process.env.FLEET_DESKTOP_TRANSCRIPT_SH || path.join(__dirname, 'box', 'desktop-transcript.sh');
 // Renders one transcript on the machine that owns it. The selector is either a validated
@@ -2201,9 +2174,9 @@ function machinesUsage(rows, now = Math.floor(Date.now() / 1000)) {
     if (!r || (r.kind !== 'claude' && r.kind !== 'codex')) continue;
     const key = r.kind === 'claude' ? r.org : String(r.email || r.id || '').toLowerCase();
     if (!key) continue;
-    // Only a desktop-sourced Claude row is stamped with sample_ts; an oauth or codex row
-    // dates itself with updated_at, and a row with neither is the configured-but-unreported
-    // blank, which is still a legitimate entry.
+    // No source stamps a stored row with sample_ts any more; an oauth or codex row dates
+    // itself with updated_at, and a row with neither is the configured-but-unreported blank,
+    // which is still a legitimate entry.
     const sampleTs = r.sample_ts ?? r.updated_at ?? null;
     let windows = windowsOf(r);
     let staleWindows = !!r.stale_windows;
@@ -2677,11 +2650,52 @@ async function sshkeys() {
     )
   ).filter(Boolean);
   keys.sort((a, b) => a.name.localeCompare(b.name));
-  return { certs, keys };
+  return { certs, keys, policy: sshCertPolicy() };
 }
 
 const TTL_MS = { '1h': 3600e3, '4h': 4 * 3600e3, '8h': 8 * 3600e3 };
-const SAFE_PRINCIPALS = /^[a-z0-9_][a-z0-9_.,-]*$/i;
+const ADMIN_CERT_TAGS = new Set(['promptly-only', 'onboarding-only', 'ivy-only', 'german-only', 'rog-only']);
+const LEGACY_CERT_PRINCIPALS = ['root', 'vibe', 'misterisley', 'tabor'];
+const LEGACY_ALIAS_USERS = { 'vps-deploy':'root', 'ob-deploy':'root', 'ivybox-deploy':'root', 'gb-deploy':'vibe', 'rs-deploy':'misterisley' };
+function sshCertPolicy() {
+  const policy = { defaultProfile:'legacy', legacyPrincipals:[...LEGACY_CERT_PRINCIPALS], requiredLogins:[], error:null };
+  try {
+    const rotation = (process.env.SSH_ROTATION_STATE || fs.readFileSync(path.join(__dirname, 'deploy-keys/ROTATION-STATE'), 'utf8')).trim();
+    if (!['legacy','s3-applied'].includes(rotation)) throw new Error('unknown rotation state');
+    policy.defaultProfile = rotation === 's3-applied' ? 'daily' : 'legacy';
+    const config = JSON.parse(fs.readFileSync(MACHINES_FILE, 'utf8'));
+    if (!Array.isArray(config.machines)) throw new Error('invalid machines config');
+    for (const m of config.machines) {
+      if (!m || m.route !== 'ssh') continue;
+      // Existing rows identify login users through their documented aliases.
+      // Explicit metadata supports new rows without reading the owner's SSH config.
+      const user = m.user !== undefined ? m.user : m.sshUser !== undefined ? m.sshUser : LEGACY_ALIAS_USERS[m.ssh];
+      if (typeof user !== 'string' || !/^[a-z_][a-z0-9_-]*$/.test(user)) throw new Error('unknown machine login');
+      if (!policy.requiredLogins.includes(user)) policy.requiredLogins.push(user);
+    }
+    if (policy.requiredLogins.some(user => !LEGACY_CERT_PRINCIPALS.includes(user))) throw new Error('Legacy omits a configured login');
+  } catch {
+    policy.error = 'Legacy mint blocked: cannot cover every SSH login in machines.json; owner must reconcile the login policy';
+  }
+  return policy;
+}
+function mintArguments(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
+  if (Object.keys(input).some(k => !['profile', 'ttl', 'extraTags'].includes(k))) return null;
+  const policy = sshCertPolicy();
+  const profile = input.profile === undefined ? policy.defaultProfile : input.profile;
+  if (!['legacy','daily','admin'].includes(profile)) return null;
+  const ttl = profile === 'daily' ? '8h' : profile === 'legacy' ? (input.ttl === undefined ? '1h' : input.ttl) : '1h';
+  if (typeof ttl !== 'string' || !Object.hasOwn(TTL_MS, ttl)) return null;
+  if (input.ttl !== undefined && input.ttl !== ttl) return null;
+  const tags = input.extraTags === undefined ? [] : input.extraTags;
+  if (!Array.isArray(tags) || tags.length > ADMIN_CERT_TAGS.size ||
+      tags.some(tag => typeof tag !== 'string' || !ADMIN_CERT_TAGS.has(tag)) ||
+      new Set(tags).size !== tags.length || (profile !== 'admin' && tags.length)) return null;
+  if (profile === 'legacy' && policy.error) return null;
+  const principals = profile === 'legacy' ? LEGACY_CERT_PRINCIPALS.join(',') : profile === 'daily' ? 'deploy' : ['admin', ...tags].join(',');
+  return ['--' + profile, '-t', ttl, '-n', principals];
+}
 
 // The signature comes from the 1Password agent, which pops an approval on this Mac —
 // the timeout has to outlast a human walking back to the keyboard.
@@ -2690,9 +2704,9 @@ const MINT_TIMEOUT = 120000;
 // detached puts the script in its own process group, so the timeout kill (-pid) also takes
 // down the ssh-keygen still blocked on the 1Password prompt. execFile's own timeout kills
 // only the script, leaving that child free to mint a cert after we already answered 502.
-function mint(ttl, principals) {
+function mint(args) {
   return new Promise((resolve) => {
-    const child = spawn(MINT_SH, ['-t', ttl, '-n', principals], {
+    const child = spawn(MINT_SH, args, {
       detached: true,
       env: { ...process.env, SSH_AUTH_SOCK: OP_AGENT_SOCK },
     });
@@ -2728,13 +2742,14 @@ function deleteCertDir(input) {
   if (!dir.startsWith(CERTS_DIR + path.sep) || !fs.existsSync(dir) || !fs.lstatSync(dir).isDirectory())
     return { code: 400, body: { ok: false, error: 'not a cert directory' } };
   fs.rmSync(dir, { recursive: true, force: true });
-  // If the vps-deploy/gb-deploy alias pointer targeted this dir, remove it too so
-  // ssh fails with a clear missing-file error instead of a dangling symlink.
-  const cur = path.join(CERTS_DIR, 'current');
-  try {
-    if (path.resolve(CERTS_DIR, fs.readlinkSync(cur)) === dir) fs.unlinkSync(cur);
-  } catch (e) {
-    // no symlink present — nothing to clean
+  // Remove only profile pointers targeting this directory; other profiles retain theirs.
+  for (const name of ['current', 'current-daily', 'current-admin']) {
+    const cur = path.join(CERTS_DIR, name);
+    try {
+      if (path.resolve(CERTS_DIR, fs.readlinkSync(cur)) === dir) fs.unlinkSync(cur);
+    } catch (e) {
+      // no symlink present — nothing to clean
+    }
   }
   return { code: 200, body: { ok: true } };
 }
@@ -2974,6 +2989,7 @@ async function body(req, maxBytes = 4096) {
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
@@ -3192,8 +3208,7 @@ async function messageRoute(req, res, p, url) {
 
 // --- notify: alias -> target, delivery with auto-retry, and the ACK the sender waits on.
 
-// Desktop seats have no address of their own: delivery lands in whichever chat is open.
-// A seat is a Claude Desktop session, found by the title the operator gave it (/rename
+// A seat is a Claude Desktop session, found by the app title the operator gave it (or /rename
 // `🎛 ORCHESTRATOR <N> · <project> · <topic>` and kin). Each row: alias pattern, the seat name the
 // receiver reads, the seats-table key, and the title test. Project spelling drifts
 // (lowcap-connector / lowcapconnector / lowcap), so it is compared with punctuation stripped.
@@ -3213,15 +3228,17 @@ const NOTIFY_SEATS = [
   [/^coordinator[\s-]+(\d+)$/i, (m) => '🧭 COORDINATOR ' + m[1], null, (m) => numbered('🧭 COORDINATOR', m[1])],
 ];
 
-// The orchestrator seat also has a lease row whose owner_name is the session's ListAgents name
-// even when it was never renamed — the fallback when no title matches.
-function seatSessions(seatKey, matches) {
-  const live = desktopSessions();
-  const titled = live.filter((s) => matches(s.name));
-  if (titled.length || seatKey !== 'orchestrator') return titled;
+// Prefer app titles across all live sessions before trying legacy CLI names. The
+// orchestrator lease owner remains the last fallback when neither title nor name matches.
+function seatSessions(seatKey, matches, live) {
+  const titled = live.filter((s) => s.title !== null && matches(s.title));
+  if (titled.length) return { sessions: titled, resolvedVia: 'title' };
+  const named = live.filter((s) => matches(s.name));
+  if (named.length || seatKey !== 'orchestrator') return { sessions: named, resolvedVia: 'seat' };
   const row = seatRow.get('orchestrator');
-  if (!row || row.epoch === null || row.suspect_at !== null || row.expires_at < msNow()) return [];
-  return live.filter((s) => s.name === row.owner_name);
+  const sessions = !row || row.epoch === null || row.suspect_at !== null || row.expires_at < msNow()
+    ? [] : live.filter((s) => s.name === row.owner_name);
+  return { sessions, resolvedVia: 'seat' };
 }
 
 // A worker is addressed by the human name the operator knows it by. Identity columns first
@@ -3268,21 +3285,28 @@ function resolveNotifyTarget(to) {
     const match = pattern.exec(alias);
     if (!match) continue;
     const seat = seatLabel(match);
-    const live = seatSessions(seatKey, matcher(match));
+    const considered = desktopSessions();
+    const { sessions: live, resolvedVia } = seatSessions(seatKey, matcher(match), considered);
     if (live.length > 1) {
       const error = new Error('ambiguous');
       error.code = 409;
-      error.candidates = live.map((s) => ({ host: 'mac', name: s.name, worker: '', label: seat }));
+      error.candidates = live.map((s) => ({
+        host: 'mac', name: s.name, ...(s.title !== null ? { title: s.title } : {}), worker: '', label: seat,
+      }));
       throw error;
     }
-    const session = live.length ? live[0].name : 'current';
+    // A derived CLI name can collide or change. Title matches have a joined stable ID,
+    // which the existing delivery path revalidates against the live process/socket.
+    const session = !live.length ? 'current'
+      : resolvedVia === 'title' ? 'id:' + live[0].sessionId : live[0].name;
     return {
       target: validateMessageTarget({ type: 'claude-desktop', session, label: seat }),
       resolvedTarget: 'claude-desktop:' + session,
-      resolvedVia: 'seat',
+      resolvedVia,
       seat,
       seatKey,
       unaddressable: !live.length,
+      consideredTitles: considered.map((s) => s.title).filter((title) => title !== null).slice(0, 100),
     };
   }
   if (alias.includes(':')) {
@@ -3365,17 +3389,18 @@ async function notifySend(b, remote) {
   // Hand-rolled callers send false as a string or a 0 as often as a boolean; all mean no ACK.
   const expectAck = !(b.expectAck === false || b.expectAck === 0 || b.expectAck === 'false');
   const openChat = b.openChat === true || b.openChat === 1 || b.openChat === 'true';
-  const { target, resolvedTarget, resolvedVia, seat, seatKey, unaddressable } = resolveNotifyTarget(b.to);
+  const { target, resolvedTarget, resolvedVia, seat, seatKey, unaddressable, consideredTitles } = resolveNotifyTarget(b.to);
   if (unaddressable && !openChat) {
     const row = seatKey ? seatRow.get(seatKey) : null;
     const error = new Error('seat_unaddressable');
     error.code = 409;
-    // Over the tailnet the owner is withheld: /api/seats is loopback-only (M13), and this reply
-    // must not become a side door to it.
+    // Owner and the fleet-wide title diagnostic stay on loopback: a bus-token holder
+    // must not use a missing alias to enumerate desktop seats across projects.
     error.detail = {
       seat,
       owner: row && !remote ? { host: row.owner_host, name: row.owner_name, fenced: row.epoch !== null } : null,
-      hint: 'no live Claude Desktop session is titled for this seat (ListAgents name); start or /rename it, or open its chat and resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.',
+      consideredTitles: remote ? null : consideredTitles,
+      hint: 'no live Claude Desktop session matches this seat by app title or CLI name; start or title it, or open its chat and resend with --open-chat (openChat:true) — best-effort, no ACK wait unless --expect-ack.',
     };
     throw error;
   }
@@ -3443,6 +3468,89 @@ async function notifyRoute(req, res, p, url, remote = false) {
   }
 }
 
+// --- docs. The index of what the operator's own sessions wrote. Loopback only, and
+// deliberately absent from tailnetHandler (the same rule /api/goals follows): these are
+// the operator's working files, and a box worker has no business reading them.
+
+// Which app opens which kind. Server-side on purpose: the page asks for a row by id and the
+// deck decides what to launch, so no browser ever names an executable. FLEET_DOCS_APPS is a
+// JSON object merged over these, e.g. {".md":"Obsidian"}.
+function docsAppsEnv() {
+  const raw = (process.env.FLEET_DOCS_APPS || '').trim();
+  if (!raw) return {};
+  try {
+    const d = JSON.parse(raw);
+    if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('not a JSON object');
+    return d;
+  } catch (e) {
+    console.error('FLEET_DOCS_APPS ignored, the default app map stands: ' + e.message);
+    return {};
+  }
+}
+
+const DOCS_APPS = { '.html': 'Google Chrome', '.md': 'Cursor', url: 'Google Chrome', ...docsAppsEnv() };
+const OPEN_BIN = process.env.FLEET_OPEN_BIN || 'open'; // the deck runs on the Mac: `open -a <App>`
+
+async function docsRoute(req, res, url) {
+  if (req.method === 'GET') {
+    const refresh = url.searchParams.get('refresh') === '1';
+    const sweep = docsIndex.sweep(refresh);
+    // A plain GET answers out of the table at once and lets the sweep land behind it. Only
+    // a Refresh, or a first load with nothing stored yet, is worth waiting on the disk for.
+    if (refresh || docsIndex.at === null) await sweep;
+    else Promise.resolve(sweep).catch(() => {});
+    const q = url.searchParams;
+    return json(res, {
+      ...docsIndex.view({
+        day: q.get('day'), session: q.get('session'), kind: q.get('kind'), source: q.get('source'),
+        project: q.get('project'), q: q.get('q'),
+        limit: q.get('limit') || undefined,
+      }),
+      // So the screen can name the app in the tooltip without ever deciding it.
+      apps: DOCS_APPS,
+    });
+  }
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  // The hook POSTs from a shell and carries no Origin; a *foreign* Origin is another
+  // page's browser and is rejected (the registry gate, same reasoning).
+  if (req.headers.origin && !ALLOWED_ORIGINS.has(req.headers.origin))
+    return send(res, 403, 'text/plain', 'forbidden');
+  const b = await body(req, 16384).catch(() => null);
+  if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
+  try {
+    return json(res, { ok: true, doc: docsIndex.add(b) });
+  } catch (e) {
+    return json(res, { ok: false, error: e.message }, 400);
+  }
+}
+
+// The stored path is the only thing served: an id, never a path from the query. What gets
+// stored is gated in DocsIndex.add (a real .html/.md path, never under a hidden directory
+// outside the swept roots). An Artifact row is a claude.ai URL with no local file.
+function docsOpen(req, res, url) {
+  const id = Number(url.searchParams.get('id'));
+  const row = Number.isSafeInteger(id) && id > 0 ? docsIndex.get(id) : null;
+  if (!row || row.gone || !row.path.startsWith('/')) return send(res, 404, 'text/plain', 'not found');
+  return sendFile(res, row.path, req);
+}
+
+// Hands one indexed row to its preferred app on this machine. The Origin check fails closed —
+// stricter than POST /api/docs, which a shell hook posts to with no Origin at all — because
+// this route LAUNCHES a local application, and no other page may be able to do that.
+async function docsOpenApp(req, res) {
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  if (!ALLOWED_ORIGINS.has(req.headers.origin)) return send(res, 403, 'text/plain', 'forbidden');
+  const b = await body(req, 4096).catch(() => null);
+  const id = Number(b && b.id);
+  const row = Number.isSafeInteger(id) && id > 0 ? docsIndex.get(id) : null;
+  if (!row || row.gone) return json(res, { ok: false, error: 'unknown doc id' }, 404);
+  const app = row.path.startsWith('https://') ? DOCS_APPS.url : DOCS_APPS[path.extname(row.path).toLowerCase()];
+  if (!app) return json(res, { ok: false, error: 'no app for this kind' }, 400);
+  const { err, stderr } = await run(OPEN_BIN, ['-a', app, row.path], { timeout: 10000 });
+  if (err) return json(res, { ok: false, error: String(stderr || err.message).trim().slice(0, 300) }, 502);
+  return json(res, { ok: true, app });
+}
+
 const server = http.createServer(async (req, res) => {
   if (!ALLOWED_HOSTS.has(req.headers.host)) return send(res, 403, 'text/plain', 'forbidden');
   const url = new URL(req.url, 'http://localhost');
@@ -3463,13 +3571,16 @@ const server = http.createServer(async (req, res) => {
         const r = deleteCertDir(b.dir);
         return json(res, r.body, r.code);
       }
-      if (!TTL_MS[b.ttl] || typeof b.principals !== 'string' || !SAFE_PRINCIPALS.test(b.principals))
-        return json(res, { ok: false, error: 'ttl must be 1h, 4h or 8h; principals must be names like root or root,vibe' }, 400);
-      const r = await mint(b.ttl, b.principals);
+      const args = mintArguments(b);
+      if (!args) return json(res, { ok: false, error: 'choose legacy (1h/4h/8h, all configured logins), daily (8h), or admin (1h); extraTags must be approved admin box tags' }, 400);
+      const r = await mint(args);
       return json(res, r.body, r.code);
     }
     if (p === '/api/registry' || p === '/api/registry/delete') return await registryRoute(req, res, p, false);
     if (p === '/api/goals') return await goalsRoute(req, res);
+    if (p === '/api/docs') return await docsRoute(req, res, url);
+    if (p === '/api/docs/open') return docsOpen(req, res, url);
+    if (p === '/api/docs/open-app') return await docsOpenApp(req, res);
     // Loopback only, and deliberately absent from tailnetHandler: a decision sheet is the
     // operator's, and no box worker may read one or answer for them.
     if (p === '/api/unblock' || p.startsWith('/api/unblock/')) return await unblockRoute(req, res, p);
@@ -3827,10 +3938,14 @@ module.exports = {
   reaperTick, reaperLoop, REAPER,
   // Test seams: the pure joins the Machines view renders from, no I/O of their own.
   machinesUsage, machinesSessions, clientUsage,
+  // Test seam: the docs index this instance swept into, so a test can read it without HTTP.
+  docsIndex,
   // Test seams: which candidate wins a credits row, what that row ends up holding, and
   // what a reader is finally shown once ageing has had its say.
   creditsWrite, beats, creditsRows, machinesCredits, creditsCollect, creditsCandidates,
-  // Test seams: the hourly window the usage endpoint is read in, and the claim on it.
+  // Test seam: the trend line's own writer — the only thing that still reads a desktop sample.
+  creditsHistoryWrite,
+  // Test seams: the eight-hour schedule the usage endpoint is read on, and the claim on it.
   usageDue, usageHoursOpen,
   // Test seams: the per-reply insert behind the Accounts page's usage-call log, and the
   // retention the sweep applies to it.

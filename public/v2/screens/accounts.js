@@ -38,8 +38,9 @@
   const label = (n) =>
     WIN_LABEL[n] ||
     (n.startsWith('seven_day_') ? '7 day ' + n.slice(10).replace(/(^|_)(\w)/g, (m, s, c) => (s && ' ') + c.toUpperCase()) : n.replace(/_/g, ' '));
-  // What each row's numbers actually are, so a stale snapshot is never read as live usage.
-  const SOURCE = { oauth: 'live', desktop: 'desktop snapshot', push: 'push', codex: 'live' };
+  // What each row's numbers actually are. Every one of them is a live read of that account's
+  // own token; the desktop app's samples are the trend line and nothing else.
+  const SOURCE = { oauth: 'live', push: 'push', codex: 'live' };
   // The plan behind the windows. An unknown tier shows verbatim rather than as nothing.
   const TIER = { default_claude_max_20x: 'Max 20×', claude_max: 'Max' };
 
@@ -57,8 +58,8 @@
 
   const nowMs = (now) => (now === undefined ? Date.now() : now);
 
-  // Past a day amber, past three red — a desktop sample only refreshes while that account
-  // is actually being used, so its age is the whole story. accounts.js:40-47.
+  // Past a day amber, past three red — a reading's age is the whole story once the window it
+  // describes has rolled over. accounts.js:40-47.
   function ago(epoch, now) {
     const ms = nowMs(now) - epoch * 1000;
     const m = Math.floor(ms / 60000);
@@ -175,15 +176,16 @@
     };
   }
 
-  // The header's source text: 'live' / 'desktop snapshot' / 'push', plus whose numbers
-  // are actually on show when the live reply carried none. accounts.js:135-137.
-  // A desktop sample newer than the live read supplies the windows it covers (server.js
-  // freshen); the row stays the live read's, so the header names exactly those windows.
-  function sourceText(r, now) {
+  // The header's source text: 'live' / 'push', plus whose numbers are actually on show when
+  // the live reply carried none. accounts.js:135-137. A held live read is named here too: a
+  // collapsed card shows its header and nothing else, so a row with no numbers at all must
+  // still say on that one line why nobody could read it.
+  function sourceText(r) {
     if (!r.source) return '';
     return (SOURCE[r.source] || r.source) +
       (r.windows_from ? ' · usage from ' + (SOURCE[r.windows_from] || r.windows_from) : '') +
-      (r.fresh ? ' · ' + r.fresh.windows.map(label).join(', ') + ' from a desktop sample ' + ago(r.fresh.t, now).text : '');
+      (r.hold ? ' · live read ' + (r.hold.state === 'rate_limited' ? 'throttled' : 'refused') + ' on ' + r.hold.host +
+        (r.hold.until ? ' until ' + hhmm(r.hold.until) : '') : '');
   }
 
   // accounts.js:154-166. An expired token still leaves whatever another source reported,
@@ -206,19 +208,6 @@
     if (r.state === 'rate_limited') return { text: 'usage endpoint busy on ' + r.host + below, tone: 'muted' };
     if (r.state === 'error') return { text: 'could not read usage on ' + r.host, tone: 'notice' };
     return null;
-  }
-
-  // accounts.js:168-178. Older than the window it measured means that window has reset
-  // since, so the reading is history, not a current figure.
-  function staleNote(r, now) {
-    if (!r.sample_ts) return null;
-    const a = ago(r.sample_ts, now);
-    return {
-      text: r.stale_windows
-        ? 'sampled ' + a.text + ' — older than the window it measured, so these have reset since'
-        : 'sampled ' + a.text + ' — no reset times in this source',
-      cls: a.cls,
-    };
   }
 
   // The bars, in the order the old page sorted them: five_hour, seven_day, the model
@@ -264,7 +253,6 @@
     const a = ago(r.updated_at, now);
     const t = r.kind === 'claude' ? trend(r.history) : null;
     const b = banner(r);
-    const s = staleNote(r, now);
     const credits = creditsLine(r);
     const tier = TIER[r.tier] || r.tier || TIER[r.type] || r.type;
     const rowBars = bars(r, now);
@@ -277,15 +265,13 @@
       // Eight characters is enough to match a row against credits-accounts.json by eye.
       id: r.org ? String(r.org).slice(0, 8) : '',
       plan: (tier || '') + (r.kind === 'codex' && r.plan ? (tier ? ' ' : '') + r.plan : ''),
-      live: sourceText(r, now),
+      live: sourceText(r),
       unconfirmed: !r.confirmed,
       right: r.updated_at ? a.text + ' · ' + (r.source === 'push' ? 'push' : r.host) : '',
       // Body.
       noData: !r.source,
       banner: b ? b.text : '',
       bannerTone: b ? b.tone : '',
-      staleNote: s ? s.text : '',
-      staleCls: s ? s.cls : '',
       bars: rowBars,
       noWindows: !!r.source && r.kind === 'claude' && rowBars.length === 0,
       creditsText: credits ? credits.text : '',
@@ -312,16 +298,13 @@
     const parts = [];
     if (a.noData) parts.push('no data yet — run push from their machine');
     else {
-      if (a.staleNote) parts.push(a.staleNote);
       if (a.noWindows) parts.push('no usage windows reported');
       if (a.creditsText) parts.push(a.creditsText);
       if (a.noHistory) parts.push('no history yet');
     }
     if (a.unconfirmed) parts.push('unconfirmed mapping');
     a.note = parts.join(' · ');
-    a.noteTone = a.staleCls === 'age-red' ? 'bad'
-      : (a.staleCls === 'age-amber' || a.unconfirmed || a.creditsNotice) ? 'warn'
-      : 'muted';
+    a.noteTone = a.unconfirmed || a.creditsNotice ? 'warn' : 'muted';
     return a;
   }
 
@@ -427,7 +410,7 @@
 
   const pure = {
     ago, until, hhmm, level, worst, atLimit, order, summary, creditsLine, trend,
-    sourceText, banner, staleNote, bars, barOf, enrich, note, toRows, toErrors, label,
+    sourceText, banner, bars, barOf, enrich, note, toRows, toErrors, label,
     progressRows, progressSummary, accountLines, usageLogLines,
     WIN_LABEL, SOURCE, TIER,
   };
@@ -505,7 +488,7 @@
   // appears in the styles the template binds, and setProp only writes the properties
   // present in the new style object, so neither write is undone by a re-render.
   // ---------------------------------------------------------------------------
-  const PRIVACY = "Usage per AI account, most constrained first. Every machine reads its own token locally and reports only percentages — no access token ever leaves the machine that owns it. The trend line is the Claude desktop app's own samples, merged across machines. Names and org mapping live in credits-accounts.json.";
+  const PRIVACY = "Usage per AI account, most constrained first. Every machine reads its own token locally and reports only percentages — no access token ever leaves the machine that owns it. The trend line is the Claude desktop app's own samples, merged across machines — history only; no row's figures come from it. Names and org mapping live in credits-accounts.json.";
 
   function chrome() {
     let box = document.getElementById(CHROME);

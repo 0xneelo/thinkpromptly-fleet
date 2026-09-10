@@ -16,8 +16,8 @@ One page serves three views. The view travels on the query string, the screen on
 | `/app` | The deck |
 | `/deck` | Investor deck, five slides |
 
-The deck has ten screens: `windows`, `org`, `registry`, `bus`, `keys`, `accounts`,
-`machines`, `goals`, `unblock`, `desktop`. `/app#registry` opens one directly. The old per-page URLs
+The deck has eleven screens: `windows`, `org`, `registry`, `bus`, `keys`, `accounts`,
+`machines`, `goals`, `docs`, `unblock`, `desktop`. `/app#registry` opens one directly. The old per-page URLs
 (`/index.html`, `/keys.html`, `/accounts.html`, `/machines.html`, `/sessions.html`)
 answer with a 302 to the screen that replaced them, so an old bookmark still lands in
 the right place. `/v2/` serves the same shell, which is what the design gate captures.
@@ -31,6 +31,7 @@ worktree you run it from**: `node_modules/` is gitignored, so a fresh clone and 
 
     npm install   # once per worktree — 6 packages, about 2s
     npm test      # node --test, one file at a time
+    FLEET_TEST_TAILNET_BIND=::1 npm test   # on a Mac without the 127.0.0.2 lo0 alias
 
 `npm test` checks that first. `scripts/check-deps.js` runs as `pretest` and prints one line
 naming the missing packages, instead of letting the first test file die on `Cannot find
@@ -108,6 +109,23 @@ senders set `FLEETDECK_URL=http://100.125.231.25:3131` and
 `FLEETDECK_BUS_TOKEN`; Fleetdeck creates that token at `~/.fleetdeck-bus-token` with mode 0600.
 Message IDs are idempotent, failed deliveries stay visible and retryable, and tailnet message
 POSTs require the bearer token.
+
+**Notify seat titles.** Local desktop sessions join the process registry's `sessionId`
+to the app store's `cliSessionId`. The title index refreshes lazily every five seconds;
+archived records and ambiguous duplicate keys supply no title. Missing or unreadable
+stores leave the existing CLI session names available. Store files above 16 MiB are skipped.
+Seat aliases (`orchestrator <project>`, `global`, `design <N>`, `researcher <N>`,
+`coordinator <N>`) match app titles first (`resolvedVia: "title"`), then CLI names,
+then the existing orchestrator lease owner. Title matches address the stable
+`claude-desktop:id:<cliSessionId>` peer. Multiple matches still return 409 `ambiguous`,
+with each candidate's app title included when present. On loopback, 409 `seat_unaddressable`
+includes up to 100 `consideredTitles` (titles only, no store paths or cwd); tailnet callers
+receive `consideredTitles: null`, just as the seat owner is withheld.
+
+| Environment variable | Default | Purpose |
+|---|---|---|
+| `CLAUDE_SESSIONS_DIR` | `~/.claude/sessions` | Live process/socket registry (`<pid>.json`); override for fixtures. |
+| `CLAUDE_DESKTOP_STORE_DIR` | `~/Library/Application Support/Claude/claude-code-sessions` | Local app metadata (`<account>/<org>/local_*.json`); override for fixtures. No remote collection. |
 
 **GitHub train.** The train broker is its own process, `fleetdeck-train.js`, run as a macOS
 launch agent (`com.fleetdeck.train`). It holds the GitHub App PEM and the train window in
@@ -198,6 +216,20 @@ session's `<cliSessionId>.jsonl` on the owning machine via `box/desktop-transcri
 (text and tool calls; thinking dropped, tool output clipped). Its read-only
 `GET /api/desktop-sessions` returns `groups` keyed by account UUID, org UUID, and machine,
 plus per-machine collection status. Org labels come from `credits-accounts.json`.
+
+**Docs.** `/app#docs` lists every document the sessions produce — published Artifacts,
+ELI5 explainers, unblock sheets, session digests, reports, and any `.html`/`.md` a session
+writes — newest first, filterable by day (date picker or day chips), by session, by kind, by
+source (a sticky "No scratchpads" choice), by project, and by text. The filter lives in the hash (`#docs?session=<cli-uuid>&day=2026-09-10`), and each
+Desktop sessions row has a Docs icon that opens the list for that session. The index is a
+`docs` table in `fleet.db`, swept from `~/.claude/session-exports`, the session scratchpads
+under `/private/tmp/claude-501/*/*/scratchpad/`, and this repo's `docs/{reports,research,unblocks}`
+(`FLEET_DOCS_ROOTS` adds more, colon-separated). `bin/docs-hook.js` is a Claude Code
+PostToolUse hook on `Write|Artifact` that registers each written file and each published
+Artifact URL as it happens; `GET /api/docs` lists, `POST /api/docs` registers, and
+`GET /api/docs/open?id=` serves a file by index id only. Each row's Open-in-app icon hands the
+file to the preferred app through macOS `open`: html and Artifacts to Google Chrome, md to Cursor;
+`FLEET_DOCS_APPS` overrides, e.g. `{".md":"Obsidian"}`. Loopback only, never on the tailnet.
 Enable a machine with `"desktop_sessions": true` on its existing `machines.json` entry;
 the Mac and german-box are enabled, while rog-strix remains deferred. The same local/SSH
 routing used by Machines pipes `box/desktop-sessions.sh` to the configured deploy alias.

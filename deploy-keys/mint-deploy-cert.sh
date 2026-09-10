@@ -1,99 +1,84 @@
 #!/bin/bash
-# Mint a short-lived OpenSSH user certificate signed by the CA key held in 1Password.
-# The CA private key never leaves the 1Password agent (-U signs via the agent).
+# Operator-only mint; the real CA stays inside 1Password. --dry-run never mints.
 set -euo pipefail
-
+CA_PUB=${CA_PUB:-$HOME/.ssh/deploy-ca.pub}
 AGENT_SOCK="$HOME/Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock"
-CA_PUB="$HOME/.ssh/deploy-ca.pub"
-
-ttl=1h
-principals=
-outdir=
-
+v1=SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0
+profile='' ttl='' principals='' outdir='' dry_run=0
 usage() {
-	echo "usage: $(basename "$0") -n principal[,principal] [-t 1h|4h|8h] [-o outdir]" >&2
-	exit 2
+  echo "usage: $0 [--legacy|--daily|--admin] [-n principals] [-t 1h|4h|8h] [--ca-pub file] [-o outdir] [--dry-run]" >&2
+  exit 2
 }
-
-while getopts ':t:n:o:h' opt; do
-	case "$opt" in
-	t) ttl=$OPTARG ;;
-	n) principals=$OPTARG ;;
-	o) outdir=$OPTARG ;;
-	*) usage ;;
-	esac
+fail() { echo "error: $*" >&2; exit 2; }
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --legacy|--daily|--admin) [ -z "$profile" ] || fail 'choose one profile'; profile=${1#--}; shift ;;
+    -n|-t|-o|--ca-pub)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || usage
+      case "$1" in -n) principals=$2;; -t) ttl=$2;; -o) outdir=$2;; --ca-pub) CA_PUB=$2;; esac
+      shift 2 ;;
+    --dry-run) dry_run=1; shift ;;
+    *) usage ;;
+  esac
 done
-
-case "$ttl" in
-1h | 4h | 8h) ;;
-*)
-	echo "error: -t must be 1h, 4h or 8h (got '$ttl')" >&2
-	exit 2
-	;;
+case "$profile" in
+  legacy) principals=${principals:-root,vibe,misterisley,tabor}; ttl=${ttl:-1h} ;;
+  daily) principals=${principals:-deploy}; ttl=${ttl:-8h}
+    [ "$principals" = deploy ] && [ "$ttl" = 8h ] || fail 'daily requires deploy and 8h' ;;
+  admin) principals=${principals:-admin}; ttl=${ttl:-1h}
+    [ "$ttl" = 1h ] || fail 'admin requires 1h'
+    IFS=, read -r -a tags <<< "$principals"
+    for tag in "${tags[@]}"; do
+      case "$tag" in admin|promptly-only|onboarding-only|ivy-only|german-only|rog-only) ;; *) fail 'unknown admin principal';; esac
+    done ;;
+  '') [ -n "$principals" ] || fail 'choose --daily, --admin, or explicit legacy -n'; ttl=${ttl:-1h} ;;
 esac
-
-[ -n "$principals" ] || {
-	echo "error: -n is required — cert principals must match the login username (e.g. -n root)" >&2
-	exit 2
-}
-
+case "$ttl" in 1h|4h|8h) ;; *) fail '-t must be 1h, 4h or 8h';; esac
+[[ "$principals" =~ ^[a-zA-Z0-9_-]+(,[a-zA-Z0-9_-]+)*$ ]] || fail 'invalid principals'
+[ -f "$CA_PUB" ] || fail 'CA public key file missing; export only its public half from 1Password'
+# Accept exactly one ordinary ed25519 PUBLIC key, never a certificate or private key.
+ca_public=$(cat -- "$CA_PUB")
+printf '%s\n' "$ca_public" | awk 'NF && $1 !~ /^#/ { if ($1 != "ssh-ed25519" || NF < 2) exit 1; n++ } END { if (n != 1) exit 1 }' || fail 'expected one ed25519 public CA key'
+fp=$(printf '%s\n' "$ca_public" | ssh-keygen -lf /dev/stdin -E sha256 | awk '{print $2}')
+[ -n "$fp" ] || fail 'invalid CA public key'
 stamp=$(date +%Y%m%d-%H%M%S)
+key_id=deployer-$stamp
+[ "$fp" = "$v1" ] || key_id=$key_id-ca2
+extensions=default
+options=()
+if [ "$profile" = daily ]; then extensions=permit-pty; options=(-O clear -O permit-pty); fi
+current_link=current
+case "$profile" in daily|admin) current_link=current-$profile ;; esac
+if [ "$dry_run" = 1 ]; then
+  printf 'profile=%s\nprincipals=%s\nttl=%s\nkey_id=%s\nca_fingerprint=%s\nextensions=%s\n' "${profile:-legacy}" "$principals" "$ttl" "$key_id" "$fp" "$extensions"
+  printf 'current_link=%s\n' "$current_link"
+  exit 0
+fi
+# Deliberately opt-in test seam. Tests supply an isolated signer, never an agent.
+if [ "${SSH_CA_TEST_MODE:-}" = 1 ]; then
+  [ -x "${SSH_CA_TEST_SIGNER:-}" ] && [ -n "$outdir" ] || fail 'test mode requires signer and explicit output directory'
+else
+  [ -z "${SSH_CA_TEST_SIGNER:-}" ] || fail 'test signer requires test mode'
+  [ -S "$AGENT_SOCK" ] || fail '1Password SSH agent unavailable'
+  export SSH_AUTH_SOCK="$AGENT_SOCK"
+fi
 outdir=${outdir:-$HOME/.ssh/deploy-certs/$stamp}
-
-if [ ! -S "$AGENT_SOCK" ]; then
-	echo "error: 1Password SSH agent socket not found at:" >&2
-	echo "  $AGENT_SOCK" >&2
-	echo "Enable it in 1Password > Settings > Developer > Use the SSH agent." >&2
-	exit 1
+umask 077
+ca_snapshot=$(mktemp "${TMPDIR:-/tmp}/ssh-ca-public.XXXXXX")
+trap 'rm -f "$ca_snapshot"' EXIT
+printf '%s\n' "$ca_public" > "$ca_snapshot"
+# Refuse an existing directory: never overwrite an active credential or follow its symlink.
+mkdir -p "$(dirname "$outdir")"
+outdir=$(cd "$(dirname "$outdir")" && pwd)/$(basename "$outdir")
+mkdir -m 700 "$outdir" || fail 'output directory must be new'
+ssh-keygen -t ed25519 -f "$outdir/deployer" -N '' -C deployer-cert -q
+sign_args=(-I "$key_id" -n "$principals" -V "+$ttl" -z "$(date +%s)" "${options[@]}" "$outdir/deployer.pub")
+if [ "${SSH_CA_TEST_MODE:-}" = 1 ]; then
+  SSH_CA_PUBLIC_SNAPSHOT="$ca_snapshot" "$SSH_CA_TEST_SIGNER" "${sign_args[@]}" >/dev/null
+else
+  ssh-keygen -Us "$ca_snapshot" "${sign_args[@]}" >/dev/null
+  mkdir -p "$HOME/.ssh/deploy-certs"
+  ln -sfn "$outdir" "$HOME/.ssh/deploy-certs/$current_link"
 fi
-export SSH_AUTH_SOCK="$AGENT_SOCK"
-
-if [ ! -f "$CA_PUB" ]; then
-	echo "error: CA public key not found at $CA_PUB" >&2
-	echo >&2
-	echo "List the keys the 1Password agent holds:" >&2
-	echo "  SSH_AUTH_SOCK=\"$AGENT_SOCK\" ssh-add -L" >&2
-	echo >&2
-	echo "Copy the single line for the key you want to act as the CA into:" >&2
-	echo "  $CA_PUB" >&2
-	exit 1
-fi
-
-mkdir -p -m 700 "$outdir"
-
-# Stale files would make ssh-keygen prompt "Overwrite?" and hang a headless run.
-rm -f "$outdir/deployer" "$outdir/deployer.pub" "$outdir/deployer-cert.pub"
-
-ssh-keygen -t ed25519 -f "$outdir/deployer" -N "" -C "deployer-cert" -q
-chmod 600 "$outdir/deployer"
-
-if ! ssh-keygen -Us "$CA_PUB" \
-	-I "deployer-$stamp" \
-	-n "$principals" \
-	-V "+$ttl" \
-	-z "$(date +%s)" \
-	"$outdir/deployer.pub" >/dev/null; then
-	echo "Signing failed — 1Password is probably locked. Unlock 1Password and re-run." >&2
-	exit 1
-fi
-
-login=${principals%%,*}
-
-# Stable pointer for the vps-deploy / gb-deploy ssh aliases in ~/.ssh/config.
-ln -sfn "$outdir" "$HOME/.ssh/deploy-certs/current"
-ssh-keygen -Lf "$outdir/deployer-cert.pub" | grep -E '^[[:space:]]*Valid:' >&2 || true
-echo >&2
-echo "ssh -o IdentitiesOnly=yes -o IdentityAgent=none -i \"$outdir/deployer\" -o CertificateFile=\"$outdir/deployer-cert.pub\" $login@<host>" >&2
-echo >&2
-cat >&2 <<EOF
-Host deploy-target
-    HostName <host>
-    User $login
-    IdentitiesOnly yes
-    IdentityAgent none
-    IdentityFile $outdir/deployer
-    CertificateFile $outdir/deployer-cert.pub
-EOF
-echo >&2
-
-echo "$outdir"
+ssh-keygen -Lf "$outdir/deployer-cert.pub" | awk '/Valid:/{print}' >&2
+printf '%s\n' "$outdir"
