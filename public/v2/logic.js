@@ -1211,6 +1211,7 @@ class AppLogic extends Sub {
       ink: t.ink, ink75: t.ink75, ink60: t.ink60, ink45: t.ink45, ink35: t.ink35,
       warn: t.warn, warnBg: t.warnBg, bad: t.bad, good: t.good, line: t.line,
       panel: t.panel, panelShadow: t.panelShadow, track: t.track, hoverBg: t.hoverBg,
+      bgAll: t.bgAll,   // the one opaque colour: a sticky card lays its panel tint over it
       cardPad: compact ? '14px 16px' : '18px 20px',
     };
     // The Goals screen draws itself in plain DOM into its own mount node, so it paints in the

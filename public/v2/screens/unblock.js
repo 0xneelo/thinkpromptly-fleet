@@ -338,7 +338,7 @@
       ink: '#111', ink75: '#333', ink60: '#666', ink45: '#888', ink35: '#aaa',
       warn: '#b26a00', bad: '#c0392b', good: '#2e7d32', line: 'rgba(128,128,128,.28)',
       panel: 'transparent', panelShadow: 'none', hoverBg: 'rgba(128,128,128,.12)',
-      track: 'rgba(128,128,128,.2)', cardPad: '18px 20px',
+      track: 'rgba(128,128,128,.2)', bgAll: '#ffffff', cardPad: '18px 20px',
     };
   }
 
@@ -769,7 +769,10 @@
     var total = qs.length;
     var done = answeredIds(qs, v.answers).length;
     var pending = pendingIds(qs, v.answers);
-    var c = card('position:sticky;top:8px;z-index:3;');
+    // Sticky over the scrolling cards, so it must be opaque: the panel tint laid over the page
+    // colour looks like every other card without letting the cards below read through.
+    var c = card('position:sticky;top:8px;z-index:3;background:linear-gradient(' + t.panel + ',' + t.panel + '),' +
+      (t.bgAll || '#fff') + ';');
     c.appendChild(el('span', 'font-size:15px;font-weight:600;color:' + t.ink + ';', safeText(v.sheet.title)));
     if (v.sheet.intro)
       c.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink60 + ';', safeText(v.sheet.intro)));
