@@ -79,3 +79,22 @@ Parser splits on the first `=`. The bot must be able to pin: a private chat work
 ## Later (optional, ask 6 from the handoff)
 
 Roll hook + summary + timer to onboarding-box and ivy-box with the same env contract. Package as a fleetdeck lane: a `mac/provision-ssh-alert.sh` following `mac/provision-fleet-secrets.sh:83-139` (stdin-piped values, `umask 077`, mode 600, atomic mv), one bot, one chat, host name in the message text.
+
+## Addendum 2026-09-10 — the operator chose a file, not 1Password
+
+- Bot created: `@megan_fleetdeck_bot` (getMe ok). Token lives in `~/remote-system/.secrets/.env` on the Mac as `MEGAN_TELEGRAM_BOT_TOKEN=`; line 2 is `MEGAN_TELEGRAM_BOT_TOKEN_LINK=` (the t.me link, not a chat id).
+- Seat 20 set the file to mode 600 and added `.secrets/` to the main checkout's `.git/info/exclude` and to the tracked `.gitignore`. Verify: `git -C ~/remote-system check-ignore -v .secrets/.env`.
+- Steps 2 and 3 now read from the file, never from `op`. The token goes into curl through `-K -` (config on stdin), never argv:
+
+  ```bash
+  tok=$(sed -n 's/^MEGAN_TELEGRAM_BOT_TOKEN=//p' ~/remote-system/.secrets/.env); printf 'url = "https://api.telegram.org/bot%s/getUpdates"\n' "$tok" | curl -s -K - | python3 -c 'import json,sys;u=json.load(sys.stdin)["result"];print(u[-1]["message"]["chat"]["id"] if u else "NO UPDATE")'; unset tok
+  ```
+
+  Then append `MEGAN_TELEGRAM_CHAT_ID=<id>` as line 3 of the file.
+- Step 4, the VPS write, maps the `MEGAN_` names onto the VPS contract. Any session on this Mac can run it; per D-90 it is the lowcap 🎛 seat's (36) or the operator's:
+
+  ```bash
+  sed -n 's/^MEGAN_\(TELEGRAM_BOT_TOKEN\|TELEGRAM_CHAT_ID\)=/\1=/p' ~/remote-system/.secrets/.env | ssh vps-deploy 'umask 077; cat > /etc/ssh-alert.env.tmp && chown root:root /etc/ssh-alert.env.tmp && chmod 600 /etc/ssh-alert.env.tmp && mv /etc/ssh-alert.env.tmp /etc/ssh-alert.env && wc -l /etc/ssh-alert.env && stat -c "%U %a" /etc/ssh-alert.env'
+  ```
+
+  Expect `2 /etc/ssh-alert.env` and `root 600`. (`sed -n` with `\|` is GNU/BSD-portable here because macOS sed accepts `\|` inside `\( \)` groups only with `-E`; if it prints nothing, use `sed -E -n 's/^MEGAN_(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID)=/\1=/p'`.)
