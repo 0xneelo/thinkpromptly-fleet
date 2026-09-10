@@ -1214,6 +1214,9 @@ class AppLogic extends Sub {
     // same tokens as the accounts chrome and follows the theme toggle with it.
     FD.screens.goals = FD.screens.goals || {};
     FD.screens.goals.tokens = FD.screens.accounts.tokens;
+    // Unblock draws itself the same way, into #fd-unblock-root.
+    FD.screens.unblock = FD.screens.unblock || {};
+    FD.screens.unblock.tokens = FD.screens.accounts.tokens;
     const accTone = (lvl) => (lvl === 'red' ? t.bad : lvl === 'amber' ? t.warn : t.good);
     // An aged-out window draws at the width it last held, in grey: the shape of the reading
     // survives, the colour no longer claims it is current.
@@ -1265,7 +1268,7 @@ class AppLogic extends Sub {
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
       rowPadY: compact ? '7px' : '11px', cardPad: compact ? '14px 16px' : '18px 20px',
       isWindows: screen === 'windows', isOrg: screen === 'org', isRegistry: screen === 'registry',
-      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isGoals: screen === 'goals', isDesktop: screen === 'desktop',
+      isBus: screen === 'bus', isKeys: screen === 'keys', isAccounts: screen === 'accounts', isMachines: screen === 'machines', isGoals: screen === 'goals', isUnblock: screen === 'unblock', isDesktop: screen === 'desktop',
       goDesktop: () => this.setState({ screen: 'desktop' }), navDesktop: navBtn(screen === 'desktop'),
       dq: this.state.dq, setDq: (e) => this.setState({ dq: e.target.value }), resetDs: () => this.setState({ dq: '', dsExp: {} }),
       dsGroups, dsCount, dsLive,
@@ -1277,8 +1280,9 @@ class AppLogic extends Sub {
       goAccounts: () => this.setState({ screen: 'accounts' }),
       goMachines: () => this.setState({ screen: 'machines' }),
       goGoals: () => this.setState({ screen: 'goals' }),
+      goUnblock: () => this.setState({ screen: 'unblock' }),
       navWindows: navBtn(screen === 'windows'), navOrg: navBtn(screen === 'org'), navRegistry: navBtn(screen === 'registry'),
-      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'), navGoals: navBtn(screen === 'goals'),
+      navBus: navBtn(screen === 'bus'), navKeys: navBtn(screen === 'keys'), navAccounts: navBtn(screen === 'accounts'), navMachines: navBtn(screen === 'machines'), navGoals: navBtn(screen === 'goals'), navUnblock: navBtn(screen === 'unblock'),
       toggleMode: () => {
         const next = !this.isDark();
         try { localStorage.setItem('fd-landing-dark', next ? '1' : '0'); } catch (e) {}
@@ -1608,7 +1612,9 @@ function fdAsked(what) {
       const byPath = { '/': 'land', '/app': 'app', '/deck': 'deck' }[here.pathname];
       return byPath || null;
     }
-    const asked = String(here.hash || '').replace(/^#/, '');
+    // The hash can carry the screen's own parameters (#unblock?sheet=...), which are the
+    // screen's business, not the shell's: the name is everything before the '?'.
+    const asked = String(here.hash || '').replace(/^#/, '').split('?')[0];
     return router.SCREENS.includes(asked) ? asked : null;
   } catch (e) { return null; }
 }
