@@ -193,11 +193,15 @@
    "sources": [
     "operator via RESEARCHER 3: 'package it and notify the orchestrator to get it launched'"
    ],
-   "updated": "2026-09-10",
+   "updated": "2026-09-11",
    "log": [
     {
      "at": "2026-09-10",
      "note": "added"
+    },
+    {
+     "at": "2026-09-11",
+     "note": "status → active — 2026-09-11 ~02:05 local: repo artifacts woven into main as bcd7ee6 (Ivo, 25 commits, 12 hunter + 5 oracle findings fixed, 2 optional WONTFIX). Host applies S1-S5 remain gated per owner; nothing applied yet"
     }
    ]
   }
