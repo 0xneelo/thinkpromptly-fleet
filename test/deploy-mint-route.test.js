@@ -21,7 +21,10 @@ test('actual mint route: origin fence, fixed profiles, tag validation and argv; 
   });
   const oldHome=process.env.HOME;
   t.after(()=>{process.env.HOME=oldHome;});
-  const mod=load({HOME:dir,FLEETDECK_BUS_TOKEN:'ivo-offline-test-fixture',FLEET_DB:path.join(dir,'fleet.db'), FLEET_HOSTS_FILE:hostsFile(dir,[]),PORT:'39319'});
+  const machines=path.join(dir,'machines.json');
+  const fleet={machines:[{id:'german-box',route:'ssh',ssh:'gb-deploy'},{id:'think-box',route:'ssh',ssh:'vps-deploy'},{id:'rog-strix',route:'ssh',ssh:'rs-deploy'}]};
+  fs.writeFileSync(machines,JSON.stringify(fleet));
+  const mod=load({HOME:dir,FLEETDECK_BUS_TOKEN:'ivo-offline-test-fixture',FLEET_DB:path.join(dir,'fleet.db'), FLEET_HOSTS_FILE:hostsFile(dir,[]),FLEET_MACHINES_FILE:machines,SSH_CA_ROTATION_STATE:'legacy',PORT:'39319'});
   t.after(async()=>{await unload(mod);fs.rmSync(dir,{recursive:true,force:true});});
   function request(body, origin='http://localhost:39319') {
     return new Promise(resolve=> {
@@ -35,14 +38,29 @@ test('actual mint route: origin fence, fixed profiles, tag validation and argv; 
   }
   assert.equal((await request({profile:'daily'},null)).status,403);assert.equal(calls.length,0);
   assert.equal((await request({})).status,200);
+  assert.deepEqual(calls.pop().args,['--legacy','-t','1h','-n','root,vibe,misterisley,tabor']);
+  assert.equal((await request({profile:'legacy',ttl:'8h',extraTags:[]})).status,200);
+  assert.deepEqual(calls.pop().args,['--legacy','-t','8h','-n','root,vibe,misterisley,tabor']);
+  assert.equal((await request({profile:'daily'})).status,200);
   assert.deepEqual(calls.pop().args,['--daily','-t','8h','-n','deploy']);
   assert.equal((await request({profile:'admin',ttl:'1h',extraTags:['promptly-only','rog-only']})).status,200);
   assert.deepEqual(calls.pop().args,['--admin','-t','1h','-n','admin,promptly-only,rog-only']);
-  const invalid=[{profile:'root'},{profile:null},{profile:'daily',ttl:'1h'},{profile:'admin',ttl:'8h'},
+  const invalid=[{profile:'root'},{profile:null},{profile:'daily',ttl:'1h'},{profile:'admin',ttl:'8h'},{profile:'legacy',ttl:['1h']},{profile:'legacy',ttl:{toString:null}},
+    {profile:'legacy',ttl:'24h'},{profile:'legacy',extraTags:['ivy-only']},{profile:'legacy',principals:'tabor'},
     {profile:'daily',extraTags:['ivy-only']},{profile:'admin',extraTags:['vibes-asus-only']},
     {profile:'admin',extraTags:['root']},{profile:'admin',extraTags:['ivy-only','ivy-only']},
     {profile:'admin',extraTags:'ivy-only'},{profile:'admin',extraTags:['$(bad)']},
     {profile:'admin',principals:'root'},{profile:'admin',caPub:'/unexpected'},[], 'daily'];
   for(const input of invalid) assert.equal((await request(input)).status,400,JSON.stringify(input));
   assert.equal(calls.length,0,'invalid requests never spawn the mint script');
+  fs.writeFileSync(machines,JSON.stringify({machines:[...fleet.machines,{id:'new-box',route:'ssh',sshUser:'new-user',ssh:'new-alias'}]}));
+  assert.equal((await request({profile:'legacy'})).status,400,'new login outside Legacy blocks mint');
+  fs.writeFileSync(machines,JSON.stringify({machines:[{id:'unknown',route:'ssh',ssh:'unmapped-alias'}]}));
+  assert.equal((await request({profile:'legacy'})).status,400,'unknown alias must not guess a login');
+  fs.writeFileSync(machines,'malformed');assert.equal((await request({profile:'legacy'})).status,400);
+  fs.writeFileSync(machines,JSON.stringify(fleet));
+  process.env.SSH_CA_ROTATION_STATE='roles';
+  assert.equal((await request({})).status,200);
+  assert.deepEqual(calls.pop().args,['--daily','-t','8h','-n','deploy']);
+  assert.equal(calls.length,0);
 });

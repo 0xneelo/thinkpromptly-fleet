@@ -2677,23 +2677,51 @@ async function sshkeys() {
     )
   ).filter(Boolean);
   keys.sort((a, b) => a.name.localeCompare(b.name));
-  return { certs, keys };
+  return { certs, keys, policy: sshCertPolicy() };
 }
 
 const TTL_MS = { '1h': 3600e3, '4h': 4 * 3600e3, '8h': 8 * 3600e3 };
 const ADMIN_CERT_TAGS = new Set(['promptly-only', 'onboarding-only', 'ivy-only', 'german-only', 'rog-only']);
+const LEGACY_CERT_PRINCIPALS = ['root', 'vibe', 'misterisley', 'tabor'];
+const LEGACY_ALIAS_USERS = { 'vps-deploy':'root', 'ob-deploy':'root', 'ivybox-deploy':'root', 'gb-deploy':'vibe', 'rs-deploy':'misterisley' };
+function sshCertPolicy() {
+  const policy = { defaultProfile:'legacy', legacyPrincipals:[...LEGACY_CERT_PRINCIPALS], requiredLogins:[], error:null };
+  try {
+    const rotation = (process.env.SSH_CA_ROTATION_STATE || fs.readFileSync(path.join(__dirname, 'deploy-keys/ROTATION-STATE'), 'utf8')).trim();
+    if (!['legacy','roles'].includes(rotation)) throw new Error('unknown rotation state');
+    policy.defaultProfile = rotation === 'roles' ? 'daily' : 'legacy';
+    const config = JSON.parse(fs.readFileSync(MACHINES_FILE, 'utf8'));
+    if (!Array.isArray(config.machines)) throw new Error('invalid machines config');
+    for (const m of config.machines) {
+      if (!m || m.route !== 'ssh') continue;
+      // Existing rows identify login users through their documented aliases.
+      // Explicit metadata supports new rows without reading the owner's SSH config.
+      const user = m.user !== undefined ? m.user : m.sshUser !== undefined ? m.sshUser : LEGACY_ALIAS_USERS[m.ssh];
+      if (typeof user !== 'string' || !/^[a-z_][a-z0-9_-]*$/.test(user)) throw new Error('unknown machine login');
+      if (!policy.requiredLogins.includes(user)) policy.requiredLogins.push(user);
+    }
+    if (policy.requiredLogins.some(user => !LEGACY_CERT_PRINCIPALS.includes(user))) throw new Error('Legacy omits a configured login');
+  } catch {
+    policy.error = 'Legacy mint blocked: cannot cover every SSH login in machines.json; owner must reconcile the login policy';
+  }
+  return policy;
+}
 function mintArguments(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
   if (Object.keys(input).some(k => !['profile', 'ttl', 'extraTags'].includes(k))) return null;
-  const profile = input.profile === undefined ? 'daily' : input.profile;
-  if (profile !== 'daily' && profile !== 'admin') return null;
-  const ttl = profile === 'daily' ? '8h' : '1h';
+  const policy = sshCertPolicy();
+  const profile = input.profile === undefined ? policy.defaultProfile : input.profile;
+  if (!['legacy','daily','admin'].includes(profile)) return null;
+  const ttl = profile === 'daily' ? '8h' : profile === 'legacy' ? (input.ttl === undefined ? '1h' : input.ttl) : '1h';
+  if (typeof ttl !== 'string' || !Object.hasOwn(TTL_MS, ttl)) return null;
   if (input.ttl !== undefined && input.ttl !== ttl) return null;
   const tags = input.extraTags === undefined ? [] : input.extraTags;
   if (!Array.isArray(tags) || tags.length > ADMIN_CERT_TAGS.size ||
       tags.some(tag => typeof tag !== 'string' || !ADMIN_CERT_TAGS.has(tag)) ||
-      new Set(tags).size !== tags.length || (profile === 'daily' && tags.length)) return null;
-  return ['--' + profile, '-t', ttl, '-n', profile === 'daily' ? 'deploy' : ['admin', ...tags].join(',')];
+      new Set(tags).size !== tags.length || (profile !== 'admin' && tags.length)) return null;
+  if (profile === 'legacy' && policy.error) return null;
+  const principals = profile === 'legacy' ? LEGACY_CERT_PRINCIPALS.join(',') : profile === 'daily' ? 'deploy' : ['admin', ...tags].join(',');
+  return ['--' + profile, '-t', ttl, '-n', principals];
 }
 
 // The signature comes from the 1Password agent, which pops an approval on this Mac —
@@ -3477,7 +3505,7 @@ const server = http.createServer(async (req, res) => {
         return json(res, r.body, r.code);
       }
       const args = mintArguments(b);
-      if (!args) return json(res, { ok: false, error: 'choose daily (8h) or admin (1h); extraTags must be approved admin box tags' }, 400);
+      if (!args) return json(res, { ok: false, error: 'choose legacy (1h/4h/8h, all configured logins), daily (8h), or admin (1h); extraTags must be approved admin box tags' }, 400);
       const r = await mint(args);
       return json(res, r.body, r.code);
     }

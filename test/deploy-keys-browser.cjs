@@ -8,13 +8,14 @@ const assert = require('node:assert/strict');
   try {
     const page = await browser.newPage({viewport:{width:1280,height:900}});
     const errors=[], mints=[];
+    let policy={defaultProfile:'legacy',requiredLogins:['root','vibe','misterisley'],error:null};
     page.on('pageerror', e => errors.push(e.message));
     await page.routeWebSocket('**/*', ws => ws.close());
     await page.route('**/*', async route => {
       const req=route.request(); const url=new URL(req.url());
       if (url.pathname.startsWith('/api/')) {
         let body={};
-        if(url.pathname==='/api/sshkeys') body={keys:[],certs:[]};
+        if(url.pathname==='/api/sshkeys') body={keys:[],certs:[],policy};
         else if(url.pathname==='/api/ghtrain') body={active:false};
         else if(url.pathname==='/api/sshkeys/mint') {mints.push(req.postDataJSON());body={ok:false,error:'Offline preview: no mint performed'};}
         else if(url.pathname==='/api/sessions') body={sessions:[],errors:[]};
@@ -31,24 +32,31 @@ const assert = require('node:assert/strict');
     });
     await page.goto('http://ivo.invalid/app#keys');
     const card=page.locator('[data-screen-label="SSH keys"]').locator(':scope > div').first();
-    await card.getByRole('button',{name:'Daily cert',exact:true}).waitFor();
-    assert.equal(await card.getByRole('button',{name:'Daily cert',exact:true}).getAttribute('aria-pressed'),'true');
+    await card.getByRole('button',{name:'Legacy cert',exact:true}).waitFor();
+    assert.equal(await card.getByRole('button',{name:'Legacy cert',exact:true}).getAttribute('aria-pressed'),'true');
+    await card.getByRole('button',{name:'Mint legacy cert',exact:true}).click();
+    await page.waitForFunction(()=>document.body.textContent.includes('Offline preview: no mint performed'));
+    assert.deepEqual(mints.shift(),{profile:'legacy',ttl:'1h',extraTags:[]});
+    await card.getByRole('button',{name:'Daily cert',exact:true}).click();
     assert.equal(await card.getByRole('button',{name:'rog-only',exact:true}).count(),0);
     await card.getByRole('button',{name:'Mint daily cert',exact:true}).click();
     await page.waitForFunction(()=>document.body.textContent.includes('Offline preview: no mint performed'));
     assert.deepEqual(mints.shift(),{profile:'daily',ttl:'8h',extraTags:[]});
     await card.getByRole('button',{name:'Admin cert',exact:true}).click();
-    await card.getByRole('button',{name:'rog-only',exact:true}).waitFor();
-    assert.equal(await card.getByRole('button',{name:'vibes-asus',exact:true}).isDisabled(),true);
-    await card.getByRole('button',{name:'rog-only',exact:true}).click();
-    assert.equal(await card.getByRole('button',{name:'rog-only',exact:true}).getAttribute('aria-pressed'),'true');
-    assert.match(await card.getByRole('button',{name:'rog-only',exact:true}).getAttribute('title'),/rog-strix/);
+    assert.equal(await card.getByRole('button',{name:'rog-only',exact:true}).count(),0,'Admin box chips were dropped');
     await card.getByRole('button',{name:'Mint admin cert',exact:true}).click();
     await page.waitForFunction(()=>document.body.textContent.includes('Offline preview: no mint performed'));
-    assert.deepEqual(mints.shift(),{profile:'admin',ttl:'1h',extraTags:['rog-only']});
+    assert.deepEqual(mints.shift(),{profile:'admin',ttl:'1h',extraTags:[]});
     await page.screenshot({path:'/tmp/ivo-keys-admin.png'});
-    await card.getByRole('button',{name:'Daily cert',exact:true}).click();
+    policy={...policy,requiredLogins:['new-login']};
+    await page.reload();
+    await card.getByText('Legacy mint would drop a login used by machines.json.').waitFor();
+    assert.equal(await card.getByRole('button',{name:'Mint legacy cert',exact:true}).isDisabled(),true);
+    assert.equal(mints.length,0,'unsafe Legacy never reached the route');
+    policy={defaultProfile:'daily',requiredLogins:['root','vibe','misterisley'],error:null};
+    await page.reload();
     await card.getByRole('button',{name:'Mint daily cert',exact:true}).waitFor();
+    assert.equal(await card.getByRole('button',{name:'Daily cert',exact:true}).getAttribute('aria-pressed'),'true','S3 completion changes only the future default');
     assert.equal(await card.getByRole('button',{name:'rog-only',exact:true}).count(),0);
     // Measure the actual card independently of the pre-existing desktop shell.
     await page.evaluate(()=> {
@@ -62,6 +70,6 @@ const assert = require('node:assert/strict');
     assert.equal(await narrow.evaluate(el=>el.scrollWidth<=el.clientWidth),true);
     await page.screenshot({path:'/tmp/ivo-keys-daily-mobile.png'});
     assert.deepEqual(errors,[]);
-    console.log('PASS: offline browser Daily/Admin, hidden tags, label join, unknown host disabled, requests, isolated 390px mint card, no page errors');
+    console.log('PASS: offline browser Legacy default, login coverage guard, Daily/Admin isolation, removed Admin chips, S3 default switch, requests, isolated 390px mint card, no page errors');
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});
