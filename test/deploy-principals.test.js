@@ -54,20 +54,59 @@ test('verify dry-run never invokes SSH and forces certificate-only, no multiplex
   assert.equal(r.status,0,r.stderr); assert.match(r.stdout,/IdentityAgent=none/);
   assert.match(r.stdout,/PubkeyAcceptedAlgorithms=ssh-ed25519-cert-v01@openssh.com/);
   assert.match(r.stdout,/ControlPath=none/); assert.match(r.stdout,/-l deploy/);
+  assert.match(r.stdout,/-F \/dev\/null/);
 }));
-test('fake-only verification distinguishes success, wrong role, refusal, and network error', () => fixtures(root => {
+test('fake-only verification isolates credentials and distinguishes target cert refusal from unrelated failures', () => fixtures(root => {
   const bin=path.join(root,'bin');fs.mkdirSync(bin);
-  fs.writeFileSync(path.join(bin,'ssh'),'#!/bin/sh\nprintf "%s\\n" "$FAKE_OUTPUT"\nexit "$FAKE_STATUS"\n',{mode:0o700});
+  const fp='SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0';
+  fs.writeFileSync(path.join(bin,'ssh'),`#!/bin/sh
+if [ "$1" = -G ]; then printf 'hostname target.invalid\\nport 2222\\nidentityfile alias-v1\\ncertificatefile alias-v1-cert.pub\\nproxyjump unrelated.invalid\\n'; exit 0; fi
+printf '%s\\n' "$@" > "$FAKE_ARGV"
+if [ "$1" != -F ] || [ "$2" != /dev/null ]; then echo 'IVO_CERT_OK deploy'; exit 0; fi
+printf '%s\\n' "$FAKE_OUTPUT"
+exit "$FAKE_STATUS"
+`,{mode:0o700});
+  fs.writeFileSync(path.join(bin,'ssh-keygen'),`#!/bin/sh
+[ "$FAKE_PREFLIGHT_STATUS" != 1 ] || exit 1
+case "$1" in
+  -L) echo '        Type: ssh-ed25519-cert-v01@openssh.com user certificate';;
+  -lf) echo '256 ${fp} public-fixture';;
+  *) exit 99;;
+esac
+`,{mode:0o700});
   const id=path.join(root,'identity.mock');fs.writeFileSync(id,'not a credential');
-  function verify(expect,output,status,alias='vps-deploy') {
-    return spawnSync('bash',['deploy-keys/verify-cert.sh',alias,'--expect',expect,'--identity',id,'--certificate',id],{encoding:'utf8',env:{PATH:bin+':'+process.env.PATH,FAKE_OUTPUT:output,FAKE_STATUS:String(status)}});
+  const argv=path.join(root,'argv.txt');
+  function verify(expect,output,status,alias='vps-deploy',extra={}) {
+    return spawnSync('bash',['deploy-keys/verify-cert.sh',alias,'--expect',expect,'--identity',id,'--certificate',id],{encoding:'utf8',env:{PATH:bin+':'+process.env.PATH,FAKE_OUTPUT:output,FAKE_STATUS:String(status),FAKE_ARGV:argv,...extra}});
   }
   assert.equal(verify('deploy','IVO_CERT_OK deploy',0).status,0);
+  const used=fs.readFileSync(argv,'utf8');
+  assert.match(used,/-F\n\/dev\/null\n/);assert.match(used,/HostName=target.invalid\n-p\n2222/);
+  assert.doesNotMatch(used,/alias-v1|unrelated.invalid/);assert.equal(used.split('CertificateFile=').length,2);
   assert.notEqual(verify('deploy','IVO_CERT_OK admin',0).status,0);
   assert.equal(verify('admin','IVO_CERT_OK admin',0,'vps-admin').status,0);
-  assert.equal(verify('refused','Permission denied (publickey).',255).status,0);
+  assert.equal(verify('deploy','IVO_CERT_OK deploy\r\n',0,'gb-deploy').status,0,'Windows CRLF marker');
+  const denied=["debug1: Authenticating to target.invalid [192.0.2.1]:2222 as 'deploy'",
+    'debug1: SSH2_MSG_NEWKEYS received',`debug1: Offering public key: ${id} ED25519-CERT ${fp} explicit`,
+    'debug3: send packet: type 50','debug2: we sent a publickey packet, wait for reply',
+    'debug3: receive packet: type 51','debug1: Authentications that can continue: publickey',
+    'deploy@target.invalid: Permission denied (publickey).'].join('\n');
+  assert.equal(verify('refused',denied,255).status,0);
+  for(const bad of [denied.replaceAll('target.invalid','jump.invalid'),denied.replace('SSH2_MSG_NEWKEYS received','KEX missing'),
+    denied.replace('ED25519-CERT','ED25519'),denied.replace('send packet: type 50','no mutual signature algorithm'),
+    denied.replace('receive packet: type 51','receive packet: type 60'),denied+'\ndebug1: Server accepts key: explicit',
+    'Permission denied (publickey).']) assert.notEqual(verify('refused',bad,255).status,0,bad);
   for (const error of ['Connection timed out','Host key verification failed','Could not resolve hostname']) assert.notEqual(verify('refused',error,255).status,0);
   assert.notEqual(verify('refused','IVO_CERT_OK admin',0).status,0);
+  assert.notEqual(verify('refused',denied,255,'vps-deploy',{FAKE_PREFLIGHT_STATUS:'1'}).status,0,'invalid cert must fail preflight');
+  fs.writeFileSync(id,'');
+  assert.notEqual(verify('refused',denied,255).status,0,'empty identity cannot prove refusal');
+}));
+test('verify refuses ambiguous credential paths before any SSH or key inspection', () => fixtures(root => {
+  for(const name of ['cert set.pub','line\nbreak.pub','quote".pub','%d-cert.pub']) {
+    const r=spawnSync('bash',['deploy-keys/verify-cert.sh','vps-deploy','--expect','deploy','--identity','unread','--certificate',name,'--dry-run'],{encoding:'utf8'});
+    assert.equal(r.status,2);assert.match(r.stderr,/credential paths/);
+  }
 }));
 test('sudoers renderer permits only an exact unit and never a shell or wildcard', () => {
   const render = app => spawnSync('bash',['deploy-keys/render-sudoers.sh','--app',app],{encoding:'utf8'});

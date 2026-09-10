@@ -25,6 +25,11 @@ case "$alias_name" in
   *) usage ;;
 esac
 [ -n "$identity" ] && [ -n "$certificate" ] || usage
+for path in "$identity" "$certificate"; do
+  case "$path" in *[[:space:]]*|*\"*|*\'*|*\\*|*%*)
+    echo 'credential paths must not contain whitespace, quotes, backslashes, or SSH expansion tokens' >&2; exit 2;;
+  esac
+done
 case "$expect:$user" in deploy:deploy|admin:root|admin:vibe|admin:misterisley|refused:*) ;; *) echo 'alias login does not match expected role' >&2; exit 2;; esac
 if [ "$platform" = linux ]; then
   if [ "$expect" = deploy ]; then
@@ -43,25 +48,43 @@ else
   encoded=$(printf '%s' "$ps" | iconv -f UTF-8 -t UTF-16LE | base64 | tr -d '\n')
   remote="powershell.exe -NoProfile -EncodedCommand $encoded"
 fi
-args=(-o BatchMode=yes -o IdentityAgent=none -o IdentitiesOnly=yes -o PreferredAuthentications=publickey
+host=RESOLVED_HOSTNAME port=RESOLVED_PORT
+if [ "$dry_run" != 1 ]; then
+  [ -s "$identity" ] && [ -s "$certificate" ] || { echo 'explicit credential files missing or empty' >&2; exit 2; }
+  metadata=$(LC_ALL=C ssh-keygen -L -f "$certificate" 2>/dev/null) || { echo 'certificate preflight failed' >&2; exit 2; }
+  printf '%s\n' "$metadata" | grep -qE '^ +Type: ssh-ed25519-cert-v01@openssh.com user certificate$' || { echo 'expected an ed25519 user certificate' >&2; exit 2; }
+  cert_fp=$(LC_ALL=C ssh-keygen -lf "$certificate" -E sha256 2>/dev/null | awk '{print $2}')
+  [[ "$cert_fp" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]] || { echo 'certificate fingerprint preflight failed' >&2; exit 2; }
+  # Owner-side alias lookup only. Use just the endpoint, never its identities,
+  # certificates, ProxyJump, ProxyCommand, or connection-sharing configuration.
+  resolved=$(LC_ALL=C ssh -G -o CanonicalizeHostname=no "$alias_name" 2>/dev/null) || { echo 'alias endpoint lookup failed' >&2; exit 2; }
+  host=$(printf '%s\n' "$resolved" | awk '$1=="hostname" {print $2; exit}')
+  port=$(printf '%s\n' "$resolved" | awk '$1=="port" {print $2; exit}')
+  [[ "$host" =~ ^[a-zA-Z0-9_.:-]+$ ]] && [[ "$port" =~ ^[0-9]{1,5}$ ]] && [ "$port" -gt 0 ] && [ "$port" -le 65535 ] || { echo 'invalid alias endpoint' >&2; exit 2; }
+fi
+args=(-F /dev/null -vvv -o "HostName=$host" -p "$port"
+      -o BatchMode=yes -o IdentityAgent=none -o IdentitiesOnly=yes -o PreferredAuthentications=publickey
       -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no
       -o PubkeyAcceptedAlgorithms=ssh-ed25519-cert-v01@openssh.com
       -o ControlMaster=no -o ControlPath=none -o StrictHostKeyChecking=yes -o ConnectTimeout=8
       -l "$user" -i "$identity" -o "CertificateFile=$certificate" "$alias_name" "$remote")
-if [ "$dry_run" = 1 ]; then printf 'ssh '; printf '%q ' "${args[@]}"; printf '\n'; exit 0; fi
-[ -f "$identity" ] && [ -f "$certificate" ] || { echo 'explicit credential files missing' >&2; exit 2; }
+if [ "$dry_run" = 1 ]; then
+  printf 'PRECHECK (owner only): nonempty files; ssh-keygen -L and -lf on the public certificate\n'
+  printf 'RESOLVE (owner only): ssh -G -o CanonicalizeHostname=no %q; use only hostname and port\n' "$alias_name"
+  printf 'ssh '; printf '%q ' "${args[@]}"; printf '\n'; exit 0
+fi
 set +e
 output=$(LC_ALL=C ssh "${args[@]}" 2>&1)
 status=$?
 set -e
 if [ "$expect" = refused ]; then
-  if [ "$status" = 255 ] && [[ "$output" == *'Permission denied (publickey'* ]]; then
-    echo 'PASS refused: certificate authentication denied'; exit 0
+  if printf '%s\n' "$output" | python3 "$(dirname "$0")/lib/verify_trace.py" "$host" "$port" "$user" "$cert_fp" "$status"; then
+    echo 'PASS refused: target rejected the explicitly presented certificate'; exit 0
   fi
   echo 'FAIL: expected certificate refusal; transport, host-key errors, and successful logins do not qualify' >&2
   exit 1
 fi
-if [ "$status" = 0 ] && printf '%s\n' "$output" | grep -qx "IVO_CERT_OK $expect"; then
+if [ "$status" = 0 ] && printf '%s\n' "$output" | tr -d '\r' | grep -qx "IVO_CERT_OK $expect"; then
   echo "PASS $expect: role and privilege checks passed"; exit 0
 fi
 echo 'FAIL: role verification failed (remote output suppressed)' >&2
