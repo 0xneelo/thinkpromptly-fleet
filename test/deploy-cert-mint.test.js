@@ -58,6 +58,8 @@ test('each profile previews its own current link; Legacy includes every transiti
 }));
 test('public CA snapshot is unchanged if the source changes after classification; all keygen/signing calls mocked', () => fixture(dir => {
   const bin=path.join(dir,'bin');fs.mkdirSync(bin);
+  // The mock must also work on the operator's Mac: no GNU stat dependency.
+  fs.writeFileSync(path.join(bin,'stat'), '#!/bin/sh\necho "stat: GNU options unavailable" >&2\nexit 97\n', {mode:0o700});
   fs.writeFileSync(path.join(bin,'ssh-keygen'),`#!/bin/sh
 case "$1" in
   -lf) cat > "$SNAPSHOT_READ"; printf '%s\\n' "$REPLACEMENT_PUB" > "$CA_PUB"; echo '256 SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0 fixture';;
@@ -67,7 +69,12 @@ case "$1" in
 esac
 `,{mode:0o700});
   const signer=path.join(dir,'signer-mock.sh');
-  fs.writeFileSync(signer,'#!/bin/sh\nset -eu\ncmp "$SSH_CA_PUBLIC_SNAPSHOT" "$SNAPSHOT_READ"\nstat -c %a "$SSH_CA_PUBLIC_SNAPSHOT" > "$SNAPSHOT_MODE"\nprintf "%s\\n" "$SSH_CA_PUBLIC_SNAPSHOT" > "$SNAPSHOT_PATH"\n',{mode:0o700});
+  fs.writeFileSync(signer,`#!/bin/sh
+set -eu
+cmp "$SSH_CA_PUBLIC_SNAPSHOT" "$SNAPSHOT_READ"
+perl -e 'printf("%o\\n",(stat $ARGV[0])[2] & 07777)' "$SSH_CA_PUBLIC_SNAPSHOT" > "$SNAPSHOT_MODE"
+printf '%s\\n' "$SSH_CA_PUBLIC_SNAPSHOT" > "$SNAPSHOT_PATH"
+`,{mode:0o700});
   const env={PATH:bin+':'+process.env.PATH,SSH_CA_TEST_MODE:'1',SSH_CA_TEST_SIGNER:signer,
     REPLACEMENT_PUB:other,SNAPSHOT_READ:path.join(dir,'classified.pub'),SNAPSHOT_MODE:path.join(dir,'mode.txt'),SNAPSHOT_PATH:path.join(dir,'path.txt')};
   const r=run(dir,['--daily','-o',path.join(dir,'mock-output')],env);assert.equal(r.status,0,r.stderr);
