@@ -3429,6 +3429,26 @@ async function notifyRoute(req, res, p, url, remote = false) {
 // --- docs. The index of what the operator's own sessions wrote. Loopback only, and
 // deliberately absent from tailnetHandler (the same rule /api/goals follows): these are
 // the operator's working files, and a box worker has no business reading them.
+
+// Which app opens which kind. Server-side on purpose: the page asks for a row by id and the
+// deck decides what to launch, so no browser ever names an executable. FLEET_DOCS_APPS is a
+// JSON object merged over these, e.g. {".md":"Obsidian"}.
+function docsAppsEnv() {
+  const raw = (process.env.FLEET_DOCS_APPS || '').trim();
+  if (!raw) return {};
+  try {
+    const d = JSON.parse(raw);
+    if (!d || typeof d !== 'object' || Array.isArray(d)) throw new Error('not a JSON object');
+    return d;
+  } catch (e) {
+    console.error('FLEET_DOCS_APPS ignored, the default app map stands: ' + e.message);
+    return {};
+  }
+}
+
+const DOCS_APPS = { '.html': 'Google Chrome', '.md': 'Cursor', url: 'Google Chrome', ...docsAppsEnv() };
+const OPEN_BIN = process.env.FLEET_OPEN_BIN || 'open'; // the deck runs on the Mac: `open -a <App>`
+
 async function docsRoute(req, res, url) {
   if (req.method === 'GET') {
     const refresh = url.searchParams.get('refresh') === '1';
@@ -3438,11 +3458,15 @@ async function docsRoute(req, res, url) {
     if (refresh || docsIndex.at === null) await sweep;
     else Promise.resolve(sweep).catch(() => {});
     const q = url.searchParams;
-    return json(res, docsIndex.view({
-      day: q.get('day'), session: q.get('session'), kind: q.get('kind'), source: q.get('source'),
-      project: q.get('project'), q: q.get('q'),
-      limit: q.get('limit') || undefined,
-    }));
+    return json(res, {
+      ...docsIndex.view({
+        day: q.get('day'), session: q.get('session'), kind: q.get('kind'), source: q.get('source'),
+        project: q.get('project'), q: q.get('q'),
+        limit: q.get('limit') || undefined,
+      }),
+      // So the screen can name the app in the tooltip without ever deciding it.
+      apps: DOCS_APPS,
+    });
   }
   if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
   // The hook POSTs from a shell and carries no Origin; a *foreign* Origin is another
@@ -3466,6 +3490,23 @@ function docsOpen(req, res, url) {
   const row = Number.isSafeInteger(id) && id > 0 ? docsIndex.get(id) : null;
   if (!row || row.gone || !row.path.startsWith('/')) return send(res, 404, 'text/plain', 'not found');
   return sendFile(res, row.path, req);
+}
+
+// Hands one indexed row to its preferred app on this machine. The Origin check fails closed —
+// stricter than POST /api/docs, which a shell hook posts to with no Origin at all — because
+// this route LAUNCHES a local application, and no other page may be able to do that.
+async function docsOpenApp(req, res) {
+  if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
+  if (!ALLOWED_ORIGINS.has(req.headers.origin)) return send(res, 403, 'text/plain', 'forbidden');
+  const b = await body(req, 4096).catch(() => null);
+  const id = Number(b && b.id);
+  const row = Number.isSafeInteger(id) && id > 0 ? docsIndex.get(id) : null;
+  if (!row || row.gone) return json(res, { ok: false, error: 'unknown doc id' }, 404);
+  const app = row.path.startsWith('https://') ? DOCS_APPS.url : DOCS_APPS[path.extname(row.path).toLowerCase()];
+  if (!app) return json(res, { ok: false, error: 'no app for this kind' }, 400);
+  const { err, stderr } = await run(OPEN_BIN, ['-a', app, row.path], { timeout: 10000 });
+  if (err) return json(res, { ok: false, error: String(stderr || err.message).trim().slice(0, 300) }, 502);
+  return json(res, { ok: true, app });
 }
 
 const server = http.createServer(async (req, res) => {
@@ -3497,6 +3538,7 @@ const server = http.createServer(async (req, res) => {
     if (p === '/api/goals') return await goalsRoute(req, res);
     if (p === '/api/docs') return await docsRoute(req, res, url);
     if (p === '/api/docs/open') return docsOpen(req, res, url);
+    if (p === '/api/docs/open-app') return await docsOpenApp(req, res);
     // Loopback only, and deliberately absent from tailnetHandler: a decision sheet is the
     // operator's, and no box worker may read one or answer for them.
     if (p === '/api/unblock' || p.startsWith('/api/unblock/')) return await unblockRoute(req, res, p);

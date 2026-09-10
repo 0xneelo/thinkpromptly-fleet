@@ -226,7 +226,9 @@ under `/private/tmp/claude-501/*/*/scratchpad/`, and this repo's `docs/{reports,
 (`FLEET_DOCS_ROOTS` adds more, colon-separated). `bin/docs-hook.js` is a Claude Code
 PostToolUse hook on `Write|Artifact` that registers each written file and each published
 Artifact URL as it happens; `GET /api/docs` lists, `POST /api/docs` registers, and
-`GET /api/docs/open?id=` serves a file by index id only. Loopback only, never on the tailnet.
+`GET /api/docs/open?id=` serves a file by index id only. Each row's Open-in-app icon hands the
+file to the preferred app through macOS `open`: html and Artifacts to Google Chrome, md to Cursor;
+`FLEET_DOCS_APPS` overrides, e.g. `{".md":"Obsidian"}`. Loopback only, never on the tailnet.
 Enable a machine with `"desktop_sessions": true` on its existing `machines.json` entry;
 the Mac and german-box are enabled, while rog-strix remains deferred. The same local/SSH
 routing used by Machines pipes `box/desktop-sessions.sh` to the configured deploy alias.

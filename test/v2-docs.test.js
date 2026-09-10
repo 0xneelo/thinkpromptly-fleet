@@ -45,6 +45,18 @@ test('an artifact opens at its own URL; every other row opens by id', () => {
   assert.strictEqual(_.openHref(null), '/api/docs/open?id=');
 });
 
+test('the preferred app follows the kind: an https row is a browser, a file is its extension', () => {
+  const apps = _.FIXTURE_VIEW.apps;
+  assert.strictEqual(_.appFor({ path: '/x/a.html' }, apps), 'Google Chrome');
+  assert.strictEqual(_.appFor({ path: '/x/A.MD' }, apps), 'Cursor', 'the extension is matched lowercase');
+  assert.strictEqual(_.appFor({ path: 'https://claude.ai/public/artifacts/1f0c8a1b' }, apps), 'Google Chrome');
+  assert.strictEqual(_.appFor({ path: '/x/notes.txt' }, apps), null, 'no app for the kind is no button');
+  assert.strictEqual(_.appFor({ path: '/x/README' }, apps), null);
+  assert.strictEqual(_.appFor(null, apps), null, 'a row with no path still renders');
+  assert.strictEqual(_.appFor({ path: '/x/a.md' }, { '.md': 'Obsidian' }), 'Obsidian', 'the server may override');
+  assert.strictEqual(_.appFor({ path: '/x/a.md' }), 'Cursor', 'a view carrying no apps falls back to the defaults');
+});
+
 test('only the filters this screen owns are read off the hash', () => {
   const params = { session: 'abc', day: '2026-09-10', kind: 'eli5', source: '-scratchpad',
     project: 'remote-system', q: 'train', view: 'deck', evil: '1' };
@@ -90,6 +102,9 @@ test('the fixture sample is the deterministic screen the pixel gate renders', ()
   assert.strictEqual(v.projects.reduce((n, x) => n + x.n, 0), v.docs.filter((d) => d.project).length,
     'the project counts match the rows the project picker filters');
   assert.deepStrictEqual(v.kinds.map((k) => k.kind), ['artifact', 'eli5', 'md', 'report', 'session', 'unblock']);
+  assert.deepStrictEqual(v.apps, { '.html': 'Google Chrome', '.md': 'Cursor', url: 'Google Chrome' },
+    'the fixture carries the app map, so the gate renders the Open-in-app icon on every row');
+  assert.ok(v.docs.every((d) => _.appFor(d, v.apps)), 'every fixture row has an app');
 });
 
 // The hash carries the filters, so the router has to split them off the screen name. No

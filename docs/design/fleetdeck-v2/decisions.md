@@ -163,3 +163,8 @@ changes with the work. A scratchpad row's project is decoded from the encoded cw
 learns it from the folder under the root, except for the buckets every project shares
 (`eli5-explainers`, `unblock-sheets`), where only `goals/board-<repo>.html` and
 `summary/<stamp>-<repo>/…` still name one.
+
+Each row's Open-in-app icon POSTs an id to `/api/docs/open-app` and the deck runs `open -a <App>`:
+the app map (`FLEET_DOCS_APPS` over html/Artifact → Google Chrome, md → Cursor) is the server's, so
+no page ever names an executable, and the Origin check fails closed — unlike `POST /api/docs`, which
+a shell hook posts to with no Origin, this route launches a local application.

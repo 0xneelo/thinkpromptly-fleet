@@ -74,11 +74,14 @@ function seedTree() {
 // One deck per test, on its own port and db, sweeping only the seeded tree. ssh is the fake
 // one: this route never shells out, but a real ssh to the fleet would both reach the
 // operator's machines and keep the test process alive.
-function deck(t, tree) {
+function deck(t, tree, extra = {}) {
   const dir = tmpdir('docs-deck');
   const PORT = port++;
   const state = path.join(dir, 'ssh.json');
   fs.writeFileSync(state, JSON.stringify({ hosts: {}, calls: [] }));
+  // `open` is the fake one, per deck: the real one would put a window on the operator's screen.
+  const openLog = path.join(dir, 'open.log');
+  fs.writeFileSync(openLog, '');
   const m = load(
     {
       PORT,
@@ -87,6 +90,12 @@ function deck(t, tree) {
       FLEET_SSH_BIN: path.join(__dirname, 'fake-ssh.js'),
       FLEET_FAKE_SSH_STATE: state,
       FLEET_DOCS_ROOTS_JSON: JSON.stringify(tree.roots),
+      FLEET_OPEN_BIN: path.join(__dirname, 'fake-open.js'),
+      FLEET_FAKE_OPEN_LOG: openLog,
+      // Named even when empty: load() shares one process env, so a deck that overrode the app
+      // map would otherwise leak it into every deck after it.
+      FLEET_DOCS_APPS: '',
+      ...extra,
     },
     { listen: true }
   );
@@ -104,6 +113,15 @@ function deck(t, tree) {
         headers: { 'content-type': 'application/json', ...headers },
         body: JSON.stringify(b),
       }).then(read),
+    // The deck page's own Origin by default, which is the only caller this route accepts.
+    postApp: (b, headers = { origin: base }, method = 'POST') =>
+      fetch(base + '/api/docs/open-app', {
+        method,
+        headers: { 'content-type': 'application/json', ...headers },
+        ...(method === 'POST' ? { body: JSON.stringify(b) } : {}),
+      }).then(read),
+    opens: () =>
+      fs.readFileSync(openLog, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)),
   };
 }
 
@@ -341,6 +359,68 @@ test('open serves the indexed file by id, and nothing else', async (t) => {
   assert.equal((await d.open('?id=99999')).status, 404);
   assert.equal((await d.open('?id=nope')).status, 404);
   assert.equal((await d.open('')).status, 404);
+});
+
+// --- open in the preferred app
+
+test('open-app hands the row to its preferred app, and says on the view which app that is', async (t) => {
+  const tree = seedTree();
+  const d = deck(t, tree);
+  const { body } = await d.get('?refresh=1');
+  assert.deepEqual(body.apps, { '.html': 'Google Chrome', '.md': 'Cursor', url: 'Google Chrome' },
+    'the screen names the app in its tooltip; it never picks one');
+  const eli5 = body.docs.find((x) => x.kind === 'eli5');
+  const notes = body.docs.find((x) => x.kind === 'md');
+  const artifact = await d.post({ url: 'https://claude.ai/public/artifacts/abc-123', kind: 'artifact' });
+
+  assert.deepEqual(await d.postApp({ id: eli5.id }), { status: 200, body: { ok: true, app: 'Google Chrome' } });
+  assert.deepEqual(await d.postApp({ id: notes.id }), { status: 200, body: { ok: true, app: 'Cursor' } });
+  assert.deepEqual(await d.postApp({ id: artifact.body.doc.id }),
+    { status: 200, body: { ok: true, app: 'Google Chrome' } }, 'an Artifact URL is a browser');
+
+  assert.deepEqual(d.opens(), [
+    ['-a', 'Google Chrome', tree.files.eli5],
+    ['-a', 'Cursor', tree.files.notes],
+    ['-a', 'Google Chrome', 'https://claude.ai/public/artifacts/abc-123'],
+  ]);
+});
+
+test('open-app launches an app, so it takes only a POST from the deck page and a live id', async (t) => {
+  const d = deck(t, seedTree());
+  const { body } = await d.get('?refresh=1');
+  const notes = body.docs.find((x) => x.kind === 'md');
+
+  assert.equal((await d.postApp({ id: notes.id }, {})).status, 403, 'no Origin is not the deck page');
+  assert.equal((await d.postApp({ id: notes.id }, { origin: 'http://evil.example' })).status, 403);
+  assert.equal((await d.postApp({ id: notes.id }, undefined, 'GET')).status, 405);
+  assert.equal((await d.postApp({ id: 99999 })).status, 404);
+  assert.equal((await d.postApp({ id: 'nope' })).status, 404);
+  assert.equal((await d.postApp({})).status, 404);
+  assert.deepEqual(d.opens(), [], 'nothing was launched by any of them');
+});
+
+test('an app that refuses the file is a 502 that carries what it said', async (t) => {
+  const tree = seedTree();
+  const d = deck(t, tree);
+  const file = path.join(tree.dir, 'hook', 'fail-me.md');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, '# Fail me\n');
+  const row = await d.post({ path: file });
+
+  const r = await d.postApp({ id: row.body.doc.id });
+  assert.equal(r.status, 502);
+  assert.equal(r.body.ok, false);
+  assert.match(r.body.error, /Unable to find application named Cursor/);
+});
+
+test('FLEET_DOCS_APPS overrides one kind and leaves the rest', async (t) => {
+  const d = deck(t, seedTree(), { FLEET_DOCS_APPS: '{".md":"Obsidian"}' });
+  const { body } = await d.get('?refresh=1');
+  assert.equal(body.apps['.md'], 'Obsidian');
+  assert.equal(body.apps['.html'], 'Google Chrome', 'the map is merged over the defaults, not replaced');
+  const notes = body.docs.find((x) => x.kind === 'md');
+  assert.deepEqual(await d.postApp({ id: notes.id }), { status: 200, body: { ok: true, app: 'Obsidian' } });
+  assert.deepEqual(d.opens(), [['-a', 'Obsidian', notes.path]]);
 });
 
 // --- retirement

@@ -85,6 +85,21 @@
     return '/api/docs/open?id=' + encodeURIComponent(safeText(doc && doc.id));
   }
 
+  // The server owns the app map and sends it on the view; these are the same defaults, kept
+  // here only so the fixture and a cached view can still name the app in the tooltip.
+  var DEFAULT_APPS = { '.html': 'Google Chrome', '.md': 'Cursor', url: 'Google Chrome' };
+
+  // The same rule the server applies (server.js docsOpenApp): an Artifact row is an https URL,
+  // every other row is a local file whose extension picks the app. null means no button.
+  function appFor(doc, apps) {
+    var map = apps || DEFAULT_APPS;
+    var p = safeText(doc && doc.path);
+    if (!p) return null;
+    if (p.indexOf('https://') === 0) return map.url || null;
+    var dot = p.lastIndexOf('.');
+    return (dot > 0 && map[p.slice(dot).toLowerCase()]) || null;
+  }
+
   // The sample the pixel gate renders: six docs over three days, two sessions, six kinds.
   // Deterministic — no clock, no fetch.
   var S1 = '6f2b3c1e-6b0e-4a41-9d2e-2f0c8a1b7d55';
@@ -117,6 +132,7 @@
     sources: [{ source: 'exports', n: 2 }, { source: 'hook', n: 1 }, { source: 'repo', n: 1 },
       { source: 'scratchpad', n: 2 }],
     projects: [{ project: 'remote-system', n: 4 }, { project: 'lowcapsxyz', n: 2 }],
+    apps: DEFAULT_APPS,
     total: 6,
     swept_at: '2026-09-10T09:45:00Z',
     sweeping: false,
@@ -124,7 +140,7 @@
 
   var pure = {
     safeText: safeText, shortId: shortId, fmtTime: fmtTime, fmtAge: fmtAge, countText: countText,
-    paramsOf: paramsOf, openHref: openHref, FILTERS: FILTERS, FIXTURE_VIEW: FIXTURE_VIEW,
+    paramsOf: paramsOf, openHref: openHref, appFor: appFor, FILTERS: FILTERS, FIXTURE_VIEW: FIXTURE_VIEW,
   };
 
   FD.screens.docs = Object.assign(FD.screens.docs || {}, { _: pure });
@@ -139,7 +155,7 @@
 
   var MOUNT = 'fd-docs-root';
   var DAY_CHIPS = 21; // three weeks of chips; older days stay reachable through the date input
-  var EMPTY = { docs: [], days: [], kinds: [], sources: [], projects: [] };
+  var EMPTY = { docs: [], days: [], kinds: [], sources: [], projects: [], apps: DEFAULT_APPS };
 
   // Mirrors FD.data.isFixture() so this file can still decide when FD.data is absent.
   function isFixture() {
@@ -238,6 +254,61 @@
     s.value = value;
     s.addEventListener('change', function () { onchange(s.value); });
     return s;
+  }
+
+  // lucide external-link, node by node: this file never parses an HTML string, so the icon
+  // is built the same way as every other node here.
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var LINK_PATHS = ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6'];
+
+  function linkIcon() {
+    var svg = document.createElementNS(SVG_NS, 'svg');
+    var attrs = { width: '13', height: '13', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor',
+      'stroke-width': '2', 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+    Object.keys(attrs).forEach(function (k) { svg.setAttribute(k, attrs[k]); });
+    LINK_PATHS.forEach(function (d) {
+      var p = document.createElementNS(SVG_NS, 'path');
+      p.setAttribute('d', d);
+      svg.appendChild(p);
+    });
+    return svg;
+  }
+
+  // Hands the row to the operator's preferred app, which the deck picks and launches through
+  // macOS `open`: the button only says which app that is. Null when no app covers the kind.
+  function openAppButton(doc, apps) {
+    var app = appFor(doc, apps);
+    if (!app) return null;
+    var t = tok();
+    var wrap = el('span', ROW + 'gap:5px;');
+    var b = el('button', 'border:0;background:transparent;color:' + t.ink45 +
+      ';padding:0;line-height:0;cursor:pointer;');
+    b.title = 'Open in ' + app;
+    b.setAttribute('aria-label', b.title);
+    b.appendChild(linkIcon());
+    var note = el('span', 'font-size:11px;color:' + t.bad + ';');
+    b.onclick = function () {
+      // The pixel gate renders this button; nothing may launch on the operator's machine.
+      if (isFixture()) return;
+      b.disabled = true;
+      note.textContent = '';
+      fetch('/api/docs/open-app', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: doc.id }),
+      })
+        .then(function (r) { return r.json().catch(function () { return null; }); })
+        .catch(function () { return null; })
+        .then(function (body) {
+          b.disabled = false;
+          if (body && body.ok === true) return;
+          note.textContent = safeText(body && body.error) || 'the deck could not open it';
+          root.setTimeout(function () { note.textContent = ''; }, 4000);
+        });
+    };
+    wrap.appendChild(b);
+    wrap.appendChild(note);
+    return wrap;
   }
 
   function card() {
@@ -415,7 +486,13 @@
       a.href = openHref(d);
       a.target = '_blank';
       a.rel = 'noopener';
-      title.appendChild(a);
+      // The icon rides at the end of the title, not in a column of its own: a fifth column
+      // would move every other one and the pixel gate reads this table's layout.
+      var head = el('span', ROW + 'gap:6px;min-width:0;');
+      head.appendChild(a);
+      var opener = openAppButton(d, view.apps || DEFAULT_APPS);
+      if (opener) head.appendChild(opener);
+      title.appendChild(head);
       title.appendChild(el('span', 'font-size:11.5px;color:' + t.ink45 + ';',
         [safeText(d.project), safeText(d.source)].filter(Boolean).join(' · ')));
       wrap.appendChild(title);
