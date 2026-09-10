@@ -400,7 +400,8 @@ def selftest_policy_and_queue(checked):
 
 def selftest_bundle(now, checked):
     """(d) M5 acceptance: six confirmed lanes plus exceptions stay under the gate."""
-    live = bl.load(bl.default_board_path())
+    live = fixture_board([fixture_lane("L%d" % n, next_report_due="2026-08-28T09:00:00Z")
+                          for n in range(1, 5)])
     lanes = list(live["lanes"])
     # Two more lanes of realistic weight — the 5th and 6th OQ-2 is about.
     lanes.append(dict(lanes[0], id="L5", goal="lowcap: pools capability — found, added, picked, "
@@ -479,7 +480,7 @@ def selftest_snapshot_cannot_mask(now, checked):
     went overdue since would be invisible to the seat booting to own it — silence
     reading as health, which is the one thing M1 exists to prevent.
     """
-    live = bl.load(bl.default_board_path())
+    live = fixture_board([fixture_lane("L1", next_report_due="2026-08-28T09:00:00Z")])
 
     # A board with real, live exceptions, carrying a snapshot that claims all-clear.
     masked = dict(live, exceptions=[])
