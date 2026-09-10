@@ -36,8 +36,17 @@ const assert = require('node:assert/strict');
     assert.equal(await card.getByRole('button',{name:'Legacy cert',exact:true}).getAttribute('aria-pressed'),'true');
     await card.getByRole('button',{name:'Mint legacy cert',exact:true}).click();
     await page.waitForFunction(()=>document.body.textContent.includes('Offline preview: no mint performed'));
-    assert.deepEqual(mints.shift(),{profile:'legacy',ttl:'1h',extraTags:[]});
+    assert.deepEqual(mints.shift(),{profile:'legacy',ttl:'8h',extraTags:[]});
+    assert.equal(await card.getByRole('button',{name:'8h',exact:true}).getAttribute('aria-pressed'),'true');
+    for (const ttl of ['4h','1h','8h']) {
+      await card.getByRole('button',{name:ttl,exact:true}).click();
+      assert.equal(await card.getByRole('button',{name:ttl,exact:true}).getAttribute('aria-pressed'),'true');
+      await card.getByRole('button',{name:'Mint legacy cert',exact:true}).click();
+      await page.waitForFunction(()=>!Array.from(document.querySelectorAll('button')).some(b=>b.textContent==='Minting…'));
+      assert.deepEqual(mints.shift(),{profile:'legacy',ttl,extraTags:[]});
+    }
     await card.getByRole('button',{name:'Daily cert',exact:true}).click();
+    assert.equal(await card.getByRole('button',{name:'8h',exact:true}).count(),0,'Legacy TTL selector is hidden for Daily');
     assert.equal(await card.getByRole('button',{name:'rog-only',exact:true}).count(),0);
     await card.getByRole('button',{name:'Mint daily cert',exact:true}).click();
     await page.waitForFunction(()=>document.body.textContent.includes('Offline preview: no mint performed'));
@@ -70,6 +79,6 @@ const assert = require('node:assert/strict');
     assert.equal(await narrow.evaluate(el=>el.scrollWidth<=el.clientWidth),true);
     await page.screenshot({path:'/tmp/ivo-keys-daily-mobile.png'});
     assert.deepEqual(errors,[]);
-    console.log('PASS: offline browser Legacy default, login coverage guard, Daily/Admin isolation, removed Admin chips, S3 default switch, requests, isolated 390px mint card, no page errors');
+    console.log('PASS: offline browser Legacy 8h default and 1h/4h/8h clicks, login coverage guard, Daily/Admin isolation, removed Admin chips, S3 default switch, requests, isolated 390px mint card, no page errors');
   } finally {await browser.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

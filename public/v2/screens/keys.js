@@ -36,7 +36,7 @@
   var TTLS = ['1h', '4h', '8h'];
   // Optional Admin tags are additive: admin itself grants every approved host.
   // vibes-asus stays visible as unknown and cannot contribute a principal.
-  var PROFILES = { legacy: { label: 'Legacy cert', ttl: '1h' }, daily: { label: 'Daily cert', ttl: '8h' }, admin: { label: 'Admin cert', ttl: '1h' } };
+  var PROFILES = { legacy: { label: 'Legacy cert', ttl: '8h' }, daily: { label: 'Daily cert', ttl: '8h' }, admin: { label: 'Admin cert', ttl: '1h' } };
   var LEGACY_PRINCIPALS = ['root','vibe','misterisley','tabor'];
   var BOXES = [
     { id: 'rog-strix', user: 'misterisley', tag: 'rog-only', title: 'rog-strix, adds rog-only; admin still reaches all five hosts' },
@@ -60,9 +60,9 @@
     if (policy.requiredLogins.some(function (user) { return principals.indexOf(user) < 0; })) return 'Legacy mint would drop a login used by machines.json.';
     return '';
   }
-  function mintRequest(profile, chosen) {
+  function mintRequest(profile, chosen, ttl) {
     profile = Object.prototype.hasOwnProperty.call(PROFILES, profile) ? profile : 'legacy';
-    return { profile: profile, ttl: PROFILES[profile].ttl, extraTags: [] };
+    return { profile: profile, ttl: profile === 'legacy' && TTLS.indexOf(ttl) >= 0 ? ttl : PROFILES[profile].ttl, extraTags: [] };
   }
   var KILL_CONFIRM = 'Kill this cert now? Agents using it lose access immediately.';
   var POLL_MS = 30000;
@@ -142,6 +142,7 @@
   var state = { certs: [], keys: [], policy: null };
   var train = { active: false, expiresAt: null };
   var profile = 'legacy';
+  var legacyTtl = '8h';
   var chosen = {};                  // box id -> selected, the chip state this screen reads
 
   var flashDir = null;   // the dir just minted — its card flashes once
@@ -172,6 +173,7 @@
     sync: function (next) {
       if (!next) return;
       ctx = next;
+      legacyTtl = TTLS.indexOf(next.legacyTtl) >= 0 ? next.legacyTtl : '8h';
       profile = Object.prototype.hasOwnProperty.call(PROFILES, next.profile) ? next.profile : 'legacy';
       if (!seeded && next.logic && next.prin) {
         seeded = true;
@@ -312,6 +314,11 @@
         b.disabled = minting;
         return;
       }
+      if (TTLS.indexOf(label) >= 0) {
+        b.setAttribute('aria-pressed', String(label === legacyTtl));
+        b.disabled = minting;
+        return;
+      }
       var box = BOX_BY_ID[label];
       if (!box) return;
       b.title = box.title;
@@ -323,7 +330,7 @@
     var hint = kids(card)[2];
     var guard = profile === 'legacy' ? legacyGuard(principalsFor({}, 'legacy'), state.policy) : '';
     if (hint) hint.textContent = profile === 'legacy'
-      ? '1 hour. Current fleet logins: root, vibe, misterisley, tabor. Keeps the shared legacy current link. Default until every host completes S3.'
+      ? legacyTtl + '. Current fleet logins: root, vibe, misterisley, tabor. Keeps the shared legacy current link. Default until every host completes S3.'
       : profile === 'daily'
       ? '8 hours. Deploy user on five approved hosts, PTY only. Approve in 1Password on the Mac.'
       : '1 hour. Admin access on all five hosts. Use the documented tag-only CLI flow for one-host access. Approve in 1Password on the Mac.';
@@ -533,7 +540,7 @@
       mintError = legacyGuard(principalsFor({}, 'legacy'), state.policy);
       if (mintError) { paint(); return; }
     }
-    var request = mintRequest(profile, chosen);
+    var request = mintRequest(profile, chosen, legacyTtl);
     minting = true;
     paint();
     post(function () { return FD.data.mintCert(request); })

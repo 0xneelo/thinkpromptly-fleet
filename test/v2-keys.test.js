@@ -179,11 +179,20 @@ test('Admin box chips were removed: hidden choices grant no additional principal
   assert.match(keys.BOXES.find(b => b.id === 'vibes-asus').title, /trust unknown/);
 });
 
-test('mint requests couple each profile to its fixed duration', () => {
-  assert.deepStrictEqual(keys.mintRequest(), { profile: 'legacy', ttl: '1h', extraTags: [] });
+test('mint requests keep Daily/Admin fixed and default Legacy to eight hours', () => {
+  assert.deepStrictEqual(keys.mintRequest(), { profile: 'legacy', ttl: '8h', extraTags: [] });
   assert.deepStrictEqual(keys.mintRequest('daily', { ivy: true }), { profile: 'daily', ttl: '8h', extraTags: [] });
   assert.deepStrictEqual(keys.mintRequest('admin', { ivy: true }), { profile: 'admin', ttl: '1h', extraTags: [] });
-  assert.deepStrictEqual(keys.PROFILES, { legacy: { label: 'Legacy cert', ttl: '1h' }, daily: { label: 'Daily cert', ttl: '8h' }, admin: { label: 'Admin cert', ttl: '1h' } });
+  assert.deepStrictEqual(keys.PROFILES, { legacy: { label: 'Legacy cert', ttl: '8h' }, daily: { label: 'Daily cert', ttl: '8h' }, admin: { label: 'Admin cert', ttl: '1h' } });
+});
+
+test('Legacy TTL selection reaches the request without changing role durations', () => {
+  for (const ttl of ['1h','4h','8h']) {
+    assert.deepStrictEqual(keys.mintRequest('legacy', {}, ttl), {profile:'legacy',ttl,extraTags:[]});
+    assert.equal(keys.mintRequest('daily', {}, ttl).ttl, '8h');
+    assert.equal(keys.mintRequest('admin', {}, ttl).ttl, '1h');
+  }
+  assert.equal(keys.mintRequest('legacy', {}, '24h').ttl, '8h');
 });
 
 test('Legacy mint refuses missing login coverage and unknown policy', () => {

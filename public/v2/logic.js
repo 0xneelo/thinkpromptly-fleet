@@ -256,7 +256,7 @@ class LandLogic extends Sub {
   }
 }
 class AppLogic extends Sub {
-  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, sshProfile: null, ttl: '1h', prin: { 'rog-strix': true, 'vibes-asus': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
+  state = { screen: null, dark: null, q: '', dq: '', dsExp: {}, aOpen: {}, sel: {}, exp: {}, mOpen: {}, sshProfile: null, legacyTtl: '8h', ttl: '1h', prin: { 'rog-strix': true, 'vibes-asus': true, german: true, onboarding: true, promptly: true, ivy: true }, leftOpen: true, rightOpen: true, videoOn: null };
   isDark() {
     if (this.state.dark != null) return this.state.dark;
     try { const s = localStorage.getItem('fd-landing-dark'); if (s != null) return s === '1'; } catch (e) {}
@@ -1063,7 +1063,7 @@ class AppLogic extends Sub {
     // app down with it is not acceptable.
     try {
       if (FD.screens.keys && FD.screens.keys.sync) FD.screens.keys.sync({
-        t, dark, isKeys: screen === 'keys', ttl, prin, profile: sshProfile, logic: this,
+        t, dark, isKeys: screen === 'keys', ttl, prin, profile: sshProfile, legacyTtl: this.state.legacyTtl, logic: this,
         pills: {
           good: chipTone('good'), goodDot: dot(t.good),
           dim: { ...chipTone('neutral'), color: t.ink45 }, dimDot: dot(t.ink35),
@@ -1433,7 +1433,10 @@ class AppLogic extends Sub {
         navBadgeText: leftOpen ? String(FD.fixture.l2Badge) : '',
       }),
       // keys
-      ttlChips: (keysLive ? ['legacy', 'daily', 'admin'] : ['1h', '4h', '8h']).map((v) => ({ t: keysLive ? ({legacy:'Legacy cert',daily:'Daily cert',admin:'Admin cert'}[v]) : v, style: selChip(keysLive ? sshProfile === v : ttl === v), set: () => this.setState(keysLive ? { sshProfile: v } : { ttl: v }) })),
+      ttlChips: keysLive
+        ? ['legacy', 'daily', 'admin'].map((v) => ({ t: {legacy:'Legacy cert',daily:'Daily cert',admin:'Admin cert'}[v], style: selChip(sshProfile === v), set: () => this.setState({ sshProfile: v }) })).concat(sshProfile === 'legacy'
+          ? ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(this.state.legacyTtl === v), set: () => this.setState({ legacyTtl: v }) })) : [])
+        : ['1h', '4h', '8h'].map((v) => ({ t: v, style: selChip(ttl === v), set: () => this.setState({ ttl: v }) })),
       prinChips: ['rog-strix', 'vibes-asus', 'german', 'onboarding', 'promptly', 'ivy'].map((v) => {
         const box = keysLive && FD.screens.keys.boxes.find((b) => b.id === v);
         return { t: box ? (box.tag || box.id) : v, style: { ...selChip(!!prin[v]), ...(keysLive ? { display: 'none' } : {}) }, set: () => { if (!box || box.tag) this.setState({ prin: { ...prin, [v]: !prin[v] } }); } };
