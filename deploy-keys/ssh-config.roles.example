@@ -1,6 +1,8 @@
-# OWNER TEMPLATE: install only after S3 on the target host; replace duplicate alias blocks.
-# Do not activate globally ahead of host rollout. Keep one recovery session open.
-# machines.json already uses these five *-deploy aliases; it requires no runtime rewrite.
+# OWNER TEMPLATE: activate only after all five hosts pass S3 and collector/WSL checks.
+# Replace duplicate alias blocks; retain an independent recovery route (Windows restart drops SSH).
+# S2 verification may add only the individual *-admin HostName/User blocks below.
+# At activation keep these aliases in machines.json and update their user metadata to deploy.
+# See RUNBOOK.md before switching ROTATION-STATE to s3-applied.
 Host vps-deploy vps-admin ob-deploy ob-admin ivybox-deploy ivybox-admin gb-deploy gb-admin rs-deploy rs-admin
     IdentitiesOnly yes
     IdentityAgent none
