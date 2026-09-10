@@ -92,6 +92,21 @@ function projectOf(encoded) {
   return m ? m[1] : null;
 }
 
+// Under the exports root the first directory names the repo the session ran in
+// (`lowcap-connector/sessions-2026-09-08-1010.md` -> lowcap-connector). The buckets every
+// project shares are not repos; two of them still name one in the leaf below.
+const EXPORT_BUCKETS = new Set(['eli5-explainers', 'unblock-sheets', 'goals', 'summary']);
+
+function exportProjectOf(relPath) {
+  const parts = String(relPath || '').split(path.sep).filter(Boolean);
+  if (parts.length < 2) return null; // a file straight under the root belongs to no repo
+  if (!EXPORT_BUCKETS.has(parts[0])) return parts[0];
+  const m = parts[0] === 'goals'
+    ? /^board-(.+)\.html$/.exec(parts[1])
+    : parts[0] === 'summary' ? /^\d{4}-\d{2}-\d{2}-\d{4}-(.+)$/.exec(parts[1]) : null;
+  return m ? m[1] : null;
+}
+
 // The sweep's roots. FLEET_DOCS_ROOTS_JSON replaces them outright (the test seam -- the
 // defaults point at the operator's real home); FLEET_DOCS_ROOTS adds repo dirs.
 function defaultRoots(home = os.homedir()) {
@@ -225,6 +240,7 @@ class DocsIndex {
     this.days = db.prepare('SELECT day, COUNT(*) AS n FROM docs WHERE gone = 0 GROUP BY day ORDER BY day DESC');
     this.kinds = db.prepare('SELECT kind, COUNT(*) AS n FROM docs WHERE gone = 0 GROUP BY kind ORDER BY kind');
     this.sources = db.prepare('SELECT source, COUNT(*) AS n FROM docs WHERE gone = 0 GROUP BY source ORDER BY source');
+    this.projects = db.prepare('SELECT project, COUNT(*) AS n FROM docs WHERE gone = 0 AND project IS NOT NULL GROUP BY project ORDER BY n DESC, project');
   }
 
   async sweep(force = false) {
@@ -246,7 +262,10 @@ class DocsIndex {
     for (const root of this.roots) {
       const found = root.source === 'scratchpad'
         ? await scratchpadFiles(root.dir)
-        : (await walk(root.dir)).map((file) => ({ file, session: null, cwd: null, project: root.project || null }));
+        : (await walk(root.dir)).map((file) => ({
+          file, session: null, cwd: null,
+          project: root.source === 'exports' ? exportProjectOf(path.relative(root.dir, file)) : root.project || null,
+        }));
       for (const doc of found) {
         let st;
         try {
@@ -320,7 +339,7 @@ class DocsIndex {
     return this.byPath.get(target);
   }
 
-  list({ day, session, kind, source, q, limit = 500 } = {}) {
+  list({ day, session, kind, source, project, q, limit = 500 } = {}) {
     const where = ['gone = 0'];
     const args = [];
     for (const [col, value] of [['day', day], ['session', session], ['kind', kind]])
@@ -333,6 +352,12 @@ class DocsIndex {
     if (typeof source === 'string' && /^-?[a-z]+$/.test(source)) {
       where.push(source[0] === '-' ? 'source != ?' : 'source = ?');
       args.push(source.replace(/^-/, ''));
+    }
+    // A project is a repo basename and matches exactly; anything else is ignored rather than
+    // answered with an empty list.
+    if (typeof project === 'string' && /^[A-Za-z0-9._-]{1,100}$/.test(project)) {
+      where.push('project = ?');
+      args.push(project);
     }
     if (typeof q === 'string' && q.trim()) {
       where.push('(lower(title) LIKE ? OR lower(path) LIKE ?)');
@@ -347,7 +372,8 @@ class DocsIndex {
     const { total } = this.db.prepare(`SELECT COUNT(*) AS total FROM docs WHERE ${where.join(' AND ')}`).get(...args);
     // The facets are unfiltered on purpose: they are the pickers, and a day picker that
     // only ever offered the day already selected could never leave it.
-    return { docs, total, days: this.days.all(), kinds: this.kinds.all(), sources: this.sources.all() };
+    return { docs, total, days: this.days.all(), kinds: this.kinds.all(), sources: this.sources.all(),
+      projects: this.projects.all() };
   }
 
   get(id) {
@@ -359,4 +385,4 @@ class DocsIndex {
   }
 }
 
-module.exports = { DocsIndex, defaultRoots, dayOf, tsOf, kindOf, titleOf, projectOf, isUuid, localDay };
+module.exports = { DocsIndex, defaultRoots, dayOf, tsOf, kindOf, titleOf, projectOf, exportProjectOf, isUuid, localDay };

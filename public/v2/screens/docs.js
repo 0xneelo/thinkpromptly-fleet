@@ -64,7 +64,7 @@
     return Math.floor(m / 1440) + ' d ago';
   }
 
-  var FILTERS = ['session', 'day', 'kind', 'source', 'q'];
+  var FILTERS = ['session', 'day', 'kind', 'source', 'project', 'q'];
 
   // Only the filters this screen owns, and only the ones that are set: an empty value has
   // to leave the hash entirely, or clearing a filter would still name it in the link.
@@ -116,6 +116,7 @@
       { kind: 'report', n: 1 }, { kind: 'session', n: 1 }, { kind: 'unblock', n: 1 }],
     sources: [{ source: 'exports', n: 2 }, { source: 'hook', n: 1 }, { source: 'repo', n: 1 },
       { source: 'scratchpad', n: 2 }],
+    projects: [{ project: 'remote-system', n: 4 }, { project: 'lowcapsxyz', n: 2 }],
     total: 6,
     swept_at: '2026-09-10T09:45:00Z',
     sweeping: false,
@@ -138,7 +139,7 @@
 
   var MOUNT = 'fd-docs-root';
   var DAY_CHIPS = 21; // three weeks of chips; older days stay reachable through the date input
-  var EMPTY = { docs: [], days: [], kinds: [], sources: [] };
+  var EMPTY = { docs: [], days: [], kinds: [], sources: [], projects: [] };
 
   // Mirrors FD.data.isFixture() so this file can still decide when FD.data is absent.
   function isFixture() {
@@ -224,7 +225,7 @@
     return b;
   }
 
-  // kind and source are the same control twice: one option list, one filter write.
+  // kind, source and project are the same control three times: one option list, one filter write.
   function picker(options, value, onchange) {
     var t = tok();
     var s = el('select', 'border-radius:9999px;border:1px solid ' + t.line + ';background:transparent;color:' +
@@ -331,6 +332,12 @@
       .concat((view.sources || []).map(function (x) {
         return { value: safeText(x.source), label: safeText(x.source) + ' · ' + safeText(x.n) };
       })), f.source || '', function (v) { storeSource(v); setFilter('source', v); }));
+
+    // Not sticky: which repo the operator is looking at changes with the work, unlike the
+    // scratchpad choice, which is a standing preference.
+    line.appendChild(picker([{ value: '', label: 'All projects' }].concat((view.projects || []).map(function (x) {
+      return { value: safeText(x.project), label: safeText(x.project) + ' · ' + safeText(x.n) };
+    })), f.project || '', function (v) { setFilter('project', v); }));
 
     if (f.session) {
       var s = el('span', 'border-radius:9999px;border:1px solid ' + t.line + ';background:' + t.hoverBg +

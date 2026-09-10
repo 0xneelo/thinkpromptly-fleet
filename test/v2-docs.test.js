@@ -46,9 +46,10 @@ test('an artifact opens at its own URL; every other row opens by id', () => {
 });
 
 test('only the filters this screen owns are read off the hash', () => {
-  const params = { session: 'abc', day: '2026-09-10', kind: 'eli5', source: '-scratchpad', q: 'train', view: 'deck', evil: '1' };
+  const params = { session: 'abc', day: '2026-09-10', kind: 'eli5', source: '-scratchpad',
+    project: 'remote-system', q: 'train', view: 'deck', evil: '1' };
   assert.deepStrictEqual(_.paramsOf({ params }),
-    { session: 'abc', day: '2026-09-10', kind: 'eli5', source: '-scratchpad', q: 'train' });
+    { session: 'abc', day: '2026-09-10', kind: 'eli5', source: '-scratchpad', project: 'remote-system', q: 'train' });
   assert.deepStrictEqual(_.paramsOf({ params: { session: '  ', kind: 'md' } }), { kind: 'md' },
     'a cleared filter leaves the hash instead of naming itself empty');
   assert.deepStrictEqual(_.paramsOf(null), {}, 'no route is no filter, never a throw');
@@ -86,6 +87,8 @@ test('the fixture sample is the deterministic screen the pixel gate renders', ()
   assert.deepStrictEqual(Object.fromEntries(v.sources.map((x) => [x.source, x.n])), perSource,
     'the source counts match the rows the source picker filters');
   assert.strictEqual(v.sources.reduce((n, x) => n + x.n, 0), 6);
+  assert.strictEqual(v.projects.reduce((n, x) => n + x.n, 0), v.docs.filter((d) => d.project).length,
+    'the project counts match the rows the project picker filters');
   assert.deepStrictEqual(v.kinds.map((k) => k.kind), ['artifact', 'eli5', 'md', 'report', 'session', 'unblock']);
 });
 

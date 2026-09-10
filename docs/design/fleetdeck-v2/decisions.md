@@ -157,3 +157,9 @@ a title comes from a file some session wrote and must never be parsed as markup)
 `?source=` filters the same way, and a leading `-` negates it (`source=-scratchpad`), which is the
 screen's "No scratchpads" choice — the only filter that is remembered (`localStorage['fd-docs-source']`),
 and it is remembered by navigating once so the hash stays the single truth.
+
+`?project=` filters the same way and is not remembered: which repo the operator is looking at
+changes with the work. A scratchpad row's project is decoded from the encoded cwd; an exports row
+learns it from the folder under the root, except for the buckets every project shares
+(`eli5-explainers`, `unblock-sheets`), where only `goals/board-<repo>.html` and
+`summary/<stamp>-<repo>/…` still name one.

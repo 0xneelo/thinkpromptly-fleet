@@ -9,7 +9,7 @@ const os = require('os');
 const fs = require('fs');
 const path = require('path');
 const { tmpdir, hostsFile, load, unload } = require('./helpers');
-const { dayOf, tsOf, kindOf, titleOf, projectOf, localDay } = require('../docs-index');
+const { dayOf, tsOf, kindOf, titleOf, projectOf, exportProjectOf, localDay } = require('../docs-index');
 
 // Sibling worktrees run this file at the same time, so the band is per process.
 let port = 22000 + Math.floor(Math.random() * 15000);
@@ -55,6 +55,10 @@ function seedTree() {
       at(9)
     ),
     notes: write(`scratch/${CWD_B}/${SESSION_B}/scratchpad/notes.md`, '# Notes for the deck\n\nbody\n', at(10)),
+    // Under the exports root the folder is the only evidence of the repo: a named one, and a
+    // shared bucket whose leaf still names one.
+    digest: write('exports/lowcap-connector/sessions-2026-09-08-1010.md', '# Sessions on the 8th\n'),
+    board: write('exports/goals/board-remote-system.html', '<title>Goals board</title>', at(8)),
   };
   write('exports/fixture.html', '<title>a visual-diff fixture</title>');
   write('exports/node_modules/x.html', '<title>vendored</title>');
@@ -147,6 +151,14 @@ test('the title is the html <title>, the first md heading, or the name made read
   assert.equal(titleOf('/x/portal-unblock-sheet.html', ''), 'portal unblock sheet');
 });
 
+test('under the exports root the folder names the repo, and a shared bucket names none', () => {
+  assert.equal(exportProjectOf('lowcap-connector/sessions-x.md'), 'lowcap-connector');
+  assert.equal(exportProjectOf('eli5-explainers/x.html'), null);
+  assert.equal(exportProjectOf('goals/board-remote-system.html'), 'remote-system');
+  assert.equal(exportProjectOf('summary/2026-09-04-1428-fleetdeck/a.md'), 'fleetdeck');
+  assert.equal(exportProjectOf('unblock-sheets/x.html'), null);
+});
+
 test('the project is decoded from the tmp directory name, worktree tail dropped', () => {
   assert.equal(projectOf(CWD_A), 'lowcap-connector');
   assert.equal(projectOf(CWD_B), 'remote-system');
@@ -161,11 +173,12 @@ test('a refreshed GET lists every swept doc newest first, with its session and p
   const { status, body } = await deck(t, tree).get('?refresh=1');
   assert.equal(status, 200);
   assert.equal(body.ok, true);
-  assert.equal(body.docs.length, 3, 'the fixture, the node_modules copy and the secrets form are not docs');
-  assert.equal(body.total, 3, 'the filtered count travels with the capped list');
-  assert.deepEqual(body.docs.map((d) => d.title), ['Notes for the deck', 'portal unblock sheet', 'ELI5 · market walk']);
+  assert.equal(body.docs.length, 5, 'the fixture, the node_modules copy and the secrets form are not docs');
+  assert.equal(body.total, 5, 'the filtered count travels with the capped list');
+  assert.deepEqual(body.docs.map((d) => d.title),
+    ['Notes for the deck', 'portal unblock sheet', 'Goals board', 'Sessions on the 8th', 'ELI5 · market walk']);
 
-  const [notes, unblock, eli5] = body.docs;
+  const [notes, unblock, board, digest, eli5] = body.docs;
   assert.deepEqual(
     { kind: notes.kind, day: notes.day, ts: notes.ts, session: notes.session, cwd: notes.cwd, project: notes.project, source: notes.source },
     { kind: 'md', day: TODAY, ts: at(10), session: SESSION_B, cwd: CWD_B, project: 'remote-system', source: 'scratchpad' }
@@ -178,12 +191,23 @@ test('a refreshed GET lists every swept doc newest first, with its session and p
     { kind: eli5.kind, day: eli5.day, session: eli5.session, project: eli5.project, source: eli5.source },
     { kind: 'eli5', day: '2026-09-07', session: null, project: null, source: 'exports' }
   );
+  assert.deepEqual(
+    { kind: digest.kind, project: digest.project, source: digest.source },
+    { kind: 'session', project: 'lowcap-connector', source: 'exports' },
+    'the first folder under the exports root is the repo'
+  );
+  assert.deepEqual(
+    { kind: board.kind, project: board.project, source: board.source },
+    { kind: 'goals', project: 'remote-system', source: 'exports' },
+    'a shared bucket is not a repo, but board-<repo>.html names one'
+  );
   assert.equal(eli5.path, tree.files.eli5);
   assert.ok(notes.size > 0 && Number.isInteger(notes.id));
 
-  assert.deepEqual(body.days, [{ day: TODAY, n: 2 }, { day: '2026-09-07', n: 1 }]);
-  assert.deepEqual(body.kinds, [{ kind: 'eli5', n: 1 }, { kind: 'md', n: 1 }, { kind: 'unblock', n: 1 }]);
-  assert.deepEqual(body.sources, [{ source: 'exports', n: 1 }, { source: 'scratchpad', n: 2 }]);
+  assert.deepEqual(body.days, [{ day: TODAY, n: 3 }, { day: '2026-09-08', n: 1 }, { day: '2026-09-07', n: 1 }]);
+  assert.deepEqual(body.kinds, [{ kind: 'eli5', n: 1 }, { kind: 'goals', n: 1 }, { kind: 'md', n: 1 },
+    { kind: 'session', n: 1 }, { kind: 'unblock', n: 1 }]);
+  assert.deepEqual(body.sources, [{ source: 'exports', n: 3 }, { source: 'scratchpad', n: 2 }]);
   assert.ok(body.swept_at > 0);
   assert.equal(body.sweeping, false);
 });
@@ -193,7 +217,7 @@ test('day and session are filters; the pickers keep offering every day and kind'
   await d.get('?refresh=1');
   const day = await d.get('?day=2026-09-07');
   assert.deepEqual(day.body.docs.map((x) => x.kind), ['eli5']);
-  assert.equal(day.body.days.length, 2, 'a day picker that hid the other days could never leave this one');
+  assert.equal(day.body.days.length, 3, 'a day picker that hid the other days could never leave this one');
 
   const session = await d.get('?session=' + SESSION_A);
   assert.deepEqual(session.body.docs.map((x) => x.kind), ['unblock']);
@@ -206,12 +230,24 @@ test('source is a filter a leading dash negates, and a value that is not a sourc
   const d = deck(t, seedTree());
   await d.get('?refresh=1');
   assert.deepEqual((await d.get('?source=scratchpad')).body.docs.map((x) => x.kind), ['md', 'unblock']);
-  assert.deepEqual((await d.get('?source=-scratchpad')).body.docs.map((x) => x.kind), ['eli5'],
+  assert.deepEqual((await d.get('?source=-scratchpad')).body.docs.map((x) => x.kind), ['goals', 'session', 'eli5'],
     'the operator hiding the scratchpads still sees the exports');
-  assert.equal((await d.get('?source=bogus!')).body.docs.length, 3, 'not a source name: no filter at all');
-  const facet = [{ source: 'exports', n: 1 }, { source: 'scratchpad', n: 2 }];
+  assert.equal((await d.get('?source=bogus!')).body.docs.length, 5, 'not a source name: no filter at all');
+  const facet = [{ source: 'exports', n: 3 }, { source: 'scratchpad', n: 2 }];
   assert.deepEqual((await d.get('?source=scratchpad')).body.sources, facet,
     'a source picker that hid the other sources could never leave this one');
+});
+
+test('project is an exact filter, and the picker keeps offering every project', async (t) => {
+  const d = deck(t, seedTree());
+  await d.get('?refresh=1');
+  assert.deepEqual((await d.get('?project=lowcap-connector')).body.docs.map((x) => x.kind), ['unblock', 'session'],
+    'the scratchpad cwd and the exports folder name the same repo');
+  assert.equal((await d.get('?project=nope')).body.docs.length, 0);
+  assert.equal((await d.get('?project=bad!')).body.docs.length, 5, 'not a project name: no filter at all');
+  const facet = [{ project: 'lowcap-connector', n: 2 }, { project: 'remote-system', n: 2 }];
+  assert.deepEqual((await d.get('?project=lowcap-connector')).body.projects, facet,
+    'a project picker that hid the other projects could never leave this one');
 });
 
 test('the tailnet listener has no /api/docs at all', async (t) => {
@@ -255,7 +291,7 @@ test('a POST registers an Artifact URL and a local file, and both list as source
 
   // A sweep that never saw either of them must not retire them.
   const list = await d.get('?refresh=1');
-  assert.equal(list.body.docs.length, 5);
+  assert.equal(list.body.docs.length, 7);
   const hooks = list.body.docs.filter((x) => x.source === 'hook');
   assert.equal(hooks.length, 2, 'no root covers a hook row, so the sweep has no evidence against it');
 });
@@ -312,11 +348,11 @@ test('open serves the indexed file by id, and nothing else', async (t) => {
 test('a deleted file leaves the list on the next refresh', async (t) => {
   const tree = seedTree();
   const d = deck(t, tree);
-  assert.equal((await d.get('?refresh=1')).body.docs.length, 3);
+  assert.equal((await d.get('?refresh=1')).body.docs.length, 5);
   fs.rmSync(tree.files.notes);
   const stale = await d.get();
-  assert.equal(stale.body.docs.length, 3, 'a plain GET inside the TTL answers from the table');
+  assert.equal(stale.body.docs.length, 5, 'a plain GET inside the TTL answers from the table');
   const fresh = await d.get('?refresh=1');
-  assert.deepEqual(fresh.body.docs.map((x) => x.kind), ['unblock', 'eli5']);
-  assert.deepEqual(fresh.body.days, [{ day: TODAY, n: 1 }, { day: '2026-09-07', n: 1 }]);
+  assert.deepEqual(fresh.body.docs.map((x) => x.kind), ['unblock', 'goals', 'session', 'eli5']);
+  assert.deepEqual(fresh.body.days, [{ day: TODAY, n: 2 }, { day: '2026-09-08', n: 1 }, { day: '2026-09-07', n: 1 }]);
 });
