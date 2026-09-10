@@ -850,23 +850,32 @@ test('theme survives storage being unavailable', () => {
 // ---------------------------------------------------------------------------
 
 test('route defaults to the app view and the windows screen', () => {
-  assert.deepStrictEqual(router.route(), { view: 'app', screen: 'windows' });
+  assert.deepStrictEqual(router.route(), { view: 'app', screen: 'windows', params: {} });
 });
 
 test('route reads the view from the query and the screen from the hash', () => {
   globalThis.location = { search: '?view=deck', hash: '#registry' };
-  assert.deepStrictEqual(router.route(), { view: 'deck', screen: 'registry' });
+  assert.deepStrictEqual(router.route(), { view: 'deck', screen: 'registry', params: {} });
   globalThis.location = { search: '?view=land', hash: '' };
-  assert.deepStrictEqual(router.route(), { view: 'land', screen: 'windows' });
+  assert.deepStrictEqual(router.route(), { view: 'land', screen: 'windows', params: {} });
 });
 
 test('an unknown view or screen falls back to the defaults', () => {
   globalThis.location = { search: '?view=bogus', hash: '#nope' };
-  assert.deepStrictEqual(router.route(), { view: 'app', screen: 'windows' });
+  assert.deepStrictEqual(router.route(), { view: 'app', screen: 'windows', params: {} });
+});
+
+// A screen can name one of its own rows in the hash. The screen is everything before the '?',
+// so a deep link still routes; the parameters are the screen's business.
+test('a screen carries its own parameters after the hash', () => {
+  globalThis.location = { search: '', hash: '#unblock?sheet=u-7&x=2' };
+  assert.deepStrictEqual(router.route(), { view: 'app', screen: 'unblock', params: { sheet: 'u-7', x: '2' } });
+  globalThis.location = { search: '', hash: '#unblock?sheet=a%20b' };
+  assert.strictEqual(router.route().params.sheet, 'a b', 'the value is decoded');
 });
 
 test('every screen in the pack is routable', () => {
-  const expected = ['windows', 'org', 'registry', 'bus', 'keys', 'accounts', 'machines', 'desktop'];
+  const expected = ['windows', 'org', 'registry', 'bus', 'keys', 'accounts', 'machines', 'goals', 'unblock', 'desktop'];
   assert.deepStrictEqual([...router.SCREENS], expected);
   assert.deepStrictEqual([...router.VIEWS], ['land', 'app', 'deck']);
   for (const screen of expected) {

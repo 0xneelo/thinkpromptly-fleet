@@ -73,6 +73,7 @@ export const SCREEN_MAP = Object.freeze([
   { id: 'accounts', label: 'Accounts', view: 'app', nav: 'Accounts', reach: 'App link; Accounts sidebar button' },
   { id: 'machines', label: 'Machines', view: 'app', nav: 'Machines', reach: 'App link; Machines sidebar button' },
   { id: 'goals', label: 'Goals', view: 'app', nav: 'Goals', reach: 'App link; Goals sidebar button' },
+  { id: 'unblock', label: 'Unblock', view: 'app', nav: 'Unblock', reach: 'App link; Unblock sidebar button' },
   { id: 'desktop-sessions', label: 'Desktop sessions', view: 'app', nav: 'Desktop sessions', reach: 'App link; Desktop sessions sidebar button' },
   { id: 'session-full-screen', label: 'Session full screen', view: 'app', nav: 'Windows', fullscreen: true, reach: 'App; Windows; first tile Fullscreen button' },
   { id: '01-title', label: '01 Title', view: 'deck', slide: 0, reach: 'Deck link; 0 ArrowRight presses' },

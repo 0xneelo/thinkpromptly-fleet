@@ -101,3 +101,28 @@ The mock has no Goals screen, so `template.dc.html` carries only the mount node 
 `public/v2/screens/goals.js` draws the whole screen in plain DOM (createElement/textContent only — a
 dictated direction must never be parsed as markup). Nothing polls: it loads on entering the screen and
 on Refresh, because the jail changes when the goalkeeper commits.
+
+## 2026-09-10 · the `#unblock` screen holds every seat's decision sheet, and the operator sends answers back
+
+New screen `/app#unblock` plus `/api/unblock`. It is the deck version of the `adhd-unblock` HTML sheet:
+a seat (orchestrator, coordinator, worker) POSTs its sheet — title, intro, questions with options and a
+from-zero explainer — and the operator answers every open sheet in one place instead of one Artifact
+per seat. Sheets and answers live in two `fleet.db` tables (`unblock_sheets`, `unblock_answers`), not
+in a jail, because nothing else owns them.
+
+Every click is timestamped by the SERVER: `answered_at` when a choice is first clicked (re-clicking the
+same option keeps the first time, a different option moves it), `note_at` on the last note edit. The
+operator's own time is the audit trail the seats reason over — "the note is newer than the click, so
+the note is the last word".
+
+Answers go back over the message bus, and only when the operator says so: **Send new (N)** posts the
+answers changed since the last send (`partial: true`, same JSON the HTML sheet prints), **Send all**
+the whole sheet, each card its own **Send this**. Nothing auto-sends a half-answered sheet. The reply
+target is the bus target the seat named when it posted; a sheet with no target gets a copy box instead
+of a send button.
+
+`POST /api/unblock` is the one AGENT route (no `Origin`, like the registry); every write the operator
+makes (`PUT …/answers/:qid`, `…/send`, `…/close`) requires an allowed `Origin`, so a seat cannot answer
+its own questions through the deck. All routes are loopback-only: every seat that posts is a Claude
+Desktop session on this Mac. The screen polls every 20 s while open, because sheets arrive while the
+operator is looking at the list.

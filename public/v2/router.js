@@ -16,6 +16,7 @@
     'accounts',
     'machines',
     'goals',
+    'unblock',
     'desktop',
   ]);
   const DEFAULT_VIEW = 'app'; // inside /v2/; '/' becomes the landing page in L11
@@ -24,27 +25,50 @@
   // Every location read is guarded so the module can be required under Node.
   const loc = () => (typeof root.location === 'object' ? root.location : null);
 
+  // `#screen?a=b`: the screen owns whatever follows its name, so one sheet, one row or one
+  // window can have a URL of its own without a second query string. A screen that asks for
+  // nothing reads an empty params object.
+  function hashParts(hash) {
+    const raw = String(hash || '').replace(/^#/, '');
+    const cut = raw.indexOf('?');
+    return cut < 0 ? [raw, ''] : [raw.slice(0, cut), raw.slice(cut + 1)];
+  }
+
   function route() {
     const here = loc();
     const view = new URLSearchParams((here && here.search) || '').get('view');
-    const screen = String((here && here.hash) || '').replace(/^#/, '');
+    const [screen, query] = hashParts(here && here.hash);
+    const params = {};
+    new URLSearchParams(query).forEach((v, k) => { params[k] = v; });
     return {
       view: VIEWS.includes(view) ? view : DEFAULT_VIEW,
       screen: SCREENS.includes(screen) ? screen : DEFAULT_SCREEN,
+      params,
     };
   }
 
-  function navigate(screen) {
+  function query(params) {
+    const q = new URLSearchParams();
+    Object.keys(params || {}).forEach((k) => {
+      const v = params[k];
+      if (v !== null && v !== undefined && v !== '') q.set(k, String(v));
+    });
+    const s = q.toString();
+    return s ? '?' + s : '';
+  }
+
+  function navigate(screen, params) {
     if (!SCREENS.includes(screen)) throw new Error('unknown screen: ' + screen);
     const here = loc();
+    const hash = screen + query(params);
     if (here) {
       const history = root.history;
       // pushState keeps programmatic navigation and popstate on one path; the
       // hash fallback fires hashchange instead, which emit() de-duplicates.
       if (history && typeof history.pushState === 'function') {
-        history.pushState(null, '', here.pathname + here.search + '#' + screen);
+        history.pushState(null, '', here.pathname + here.search + '#' + hash);
       } else {
-        here.hash = screen;
+        here.hash = hash;
       }
     }
     emit();
@@ -68,7 +92,11 @@
     };
   }
 
-  const key = (r) => r.view + '\0' + r.screen;
+  // The params are part of the route: moving from one sheet to the next changes nothing else,
+  // and a subscriber that never saw it would keep painting the sheet before it.
+  const key = (r) =>
+    r.view + '\0' + r.screen + '\0' +
+    Object.keys(r.params).sort().map((k) => k + '=' + r.params[k]).join('&');
 
   // One user action can produce both a popstate and a hashchange; subscribers
   // only ever see a route that differs from the one they last saw.

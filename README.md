@@ -16,8 +16,8 @@ One page serves three views. The view travels on the query string, the screen on
 | `/app` | The deck |
 | `/deck` | Investor deck, five slides |
 
-The deck has eight screens: `windows`, `org`, `registry`, `bus`, `keys`, `accounts`,
-`machines`, `desktop`. `/app#registry` opens one directly. The old per-page URLs
+The deck has ten screens: `windows`, `org`, `registry`, `bus`, `keys`, `accounts`,
+`machines`, `goals`, `unblock`, `desktop`. `/app#registry` opens one directly. The old per-page URLs
 (`/index.html`, `/keys.html`, `/accounts.html`, `/machines.html`, `/sessions.html`)
 answer with a 302 to the screen that replaced them, so an old bookmark still lands in
 the right place. `/v2/` serves the same shell, which is what the design gate captures.
