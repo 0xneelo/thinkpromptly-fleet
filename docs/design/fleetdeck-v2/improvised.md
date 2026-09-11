@@ -668,6 +668,35 @@ still finds every row by index and the header keeps its count. The key is `live`
 `<accountUuid>:<orgUuid>|<machine>` for a person group; it is re-stamped on every apply because
 cards are positional (audit F1). `fd-desktop-collapsed` in localStorage holds `{ key: true }`, read
 never-throwing, so a missing or hand-edited store reads as "nothing collapsed".
+
+### I-L10-11 — Collapse all / Expand all sits in the page header of Accounts, Machines and Desktop sessions
+
+**Serves:** the operator's ask (2026-09-11): a collapse-all or expand-all toggle at the top of
+Accounts, Machines and Desktop sessions. Live mode only; the fixture render and the pixel gate are
+unmoved.
+
+**Decision.** One pill in the shared page header, immediately before Refresh, drawn by
+`screens/shell.js` for whichever of the three screens is active. Each screen publishes
+`FD.screens.<screen>.fold = { count, anyOpen, setAll(open) }` on every render. Accounts (`aOpen`)
+and Machines (`mOpen`) publish from `logic.js`, the only place that can `setState`; Accounts reads
+its open rule through one `accOpen()`, so the label and the cards never disagree. Desktop publishes
+from `screens/desktop.js`, which owns its collapsed set (I-L10-10), and calls `FD.shell.syncFold()`
+after each apply, because its card toggles never re-render the runtime. The label says what a click
+does: "Collapse all" while any card is open, otherwise "Expand all"; with no cards there is no
+button. Collapse all stores an explicit `false` for every card, so a card that opens by itself
+(I-L8-02 at a limit, I-L9-03 on live data) closes too.
+
+**Binding ruling 1 is broken here, openly.** The pill is a foreign node inside a compiled node.
+It holds for this row only: the action row (app.js:1153-1171) has seven fixed keyed children and
+no sc-if or sc-for, so no reorder can strand it, and `syncChildren()` skips an unchanged child
+list. If the list ever changes, the runtime drops the pill and the post-render `syncFold()` puts
+it back in the same task.
+
+**Two shell ids were stale and are re-mapped.** Recompiles had moved the header's Live API pill
+and Refresh button to 257 and 259; `TPL` still said 239 and 241, a sidebar div. So the header
+Refresh now also runs `FD.shell.refresh()` (sessions, health and a cached credits read — no
+`?refresh=1`, so no forced usage read), and the Live API text no longer lands in the sidebar. The
+other `TPL` ids are still stale; that is its own task.
 ## L2 — app shell: sidebar · page header · right rail (Renate, `agent-v2-l2`, 2026-09-07)
 
 Ledger rows D03, D04, D05 (+ D06 with L1). Every entry below is **live mode only**: under

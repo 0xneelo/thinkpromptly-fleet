@@ -459,6 +459,9 @@
     syncNotes(el, bar, cards, view);
     syncRows(cards, view.groups);
     syncCollapse(cards, view.keys);
+    // A card toggle never re-renders the runtime, so the shell's per-render hook would
+    // not see it; ask the header toggle to re-read our fold (I-L10-11). Guarded.
+    if (FD.shell && typeof FD.shell.syncFold === 'function') FD.shell.syncFold();
   }
 
   // What logic.js will actually render: our filters, then its search box, then its
@@ -745,7 +748,7 @@
     return kids(table).slice(1);
   }
 
-  // -- 5.6 collapsible group cards (I-L10-10) -----------------------------------
+  // -- 5.8 collapsible group cards (I-L10-10) -----------------------------------
 
   // 'live' cannot collide with a person group: accountKey always holds a ':'.
   const LIVE_KEY = 'live';
@@ -764,13 +767,28 @@
     return out;
   }
 
-  function toggleCollapsed(key) {
-    if (collapsed[key]) delete collapsed[key];
-    else collapsed[key] = true;
+  function saveCollapsed() {
     try {
       root.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
     } catch (err) {} // the toggle still works for this page; it just will not survive a reload
     scheduleApply();
+  }
+
+  function toggleCollapsed(key) {
+    if (collapsed[key]) delete collapsed[key];
+    else collapsed[key] = true;
+    saveCollapsed();
+  }
+
+  // I-L10-11: the page header's Collapse all / Expand all (screens/shell.js). It acts on
+  // the cards on screen now, the same set its label was computed from.
+  let lastKeys = [];
+  function setAllCollapsed(open) {
+    lastKeys.forEach((key) => {
+      if (open) delete collapsed[key];
+      else collapsed[key] = true;
+    });
+    saveCollapsed();
   }
 
   // card > [group header, scroller]. The header becomes the toggle; the scroller is
@@ -778,6 +796,12 @@
   // positional (audit F1), so the key is re-stamped on every apply and read at click
   // time, and the header styles are re-set because a theme toggle rewrites them.
   function syncCollapse(cards, keys) {
+    lastKeys = keys.slice(0, cards.length);
+    FD.screens.desktop.fold = {
+      count: lastKeys.length,
+      anyOpen: lastKeys.some((k) => !collapsed[k]),
+      setAll: setAllCollapsed,
+    };
     cards.forEach((card, gi) => {
       const parts = kids(card);
       const head = parts[0];

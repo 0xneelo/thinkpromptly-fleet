@@ -1195,6 +1195,19 @@ class AppLogic extends Sub {
       })) : mSeed;
       mCards = mList.map(mCard);
       this._mLastCards = mCards;
+      // I-L10-11: the page header's Collapse all / Expand all (screens/shell.js) reads
+      // this. Only this component can setState, so the setter lives here; keys match mKey.
+      FD.screens = FD.screens || {};
+      FD.screens.machines = FD.screens.machines || {};
+      FD.screens.machines.fold = {
+        count: mCards.length,
+        anyOpen: mCards.some((c) => c.open),
+        setAll: (open) => {
+          const o = {};
+          mList.forEach((m, i) => { o[m.name || String(i)] = !!open; });
+          this.setState({ mOpen: o });
+        },
+      };
     } catch (e) {
       console.error(e);
       mCards = this._mLastCards || [];
@@ -1272,6 +1285,24 @@ class AppLogic extends Sub {
       accRows = accStore.lastGood || null;
     }
     const accLive = !!accRows;
+    // Untouched rows keep the mock's default (collapsed). On live data a row at or
+    // over a limit — or one carrying a banner — opens by itself, so a wall and a
+    // fault are never hidden behind a chevron. improvised.md I-L8-02.
+    const accOpen = (a, i) => {
+      const aOpen = this.state.aOpen || {};
+      return i in aOpen ? !!aOpen[i] : (accLive ? !!(a.atLimit || a.banner || a.noData || a.noWindows) : false);
+    };
+    // I-L10-11: the page header's Collapse all / Expand all (screens/shell.js) reads this.
+    // It uses the rule the cards render with, so the label never disagrees with them.
+    accStore.fold = {
+      count: accRows ? accRows.length : 0,
+      anyOpen: (accRows || []).some(accOpen),
+      setAll: (open) => {
+        const o = {};
+        (accRows || []).forEach((_, i) => { o[i] = !!open; });
+        this.setState({ aOpen: o });
+      },
+    };
     return {
       dark, notDark: !dark, ...t, four: 4,
       screenTitle: titles[screen][0], screenSub: titles[screen][1],
@@ -1482,11 +1513,7 @@ class AppLogic extends Sub {
           trendPts: spark([1,2,3,3.5,3,4,4.5,4,3.5,4,3,4.5,5,4.5,2,4,4.5,5,4.5,7]), trendColor: t.warn, trendPct: '88%',
           seen: 'rfc1918-internal · live, rfc1918-internal · desktop snapshot, DESKTOP-LJMEJQN' },
       ]).map((a, i) => {
-        // Untouched rows keep the mock's default (collapsed). On live data a row at or
-        // over a limit — or one carrying a banner — opens by itself, so a wall and a
-        // fault are never hidden behind a chevron. improvised.md I-L8-02.
-        const aOpen = this.state.aOpen || {};
-        const open = i in aOpen ? !!aOpen[i] : (accLive ? !!(a.atLimit || a.banner || a.noData || a.noWindows) : false);
+        const open = accOpen(a, i); // the default rule sits at accOpen (I-L8-02)
         // A closed row shows whichever weekly is more used up — "7 day" (all models) or
         // "7 day Fable" — never the 5 hour one: the weekly is what actually constrains an
         // account (operator, 2026-09-09). improvised.md I-L8-10.

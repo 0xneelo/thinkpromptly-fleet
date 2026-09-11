@@ -22,14 +22,17 @@
   FD.shell = FD.shell || {};
 
   /* Compiler node ids for the shell's markup (public/v2/app.js). One table, so a
-   * recompile that renumbers the template is a single edit here. */
+   * recompile that renumbers the template is a single edit here.
+   * livePill and refresh were re-read from app.js:1155/1160 on 2026-09-11 (the
+   * Docs and Unblock recompiles had moved them to 257/259). The other ids were
+   * not re-checked and may be stale too. */
   var TPL = {
     connectAll: '217',      // sidebar "Connect all" button
     sessionList: '221',     // sidebar sessions scroller
     sessionRow: '227',      // session row button
     themeBtn: '132',        // sidebar header theme toggle
-    livePill: '239',        // page-header "Live API" pill
-    refresh: '241',         // page-header "Refresh" button
+    livePill: '257',        // page-header "Live API" pill
+    refresh: '259',         // page-header "Refresh" button
     windows: '247',         // Windows screen container
     tile: '250',            // one terminal tile (L3's data, read only to count)
     accountRow: '749',      // right-rail account row
@@ -70,6 +73,15 @@
     if (!w) return;
     if (isFullScreen()) call(w, 'openMax', host, name);
     else call(w, 'openTile', host, name);
+  };
+
+  /* The header's Collapse all / Expand all toggle re-reads the active screen's
+   * fold. Every render already does this; a screen that changes its fold without
+   * a render (desktop.js) calls it. No-op until the slice is live, so fixture mode
+   * never draws the button. */
+  FD.shell.syncFold = function () {
+    if (!ready) return;
+    try { syncFold(); } catch (e) { console.error('[l2] fold sync failed', e); }
   };
 
   /* The pure halves of the slice, reachable from test/v2-shell.test.js. The
@@ -465,6 +477,7 @@
     paintSessionRows();
     paintBoxRows();
     paintAccountRows();
+    syncFold();
     paintLayer(t);
   }
 
@@ -518,6 +531,73 @@
       var meta = accountMeta[i];
       if (meta && meta.tip) row.title = meta.tip; else row.removeAttribute('title');
     });
+  }
+
+  /* ---- Collapse all / Expand all (Accounts, Machines, Desktop sessions) ---- */
+
+  /* The operator asked for one toggle that folds or opens every card on the three
+   * card screens. The mock has no slot for it. The placement ruling puts it in the
+   * page header's action row, straight before Refresh, in Refresh's own style.
+   *
+   * That makes it a foreign node inside a compiled node, which ruling 1 below keeps
+   * out. It holds here, and only here, for two reasons read off app.js:1153-1171.
+   * The row has seven fixed keyed children and no sc-if or sc-for, so no reorder
+   * can strand the button (F1). And syncChildren() skips an unchanged child list,
+   * so an ordinary render leaves it alone (F3). If the row's list ever changes, the
+   * runtime moves its own nodes in front of the button and drops it, and the
+   * post-render syncFold() puts it back in the same task.
+   *
+   * Each screen publishes FD.screens.<id>.fold = { count, anyOpen, setAll(open) }
+   * on every render. The active screen is the one whose sc-if is rendered, read by
+   * its data-screen-label. The template renders on that same condition, so a
+   * screen asked for by the URL counts as well. */
+  var FOLD_SCREENS = { accounts: 'Accounts', machines: 'Machines', desktop: 'Desktop sessions' };
+  var foldBtn = null;
+
+  function activeFold() {
+    for (var id in FOLD_SCREENS) {
+      if (!document.querySelector('[data-screen-label="' + FOLD_SCREENS[id] + '"]')) continue;
+      var f = FD.screens[id] && FD.screens[id].fold;
+      return f && typeof f.count === 'number' && f.count > 0 && typeof f.setAll === 'function' ? f : null;
+    }
+    return null;
+  }
+
+  /* Every write is compared first, so a re-sync writes nothing and cannot feed a
+   * MutationObserver loop. */
+  function syncFold() {
+    var refresh = tpl(TPL.refresh);
+    var row = refresh && refresh.parentNode;
+    var fold = row ? activeFold() : null;
+    if (!fold) {
+      if (foldBtn && foldBtn.parentNode) foldBtn.parentNode.removeChild(foldBtn);
+      return;
+    }
+    var btn = foldBtn || (foldBtn = document.querySelector('[data-fd-l2="fold-all"]') || document.createElement('button'));
+    if (!btn.__fdFold) {
+      btn.__fdFold = true;
+      btn.setAttribute('type', 'button');
+      btn.setAttribute('data-fd-l2', 'fold-all');
+      btn.addEventListener('click', onFoldClick);
+    }
+    var label = fold.anyOpen ? 'Collapse all' : 'Expand all';
+    if (btn.textContent !== label) btn.textContent = label;
+    if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
+    // A theme toggle rewrites Refresh's inline style and its resolved hover class;
+    // copying both on every sync carries the button along.
+    if (btn.style.cssText !== refresh.style.cssText) btn.style.cssText = refresh.style.cssText;
+    if (btn.className !== refresh.className) btn.className = refresh.className;
+    if (btn.parentNode !== row || btn.nextSibling !== refresh) row.insertBefore(btn, refresh);
+  }
+
+  /* The fold is read at click time: the screen may have re-published it since the
+   * last sync. A screen that throws must not throw into the click dispatch. */
+  function onFoldClick() {
+    try {
+      var fold = activeFold();
+      if (fold) fold.setAll(!fold.anyOpen);
+    } catch (e) { console.error('[l2] fold toggle failed', e); }
+    FD.shell.syncFold();
   }
 
   /* ---- the improvised layer ----------------------------------------------- */

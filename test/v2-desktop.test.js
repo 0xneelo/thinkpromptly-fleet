@@ -529,3 +529,33 @@ test('a group header collapses its card, and the collapsed set is stored', async
   assert.equal(aylin.head.listeners.click.length, 1);
   assert.deepEqual(ctx.errors, []);
 });
+
+// I-L10-11: the page header's Collapse all / Expand all reads and drives this fold.
+test('the published fold counts the cards on screen and collapses or expands them all', async () => {
+  const live = session({ id: 'local_live', live: true, liveState: 'live' });
+  const ctx = await loaded(payload([group({ sessions: [live] })]));
+  const liveNow = groupCard(ctx.screen);
+  const aylin = groupCard(ctx.screen);
+  let synced = 0;
+  ctx.sandbox.FD.shell = { syncFold: () => { synced++; } };
+  ctx.selects[0].fire('change');
+  await turn();
+  const fold = () => ctx.sandbox.FD.screens.desktop.fold;
+
+  assert.equal(fold().count, 2);
+  assert.equal(fold().anyOpen, true);
+  assert.ok(synced > 0, 'apply() did not ask the shell to re-read the fold');
+
+  fold().setAll(false);
+  await turn();
+  assert.equal(liveNow.body.style.display, 'none');
+  assert.equal(aylin.body.style.display, 'none');
+  assert.equal(fold().anyOpen, false, 'the label would still say Collapse all');
+
+  fold().setAll(true);
+  await turn();
+  assert.equal(liveNow.body.style.display, '');
+  assert.equal(aylin.body.style.display, '');
+  assert.equal(fold().anyOpen, true);
+  assert.deepEqual(ctx.errors, []);
+});

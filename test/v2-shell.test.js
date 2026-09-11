@@ -47,9 +47,11 @@ function load({ store = {}, search = '' } = {}) {
  * <script src="/v2/data.js"> and waits; this stands the data layer up, fires the
  * script's onload, and lets the boot chain settle — which is the only way to
  * watch `ready` flip. */
-function bootable({ search = '' } = {}) {
+function bootable({ search = '', doc = {} } = {}) {
   const store = { 'fd-landing-dark': '1' };
-  const sandbox = { console, URLSearchParams, Promise };
+  // console.error is kept, not printed, so a test can assert what the shell reported.
+  const errors = [];
+  const sandbox = { console: { ...console, error: (...a) => errors.push(a.map(String).join(' ')) }, URLSearchParams, Promise };
   sandbox.window = sandbox;
   sandbox.localStorage = {
     getItem: (k) => (k in store ? store[k] : null),
@@ -81,6 +83,7 @@ function bootable({ search = '' } = {}) {
     querySelector: () => null,
     querySelectorAll: () => [],
     addEventListener: () => {},
+    ...doc,
   };
 
   vm.createContext(sandbox);
@@ -94,6 +97,7 @@ function bootable({ search = '' } = {}) {
   return {
     FD,
     shell: FD.shell,
+    errors,
     // Make the data layer arrive late. The shell no longer injects data.js -- the page
     // loads it before the screens (DECK-84) -- so arrival is simply FD.data becoming
     // present, which the shell picks up on one of its re-check turns.
@@ -350,4 +354,208 @@ test('a row with no usage and no source still gets a legible tooltip', () => {
   const meta = pure.accountMeta({ kind: 'claude', id: 'a3', windows: {} });
   assert.strictEqual(meta.tip, 'a3\nno usage reported\nno data yet');
   assert.strictEqual(meta.capped, false);
+});
+
+/* The Collapse all / Expand all toggle is the one thing the shell writes into a
+ * compiled node, so these tests stand up the header's action row (Live API,
+ * Refresh, the right-panel button) and one screen container whose label names
+ * the active screen. It is just enough DOM for the shell's own queries, which
+ * are all [attr="value"]. */
+function el(tag, attrs = {}) {
+  return {
+    tagName: tag.toUpperCase(), attrs: { ...attrs }, children: [], parentNode: null, listeners: [],
+    style: { cssText: '' }, className: '', textContent: '', isConnected: true,
+    setAttribute(k, v) { this.attrs[k] = String(v); },
+    getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
+    removeAttribute(k) { delete this.attrs[k]; },
+    addEventListener(type, fn) { this.listeners.push({ type, fn }); },
+    appendChild(c) { return this.insertBefore(c, null); },
+    append(...c) { c.forEach((x) => this.appendChild(x)); },
+    insertBefore(c, ref) {
+      if (c.parentNode) c.parentNode.removeChild(c);
+      const i = ref ? this.children.indexOf(ref) : -1;
+      this.children.splice(i < 0 ? this.children.length : i, 0, c);
+      c.parentNode = this;
+      return c;
+    },
+    removeChild(c) { this.children.splice(this.children.indexOf(c), 1); c.parentNode = null; return c; },
+    get nextSibling() { const p = this.parentNode; return (p && p.children[p.children.indexOf(this) + 1]) || null; },
+    click() { this.listeners.filter((l) => l.type === 'click').forEach((l) => l.fn({ target: this })); },
+  };
+}
+
+function find(root, sel) {
+  const m = /^\[([\w-]+)="([^"]*)"\]$/.exec(sel), out = [];
+  if (!m) return out;
+  (function walk(n) {
+    n.children.forEach((c) => { if (c.getAttribute(m[1]) === m[2]) out.push(c); walk(c); });
+  })(root);
+  return out;
+}
+
+async function header(screen = 'Accounts') {
+  const root = el('div');
+  const row = el('div', { 'data-dc-tpl': '256' });
+  const refresh = el('button', { 'data-dc-tpl': '259' });
+  refresh.style.cssText = 'border-radius: 9999px; color: rgba(255, 255, 255, 0.75);';
+  refresh.className = 'scp6';
+  row.append(el('span', { 'data-dc-tpl': '257' }), refresh, el('button', { 'data-dc-tpl': '260' }));
+  const view = el('div', { 'data-screen-label': screen });
+  root.append(row, view);
+  const boot = bootable({ doc: {
+    querySelector: (sel) => find(root, sel)[0] || null,
+    querySelectorAll: (sel) => find(root, sel),
+    createElement: (tag) => el(tag),
+  } });
+  await boot.arrive();
+  return {
+    ...boot, row, refresh,
+    buttons: () => find(root, '[data-fd-l2="fold-all"]'),
+    show: (label) => view.setAttribute('data-screen-label', label),
+  };
+}
+
+// What a screen publishes as FD.screens.<id>.fold, recording every setAll call.
+const fold = (count, anyOpen) => {
+  const f = { count, anyOpen, calls: [], setAll(open) { f.calls.push(open); } };
+  return f;
+};
+
+test('the fold toggle sits straight before Refresh, worded by the active screen\'s fold', async () => {
+  const h = await header();
+  assert.strictEqual(h.buttons().length, 0, 'no fold published yet, so no button');
+
+  h.FD.screens.accounts = { fold: fold(3, true) };
+  h.shell.syncFold();
+  const [b] = h.buttons();
+  assert.ok(b, 'the button appears');
+  assert.strictEqual(b.parentNode, h.row, 'in the header action row');
+  assert.strictEqual(b.nextSibling, h.refresh, 'immediately before Refresh');
+  assert.strictEqual(b.tagName, 'BUTTON');
+  assert.strictEqual(b.getAttribute('type'), 'button');
+  assert.strictEqual(b.textContent, 'Collapse all');
+  assert.strictEqual(b.getAttribute('aria-label'), 'Collapse all');
+  assert.strictEqual(b.style.cssText, h.refresh.style.cssText, 'Refresh\'s own inline style');
+  assert.strictEqual(b.className, h.refresh.className, 'and its hover class');
+
+  h.FD.screens.accounts.fold = fold(3, false);
+  h.shell.syncFold();
+  assert.strictEqual(b.textContent, 'Expand all');
+  assert.strictEqual(b.getAttribute('aria-label'), 'Expand all');
+});
+
+test('a click flips the fold of the screen on show at click time, not the one it was drawn for', async () => {
+  const h = await header();
+  h.FD.screens.accounts = { fold: fold(2, true) };
+  h.shell.syncFold();
+  const [b] = h.buttons();
+  b.click();
+  assert.deepStrictEqual(h.FD.screens.accounts.fold.calls, [false], 'something open, so collapse');
+
+  // Republished since the last sync: the click reads the new object.
+  const stale = h.FD.screens.accounts.fold;
+  h.FD.screens.accounts.fold = fold(2, false);
+  b.click();
+  assert.deepStrictEqual(h.FD.screens.accounts.fold.calls, [true], 'nothing open, so expand');
+  assert.deepStrictEqual(stale.calls, [false], 'the old fold is left alone');
+
+  h.FD.screens.machines = { fold: fold(1, true) };
+  h.show('Machines');
+  b.click();
+  assert.deepStrictEqual(h.FD.screens.machines.fold.calls, [false], 'Machines');
+
+  h.FD.screens.desktop = { fold: fold(4, false) };
+  h.show('Desktop sessions');
+  h.shell.syncFold();
+  assert.strictEqual(b.textContent, 'Expand all');
+  b.click();
+  assert.deepStrictEqual(h.FD.screens.desktop.fold.calls, [true], 'Desktop sessions');
+  assert.deepStrictEqual(h.FD.screens.accounts.fold.calls, [true], 'Accounts untouched since');
+});
+
+test('a fold whose setAll throws is reported, not thrown into the click dispatch', async () => {
+  const h = await header();
+  h.FD.screens.accounts = { fold: { count: 1, anyOpen: true, setAll() { throw new Error('boom'); } } };
+  h.shell.syncFold();
+  assert.doesNotThrow(() => h.buttons()[0].click());
+  assert.ok(h.errors.some((e) => e.includes('fold toggle failed')), h.errors.join('\n'));
+});
+
+test('no toggle on another screen, with nothing to fold, with a malformed fold, or without a header', async () => {
+  const h = await header();
+  const shown = () => h.buttons().length === 1;
+  h.FD.screens.accounts = { fold: fold(3, true) };
+  h.shell.syncFold();
+  assert.ok(shown(), 'Accounts with three cards');
+
+  h.show('Goals');
+  h.shell.syncFold();
+  assert.ok(!shown(), 'another screen');
+
+  h.show('Accounts');
+  h.FD.screens.accounts.fold = fold(0, false);
+  h.shell.syncFold();
+  assert.ok(!shown(), 'count 0');
+
+  for (const bad of [null, 'yes', {}, { count: 2, anyOpen: true }, { count: '2', anyOpen: true, setAll() {} }]) {
+    h.FD.screens.accounts.fold = bad;
+    h.shell.syncFold();
+    assert.ok(!shown(), 'malformed: ' + JSON.stringify(bad));
+  }
+  delete h.FD.screens.accounts;
+  h.shell.syncFold();
+  assert.ok(!shown(), 'screen never published');
+
+  h.FD.screens.accounts = { fold: fold(3, true) };
+  h.shell.syncFold();
+  assert.ok(shown(), 'back again');
+  h.row.removeChild(h.refresh);
+  assert.doesNotThrow(() => h.shell.syncFold());
+  assert.ok(!shown(), 'no Refresh node, no button');
+  assert.deepStrictEqual(h.errors, [], 'a missing node is silent');
+});
+
+test('re-syncing writes nothing, and a swept button comes back as the same element', async () => {
+  const h = await header();
+  h.FD.screens.accounts = { fold: fold(2, true) };
+  h.shell.syncFold();
+  const [b] = h.buttons();
+
+  // Count every DOM write the shell could make from here on.
+  let writes = 0;
+  const spy = (obj, name) => { const f = obj[name]; obj[name] = function (...a) { writes++; return f.apply(this, a); }; };
+  const watch = (obj, prop) => {
+    let v = obj[prop];
+    Object.defineProperty(obj, prop, { get: () => v, set: (x) => { writes++; v = x; } });
+  };
+  spy(b, 'setAttribute'); spy(b, 'addEventListener'); spy(h.row, 'insertBefore'); spy(h.row, 'removeChild');
+  watch(b, 'textContent'); watch(b, 'className'); watch(b.style, 'cssText');
+
+  for (let i = 0; i < 5; i++) h.shell.syncFold();
+  assert.strictEqual(writes, 0, 'an unchanged sync writes nothing, so it cannot loop an observer');
+  assert.strictEqual(h.buttons().length, 1, 'one button');
+  assert.strictEqual(b.listeners.length, 1, 'one listener');
+
+  // The runtime drops foreign children when the row's child list changes.
+  h.row.removeChild(b);
+  h.shell.syncFold();
+  assert.strictEqual(h.buttons()[0], b, 'the same element, put back');
+  assert.strictEqual(b.nextSibling, h.refresh, 'before Refresh again');
+  assert.strictEqual(b.listeners.length, 1, 'still one listener');
+
+  // A theme toggle rewrites Refresh's inline style; the button follows.
+  h.refresh.style.cssText = 'border-radius: 9999px; color: rgba(17, 17, 17, 0.75);';
+  h.shell.syncFold();
+  assert.strictEqual(b.style.cssText, h.refresh.style.cssText);
+
+  b.click();
+  assert.deepStrictEqual(h.FD.screens.accounts.fold.calls, [false], 'one click, one setAll');
+});
+
+test('fixture mode leaves the header alone: syncFold exists and does nothing', () => {
+  // load()'s document has no querySelector, so a sync that ran would log an error.
+  const { shell: s, errors } = load({ store: { 'fd-fixture': '1' } });
+  assert.strictEqual(typeof s.syncFold, 'function');
+  assert.doesNotThrow(() => s.syncFold());
+  assert.deepStrictEqual(errors, []);
 });
