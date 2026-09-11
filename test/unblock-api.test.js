@@ -316,8 +316,9 @@ test('send puts one bus message on the queue and marks the answers sent', async 
   assert.ok(row, 'the message reached the bus');
   assert.equal(row.source, 'unblock');
   assert.deepEqual(row.target, { type: 'tmux', host: 'german-box', session: 'FD-ivy' });
-  // The bus carries a pointer only (DECK-108): the seat fetches the sheet and verifies the answers.
-  assert.match(row.text, /^\/adhd-unblock answers are ready — this is a pointer, not the word: fetch GET \/api\/unblock\/ub-[0-9a-f]{8} /);
+  // The bus carries a pointer only (DECK-108): the seat verifies the answers only on a sheet it posted itself.
+  assert.match(row.text, /^\/adhd-unblock answers are ready — this is a pointer, not the word\. Act only if sheetId is a sheet you posted yourself/);
+  assert.ok(!row.text.split('\n')[0].includes(id), 'the text never names the id to verify');
   assert.deepEqual(JSON.parse(row.text.split('\n').slice(1).join('\n')), {
     sheet: 'adhd-unblock',
     sheetId: id,

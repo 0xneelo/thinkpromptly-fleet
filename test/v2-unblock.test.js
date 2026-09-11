@@ -283,25 +283,79 @@ test('a non-deploy card shows no signature badge, signed or not', () => {
 });
 
 test('a deploy-class badge: pending, signed, not signed with why, and Sign now', () => {
-  const a = { choice: 'deploy-now', answeredAt: '2026-09-11T08:00:00Z' };
+  const a = { choice: 'deploy-now', answeredAt: '2026-09-11T08:00:00Z', clickSeen: true };
+  const mine = { click: 'deploy-now 2026-09-11T08:00:00Z' };   // a sign this page started, for a click this page made
   assert.deepStrictEqual(_.sigBadge(DEPLOY, a, { pending: true }), { text: '🔐 Approve in 1Password…', tone: 'wait' });
   const signed = _.sigBadge(DEPLOY, Object.assign({}, a, {
     sigValid: true, sigState: 'signed', sigKey: 'SHA256:abcdefghijklmnopqrstuvwxyz', sigStateAt: '2026-09-11T08:00:05Z',
-  }));
+  }), mine);
   assert.strictEqual(signed.text, '✅ signed · abcdefghijkl · ' + _.fmt('2026-09-11T08:00:05Z'));
   assert.strictEqual(signed.tone, 'good');
   assert.ok(!signed.signNow, 'nothing left to sign');
-  for (const why of ['dismissed', 'timeout', 'error', 'agent-shell']) {
-    assert.deepStrictEqual(_.sigBadge(DEPLOY, Object.assign({}, a, { sigValid: false, sigState: why })), {
+  for (const why of ['dismissed', 'timeout', 'error']) {
+    assert.deepStrictEqual(_.sigBadge(DEPLOY, Object.assign({}, a, { sigValid: false, sigState: why }), mine), {
       text: '⚠ not signed (' + why + ') — this click is a record, not a trigger', tone: 'warn', signNow: true,
     });
   }
-  assert.deepStrictEqual(_.sigBadge(DEPLOY, a), { text: '⚠ not signed', tone: 'warn', signNow: true },
-    'no sig and no state yet');
-  assert.strictEqual(_.sigBadge(DEPLOY, Object.assign({}, a, { sigValid: 'true', sigState: 'signed' })).text, '⚠ not signed',
+  assert.deepStrictEqual(_.sigBadge(DEPLOY, Object.assign({}, a, { sigValid: false, sigState: 'agent-shell' }), mine), {
+    text: '⚠ not signed (agent-shell) — this click is a record, not a trigger', tone: 'warn',
+  }, 'a sign refused in an agent shell is not retried from here');
+  assert.strictEqual(_.sigBadge(DEPLOY, Object.assign({}, a, { sigValid: 'true', sigState: 'signed' })).tone, 'warn',
     'signed is strictly sigValid === true');
   assert.deepStrictEqual(_.sigBadge(DEPLOY, a, { quiet: 'signing not configured' }),
     { text: 'signing not configured', tone: 'quiet' });
+});
+
+test('Sign now is offered only for a click this page made and a sign this page started', () => {
+  const a = { choice: 'deploy-now', answeredAt: '2026-09-11T08:00:00Z', sigValid: false, clickSeen: true };
+  const LOADED_LINE = { text: '⚠ not signed — click it again to sign', tone: 'warn' };
+  assert.deepStrictEqual(_.sigBadge(DEPLOY, a), LOADED_LINE, 'no sig and no state yet: loaded from the deck');
+  for (const why of ['dismissed', 'timeout', 'error', 'agent-shell']) {
+    assert.deepStrictEqual(_.sigBadge(DEPLOY, Object.assign({}, a, { sigState: why })), LOADED_LINE,
+      'a ' + why + ' row merely loaded from the deck offers no Sign now');
+  }
+  const later = Object.assign({}, a, { answeredAt: '2026-09-11T09:00:00Z', sigState: 'dismissed' });
+  assert.deepStrictEqual(_.sigBadge(DEPLOY, later, { click: 'deploy-now 2026-09-11T08:00:00Z' }), LOADED_LINE,
+    'a newer click on the deck (another tab) is not this page\'s click');
+  assert.deepStrictEqual(_.sigBadge(DEPLOY, Object.assign({}, a, { sigState: 'dismissed' }), { unseen: true }),
+    { text: '⚠ not signed — click your answer again, then sign', tone: 'warn' }, 'the deck never saw the click: re-click, no Sign now');
+});
+
+// DECK-108 H1: an agent can write a row into fleet.db. On a deploy-class card, a choice this deck
+// never saw clicked (clickSeen !== true) is not the operator's: no ✓, no answered line, not counted.
+const UNSEEN_LINE = { text: '⚠ not clicked in this deck session — choose again', tone: 'warn' };
+
+test('an agent-written deploy-class row is shown as unanswered, with a choose-again badge and no Sign now', () => {
+  const agent = { choice: 'deploy-now', choiceLabel: 'Deploy now', answeredAt: '2026-09-11T08:00:00Z', dirty: true,
+    note: 'n', noteAt: '2026-09-11T08:00:01Z', sigValid: false, sigState: 'dismissed', clickSeen: false };
+  for (const row of [agent, Object.assign({}, agent, { clickSeen: undefined }), Object.assign({}, agent, { clickSeen: 'true' }),
+    Object.assign({}, agent, { sigValid: true, sigState: 'signed' })]) {
+    const shown = _.shownAnswer(DEPLOY, row);
+    assert.strictEqual(shown.choice, null, 'no option is selected');
+    assert.strictEqual(_.chipText(1, 1, 'Ship', shown), '1/1 · Ship', 'the chip carries no ✓');
+    assert.doesNotMatch(_.whenLine(shown), /🕒/, 'no answered line');
+    assert.strictEqual(shown.note, 'n', 'the note box still shows what is stored');
+    assert.deepStrictEqual(_.sigBadge(DEPLOY, row), UNSEEN_LINE);
+    assert.deepStrictEqual(_.sigBadge(DEPLOY, row, { click: 'deploy-now 2026-09-11T08:00:00Z' }), UNSEEN_LINE,
+      'never Sign now for a row the deck did not see clicked');
+  }
+  assert.deepStrictEqual(_.answeredIds([DEPLOY], { ship: agent }), [], 'not counted as answered');
+  assert.deepStrictEqual(_.pendingIds([DEPLOY], { ship: agent }), [], 'and never sent as the operator\'s');
+  assert.doesNotMatch(UNSEEN_LINE.text, /your answer/);
+});
+
+test('a deploy-class row the deck saw clicked, and any non-deploy row, shows its stored choice', () => {
+  const seen = { choice: 'deploy-now', answeredAt: '2026-09-11T08:00:00Z', sigValid: false, clickSeen: true };
+  assert.strictEqual(_.shownAnswer(DEPLOY, seen), seen);
+  assert.deepStrictEqual(_.answeredIds([DEPLOY], { ship: seen }), ['ship']);
+  const plain = { choice: 'a', answeredAt: '2026-09-11T08:00:00Z', dirty: true, clickSeen: false };
+  assert.strictEqual(_.shownAnswer(PLAIN, plain), plain, 'an ordinary card is unchanged');
+  assert.deepStrictEqual(_.pendingIds([PLAIN], { plain }), ['plain']);
+  assert.strictEqual(_.sigBadge(PLAIN, plain), null);
+});
+
+test('the old click-your-answer-to-sign line is gone', () => {
+  assert.doesNotMatch(SOURCE, /click your answer to sign it/);
 });
 
 test('a sign result: 200 is the view, answer-changed reloads, unconfigured is quiet, the rest a banner', () => {
@@ -314,6 +368,7 @@ test('a sign result: 200 is the view, answer-changed reloads, unconfigured is qu
   assert.strictEqual(no(409, 'answer changed while signing'), 'reload');
   assert.strictEqual(no(409, 'signing not configured'), 'quiet');
   assert.strictEqual(no(409, 'question changed'), 'question');
+  assert.strictEqual(no(409, 'click not seen by this deck'), 'unseen');
   assert.strictEqual(no(401, 'sign in required'), 'signin');
   assert.strictEqual(no(409, 'signing in progress'), 'failed');
   assert.strictEqual(no(409, 'not a deploy-class card'), 'failed');
@@ -321,7 +376,7 @@ test('a sign result: 200 is the view, answer-changed reloads, unconfigured is qu
   assert.strictEqual(answers.ship, view, 'no refusal touches the card');
 });
 
-// A fetch double that records every call, and a localStorage double.
+// A fetch double that records every call, and a storage double that records every write.
 function fakeFetch(reply) {
   const calls = [];
   const fn = async (url, init) => {
@@ -335,14 +390,28 @@ function fakeFetch(reply) {
 
 function fakeStore(seed) {
   const m = new Map(Object.entries(seed || {}));
-  return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k), m };
+  const writes = [];
+  return {
+    getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { writes.push([k, String(v)]); m.set(k, String(v)); },
+    removeItem: (k) => m.delete(k), m, writes,
+  };
 }
 
 const HDR = 'x-fleetdeck-session';
+const SIGNIN = { signedIn: true, operatorId: 'neelo', expiresAt: 'x' };
+
+// A sign-in through the same ask, so the token is only ever where the screen put it.
+async function signedIn(f) {
+  const ask = _.makeAsk(f);
+  await ask('/api/operator/signin', 'POST', { password: 'pw' });
+  assert.strictEqual(f.calls[0].url, '/api/operator/signin');
+  f.calls.length = 0;
+  return ask;
+}
 
 test('the session token rides on the operator routes and every write, and on no plain read', async () => {
-  const f = fakeFetch(() => [200, {}]);
-  const ask = _.makeAsk(f, { localStorage: fakeStore({ [_.SESSION_KEY]: 'tok-1' }) });
+  const f = fakeFetch((url) => [200, url === '/api/operator/signin' ? Object.assign({ sessionToken: 'tok-1' }, SIGNIN) : {}]);
+  const ask = await signedIn(f);
   await ask('/api/operator/session');
   await ask('/api/unblock/s1/answers/q1', 'PUT', { choice: 'a' });
   for (const op of ['close', 'reopen', 'send']) await ask('/api/unblock/s1/' + op, 'POST', {});
@@ -361,46 +430,51 @@ test('the session token rides on the operator routes and every write, and on no 
   assert.ok(f.calls.every((c) => !('origin' in c.init.headers)), 'the browser owns Origin; the screen never sets one');
 });
 
-test('a sign-in stores the token, a sign-out and any 401 drop it', async () => {
-  const store = fakeStore();
+test('a sign-in holds the token in page memory, a sign-out and any 401 drop it', async () => {
   let status = 200;
+  let token = 'tok-2';
   const f = fakeFetch((url) => url === '/api/operator/signin'
-    ? [status, status === 200 ? { signedIn: true, operatorId: 'neelo', expiresAt: 'x', sessionToken: 'tok-2' } : { error: 'wrong password' }]
+    ? [status, status === 200 ? Object.assign({ sessionToken: token }, SIGNIN) : { error: 'wrong password' }]
     : [status, {}]);
-  const ask = _.makeAsk(f, { localStorage: store });
+  const ask = _.makeAsk(f);
+  const hdr = async () => { status = 200; await ask('/api/operator/session'); return f.calls[f.calls.length - 1].init.headers[HDR]; };
 
   status = 401;
   await ask('/api/operator/signin', 'POST', { password: 'nope' });
-  assert.strictEqual(store.getItem(_.SESSION_KEY), null, 'a refused sign-in stores nothing');
+  assert.strictEqual(await hdr(), undefined, 'a refused sign-in holds nothing');
 
-  status = 200;
   await ask('/api/operator/signin', 'POST', { password: 'pw' });
-  assert.strictEqual(store.getItem(_.SESSION_KEY), 'tok-2');
-  assert.strictEqual(_.SESSION_KEY, 'fleetdeck.operatorSession');
+  assert.strictEqual(await hdr(), 'tok-2');
 
   await ask('/api/operator/signout', 'POST', {});
-  assert.strictEqual(f.calls[2].init.headers[HDR], 'tok-2', 'the sign-out still names its session');
-  assert.strictEqual(store.getItem(_.SESSION_KEY), null);
+  assert.strictEqual(f.calls[f.calls.length - 1].init.headers[HDR], 'tok-2', 'the sign-out still names its session');
+  assert.strictEqual(await hdr(), undefined);
 
-  store.setItem(_.SESSION_KEY, 'tok-3');
+  token = 'tok-3';
+  await ask('/api/operator/signin', 'POST', { password: 'pw' });
   status = 401;
   await ask('/api/unblock/s1/answers/q1', 'PUT', { choice: 'a' });
-  assert.strictEqual(store.getItem(_.SESSION_KEY), null, 'a 401 is a dead session');
+  assert.strictEqual(await hdr(), undefined, 'a 401 is a dead session');
 });
 
-test('storage that throws is no token and no crash', async () => {
-  const host = {};
-  Object.defineProperty(host, 'localStorage', { get() { throw new Error('denied'); } });
-  const f = fakeFetch(() => [200, { sessionToken: 't' }]);
-  const ask = _.makeAsk(f, host);
+test('the token never touches web storage, under any key', async () => {
+  const local = fakeStore();
+  const session = fakeStore();
+  const f = fakeFetch((url) => [200, url === '/api/operator/signin' ? Object.assign({ sessionToken: 'tok-secret' }, SIGNIN) : {}]);
+  const ask = _.makeAsk(f, { localStorage: local, sessionStorage: session });
   await ask('/api/operator/signin', 'POST', { password: 'pw' });
-  await ask('/api/operator/signout', 'POST', {});
-  assert.strictEqual(f.calls[0].init.headers[HDR], undefined);
+  await ask('/api/unblock/s1/answers/q1', 'PUT', { choice: 'a' });
+  assert.strictEqual(f.calls[1].init.headers[HDR], 'tok-secret', 'the write still carries it');
+  for (const store of [local, session]) {
+    assert.ok(store.writes.every(([k, v]) => !k.includes('tok-secret') && !v.includes('tok-secret')), 'no storage write holds the token');
+    assert.strictEqual(store.m.size, 0);
+  }
+  assert.doesNotMatch(SOURCE, /(local|session)Storage\.setItem\([^)]*[Tt]oken/, 'no code path stores it');
 });
 
 test('a 429 hands the Retry-After header to the sign-in line', async () => {
   const f = fakeFetch(() => [429, { error: 'too many attempts' }, { 'retry-after': '45' }]);
-  const r = await _.makeAsk(f, { localStorage: fakeStore() })('/api/operator/signin', 'POST', { password: 'pw' });
+  const r = await _.makeAsk(f)('/api/operator/signin', 'POST', { password: 'pw' });
   assert.strictEqual(_.signinError(r), 'too many tries — wait 45s');
 });
 
@@ -412,8 +486,8 @@ const LOADED = {
 };
 
 test('the sign request carries the PUT response\'s choice and answeredAt, the loaded question\'s hash, and nothing else', async () => {
-  const f = fakeFetch(() => [200, {}]);
-  const ask = _.makeAsk(f, { localStorage: fakeStore({ [_.SESSION_KEY]: 'tok-1' }) });
+  const f = fakeFetch((url) => [200, url === '/api/operator/signin' ? Object.assign({ sessionToken: 'tok-1' }, SIGNIN) : {}]);
+  const ask = await signedIn(f);
   const row = { choice: 'deploy-now', choiceLabel: 'Deploy now', answeredAt: '2026-09-11T08:00:00Z', note: 'n', sigValid: false };
   const sheet = { questions: [JSON.parse(JSON.stringify(LOADED))] };
   const texts = _.questionTexts(sheet);
@@ -459,6 +533,143 @@ test('live: Sign hashes the question as loaded, and a question changed on the de
   assert.strictEqual(JSON.parse(after[0].init.body).questionSha256, sha(LOADED), 'the hash of the question as the GET returned it');
   assert.strictEqual(live.state.sheet.questions[0].decision, 'Deploy to prod and skip the train?', 'the new text is on screen');
   assert.strictEqual(live.state.error, 'the question changed on the deck — read it again before you sign');
+});
+
+// One page load of the live half, in a sandbox of its own. The same stores across two loads are
+// one browser profile; a second load is a reload.
+async function loadPage(f, local, session) {
+  const vm = require('vm');
+  const box = {
+    document: { readyState: 'complete', getElementById: () => null },
+    fetch: f, crypto: globalThis.crypto, TextEncoder, localStorage: local, sessionStorage: session,
+    setInterval: () => 0, clearInterval: () => {},
+  };
+  vm.runInNewContext(SOURCE, box);
+  await new Promise((r) => setTimeout(r, 10));   // start()'s own reads settle first
+  return box.FD.screens.unblock;
+}
+
+// Holds until the card's sign is no longer in flight.
+async function signSettled(live, key) {
+  for (let i = 0; i < 100 && (live.state.sign[key] || {}).pending; i++) await new Promise((r) => setTimeout(r, 5));
+  assert.ok(!(live.state.sign[key] || {}).pending, 'the sign settled');
+}
+
+test('live: the token lives only as long as the page; a reload signs in again, and the old stored key is removed', async () => {
+  const local = fakeStore({ 'fleetdeck.operatorSession': 'tok-old', 'adhd-unblock:hide': '0' });
+  const session = fakeStore();
+  const f = fakeFetch((url, init) => {
+    const h = init.headers[HDR];
+    if (url === '/api/operator/session') return [200, h === 'tok-live' ? { configured: true, signedIn: true, operatorId: 'neelo' } : { configured: true, signedIn: false }];
+    if (url === '/api/operator/signin') return [200, Object.assign({ sessionToken: 'tok-live' }, SIGNIN)];
+    return [200, {}];
+  });
+  const sessionReads = () => f.calls.filter((c) => c.url === '/api/operator/session').map((c) => c.init.headers[HDR]);
+
+  let live = await loadPage(f, local, session);
+  assert.strictEqual(local.getItem('fleetdeck.operatorSession'), null, 'the key an earlier build left is gone');
+  assert.strictEqual(local.getItem('adhd-unblock:hide'), '0', 'and nothing else is');
+  assert.deepStrictEqual(sessionReads(), [undefined], 'the old token is never sent');
+  assert.strictEqual(_.signinMode(live.state.session, false, false), 'out');
+
+  await live.signIn({ value: 'pw' });
+  assert.deepStrictEqual(sessionReads(), [undefined, 'tok-live'], 'the session read names it while the page lives');
+  assert.strictEqual(_.signinMode(live.state.session, false, false), 'in');
+  await live.putAnswer({ id: 'plain', options: [{ key: 'a', label: 'A' }] }, { choice: 'a', choiceLabel: 'A' });
+  assert.ok(f.calls.some((c) => c.init.method === 'PUT' && c.init.headers[HDR] === 'tok-live'), 'and every write');
+  for (const store of [local, session]) {
+    assert.ok(store.writes.every(([k, v]) => !(k + v).includes('tok-live')), 'no storage write holds the token');
+  }
+
+  f.calls.length = 0;
+  live = await loadPage(f, local, session);   // the reload
+  assert.deepStrictEqual(sessionReads(), [undefined], 'a fresh page has no token');
+  assert.strictEqual(_.signinMode(live.state.session, false, false), 'out', 'so the form is back');
+  assert.strictEqual(_.SIGNIN_LINE, '🔒 Sign in to answer — sign-in lasts until this page reloads');
+  assert.match(SOURCE, /SIGNIN_LINE\)\);/, 'the form says it');
+});
+
+test('live: Sign now follows only this page\'s own click; a click the deck never saw asks for a re-click', async () => {
+  const T0 = '2026-09-11T08:00:00.000Z';
+  const T1 = '2026-09-11T08:05:00.000Z';
+  const T2 = '2026-09-11T08:09:00.000Z';
+  let put = null;
+  let sign = null;
+  const f = fakeFetch((url, init) => {
+    if (url === '/api/unblock/ub-1')
+      return [200, {
+        sheet: { id: 'ub-1', status: 'open', questions: [JSON.parse(JSON.stringify(LOADED))] },
+        answers: { ship: { choice: 'deploy-now', answeredAt: T0, sigValid: false, sigState: 'dismissed', clickSeen: true } },
+      }];
+    if (url.endsWith('/sign')) return sign;
+    if (init.method === 'PUT') return put;
+    return [200, {}];
+  });
+  const live = await loadPage(f, fakeStore(), fakeStore());
+  const KEY = 'ub-1 ship';
+  const badge = () => _.sigBadge(LOADED, live.state.answers.ship, live.state.sign[KEY]);
+  await live.loadSheet('ub-1');
+  assert.deepStrictEqual(badge(), { text: '⚠ not signed — click it again to sign', tone: 'warn' },
+    'a dismissed row loaded from the deck offers no Sign now');
+
+  // The operator clicks; this page's own sign comes back dismissed: Sign now.
+  put = [200, { choice: 'deploy-now', choiceLabel: 'Deploy now', answeredAt: T1, sigValid: false, clickSeen: true }];
+  sign = [200, { choice: 'deploy-now', choiceLabel: 'Deploy now', answeredAt: T1, sigValid: false, sigState: 'dismissed', clickSeen: true }];
+  await live.putAnswer(LOADED, { choice: 'deploy-now', choiceLabel: 'Deploy now' });
+  await signSettled(live, KEY);
+  assert.strictEqual(badge().signNow, true);
+
+  // Sign now, but the deck restarted since the click: it will not sign what it did not see.
+  sign = [409, { error: 'click not seen by this deck' }];
+  await live.signCard('ship');
+  assert.deepStrictEqual(badge(), { text: '⚠ not signed — click your answer again, then sign', tone: 'warn' });
+  assert.strictEqual(live.state.error, '', 'the card says it; no banner');
+
+  // A poll re-read does not bring Sign now back.
+  await live.loadSheet('ub-1', true);
+  assert.ok(!badge().signNow);
+
+  // The re-click is a fresh PUT, and its sign goes through.
+  put = [200, { choice: 'deploy-now', choiceLabel: 'Deploy now', answeredAt: T2, sigValid: false, clickSeen: true }];
+  sign = [200, { choice: 'deploy-now', choiceLabel: 'Deploy now', answeredAt: T2, sigValid: true, sigState: 'signed', sigKey: 'SHA256:k', clickSeen: true }];
+  await live.putAnswer(LOADED, { choice: 'deploy-now', choiceLabel: 'Deploy now' });
+  await signSettled(live, KEY);
+  assert.strictEqual(badge().tone, 'good');
+  const signs = f.calls.filter((c) => c.url.endsWith('/sign')).map((c) => JSON.parse(c.init.body));
+  assert.deepStrictEqual(signs.map((b) => b.answeredAt), [T1, T1, T2], 'each sign names the click the PUT stamped');
+  assert.ok(signs.every((b) => b.questionSha256 === sha(LOADED)), 'the question hash still rides');
+});
+
+test('live: choosing on an agent-written deploy-class card is a fresh click, signed with its own answeredAt', async () => {
+  const T0 = '2026-09-11T08:00:00.000Z';
+  const T1 = '2026-09-11T08:07:00.000Z';
+  const f = fakeFetch((url, init) => {
+    if (url === '/api/unblock/ub-1')
+      return [200, {
+        sheet: { id: 'ub-1', status: 'open', questions: [JSON.parse(JSON.stringify(LOADED))] },
+        answers: { ship: { choice: 'deploy-now', choiceLabel: 'Deploy now', answeredAt: T0, sigValid: false, clickSeen: false } },
+      }];
+    if (url.endsWith('/sign')) return [200, { choice: 'deploy-now', answeredAt: T1, sigValid: true, sigState: 'signed', sigKey: 'SHA256:k', clickSeen: true }];
+    if (init.method === 'PUT') return [200, { choice: 'deploy-now', choiceLabel: 'Deploy now', answeredAt: T1, sigValid: false, clickSeen: true }];
+    return [200, {}];
+  });
+  const live = await loadPage(f, fakeStore(), fakeStore());
+  const KEY = 'ub-1 ship';
+  await live.loadSheet('ub-1');
+  assert.strictEqual(_.shownAnswer(LOADED, live.state.answers.ship).choice, null, 'loaded: nothing selected');
+  assert.deepStrictEqual(_.sigBadge(LOADED, live.state.answers.ship, live.state.sign[KEY]), UNSEEN_LINE);
+
+  const from = f.calls.length;
+  await live.putAnswer(LOADED, { choice: 'deploy-now', choiceLabel: 'Deploy now' });
+  await signSettled(live, KEY);
+  const after = f.calls.slice(from).filter((c) => c.init.method);   // the list refresh is a plain read
+  assert.deepStrictEqual(after.map((c) => [c.init.method, c.url]), [
+    ['PUT', '/api/unblock/ub-1/answers/ship'], ['POST', '/api/unblock/ub-1/answers/ship/sign'],
+  ], 'the click PUTs, then signs');
+  assert.deepStrictEqual(JSON.parse(after[1].init.body), { choice: 'deploy-now', answeredAt: T1, questionSha256: sha(LOADED) },
+    'signed with the answeredAt this click was stamped with, not the agent row\'s');
+  assert.strictEqual(_.shownAnswer(LOADED, live.state.answers.ship).choice, 'deploy-now', 'now it is the operator\'s');
+  assert.strictEqual(_.sigBadge(LOADED, live.state.answers.ship, live.state.sign[KEY]).tone, 'good');
 });
 
 test('the session token is never logged', () => {

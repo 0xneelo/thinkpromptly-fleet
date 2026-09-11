@@ -5,7 +5,8 @@
 // The signed bytes, verbatim (UTF-8, no trailing newline):
 //   v2|sheetId|qid|choice|answeredAt|operator_id|project|expiresAt|question_sha256
 // Each field is escaped first — `%` → `%25`, then `|` → `%7C` — so the join stays injective and
-// plain ids read unchanged.
+// plain ids read unchanged. A lone surrogate is refused: UTF-8 would encode it as U+FFFD, the same
+// bytes as a real U+FFFD.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
@@ -15,16 +16,26 @@ const { spawn } = require('child_process');
 const NAMESPACE = 'fleetdeck-unblock';
 const FIELDS = ['sheetId', 'qid', 'choice', 'answeredAt', 'operatorId', 'project', 'expiresAt', 'questionSha256'];
 const escape = (v) => v.replace(/%/g, '%25').replace(/\|/g, '%7C');
+const sha256 = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex');
 
-function canonical(f) {
-  return ['v2', ...FIELDS.map((k) => {
-    if (typeof f[k] !== 'string') throw new TypeError('canonical: ' + k + ' must be a string');
+function joined(tag, f, keys) {
+  return [tag, ...keys.map((k) => {
+    if (typeof f[k] !== 'string' || !f[k].isWellFormed()) throw new TypeError(tag + ': ' + k + ' must be a well-formed string');
     return escape(f[k]);
   })].join('|');
 }
+const canonical = (f) => joined('v2', f, FIELDS);
 
 // `question` exactly as GET /api/unblock/:id returns it; any field added to it moves the hash.
-const questionSha256 = (question) => crypto.createHash('sha256').update(JSON.stringify(question), 'utf8').digest('hex');
+// JSON.stringify escapes a lone surrogate (`\ud800`), so these bytes stay injective without a check.
+const questionSha256 = (question) => sha256(JSON.stringify(question));
+
+// The seat's pin, from its own POST: binds the sheet, the question id and the question text, so the
+// same question copied onto another sheet pins differently. Lowercase hex SHA-256 of the UTF-8 bytes of
+//   v2-pin|sheetId|qid|question_sha256
+// escaped and refused like canonical().
+const pin = (sheetId, qid, questionSha256) =>
+  sha256(joined('v2-pin', { sheetId, qid, questionSha256 }, ['sheetId', 'qid', 'questionSha256']));
 
 // allowed_signers lines: `principals [options] keytype base64 [comment]`. An options field may be
 // quoted (namespaces="a,b"), so tokens keep their quotes whole.
@@ -177,6 +188,6 @@ function createSigner(spec, { operatorKey, bin = 'ssh-keygen', timeoutMs = 12000
 }
 
 module.exports = {
-  NAMESPACE, OP_AGENT_SOCK, canonical, questionSha256, parseAllowedSigners, fingerprint,
+  NAMESPACE, OP_AGENT_SOCK, canonical, questionSha256, pin, parseAllowedSigners, fingerprint,
   verifySignature, createVerifier, createSigner,
 };

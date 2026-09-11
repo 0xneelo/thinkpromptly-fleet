@@ -3113,7 +3113,9 @@ const json = (res, obj, code = 200) => send(res, code, 'application/json', JSON.
 // set-but-broken stops the deck. Log lines name the failure, never the file's contents.
 const OPERATOR_FILE = process.env.FLEET_OPERATOR_FILE || path.join(HOME, '.fleetdeck', 'operator.json');
 const ALLOWED_SIGNERS = process.env.FLEET_ALLOWED_SIGNERS || path.join(HOME, '.claude', 'fleet', 'allowed_signers');
-const SIG_TTL_SECS = Number(process.env.FLEET_UNBLOCK_SIG_TTL_SECS) > 0 ? Number(process.env.FLEET_UNBLOCK_SIG_TTL_SECS) : 7200;
+// A minute to a day; anything else (unset, junk, a value past the Date range) is the two-hour default.
+const sigTtl = Number(process.env.FLEET_UNBLOCK_SIG_TTL_SECS);
+const SIG_TTL_SECS = sigTtl >= 60 && sigTtl <= 86400 ? sigTtl : 7200;
 let deckOperator = null;
 try {
   deckOperator = loadOperator(fs.readFileSync(OPERATOR_FILE, 'utf8'));

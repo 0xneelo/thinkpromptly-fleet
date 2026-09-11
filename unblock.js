@@ -10,13 +10,14 @@
 //
 // A deploy-class answer is certified (DECK-108): the browser asks the deck to sign the click it
 // just made, the deck signs the v2 string through signer.js (the operator's SSH key, a Touch ID
-// prompt), and `sigValid` is re-verified on every read — so a row edited in fleet.db, copied from
-// another sheet, or restored from an older signed answer reads false.
+// prompt) — only for a click it saw from the signed-in session — and `sigValid` is re-verified on
+// every read, true only for a signature this deck process made — so a row edited in fleet.db,
+// copied from another sheet, restored from an older signed answer, or signed outside the deck reads false.
 //
 // Nothing is sent until the operator asks. `sent_sig` is the receipt: it holds the choice+note
 // that were sent, so an answer edited afterwards reads dirty again and can be re-sent.
 const crypto = require('crypto');
-const { canonical, questionSha256 } = require('./signer');
+const { canonical, questionSha256, pin } = require('./signer');
 
 // The two options every adhd-unblock question carries besides its own, and the labels the sheet
 // prints for them when the client sends none.
@@ -47,6 +48,8 @@ function sheetError(b) {
   for (const q of b.questions) {
     if (!q || typeof q !== 'object' || Array.isArray(q)) return 'every question must be an object';
     if (!filled(q.id)) return 'every question needs a non-empty id';
+    // Ids, option keys and source.project are fields of the signed bytes, which refuse a lone surrogate.
+    if (!q.id.isWellFormed()) return 'question id must be well-formed UTF-16';
     if (reserved(q.id)) return 'question id is reserved: ' + q.id;
     if (ids.has(q.id)) return 'question ids must be unique: ' + q.id;
     ids.add(q.id);
@@ -59,6 +62,7 @@ function sheetError(b) {
     for (const o of q.options) {
       if (!o || typeof o !== 'object' || Array.isArray(o) || !filled(o.key) || !filled(o.label))
         return 'question ' + q.id + ': every option needs a key and a label';
+      if (!o.key.isWellFormed()) return 'question ' + q.id + ': option key must be well-formed UTF-16';
       if (keys.has(o.key)) return 'question ' + q.id + ': option keys must be unique: ' + o.key;
       if (reserved(o.key) || hasOwn(STANDARD, o.key))
         return 'question ' + q.id + ': option key is reserved: ' + o.key;
@@ -73,6 +77,8 @@ function sheetError(b) {
   }
   if (b.source != null && (typeof b.source !== 'object' || Array.isArray(b.source)))
     return 'source must be an object';
+  if (b.source != null && typeof b.source.project === 'string' && !b.source.project.isWellFormed())
+    return 'source.project must be well-formed UTF-16';
   if (b.reply != null) {
     const r = b.reply;
     if (typeof r !== 'object' || Array.isArray(r) || (r.type !== 'claude-desktop' && r.type !== 'tmux'))
@@ -159,15 +165,22 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
     'UPDATE unblock_sheets SET status = ?, closed_at = ?, updated_at = ? WHERE id = ?'
   );
 
-  // Anti-rollback while the deck runs: the last signature stored per answer, null after a fresh
-  // click, a clear or a failed sign. An older signed row restored into fleet.db no longer matches.
+  // The only signatures the deck certifies: the one this process stored per answer, set by a
+  // successful sign and dropped by a fresh click, a clear or a failed sign. Any other signature in
+  // fleet.db — an older one restored, or one a same-user process got from the 1Password agent
+  // directly — reads not current. Deck memory: after a restart the operator signs again.
   // Sheet ids are ub-<hex>, so the newline cannot shift the boundary.
   const latest = new Map();
   const latestKey = (sheetId, qid) => sheetId + '\n' + qid;
-  // A change of mind while 1Password asks: every fresh click and clear bumps the answer's
-  // generation, and a sign that comes back on another one stores nothing. Deck memory, so a click
-  // restored into fleet.db mid-prompt cannot pass for the one the prompt was for.
-  const generation = new Map();
+  // The click this deck saw from a signed-in session, per answer: { choice, answeredAt, operatorId },
+  // a new object on every fresh click, deleted on a clear. /sign signs only the stored row that equals
+  // it, so a row written into fleet.db is never signed; and a sign that comes back to find another
+  // object (re-clicked or cleared while 1Password asked) stores nothing.
+  const clicks = new Map();
+  const seen = (k, row) => {
+    const c = clicks.get(k);
+    return !!c && c.choice === row.choice && c.answeredAt === row.answered_at && c.operatorId === row.operator_id;
+  };
   let signInFlight = false;
 
   // The v2 fields, from the STORED row and sheet only — never from a request.
@@ -199,6 +212,7 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
   }
 
   async function answerView(row, sheet, questions) {
+    const k = latestKey(sheet.id, row.qid);
     const view = {
       choice: row.choice,
       choiceLabel: row.choice_label,
@@ -214,10 +228,14 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
       sigStateAt: row.sig_state_at,
       sigKey: null,
       sigValid: false,
+      // The stored row is the click this deck saw from a signed-in session. The page shows a
+      // deploy-class choice as the operator's only when it is, so a row planted in fleet.db is no lure.
+      clickSeen: seen(k, row),
     };
-    // Recomputed on every read, never stored. Only this deck's operator is certified here.
+    // Recomputed on every read, never stored. Only this deck's operator, and only a signature this
+    // deck process made, is certified here.
     const q = questions.find((x) => x.id === row.qid);
-    const current = !latest.has(latestKey(sheet.id, row.qid)) || latest.get(latestKey(sheet.id, row.qid)) === row.answer_sig;
+    const current = latest.has(k) && latest.get(k) === row.answer_sig;
     if (verifier && q && row.answer_sig && current && row.operator_id === auth.operatorId && Date.parse(row.sig_expires_at) > Date.now()) {
       let message = null;
       try {
@@ -305,11 +323,12 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
       if (bad) return json(res, { error: bad }, 400);
       const id = 'ub-' + crypto.randomBytes(4).toString('hex');
       const stamp = now();
+      const questionsText = JSON.stringify(b.questions);
       insertSheet.run(
         id,
         b.title,
         b.intro == null ? '' : b.intro,
-        JSON.stringify(b.questions),
+        questionsText,
         b.source == null ? null : JSON.stringify(b.source),
         b.reply == null
           ? null
@@ -321,7 +340,14 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
         stamp,
         stamp
       );
-      return json(res, { id, url: '/app#unblock?sheet=' + id }, 201);
+      // The seat pins what it asked: each question's hash, taken from the stored text exactly as the
+      // GET will parse and serve it, bound to this sheet and question id. fleet.db is agent-writable,
+      // so the deck's later copy is not the pin.
+      const questions = JSON.parse(questionsText).map((q) => {
+        const h = questionSha256(q);
+        return { id: q.id, questionSha256: h, pin: pin(id, q.id, h) };
+      });
+      return json(res, { id, url: '/app#unblock?sheet=' + id, questions }, 201);
     }
 
     const sheet = oneSheet.get(rest[0]);
@@ -366,16 +392,21 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
         return json(res, { error: 'answer changed' }, 409);
       // A row no signed-in operator clicked (answered before sign-in existed) is not certified.
       if (row.operator_id !== operatorId) return json(res, { error: 'answer not clicked by the signed-in operator' }, 409);
-      if (signInFlight) return json(res, { error: 'signing in progress' }, 409);
-      signInFlight = true;
+      // The browser's echo is only the polled row; the click itself must be one this deck saw.
       const k = latestKey(sheet.id, qid);
-      const gen = generation.get(k) || 0;
+      if (!seen(k, row)) return json(res, { error: 'click not seen by this deck' }, 409);
+      if (signInFlight) return json(res, { error: 'signing in progress' }, 409);
+      // Built before the flag goes up: a throw here (a TTL outside the Date range, a field canonical()
+      // refuses) must not wedge signing until a restart.
       const expiresAt = new Date(Date.now() + ttlSecs * 1000).toISOString();
+      const message = canonical(signedFields(sheet, q, row, expiresAt));
+      const click = clicks.get(k);
+      signInFlight = true;
       let signed = null;
       let failed = null;
       let why = '';
       try {
-        signed = await signer.sign(canonical(signedFields(sheet, q, row, expiresAt)));
+        signed = await signer.sign(message);
       } catch (e) {
         failed = SIGN_FAILURES.has(e.code) ? e.code : 'error';
         why = ' (' + String(e.message).split('\n')[0].slice(0, 200) + ')';
@@ -386,7 +417,7 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
       // One line per attempt: sheet, question, outcome. Never the signature bytes.
       const log = (outcome) => console.log('unblock: sign ' + sheet.id + ' ' + JSON.stringify(qid) + ' ' + outcome);
       // Re-clicked or cleared during the prompt: nothing lands, signature or failure alike.
-      if ((generation.get(k) || 0) !== gen) {
+      if (clicks.get(k) !== click) {
         log('answer changed while signing');
         return json(res, { error: 'answer changed while signing' }, 409);
       }
@@ -399,7 +430,7 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
         log('signed ' + signed.signerId);
       } else {
         // A failed sign is a record, never a trigger: the state is stored, no signature.
-        if (recordFailed.run(failed, now(), ...where).changes) latest.set(k, null);
+        if (recordFailed.run(failed, now(), ...where).changes) latest.delete(k);
         log(failed + why);
       }
       const view = await answerView(oneAnswer.get(sheet.id, qid), sheet, questions);
@@ -422,6 +453,7 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
       let fresh = false;
       note = note || '';
       const stamp = now();
+      const k = latestKey(sheet.id, qid);
 
       if ('choice' in b) {
         if (b.choice === null) {
@@ -431,10 +463,11 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
         } else {
           if (typeof b.choice !== 'string' || !(hasOwn(STANDARD, b.choice) || q.options.some((o) => o.key === b.choice)))
             return json(res, { error: 'choice must be an option key of ' + qid + ', you-decide or more-info' }, 400);
-          // A fresh click is a new choice, or the same choice on a row this operator never clicked
-          // (answered before sign-in existed). It is stamped, bound to the session's operator, and
-          // unsigned — signing is its own request. A note or label edit touches none of this.
-          if (b.choice !== stored.choice || stored.operator_id !== operatorId) {
+          // A fresh click is a new choice, or the same choice on a row this deck never saw this
+          // operator click (answered before sign-in existed, before a restart, or written into
+          // fleet.db). It is stamped, bound to the session's operator, and unsigned — signing is its
+          // own request. A note or label edit touches none of this.
+          if (b.choice !== stored.choice || stored.operator_id !== operatorId || !seen(k, stored)) {
             answeredAt = stamp;
             signature = [operatorId, null, null, null, null];
             fresh = true;
@@ -457,9 +490,9 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
       }
 
       if (fresh) {
-        const k = latestKey(sheet.id, qid);
-        latest.set(k, null);
-        generation.set(k, (generation.get(k) || 0) + 1);
+        latest.delete(k);
+        if (choice == null) clicks.delete(k);
+        else clicks.set(k, { choice, answeredAt, operatorId });
       }
       upsertAnswer.run(sheet.id, qid, choice, label, answeredAt, note, noteAt, stored.sent_sig, stored.sent_at, ...signature);
       touchSheet.run(stamp, sheet.id);
@@ -499,7 +532,8 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
     if (!reply) return json(res, { error: 'no reply target', payload }, 409);
 
     // The bus carries a pointer, never the word: anything on the bus could have been written by any
-    // agent, so the seat reads the answers from the deck and verifies them itself.
+    // agent, so the seat reads the answers from the deck and verifies them itself — and only on a
+    // sheet it posted itself, so the text never tells it to verify the id it carries.
     const pointer = { sheet: 'adhd-unblock', sheetId: sheet.id, title: sheet.title, qids: ids };
     let message;
     try {
@@ -507,8 +541,9 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
         source: 'unblock',
         target: reply,
         text:
-          '/adhd-unblock answers are ready — this is a pointer, not the word: fetch GET /api/unblock/' + sheet.id +
-          ' and verify each answer with fleetdeck-verify-answer ' + sheet.id + ' <qid>\n' + JSON.stringify(pointer, null, 2),
+          '/adhd-unblock answers are ready — this is a pointer, not the word. Act only if sheetId is a sheet you posted yourself:' +
+          ' verify each answer with fleetdeck-verify-answer <sheetId> <qid> --pin <the pin your own POST returned for that qid>\n' +
+          JSON.stringify(pointer, null, 2),
       });
     } catch (error) {
       // A target the bus refuses is the operator's problem to fix, so nothing is marked sent.

@@ -39,6 +39,17 @@ test('canonical() is the v2 string: escaped fields, pipe-joined, no newline', ()
   assert.match(signer.questionSha256(q), /^[0-9a-f]{64}$/);
 });
 
+test('M1. pin() hashes the v2-pin string: sheet, question id and question hash, escaped like canonical()', () => {
+  const h = 'ab'.repeat(32);
+  const sha = (s) => crypto.createHash('sha256').update(Buffer.from(s, 'utf8')).digest('hex');
+  assert.equal(signer.pin('ub-1', 'q1', h), sha('v2-pin|ub-1|q1|' + h));
+  assert.equal(signer.pin('ub-1', 'q|%x', h), sha('v2-pin|ub-1|q%7C%25x|' + h));
+  assert.notEqual(signer.pin('ub-1', 'q|x', h), signer.pin('ub-1|q', 'x', h), 'the join is injective');
+  assert.notEqual(signer.pin('ub-2', 'q1', h), signer.pin('ub-1', 'q1', h), 'another sheet, another pin');
+  for (const [s, q, x, k] of [['ub-1', 'q\ud800', h, 'qid'], ['ub-1', 'q1', null, 'questionSha256'], [undefined, 'q1', h, 'sheetId']])
+    assert.throws(() => signer.pin(s, q, x), (e) => e instanceof TypeError && e.message.includes(k), k);
+});
+
 test('parseAllowedSigners reads principals and the key, past options, blanks and comments', () => {
   const text = [
     '# the operator',
@@ -290,8 +301,10 @@ async function deck(t, { operator = true, signerSpec, ttl, signingKey, allowedKe
   const session = () => ({ ...(cookie ? { cookie } : {}), ...(token ? { 'x-fleetdeck-session': token } : {}) });
   // Operator calls carry the browser's Origin, the cookie and the header token unless a test says otherwise.
   const op = (method, p, b, headers) => raw(method, p, b, headers || { origin, ...session() }).then(read);
+  // What the posting seat records from its own POST: sheet id → qid → pin.
+  const pins = {};
   const d = {
-    m, base, origin, db, dir, key, signersFile,
+    m, base, origin, db, dir, key, signersFile, pins,
     get cookie() { return cookie; },
     get token() { return token; },
     op,
@@ -310,6 +323,7 @@ async function deck(t, { operator = true, signerSpec, ttl, signingKey, allowedKe
     create: async (extra = {}) => {
       const r = await raw('POST', '/api/unblock', { ...SHEET, ...extra }, {}).then(read);
       assert.equal(r.status, 201, JSON.stringify(r.body));
+      pins[r.body.id] = Object.fromEntries((r.body.questions || []).map((q) => [q.id, q.pin]));
       return r.body.id;
     },
   };
@@ -669,9 +683,10 @@ test('/sign with the signer off answers 409, and the session says signer null', 
   assert.deepEqual(r.body, { error: 'signing not configured' });
 });
 
+const QSHA = Object.fromEntries(SHEET.questions.map((q) => [q.id, signer.questionSha256(q)]));
 // Signing waits on a human; the route has to hold its ground while it does. Driven in-process with
 // an in-memory db and a signer the test settles by hand: release() signs, release(error) fails.
-function inProcess() {
+function inProcess({ ttlSecs } = {}) {
   const { createUnblock } = require('../unblock');
   const db = new DatabaseSync(':memory:');
   const waiting = [];
@@ -688,12 +703,36 @@ function inProcess() {
     auth: { configured: true, operatorId: OPERATOR, operator: () => OPERATOR },
     signer: { kind: 'file', sign: (m) => new Promise((ok, no) => signs.push(m) && waiting.push([ok, no])) },
     verifier: { verify: async () => ({ ok: true, key: 'SHA256:x' }) },
+    ...(ttlSecs === undefined ? {} : { ttlSecs }),
   });
   const call = (method, p, body) =>
-    new Promise((done) => unblock({ method, headers: { origin: 'http://deck' }, body }, { done }, '/api/unblock' + p));
+    new Promise((done, fail) => unblock({ method, headers: { origin: 'http://deck' }, body }, { done }, '/api/unblock' + p).catch(fail));
   return { db, waiting, signs, release, call };
 }
-const QSHA = Object.fromEntries(SHEET.questions.map((q) => [q.id, signer.questionSha256(q)]));
+
+test('L2. a TTL outside the Date range throws before signing starts, so it never wedges the next sign', async () => {
+  const { db, signs, call } = inProcess({ ttlSecs: 1e16 });
+  const id = (await call('POST', '', { ...SHEET })).obj.id;
+  const put = await call('PUT', '/' + id + '/answers/q1', { choice: 'deploy-now' });
+  const b = { choice: 'deploy-now', answeredAt: put.obj.answeredAt, questionSha256: QSHA.q1 };
+  await assert.rejects(call('POST', '/' + id + '/answers/q1/sign', b), RangeError);
+  await assert.rejects(call('POST', '/' + id + '/answers/q1/sign', b), RangeError, 'not "signing in progress"');
+  assert.equal(signs.length, 0, 'the signer was never asked');
+  db.close();
+});
+
+test('the deck stops certifying its own signature once it expires', async () => {
+  const { db, release, call } = inProcess({ ttlSecs: 1 });
+  const id = (await call('POST', '', { ...SHEET })).obj.id;
+  const put = await call('PUT', '/' + id + '/answers/q1', { choice: 'deploy-now' });
+  const signing = call('POST', '/' + id + '/answers/q1/sign', { choice: 'deploy-now', answeredAt: put.obj.answeredAt, questionSha256: QSHA.q1 });
+  await new Promise((r) => setImmediate(r));
+  release();
+  assert.equal((await signing).obj.sigValid, true);
+  await new Promise((r) => setTimeout(r, 1100));
+  assert.equal((await call('GET', '/' + id)).obj.answers.q1.sigValid, false);
+  db.close();
+});
 
 test('one sign at a time, and a click that changes mid-sign never receives the signature', { timeout: 20000 }, async () => {
   const { db, waiting, signs, release, call } = inProcess();
@@ -749,10 +788,15 @@ test('a change of mind during the prompt is never signed, even when an agent res
 // --- the CLI a seat runs itself: it rebuilds the message and verifies with its own allowed_signers
 
 const CLI = path.join(__dirname, '..', 'bin', 'fleetdeck-verify-answer.js');
+// A seat passes the pin its own POST returned (`d.pins`); a sheet the harness never posted pins zeros,
+// and a `d` with no pins passes no flag at all.
 function verify(d, ...args) {
   const withSigners = args.includes('--allowed-signers') || !d.signersFile ? args : [...args, '--allowed-signers', d.signersFile];
+  const pin = d.pins && !args.includes('--pin')
+    ? ['--pin', (d.pins[args[0]] || {})[args[1]] || '0'.repeat(64)]
+    : [];
   return new Promise((resolve) => {
-    const child = spawn(process.execPath, [CLI, ...withSigners], {
+    const child = spawn(process.execPath, [CLI, ...pin, ...withSigners], {
       env: noAgentEnv({ FLEETDECK_URL: d.base }),
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -815,7 +859,17 @@ test('the CLI certifies a signed click: every line, --json, and the exit codes',
   assert.equal((await verify(d, id)).code, 2);
   assert.equal((await verify(d, id, 'q1', '--bogus')).code, 2);
   assert.equal((await verify(d, id, 'q1', '--allowed-signers')).code, 2);
-  assert.equal((await verify({ base: 'http://127.0.0.1:1', signersFile: d.signersFile }, id, 'q1')).code, 2, 'deck unreachable');
+  // M1: the seat's own pin is required, 64 lowercase hex; the old question-hash flag is gone.
+  const unpinned = await verify({ base: d.base, signersFile: d.signersFile }, id, 'q1');
+  assert.equal(unpinned.code, 2, unpinned.out);
+  assert.match(unpinned.err, /--pin/);
+  assert.equal((await verify(d, id, 'q1', '--pin', d.pins[id].q1.toUpperCase())).code, 2, 'uppercase hex');
+  assert.equal((await verify(d, id, 'q1', '--pin', d.pins[id].q1.slice(1))).code, 2, '63 digits');
+  assert.equal((await verify(d, id, 'q1', '--pin')).code, 2, 'no value');
+  const old = await verify({ base: d.base, signersFile: d.signersFile }, id, 'q1', '--question-sha256', await qsha(d, id, 'q1'));
+  assert.equal(old.code, 2, 'the question hash alone is no pin');
+  assert.match(old.err, /unknown flag --question-sha256/);
+  assert.equal((await verify({ base: 'http://127.0.0.1:1', signersFile: d.signersFile, pins: {} }, id, 'q1')).code, 2, 'deck unreachable');
   const missing = await verify(d, id, 'q1', '--allowed-signers', path.join(d.dir, 'nope'));
   assert.equal(missing.code, 2);
   assert.match(missing.err, /allowed_signers/);
@@ -828,16 +882,22 @@ test('fleetdeck-verify-answer --help prints the v2 string verbatim with its rule
   assert.ok(r.out.includes('first `%` → `%25`, then `|` → `%7C`'), r.out);
   assert.ok(r.out.includes('lowercase hex SHA-256 of the UTF-8 bytes of JSON.stringify(question)'), r.out);
   assert.ok(r.out.includes('fleetdeck-unblock'), r.out);
-  assert.match(r.out, /usage: fleetdeck-verify-answer <sheet> <qid> \[--json\] \[--allowed-signers <file>\]/);
+  assert.match(r.out, /usage: fleetdeck-verify-answer <sheet> <qid> --pin <hex> \[--json\] \[--allowed-signers <file>\]/);
+  assert.ok(r.out.includes('v2-pin|sheetId|qid|question_sha256'), r.out);
   assert.match(r.out, /^ *0 /m);
   assert.match(r.out, /^ *1 /m);
   assert.match(r.out, /^ *2 /m);
+  const flat = r.out.replace(/\s+/g, ' ');
   assert.ok(
-    r.out.replace(/\s+/g, ' ').includes(
-      'superseded: your own verify passed, but the deck does not certify this answer: an older signature, a key the deck did not boot with, or another principal'
+    flat.includes(
+      'superseded: your own verify passed, but the deck does not certify this answer: a signature this deck process did not make (made outside it, or before a restart), an older signature, a key the deck did not boot with, or another principal'
     ),
     r.out
   );
+  assert.ok(flat.includes('pin-mismatch'), r.out);
+  assert.ok(!flat.includes('question-mismatch'), r.out);
+  assert.ok(flat.includes('questions[].pin'), r.out);
+  assert.ok(flat.includes('only on a sheet you posted yourself'), r.out);
 });
 
 test('the CLI text output carries no control character a sheet field smuggles in', async (t) => {
@@ -909,14 +969,38 @@ test('e. a signature replayed onto another sheet with the same questions reads i
   assert.equal((await verify(d, a, 'q1')).code, 0, 'the original is untouched');
 });
 
-test('f. an expired signature: the CLI refuses it as expired', async (t) => {
-  const d = await deck(t, { ttl: 1 });
+// A genuine operator-key signature over the v2 string, made OUTSIDE the deck (the file key stands in
+// for any same-user process asking the 1Password agent directly) and written into fleet.db.
+async function forgedRow(d, id, qid, choice, expiresAt = new Date(Date.now() + 3600e3).toISOString()) {
+  const sheet = (await d.get('/' + id)).body.sheet;
+  const answeredAt = new Date().toISOString();
+  const message = signer.canonical({
+    sheetId: id, qid, choice, answeredAt, operatorId: OPERATOR, project: 'fleetdeck',
+    expiresAt, questionSha256: signer.questionSha256(sheet.questions.find((q) => q.id === qid)),
+  });
+  const forged = (await signer.createSigner('file:' + d.key.file).sign(message)).sig;
+  dbRun(
+    d,
+    `INSERT INTO unblock_answers (sheet_id, qid, choice, choice_label, answered_at, note, operator_id, answer_sig, sig_expires_at, sig_state)
+     VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, 'signed')`,
+    id, qid, choice, 'label ' + choice, answeredAt, OPERATOR, forged, expiresAt
+  );
+  assert.equal((await signer.createVerifier({ allowedSigners: d.signersFile }).verify(message, forged, OPERATOR)).ok, true, 'a genuine signature');
+}
+
+test('F1. a signature made with the operator key outside the deck is never certified: the deck made none', async (t) => {
+  const d = await deck(t);
   const id = await d.create();
-  await d.signin();
-  const s = await signedClick(d, id, 'q1', 'deploy-now');
-  assert.ok(Date.parse(s.sigExpiresAt) - Date.now() <= 1000);
-  await new Promise((r) => setTimeout(r, 1300));
-  assert.equal((await d.get('/' + id)).body.answers.q1.sigValid, false);
+  await forgedRow(d, id, 'q3', 'ship');
+  const cli = await refusedBoth(d, id, 'q3', 'superseded');
+  assert.match(cli.out, /^key: SHA256:/m, 'the CLI\'s own verify passed; only the deck\'s sigValid holds the line');
+});
+
+test('f. an expired signature: the CLI refuses it as expired', async (t) => {
+  // The TTL is clamped to 60 s at least, so the expired signature is made outside the deck.
+  const d = await deck(t);
+  const id = await d.create();
+  await forgedRow(d, id, 'q1', 'deploy-now', new Date(Date.now() - 1000).toISOString());
   await refusedBoth(d, id, 'q1', 'expired');
 
   // The seat checks expiry itself: a deck that (wrongly) still said valid changes nothing.
@@ -929,9 +1013,34 @@ test('f. an expired signature: the CLI refuses it as expired', async (t) => {
   });
   await new Promise((r) => liar.listen(0, '127.0.0.1', r));
   t.after(() => liar.close());
-  const cli = await verify({ base: 'http://127.0.0.1:' + liar.address().port, signersFile: d.signersFile }, id, 'q1');
+  const cli = await verify({ base: 'http://127.0.0.1:' + liar.address().port, signersFile: d.signersFile, pins: d.pins }, id, 'q1');
   assert.equal(cli.code, 1, cli.out);
   assert.match(cli.out, /^reason: expired$/m);
+});
+
+test('L2. a real signature whose expiresAt lies past the deck\'s maximum TTL is refused even when the deck says valid', async (t) => {
+  const d = await deck(t);
+  const id = await d.create();
+  await forgedRow(d, id, 'q3', 'ship', '2099-01-01T00:00:00.000Z');
+  // A lying deck: everything true but the verdict, which it flips.
+  const http = require('http');
+  const liar = http.createServer(async (req, res) => {
+    const body = await fetch(d.base + req.url).then((r) => r.json());
+    if (body.answers && body.answers.q3) body.answers.q3.sigValid = true;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(body));
+  });
+  await new Promise((r) => liar.listen(0, '127.0.0.1', r));
+  t.after(() => liar.close());
+  const cli = await verify({ base: 'http://127.0.0.1:' + liar.address().port, signersFile: d.signersFile, pins: d.pins }, id, 'q3');
+  assert.equal(cli.code, 1, cli.out);
+  assert.match(cli.out, /^sig_valid: false\nreason: invalid$/m);
+
+  // Inside the cap (86400 s + 60 s of skew) the same lie still passes the CLI's own checks: the cap is the point.
+  const near = await d.create();
+  await forgedRow(d, near, 'q3', 'ship', new Date(Date.now() + 86400e3).toISOString());
+  const ok = await verify({ base: 'http://127.0.0.1:' + liar.address().port, signersFile: d.signersFile, pins: d.pins }, near, 'q3');
+  assert.equal(ok.code, 0, ok.out);
 });
 
 test('g. a signature by a key that is not in allowed_signers reads invalid', async (t) => {
@@ -972,7 +1081,7 @@ test('i. a substituted public key on the seat side: the CLI refuses even though 
   assert.match(cli.out, /^reason: invalid$/m);
 });
 
-test('j. question text or an option label rewritten in unblock_sheets reads invalid', async (t) => {
+test('j. question text or an option label rewritten in unblock_sheets: the seat\'s pin refuses it, and the signature does not cover it', async (t) => {
   for (const rewrite of [(q) => (q.decision = 'decide something else'), (q) => (q.options[0].label = 'deploy to prod NOW')]) {
     const d = await deck(t);
     const id = await d.create();
@@ -983,8 +1092,185 @@ test('j. question text or an option label rewritten in unblock_sheets reads inva
     rewrite(questions[0]);
     db.prepare('UPDATE unblock_sheets SET questions = ? WHERE id = ?').run(JSON.stringify(questions), id);
     db.close();
-    await refusedBoth(d, id, 'q1', 'invalid');
+    await refusedBoth(d, id, 'q1', 'pin-mismatch');
+    // Pinned to the rewritten question instead, the old signature still does not verify.
+    const cli = await verify(d, id, 'q1', '--pin', signer.pin(id, 'q1', signer.questionSha256(questions[0])));
+    assert.equal(cli.code, 1, cli.out);
+    assert.match(cli.out, /^reason: invalid$/m);
   }
+});
+
+// --- F3/M1. the seat pins what it asked: each question's pin, from its own POST response
+
+test('F3. the POST answers each question\'s hash and pin, both recomputed from the question the GET serves', async (t) => {
+  const d = await deck(t);
+  // Unvalidated extras, a small float, non-ASCII and a lone surrogate in free text: all must round-trip.
+  const odd = { ...question('q4', 'deploy-x', 'y'), explain: 'é ✓ \ud800 "q"', weight: 1e-7 };
+  const r = await d.op('POST', '/api/unblock', { ...SHEET, questions: [...SHEET.questions, odd] }, {});
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const served = (await d.get('/' + r.body.id)).body.sheet.questions;
+  assert.deepEqual(
+    r.body.questions,
+    served.map((q) => ({ id: q.id, questionSha256: signer.questionSha256(q), pin: signer.pin(r.body.id, q.id, signer.questionSha256(q)) }))
+  );
+  assert.deepEqual(Object.keys(r.body).sort(), ['id', 'questions', 'url']);
+  for (const q of r.body.questions) {
+    assert.match(q.questionSha256, /^[0-9a-f]{64}$/);
+    assert.match(q.pin, /^[0-9a-f]{64}$/);
+  }
+});
+
+test('M1. the seat\'s pin binds its sheet: the same question copied onto another sheet does not verify with it', async (t) => {
+  // N2: an agent posts the seat's questions on a sheet of its own ("a drill, nothing deploys"), the
+  // operator signs there, and the seat is handed that sheet id with its own pin.
+  const d = await deck(t);
+  const seat = await d.create();
+  const attacker = await d.create({ title: 'DRILL: click ship, nothing deploys', intro: 'signing drill' });
+  await d.signin();
+  assert.equal((await signedClick(d, attacker, 'q3', 'ship')).sigValid, true);
+  assert.equal(await qsha(d, seat, 'q3'), await qsha(d, attacker, 'q3'), 'the very same question');
+  assert.notEqual(d.pins[seat].q3, d.pins[attacker].q3);
+  const cli = await verify(d, attacker, 'q3', '--pin', d.pins[seat].q3);
+  assert.equal(cli.code, 1, cli.out + cli.err);
+  assert.match(cli.out, /^sig_valid: false\nreason: pin-mismatch$/m);
+  // Another question id on the seat's own sheet does not borrow a pin either.
+  assert.equal((await verify(d, attacker, 'q3', '--pin', d.pins[attacker].q1)).code, 1);
+  assert.equal((await verify(d, attacker, 'q3')).code, 0, 'the attacker\'s own pin is the attacker\'s own sheet');
+});
+
+test('F3. option labels swapped in fleet.db before the operator reads the card: the pinned CLI says pin-mismatch', async (t) => {
+  const d = await deck(t);
+  const id = await d.create();
+  const swapped = [
+    { ...question('q1', 'deploy-now', 'hold'), options: [opt('deploy-now', 'label hold'), opt('hold', 'label deploy-now')] },
+    ...SHEET.questions.slice(1),
+  ];
+  dbRun(d, 'UPDATE unblock_sheets SET questions = ? WHERE id = ?', JSON.stringify(swapped), id);
+  await d.signin();
+  // The operator means "hold" and clicks the card that reads "label hold" — its key is deploy-now.
+  const clicked = (await d.get('/' + id)).body.sheet.questions[0].options.find((o) => o.label === 'label hold');
+  const s = await signedClick(d, id, 'q1', clicked.key);
+  assert.equal(s.sigValid, true, 'the deck honestly signed, and certifies, the question it served');
+  const cli = await verify(d, id, 'q1');
+  assert.equal(cli.code, 1, cli.out + cli.err);
+  assert.match(cli.out, /^sig_valid: false\nreason: pin-mismatch$/m);
+  assert.match(cli.out, /^choice: deploy-now/m);
+});
+
+// --- F2. /sign signs only a click this deck saw from a signed-in session
+
+test('F2. a row written into fleet.db is never signed, even when the browser echoes it back with "Sign now"', async (t) => {
+  const d = await deck(t);
+  const id = await d.create();
+  await d.signin();
+  const answeredAt = '2026-09-11T09:00:00.000Z';
+  dbRun(
+    d,
+    `INSERT INTO unblock_answers (sheet_id, qid, choice, choice_label, answered_at, note, operator_id, sig_state, sig_state_at)
+     VALUES (?, 'q1', 'deploy-now', 'label deploy-now', ?, '', ?, 'dismissed', ?)`,
+    id, answeredAt, OPERATOR, answeredAt
+  );
+  const refused = async (qid, b) => {
+    const r = await d.sign(id, qid, { ...b, questionSha256: await qsha(d, id, qid) });
+    assert.equal(r.status, 409, JSON.stringify(r.body));
+    assert.deepEqual(r.body, { error: 'click not seen by this deck' });
+  };
+  // What the page holds after its poll: the injected row, echoed back.
+  const a = (await d.get('/' + id)).body.answers.q1;
+  await refused('q1', { choice: a.choice, answeredAt: a.answeredAt });
+  const after = (await d.get('/' + id)).body.answers.q1;
+  assert.deepEqual([after.sig, after.sigState, after.sigValid], [null, 'dismissed', false], 'nothing signed');
+  await refusedBoth(d, id, 'q1', 'dismissed');
+
+  // The operator clicks the same choice for real: that is a fresh click, and it signs.
+  const s = await signedClick(d, id, 'q1', 'deploy-now');
+  assert.notEqual(s.answeredAt, answeredAt, 'restamped');
+  assert.equal(s.sigValid, true);
+  assert.equal((await verify(d, id, 'q1')).code, 0);
+
+  // After a real click, another choice written over it with the same answeredAt is refused.
+  const wait = await d.put('/' + id + '/answers/q3', { choice: 'wait' });
+  dbRun(d, "UPDATE unblock_answers SET choice = 'ship', choice_label = 'label ship' WHERE sheet_id = ? AND qid = 'q3'", id);
+  await refused('q3', { choice: 'ship', answeredAt: wait.body.answeredAt });
+  assert.equal((await d.get('/' + id)).body.answers.q3.sig, null);
+});
+
+// --- H1. clickSeen: the stored row is the click this deck saw from a signed-in session
+
+test('H1. clickSeen is true only for the click this deck saw: an agent-written row, a rewrite and a clear read false', async (t) => {
+  const d = await deck(t);
+  const id = await d.create();
+  const view = async (qid) => (await d.get('/' + id)).body.answers[qid];
+  // N1: a pre-selected row written into fleet.db, a lure for the operator's next click.
+  dbRun(d, `INSERT INTO unblock_answers (sheet_id, qid, choice, choice_label, answered_at, note, operator_id)
+            VALUES (?, 'q1', 'deploy-now', 'label deploy-now', '2026-09-11T09:00:00.000Z', '', ?)`, id, OPERATOR);
+  assert.strictEqual((await view('q1')).clickSeen, false, 'agent-written row');
+
+  await d.signin();
+  const put = await d.put('/' + id + '/answers/q1', { choice: 'deploy-now' });
+  assert.strictEqual(put.body.clickSeen, true, 'the PUT view');
+  assert.strictEqual((await view('q1')).clickSeen, true, 'a real click');
+  assert.strictEqual((await d.put('/' + id + '/answers/q1', { note: 'n' })).body.clickSeen, true, 'a note keeps it');
+
+  dbRun(d, "UPDATE unblock_answers SET choice = 'hold', choice_label = 'label hold' WHERE sheet_id = ? AND qid = 'q1'", id);
+  assert.equal((await view('q1')).answeredAt, put.body.answeredAt, 'the stamp kept');
+  assert.strictEqual((await view('q1')).clickSeen, false, 'choice rewritten in fleet.db');
+
+  await d.put('/' + id + '/answers/q3', { choice: 'ship' });
+  const cleared = await d.put('/' + id + '/answers/q3', { choice: null });
+  assert.strictEqual(cleared.body.clickSeen, false, 'a clear');
+  const after = await view('q3');
+  assert.ok(!after || after.clickSeen === false, 'no row, or clickSeen false');
+});
+
+// --- L1. canonical() is injective: a lone surrogate never reaches the signed bytes
+
+test('L1. canonical() refuses a lone surrogate, and a sheet cannot carry one where the signed bytes read it', async (t) => {
+  const f = {
+    sheetId: 'ub-1', qid: 'q1', choice: 'deploy-now', answeredAt: '2026-09-11T10:00:00.000Z',
+    operatorId: 'neelo@test', project: 'fleetdeck', expiresAt: '2026-09-11T12:00:00.000Z', questionSha256: 'ab'.repeat(32),
+  };
+  // Both encode to EF BF BD in UTF-8: without the check the two messages would be the same bytes.
+  assert.equal(Buffer.from('\ud800', 'utf8').toString('hex'), Buffer.from('\ufffd', 'utf8').toString('hex'));
+  for (const k of Object.keys(f)) assert.throws(() => signer.canonical({ ...f, [k]: 'x\ud800' }), new RegExp(k), k);
+  assert.ok(signer.canonical({ ...f, choice: 'x\ufffd' }).includes('x\ufffd'));
+  // The question hash reads JSON.stringify, which escapes a lone surrogate: no collision there.
+  assert.notEqual(signer.questionSha256({ l: '\ud800' }), signer.questionSha256({ l: '\ufffd' }));
+
+  const d = await deck(t);
+  const post = (sheet) => d.op('POST', '/api/unblock', sheet, {});
+  for (const [sheet, want] of [
+    [{ ...SHEET, questions: [question('q\ud800', 'a', 'b')] }, /question id must be well-formed/],
+    [{ ...SHEET, questions: [question('q1', 'deploy-\udc00', 'b')] }, /option key must be well-formed/],
+    [{ ...SHEET, source: { project: 'fleet\ud800deck' } }, /source.project must be well-formed/],
+  ]) {
+    const r = await post(sheet);
+    assert.equal(r.status, 400, JSON.stringify(r.body));
+    assert.match(r.body.error, want);
+  }
+});
+
+// --- L2. the TTL: clamped at boot, and never able to wedge signing
+
+test('L2. FLEET_UNBLOCK_SIG_TTL_SECS outside 60…86400 falls back to 7200, and signing still works twice', async (t) => {
+  for (const ttl of ['1e16', '30']) {
+    const d = await deck(t, { ttl });
+    const id = await d.create();
+    await d.signin();
+    const put = await d.put('/' + id + '/answers/q1', { choice: 'deploy-now' });
+    const b = { choice: 'deploy-now', answeredAt: put.body.answeredAt, questionSha256: await qsha(d, id, 'q1') };
+    for (const n of [1, 2]) {
+      const before = Date.now();
+      const s = await d.sign(id, 'q1', b);
+      assert.equal(s.status, 200, ttl + ' #' + n + ' ' + JSON.stringify(s.body));
+      assert.ok(Math.abs(Date.parse(s.body.sigExpiresAt) - before - 7200e3) < 60e3, ttl + ': ' + s.body.sigExpiresAt);
+    }
+  }
+  const d = await deck(t, { ttl: 86400 });
+  const id = await d.create();
+  await d.signin();
+  const s = await signedClick(d, id, 'q1', 'deploy-now');
+  assert.ok(Math.abs(Date.parse(s.sigExpiresAt) - Date.now() - 86400e3) < 60e3, s.sigExpiresAt);
 });
 
 test('k. an older signed answer restored into fleet.db reads superseded while the deck runs', async (t) => {
@@ -1108,8 +1394,10 @@ test('n. send puts only sheetId, title and qids on the bus; the 409 copy-out kee
   const row = (await fetch(d.base + '/api/messages').then((r) => r.json())).messages.find((m) => m.id === sent.body.messageId);
   const [first, ...rest] = row.text.split('\n');
   assert.match(first, /pointer, not the word/);
-  assert.ok(first.includes('/api/unblock/' + id), first);
-  assert.ok(first.includes('fleetdeck-verify-answer'), first);
+  // F3: the text never tells the seat to verify the id it carries — only a sheet the seat posted itself.
+  assert.ok(!first.includes(id), first);
+  assert.ok(first.includes('a sheet you posted yourself'), first);
+  assert.ok(first.includes('fleetdeck-verify-answer <sheetId> <qid> --pin <the pin your own POST returned for that qid>'), first);
   assert.deepEqual(JSON.parse(rest.join('\n')), { sheet: 'adhd-unblock', sheetId: id, title: 'the signing lane', qids: ['q1', 'q2'] });
   for (const word of ['deploy-now', 'straight', 'SECRET-NOTE-TEXT', 'label '])
     assert.ok(!row.text.includes(word), word + ' travelled on the bus');
@@ -1124,11 +1412,11 @@ test('n. send puts only sheetId, title and qids on the bus; the 409 copy-out kee
 
 // --- p. the two operator gate scripts: run in the operator's own Terminal, never an agent shell
 
-// A child env as the operator's Terminal would have it: no CLAUDE* var, no agent socket.
+// A child env as the operator's Terminal would have it: no CLAUDE* var, no agent socket, no multiplexer.
 function cleanEnv(extra = {}) {
-  const env = noAgentEnv(extra);
-  for (const k of Object.keys(env)) if (k.startsWith('CLAUDE')) delete env[k];
-  return env;
+  const env = noAgentEnv();
+  for (const k of Object.keys(env)) if (k.startsWith('CLAUDE') || k === 'TMUX' || k === 'STY') delete env[k];
+  return { ...env, ...extra };
 }
 function runScript(script, args, { env, input }) {
   return new Promise((resolve) => {
@@ -1146,42 +1434,69 @@ function runScript(script, args, { env, input }) {
   });
 }
 
-test('p. deck-operator-init writes a 0600 operator file loadOperator accepts, prints no secret, never overwrites', async () => {
+test('p. deck-operator-init generates the password, prints it once, stores only its hash 0600, never overwrites', async () => {
   const dir = tmpdir('signing-init');
   const file = path.join(dir, 'fresh', 'operator.json');
   const env = cleanEnv({ FLEET_OPERATOR_FILE: file });
-  const pw = 'a long enough operator password';
 
-  const agent = await runScript('deck-operator-init.js', ['neelo@test'], { env: { ...env, CLAUDE_TEST_MARKER: '1' }, input: pw + '\n' + pw + '\n' });
+  const agent = await runScript('deck-operator-init.js', ['neelo@test'], { env: { ...env, CLAUDE_TEST_MARKER: '1' } });
   assert.notEqual(agent.code, 0);
   assert.match(agent.err, /your own Terminal/);
+  assert.equal(agent.out, '', 'no password for an agent shell');
   assert.equal(fs.existsSync(file), false);
+  assert.notEqual((await runScript('deck-operator-init.js', ['has space'], { env })).code, 0);
+  assert.notEqual((await runScript('deck-operator-init.js', [], { env })).code, 0);
+  assert.equal(fs.existsSync(file), false, 'nothing written');
 
-  for (const [input, want] of [['short pw\nshort pw\n', /at least 12/], [pw + '\n' + pw + 'x\n', /do not match/], ['', /password/]]) {
-    const r = await runScript('deck-operator-init.js', ['neelo@test'], { env, input });
-    assert.notEqual(r.code, 0, input);
-    assert.match(r.err, want);
-    assert.equal(fs.existsSync(file), false, 'nothing written');
-  }
-  assert.notEqual((await runScript('deck-operator-init.js', ['has space'], { env, input: pw + '\n' + pw + '\n' })).code, 0);
-  assert.notEqual((await runScript('deck-operator-init.js', [], { env, input: pw + '\n' + pw + '\n' })).code, 0);
-
-  const ok = await runScript('deck-operator-init.js', ['neelo@test'], { env, input: pw + '\n' + pw + '\n' });
+  // Nothing is read from stdin any more: a chosen password piped in is ignored.
+  const ok = await runScript('deck-operator-init.js', ['neelo@test'], { env, input: 'chosen password\nchosen password\n' });
   assert.equal(ok.code, 0, ok.err);
-  assert.equal(ok.out.trim(), 'wrote ' + file + ' for neelo@test');
+  assert.equal(ok.err, '');
+  const lines = ok.out.trim().split('\n');
+  assert.equal(lines.length, 3, ok.out);
+  assert.equal(lines[0], 'wrote ' + file + ' for neelo@test');
+  const pw = lines[1];
+  assert.match(pw, /^[A-Za-z0-9_-]{24,}$/, 'base64url, at least 24 characters (144 bits)');
+  assert.match(lines[2], /save it in 1Password as "fleetdeck deck sign-in", then press Cmd-K to clear the scrollback/);
+  assert.equal(ok.out.split(pw).length, 2, 'printed exactly once');
   assert.equal(fs.statSync(file).mode & 0o777, 0o600);
   assert.equal(fs.statSync(path.dirname(file)).mode & 0o777, 0o700);
-  const o = auth.loadOperator(fs.readFileSync(file, 'utf8'));
+  const text = fs.readFileSync(file, 'utf8');
+  assert.ok(!text.includes(pw), 'the file holds the hash only');
+  const o = auth.loadOperator(text);
   assert.equal(o.operatorId, 'neelo@test');
   assert.equal(await auth.verifyPassword(pw, o.identity.hash), true);
-  for (const secret of [pw, o.identity.hash, ...o.identity.hash.split('$').slice(4)])
-    assert.ok(!(ok.out + ok.err).includes(secret), 'nothing secret printed');
+  assert.equal(await auth.verifyPassword('chosen password', o.identity.hash), false);
+  for (const secret of [o.identity.hash, ...o.identity.hash.split('$').slice(4)])
+    assert.ok(!ok.out.includes(secret), 'no hash printed');
   assert.deepEqual(fs.readdirSync(path.dirname(file)), ['operator.json'], 'no temp file left behind');
 
-  const again = await runScript('deck-operator-init.js', ['other@test'], { env, input: pw + '\n' + pw + '\n' });
+  const again = await runScript('deck-operator-init.js', ['other@test'], { env });
   assert.notEqual(again.code, 0);
   assert.match(again.err, /delete it to rotate/);
-  assert.equal(auth.loadOperator(fs.readFileSync(file, 'utf8')).operatorId, 'neelo@test', 'untouched');
+  assert.equal(again.out, '', 'no password printed for a file it did not write');
+  assert.equal(fs.readFileSync(file, 'utf8'), text, 'untouched');
+
+  // A fresh target gets a fresh password.
+  const other = path.join(dir, 'other', 'operator.json');
+  const second = await runScript('deck-operator-init.js', ['neelo@test'], { env: cleanEnv({ FLEET_OPERATOR_FILE: other }) });
+  assert.equal(second.code, 0, second.err);
+  const pw2 = second.out.trim().split('\n')[1];
+  assert.match(pw2, /^[A-Za-z0-9_-]{24,}$/);
+  assert.notEqual(pw2, pw);
+  assert.equal(await auth.verifyPassword(pw2, auth.loadOperator(fs.readFileSync(other, 'utf8')).identity.hash), true);
+});
+
+test('L1. deck-operator-init refuses inside tmux or screen: the scrollback would keep the password', async () => {
+  const dir = tmpdir('signing-init-mux');
+  const file = path.join(dir, 'operator.json');
+  for (const [k, v] of [['TMUX', '/private/tmp/tmux-501/default,1,0'], ['STY', '1234.ttys001.mac']]) {
+    const r = await runScript('deck-operator-init.js', ['neelo@test'], { env: cleanEnv({ FLEET_OPERATOR_FILE: file, [k]: v }) });
+    assert.equal(r.code, 1, k + ': ' + r.err);
+    assert.match(r.err, /run it in a plain Terminal window, not tmux\/screen — the password is printed once and a multiplexer keeps scrollback any same-user process can read/);
+    assert.equal(r.out, '', k + ': no password');
+    assert.deepEqual(fs.readdirSync(dir), [], k + ': nothing written');
+  }
 });
 
 test('p. deck-click-key-check refuses an agent shell, and with a file signer signs and verifies', async () => {

@@ -1,18 +1,18 @@
 #!/usr/bin/env node
 // Operator gate step (DECK-108): write the deck's operator file — the operator id and the scrypt
-// hash of the sign-in password. Run it once, in your own Terminal; no sudo. To rotate, delete the
-// file and run it again, then restart the deck.
+// hash of the sign-in password. Run it once, in a plain Terminal window of your own (not tmux or
+// screen); no sudo. To rotate, delete the file and run it again, then restart the deck.
 //
 //   node scripts/deck-operator-init.js <operator_id>
 //
-// Target: $FLEET_OPERATOR_FILE, default ~/.fleetdeck/operator.json. The password is read twice
-// without echo (on a pipe: two lines). Prints only the path and the operator id.
+// Target: $FLEET_OPERATOR_FILE, default ~/.fleetdeck/operator.json. The password is GENERATED, never
+// chosen: the file is readable by every same-user agent, so its hash is open to offline guessing, and
+// only a random password (144 bits) stands up to that. It is printed once, on stdout; the file holds
+// only its hash.
 const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const readline = require('readline');
-const { execFileSync } = require('child_process');
 const { hashPassword, loadOperator, OPERATOR_ID } = require('../operator-auth');
 
 class Refusal extends Error {}
@@ -21,42 +21,17 @@ async function main() {
   // Same rule as up.sh: the operator's secrets are set up by the operator, not by an agent shell.
   if (Object.keys(process.env).some((k) => k.startsWith('CLAUDE')))
     throw new Refusal('agent shell detected (CLAUDE* in env) — run it in your own Terminal');
+  if ('TMUX' in process.env || 'STY' in process.env)
+    throw new Refusal(
+      'run it in a plain Terminal window, not tmux/screen — the password is printed once and a multiplexer keeps scrollback any same-user process can read'
+    );
   const operatorId = process.argv[2];
   if (process.argv.length !== 3 || !OPERATOR_ID.test(operatorId))
     throw new Refusal('usage: deck-operator-init.js <operator_id>  (operator_id matches [A-Za-z0-9._@-]{1,64})');
   const file = process.env.FLEET_OPERATOR_FILE || path.join(os.homedir(), '.fleetdeck', 'operator.json');
   if (fs.existsSync(file)) throw new Refusal(file + ' exists — delete it to rotate');
 
-  const tty = process.stdin.isTTY;
-  const rl = readline.createInterface({ input: process.stdin, terminal: false });
-  const lines = rl[Symbol.asyncIterator]();
-  const ask = async (prompt) => {
-    process.stderr.write(prompt);
-    const { value, done } = await lines.next();
-    if (tty) process.stderr.write('\n');
-    if (done) throw new Refusal('no password given');
-    return value;
-  };
-  const echo = (on) => execFileSync('stty', [on ? 'echo' : '-echo'], { stdio: ['inherit', 'ignore', 'inherit'] });
-  let password;
-  let again;
-  if (tty) {
-    echo(false);
-    process.once('SIGINT', () => {
-      echo(true);
-      process.exit(130);
-    });
-  }
-  try {
-    password = await ask('sign-in password (12+ characters): ');
-    again = await ask('again: ');
-  } finally {
-    if (tty) echo(true);
-    rl.close();
-  }
-  if (password.length < 12) throw new Refusal('the password must be at least 12 characters');
-  if (password !== again) throw new Refusal('the two passwords do not match');
-
+  const password = crypto.randomBytes(18).toString('base64url'); // 24 characters, 144 bits
   const text =
     JSON.stringify({ version: 1, operatorId, identity: { kind: 'password', hash: await hashPassword(password) } }, null, 2) + '\n';
   loadOperator(text); // never write a file the deck would refuse to start on
@@ -80,7 +55,10 @@ async function main() {
   } finally {
     fs.unlinkSync(tmp);
   }
+  // Only once the file is published: a refusal above never shows a password that is not stored.
   console.log('wrote ' + file + ' for ' + operatorId);
+  console.log(password);
+  console.log('save it in 1Password as "fleetdeck deck sign-in", then press Cmd-K to clear the scrollback — it is not shown again');
 }
 
 main().catch((e) => {

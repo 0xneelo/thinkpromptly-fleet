@@ -11,11 +11,11 @@ Linear is unreachable here (no Linear MCP in this session, no API key). Replay t
 
 **Why:** the deck now fails closed. Until steps 1–5 are done, the Unblock screen is read-only and `fleetdeck-verify-answer` exits 1 for every answer. Run everything in **your own Terminal** (never an agent pane) and after DECK-108 is woven to main. Do the steps in this order.
 
-1. **Deck password** (the scrypt hash goes into `~/.fleetdeck/operator.json`, mode 0600; nothing else is stored):
+1. **Deck password.** The script generates a strong password, prints it ONCE, and stores only its scrypt hash in `~/.fleetdeck/operator.json` (mode 0600):
    ```bash
    cd ~/remote-system && node scripts/deck-operator-init.js neelo
    ```
-   Type a password of 12+ characters twice. A password from a 1Password generator is fine; save it in 1Password as "fleetdeck deck sign-in".
+   Run it in a plain Terminal window, not tmux or screen: the script refuses there, because a multiplexer keeps scrollback that any agent can read. Save the printed password in 1Password as "fleetdeck deck sign-in", then press Cmd-K to clear the scrollback. Every agent can read the hash, so the password is generated, never chosen.
 
 2. **New 1Password SSH key:** 1Password → New Item → SSH Key → Add Private Key → Generate a New Key → **Ed25519** → title exactly **`fleetdeck operator click key`** → Save, in a vault the 1Password SSH agent serves (Personal/Private by default). Never the CA key.
 
@@ -38,4 +38,4 @@ Linear is unreachable here (no Linear MCP in this session, no API key). Replay t
    ```
    `deck.log` shows the operator sign-in as ON for `neelo` and the click signer as `op-agent` with the same `SHA256:…`.
 
-6. **Attest (with Bernward or any seat):** open http://localhost:3131/app#unblock and sign in with the step-1 password. Click the harmless deploy-class test card that Bernward posts, and approve Touch ID. The seat then runs `node ~/remote-system/bin/fleetdeck-verify-answer.js <sheet> <qid>` → exit 0. Separately, a forged-Origin write is refused. Both outputs go on DECK-108.
+6. **Attest (with Bernward or any seat):** open http://localhost:3131/app#unblock and sign in with the step-1 password. Click the harmless deploy-class test card that Bernward posts, and approve Touch ID. The seat then runs `node ~/remote-system/bin/fleetdeck-verify-answer.js <sheet> <qid> --pin <questions[].pin from its own POST response>` → exit 0. Separately, a forged-Origin write is refused. Both outputs go on DECK-108.
