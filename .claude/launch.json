@@ -40,6 +40,16 @@
       "autoPort": true
     },
     {
+      "name": "deck-worktree-offline",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "FLEET_DB=${TMPDIR:-/tmp}/fleetdeck-preview.db FLEET_LOGINS_SH=/dev/null FLEET_CREDITS_SH=/dev/null FLEET_SSH_BIN=/usr/bin/false FLEET_NO_REAPER=1 FLEET_USAGE_EVERY_SECS=999999999999 exec node server.js"
+      ],
+      "port": 3143,
+      "autoPort": true
+    },
+    {
       "name": "deck-goals-preview",
       "runtimeExecutable": "sh",
       "runtimeArgs": [
