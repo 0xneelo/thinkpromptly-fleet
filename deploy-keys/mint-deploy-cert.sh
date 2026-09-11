@@ -72,7 +72,8 @@ mkdir -p "$(dirname "$outdir")"
 outdir=$(cd "$(dirname "$outdir")" && pwd)/$(basename "$outdir")
 mkdir -m 700 "$outdir" || fail 'output directory must be new'
 ssh-keygen -t ed25519 -f "$outdir/deployer" -N '' -C deployer-cert -q
-sign_args=(-I "$key_id" -n "$principals" -V "+$ttl" -z "$(date +%s)" "${options[@]}" "$outdir/deployer.pub")
+# macOS /bin/bash 3.2 calls an empty array unbound under set -u (Legacy and Admin have no options).
+sign_args=(-I "$key_id" -n "$principals" -V "+$ttl" -z "$(date +%s)" ${options[@]+"${options[@]}"} "$outdir/deployer.pub")
 if [ "${SSH_CA_TEST_MODE:-}" = 1 ]; then
   SSH_CA_PUBLIC_SNAPSHOT="$ca_snapshot" "$SSH_CA_TEST_SIGNER" "${sign_args[@]}" >/dev/null
 else

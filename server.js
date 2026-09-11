@@ -2725,7 +2725,9 @@ function mint(args) {
     // The script's own "1Password is probably locked" text must reach the UI verbatim.
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (code === 0) return resolve({ code: 200, body: { ok: true, outdir: stdout.trim().split('\n').pop() } });
+      const outdir = stdout.trim().split('\n').pop();
+      // Exit 0 alone is not a mint: macOS bash 3.2 exits 0 after a set -u abort, before signing.
+      if (code === 0 && outdir && fs.existsSync(path.join(outdir, 'deployer-cert.pub'))) return resolve({ code: 200, body: { ok: true, outdir } });
       resolve({ code: 502, body: { ok: false, error: stderr.trim() || 'mint failed (exit ' + code + ')' } });
     });
     child.on('error', (e) => {

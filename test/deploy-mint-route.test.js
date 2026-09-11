@@ -11,12 +11,16 @@ const {tmpdir, hostsFile, load, unload} = require('./helpers');
 test('actual mint route: origin fence, fixed profiles, tag validation and argv; no real process minted', async t => {
   const dir = tmpdir('ivo-mint-route');
   const calls=[];
+  // Empty placeholder file: the route only checks that the mint left a certificate behind.
+  const minted=path.join(dir,'minted');fs.mkdirSync(minted);fs.writeFileSync(path.join(minted,'deployer-cert.pub'),'');
+  let mockOut=minted;
   const original = cp.spawn;
   t.mock.method(cp,'spawn',(file,args,opts) => {
     if (!file.endsWith('/deploy-keys/mint-deploy-cert.sh')) return original(file,args,opts);
     calls.push({file,args});
     const child = new EventEmitter(); child.stdout=new PassThrough();child.stderr=new PassThrough();
-    process.nextTick(()=> {child.stdout.end('/mock/certificate-output-directory\n'); child.emit('close',0);});
+    // Like a real child: 'close' only after stdout has been delivered.
+    process.nextTick(()=> {child.stdout.end(mockOut+'\n'); setImmediate(()=>child.emit('close',0));});
     return child;
   });
   const oldHome=process.env.HOME;
@@ -46,6 +50,9 @@ test('actual mint route: origin fence, fixed profiles, tag validation and argv; 
   assert.deepEqual(calls.pop().args,['--daily','-t','8h','-n','deploy']);
   assert.equal((await request({profile:'admin',ttl:'1h',extraTags:['promptly-only','rog-only']})).status,200);
   assert.deepEqual(calls.pop().args,['--admin','-t','1h','-n','admin,promptly-only,rog-only']);
+  mockOut=path.join(dir,'no-cert');fs.mkdirSync(mockOut);
+  assert.equal((await request({profile:'legacy'})).status,502,'exit 0 without a certificate is not a mint');
+  calls.pop();mockOut=minted;
   const invalid=[{profile:'root'},{profile:null},{profile:'daily',ttl:'1h'},{profile:'admin',ttl:'8h'},{profile:'legacy',ttl:['1h']},{profile:'legacy',ttl:{toString:null}},
     {profile:'legacy',ttl:'24h'},{profile:'legacy',extraTags:['ivy-only']},{profile:'legacy',principals:'tabor'},
     {profile:'daily',extraTags:['ivy-only']},{profile:'admin',extraTags:['vibes-asus-only']},

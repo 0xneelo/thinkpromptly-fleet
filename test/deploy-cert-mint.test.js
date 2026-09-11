@@ -83,6 +83,33 @@ printf '%s\\n' "$SSH_CA_PUBLIC_SNAPSHOT" > "$SNAPSHOT_PATH"
   assert.equal(fs.existsSync(fs.readFileSync(env.SNAPSHOT_PATH,'utf8').trim()),false,'public snapshot cleaned');
   assert.deepEqual(fs.readdirSync(path.join(dir,'mock-output')),[],'no key or certificate was generated');
 }));
+// Spawned through the shebang like server.js does: macOS /bin/bash 3.2 calls an empty
+// array unbound under set -u, which broke every Legacy and Admin mint on the Mac.
+test('legacy and admin reach the signer through the shebang interpreter; all keygen/signing calls mocked', () => fixture(dir => {
+  const bin=path.join(dir,'bin');fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin,'ssh-keygen'),`#!/bin/sh
+case "$1" in
+  -lf) cat >/dev/null; echo '256 SHA256:Sg4TJdI9+SNBj8K0et1nEBhb8ntuX7ZzXSqzikyyDL0 fixture';;
+  -t) : ;; # no credential generation or file output
+  -Lf) echo 'Valid: mocked metadata only';;
+  *) exit 99;;
+esac
+`,{mode:0o700});
+  const signer=path.join(dir,'signer-mock.sh'), argv=path.join(dir,'argv.txt');
+  fs.writeFileSync(signer,'#!/bin/sh\nprintf "%s\\n" "$@" > "$SIGN_ARGS"\n',{mode:0o700});
+  for (const [args,principals,ttl] of [[['--legacy','-t','8h'],'root,vibe,misterisley,tabor','8h'],[['--admin'],'admin','1h']]) {
+    fs.rmSync(argv,{force:true});
+    const out=path.join(dir,args[0].slice(2));
+    const r=spawnSync(script,[...args,'-o',out],{encoding:'utf8',env:{PATH:bin+':'+process.env.PATH,HOME:dir,CA_PUB:path.join(dir,'ca.pub'),
+      SSH_CA_TEST_MODE:'1',SSH_CA_TEST_SIGNER:signer,SIGN_ARGS:argv}});
+    assert.equal(r.status,0,r.stderr);
+    assert.ok(fs.existsSync(argv),args[0]+' never reached the signer: '+r.stderr);
+    assert.equal(fs.realpathSync(r.stdout.trim().split('\n').pop()),fs.realpathSync(out),'server.js reads the outdir from the last stdout line');
+    const a=fs.readFileSync(argv,'utf8').trimEnd().split('\n');
+    assert.equal(a.length,9,a.join(' '));
+    assert.deepEqual([a[0],a[2],a[3],a[4],a[5],a[6],path.basename(a[8])],['-I','-n',principals,'-V','+'+ttl,'-z','deployer.pub']);
+  }
+}));
 // Explicit operator opt-in only: this test generates and signs disposable credentials.
 // Never enabled by npm test or by a goal that prohibits minting.
 test('isolated file signer: ssh-keygen -L proves real principals, validity, Key ID and extensions', { skip: process.env.SSH_CA_ALLOW_TEST_MINT !== '1' }, () => fixture(dir => {
