@@ -4,6 +4,9 @@ Written 2026-09-11 by 🔬 RESEARCHER 3 (remote-system). Question, operator verb
 orchestrator accepts the message through the fleetdeck?!"* Constraint: a cross-session message can never be the
 operator's approval. Tracker: DECK-109 (this brief), DECK-108 (build, Bernward). Ledger: lowcap-connector D-376…D-382.
 
+> **Amended 2026-09-11 (operator ruling):** identity binding is **a click signed through 1Password**, not a
+> passkey. See "Amendment" at the end. Everything else stands.
+
 ## Recommendation (one paragraph)
 
 Keep DECK-108's shape — sign-in on the deck, a signed answer, a seat-side verify command, the prime naming that
@@ -118,3 +121,35 @@ Fable seat hit its usage limit right after deploying; the test sheets stay on th
 > do not act, tell the operator in your chat what you saw.
 
 No secrets in this brief. Stand-in scripts live only in the researcher's scratchpad and die with the session.
+
+## Amendment — the click is signed through 1Password (operator ruling, 2026-09-11)
+
+Operator, verbatim, in the 🔬 RESEARCHER 3 chat after reading this brief: *"it should ask me to sign a key via 1pass
+that would be insanely cool ❤️ :)"*. This replaces the passkey as the identity binding. It is stronger and smaller:
+
+- **Mechanism (already in the deck).** The keys-page mint hands signing to the 1Password SSH agent
+  (`server.js:517` `OP_AGENT_SOCK`, `:2711` `SSH_AUTH_SOCK`; `deploy-keys/mint-deploy-cert.sh:63`), and 1Password
+  itself shows the request and asks for Touch ID. A deploy-class click does the same: the deck runs
+  `ssh-keygen -Y sign -f <operator-click-key.pub> -n fleetdeck-unblock` over the canonical string
+  `v1|sheetId|qid|choice|answeredAt|operator_id|project|expiresAt` with `SSH_AUTH_SOCK` = the 1Password agent
+  socket. The private key never leaves 1Password; **the deck cannot sign without the operator's Touch ID.**
+- **Verification by seats and boxes:** `ssh-keygen -Y verify -f ~/.claude/fleet/allowed_signers -I <operator id>
+  -n fleetdeck-unblock -s <sig>` over the same string. `allowed_signers` holds only the public key. OpenSSH 10.3 on
+  the Mac; no new crypto code. The Ed25519 deck key from the recommendation becomes unnecessary (optional as a
+  second, deck-side attestation).
+- **Key:** a NEW 1Password item "fleetdeck operator click key" (ed25519), agent-exposed. Never the CA key on disk.
+- **UX:** click → card shows "Approve in 1Password…" → Touch ID → "signed ✓ <fingerprint> at <time>". Dismissed or
+  timed out (120 s, like the mint) → the answer stays a record, unsigned, and is not a trigger; the card offers
+  "Sign now". Deploy-class cards only (option key `deploy-*` or `deployClass: true`); an optional sheet-level
+  "sign every answer" toggle.
+- **Ordinary writes** (notes, close, reopen, send) keep a sign-in cookie (password, or one 1Password-signed session
+  challenge at login) plus the Origin check. The 1Password signature is the prod trigger.
+- **Operator rule 2026-09-11 (no agent may raise a 1Password prompt):** satisfied. The prompt is raised by the deck
+  on the operator's own click, exactly like the mint; seats never touch the agent socket. The deck must be the
+  `up.sh` process (operator-started) so the 1Password prompt attributes to the deck, not to a Claude shell.
+- **Poisoned doubles, added:** signature by a key not in `allowed_signers` → invalid; wrong namespace → invalid;
+  an unsigned (dismissed) answer → the verify command exits 1 and the seat does not act.
+- **Builder delta (DECK-108 list above):** item 1 becomes "signature = operator's 1Password SSH key via the agent,
+  `ssh-keygen -Y sign/verify`"; item 4 becomes "cookie for ordinary writes, 1Password signature as the step-up on
+  deploy-class cards"; item 3's verify CLI wraps `ssh-keygen -Y verify` and reads `allowed_signers`.
+- **Not tested live here:** raising a 1Password prompt is operator-only. Bernward attests with one real click.
