@@ -1,9 +1,9 @@
-// Operator sign-in and answer signing (DECK-108 layer 1).
+// Operator sign-in (DECK-108).
 //
 // Every agent on this Mac runs as the operator's own macOS user, so an Origin header proves
-// nothing and fleet.db is writable by all of them. The deck secret (root:wheel 0600, read only by
-// the operator-run up.sh through sudo and handed to node on fd 3) holds the one thing an agent
-// cannot get: the HMAC key an answer is signed with, and the password hash a session is minted on.
+// nothing. A write needs a session, and a session needs the operator's password, whose scrypt hash
+// lives in the operator file (~/.fleetdeck/operator.json, written by scripts/deck-operator-init.js).
+// The session is also the only way to make the deck sign a click (signer.js).
 const crypto = require('crypto');
 const { promisify } = require('util');
 
@@ -39,45 +39,47 @@ async function verifyPassword(password, stored) {
 // outside this function knows which one is in use. Throws on a shape it cannot use.
 function identityFrom(identity) {
   if (!identity || typeof identity !== 'object' || Array.isArray(identity))
-    throw new Error('deck secret: identity must be an object');
+    throw new Error('operator file: identity must be an object');
   if (identity.kind === 'password') {
     if (typeof identity.hash !== 'string' || !STORED.test(identity.hash))
-      throw new Error('deck secret: identity.hash must be an scrypt$N$r$p$salt$hash string');
+      throw new Error('operator file: identity.hash must be an scrypt$N$r$p$salt$hash string');
     return { kind: 'password', verify: (body) => verifyPassword(body && body.password, identity.hash) };
   }
-  throw new Error('deck secret: identity.kind must be password');
+  throw new Error('operator file: identity.kind must be password');
 }
 
 const OPERATOR_ID = /^[A-Za-z0-9._@-]{1,64}$/;
 
-// Every message names the field, never its value: the log line a broken secret produces must not
-// carry the key or the hash, and JSON.parse's own message quotes the text it choked on.
-function loadDeckSecret(text) {
+const onlyFields = (o, allowed, prefix) => {
+  for (const k of Object.keys(o))
+    if (!allowed.includes(k)) throw new Error('operator file: unknown field ' + prefix + k.slice(0, 40));
+};
+
+// { "version": 1, "operatorId": "…", "identity": { "kind": "password", "hash": "scrypt$…" } }, strictly.
+// Every message names the field, never its value: the log line a broken file produces must not
+// carry the hash, and JSON.parse's own message quotes the text it choked on.
+function loadOperator(text) {
   let s;
   try {
     s = JSON.parse(text);
   } catch {
-    throw new Error('deck secret: not valid JSON');
+    throw new Error('operator file: not valid JSON');
   }
-  if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error('deck secret: must be a JSON object');
-  if (s.version !== 1) throw new Error('deck secret: version must be 1');
-  if (typeof s.hmacKey !== 'string' || !/^[0-9a-f]{64}$/i.test(s.hmacKey))
-    throw new Error('deck secret: hmacKey must be 64 hex characters');
+  if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error('operator file: must be a JSON object');
+  onlyFields(s, ['version', 'operatorId', 'identity'], '');
+  if (s.version !== 1) throw new Error('operator file: version must be 1');
   if (typeof s.operatorId !== 'string' || !OPERATOR_ID.test(s.operatorId))
-    throw new Error('deck secret: operatorId must match [A-Za-z0-9._@-]{1,64}');
+    throw new Error('operator file: operatorId must match [A-Za-z0-9._@-]{1,64}');
   identityFrom(s.identity);
-  return {
-    hmacKey: Buffer.from(s.hmacKey, 'hex'),
-    operatorId: s.operatorId,
-    identity: { kind: s.identity.kind, hash: s.identity.hash },
-  };
+  onlyFields(s.identity, ['kind', 'hash'], 'identity.');
+  return { operatorId: s.operatorId, identity: { kind: s.identity.kind, hash: s.identity.hash } };
 }
 
 const COOKIE = 'fleetdeck_operator';
+const HEADER = 'x-fleetdeck-session';
 const TTL_MS = 12 * 3600e3;
 const MAX_WRONG = 5;
-const LOCK_MS = 60e3;
-const HEX64 = /^[0-9a-f]{64}$/;
+const WINDOW_MS = 60e3;
 const digest = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 function cookieToken(req) {
@@ -88,49 +90,40 @@ function cookieToken(req) {
   return null;
 }
 
-// `secret` null is an unconfigured deck: sign-in answers 409, nothing is signed, and the unblock
-// writes fall back to the Origin gate alone — which up.sh and the boot log both say out loud.
-function createOperatorAuth({ secret, allowedOrigins }) {
-  const identity = secret ? identityFrom(secret.identity) : null;
-  // Keyed by sha256(token), so the map never holds a usable token. In memory only: a restart signs
-  // everyone out, which is the point — a session outlives neither the deck nor its secret.
+// `operator` null is a deck with no operator file: sign-in answers 409 and every unblock write
+// fails closed (unblock.js). `signer` is the click signer's kind, reported by the session GET.
+function createOperatorAuth({ operator, allowedOrigins, signer = null, now = Date.now }) {
+  const identity = operator ? identityFrom(operator.identity) : null;
+  // A session is two tokens: the HttpOnly cookie and a header token handed out once in the sign-in
+  // body. Browsers send cookies to every port on 127.0.0.1/localhost, so any dev server the
+  // operator opens would receive a replayable cookie; the header token lives in the deck page's
+  // origin-scoped storage, which no other port can read. Keyed by sha256(cookie) and holding
+  // sha256(header), so the map never holds a usable token. In memory only: a restart signs
+  // everyone out, which is the point.
   const sessions = new Map();
-  let strikes = 0;
-  let lockedUntil = 0;
+  // The sign-in rate limit: a fixed window opened by the first attempt, at most MAX_WRONG wrong
+  // passwords in it. Global, not per client: every caller is loopback, so there is none to tell apart.
+  let windowStart = 0;
+  let wrong = 0;
+  let pending = 0;
 
-  function operator(req) {
+  function session(req) {
     const token = cookieToken(req);
-    if (!secret || !token) return null;
+    const header = req.headers[HEADER];
+    if (!operator || !token || typeof header !== 'string') return null;
     const key = digest(token);
     const s = sessions.get(key);
     if (!s) return null;
-    if (s.expiresAt <= Date.now()) {
+    if (s.expiresAt <= now()) {
       sessions.delete(key);
       return null;
     }
-    return s.operatorId;
+    return crypto.timingSafeEqual(Buffer.from(digest(header), 'hex'), Buffer.from(s.header, 'hex')) ? s : null;
   }
-
-  // The DECK-108 text reads `sheetId|qid|choice|answeredAt|operator_id`. A qid or an option key may
-  // itself contain `|`, so a bare join is not injective ('a|b'+'c' and 'a'+'b|c' would share a MAC);
-  // URI-encoding every field removes `|` from them, and the domain prefix pins what is being signed.
-  const mac = (f) =>
-    crypto
-      .createHmac('sha256', secret.hmacKey)
-      .update('fleetdeck-answer-v1|' + [f.sheetId, f.qid, f.choice, f.answeredAt, f.operatorId].map(encodeURIComponent).join('|'))
-      .digest();
-
-  function signAnswer(f) {
-    return secret ? mac(f).toString('hex') : null;
-  }
-
-  function answerSigValid(f) {
-    if (!secret) return false;
-    for (const k of ['sheetId', 'qid', 'choice', 'answeredAt', 'operatorId'])
-      if (typeof f[k] !== 'string') return false;
-    if (typeof f.sig !== 'string' || !HEX64.test(f.sig)) return false;
-    return crypto.timingSafeEqual(Buffer.from(f.sig, 'hex'), mac(f));
-  }
+  const operatorOf = (req) => {
+    const s = session(req);
+    return s ? s.operatorId : null;
+  };
 
   const cookie = (value, maxAge) =>
     COOKIE + '=' + value + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=' + maxAge;
@@ -138,14 +131,16 @@ function createOperatorAuth({ secret, allowedOrigins }) {
   async function route(req, res, p, { json, send, body }) {
     if (p === '/api/operator/session') {
       if (req.method !== 'GET') return send(res, 405, 'text/plain', 'method not allowed');
-      const token = cookieToken(req);
-      const operatorId = operator(req);
-      const s = operatorId && sessions.get(digest(token));
+      // A same-origin browser GET carries no Origin, so — like the sheet POST — only a present,
+      // foreign one is refused.
+      if (req.headers.origin && !allowedOrigins.has(req.headers.origin)) return send(res, 403, 'text/plain', 'forbidden');
+      const s = session(req);
       return json(res, {
-        configured: !!secret,
-        signedIn: !!operatorId,
-        operatorId: operatorId || null,
+        configured: !!operator,
+        signedIn: !!s,
+        operatorId: s ? s.operatorId : null,
         expiresAt: s ? new Date(s.expiresAt).toISOString() : null,
+        signer,
       });
     }
     if (p !== '/api/operator/signin' && p !== '/api/operator/signout') return send(res, 404, 'text/plain', 'not found');
@@ -159,38 +154,46 @@ function createOperatorAuth({ secret, allowedOrigins }) {
       return json(res, { signedIn: false });
     }
 
-    if (!secret) return json(res, { error: 'sign-in not configured' }, 409);
+    if (!operator) return json(res, { error: 'sign-in not configured' }, 409);
     const b = await body(req).catch(() => null);
     if (!b || typeof b !== 'object' || Array.isArray(b)) return json(res, { error: 'bad request body' }, 400);
-    // Global, not per client: every caller is loopback, so there is no client to tell apart. The
-    // lock check and the strike sit together with no await between them, and the strike is taken
-    // before the (slow) verify, so parallel guesses cannot all start under the limit.
-    const now = Date.now();
-    if (now < lockedUntil)
-      return json(res, { error: 'too many attempts', retryAfter: Math.ceil((lockedUntil - now) / 1000) }, 429);
-    if (++strikes > MAX_WRONG) {
-      lockedUntil = now + LOCK_MS;
-      strikes = 0;
-      return json(res, { error: 'too many attempts', retryAfter: LOCK_MS / 1000 }, 429);
+    // The check and the pending count sit together with no await between them, and an in-flight
+    // (slow) verify counts as wrong until it is known, so parallel guesses cannot all start. A
+    // refused attempt is neither verified nor counted, and never moves the window.
+    const t0 = now();
+    if (windowStart && t0 - windowStart >= WINDOW_MS) [windowStart, wrong] = [0, 0];
+    if (wrong + pending >= MAX_WRONG) {
+      const retryAfter = Math.max(1, Math.ceil((windowStart + WINDOW_MS - t0) / 1000));
+      res.setHeader('retry-after', String(retryAfter));
+      return json(res, { error: 'too many attempts', retryAfter }, 429);
     }
-    if (!(await identity.verify(b))) {
-      if (strikes >= MAX_WRONG) {
-        lockedUntil = Date.now() + LOCK_MS;
-        strikes = 0;
-      }
+    if (!windowStart) windowStart = t0;
+    pending++;
+    let ok;
+    try {
+      ok = await identity.verify(b);
+    } finally {
+      pending--;
+    }
+    if (!ok) {
+      wrong++;
       return json(res, { error: 'wrong password' }, 401);
     }
-    strikes = 0;
-    const t = Date.now();
+    [windowStart, wrong] = [0, 0];
+    const t = now();
     for (const [k, s] of sessions) if (s.expiresAt <= t) sessions.delete(k);
+    // A sign-in that still carries an old session's cookie ends that session.
+    const old = cookieToken(req);
+    if (old) sessions.delete(digest(old));
     const token = crypto.randomBytes(32).toString('base64url');
+    const sessionToken = crypto.randomBytes(32).toString('base64url');
     const expiresAt = t + TTL_MS;
-    sessions.set(digest(token), { operatorId: secret.operatorId, expiresAt });
+    sessions.set(digest(token), { header: digest(sessionToken), operatorId: operator.operatorId, expiresAt });
     res.setHeader('set-cookie', cookie(token, TTL_MS / 1000));
-    return json(res, { signedIn: true, operatorId: secret.operatorId, expiresAt: new Date(expiresAt).toISOString() });
+    return json(res, { signedIn: true, operatorId: operator.operatorId, expiresAt: new Date(expiresAt).toISOString(), sessionToken });
   }
 
-  return { configured: !!secret, operator, route, signAnswer, answerSigValid };
+  return { configured: !!operator, operatorId: operator ? operator.operatorId : null, operator: operatorOf, route };
 }
 
-module.exports = { hashPassword, verifyPassword, identityFrom, loadDeckSecret, createOperatorAuth, OPERATOR_ID };
+module.exports = { hashPassword, verifyPassword, identityFrom, loadOperator, createOperatorAuth, OPERATOR_ID };

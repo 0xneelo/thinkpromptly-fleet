@@ -1,11 +1,19 @@
 // /api/unblock — a seat posts a decision sheet, the operator answers it, the answers go back
 // over the bus. Two gates are the point: the POST is the only agent-facing route (no Origin,
-// foreign Origin rejected), every write after it is the operator's browser and needs one.
+// foreign Origin rejected), every write after it is the operator's browser and needs one — plus a
+// signed-in operator session (DECK-108; unblock-signing.test.js covers that gate itself).
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const { tmpdir, hostsFile, load, unload } = require('./helpers');
+const { hashPassword } = require('../operator-auth');
+
+// One throwaway operator for the file: with no operator file every operator write fails closed.
+const PASSWORD = 'throwaway operator pass';
+const OPERATOR_FILE_TEXT = hashPassword(PASSWORD).then((hash) =>
+  JSON.stringify({ version: 1, operatorId: 'neelo@test', identity: { kind: 'password', hash } })
+);
 
 // Sibling worktrees run this file at the same time, so the band is per process.
 let port = 37000 + Math.floor(Math.random() * 15000);
@@ -40,13 +48,15 @@ const SHEET = {
   source: { seat: '🎛 ORCHESTRATOR 3', session: 'orch-3', project: 'fleetdeck' },
 };
 
-// One deck per test, on its own port and its own db. ssh is the fake one: a bus delivery to a
-// fleet host must never reach the operator's machines, and a real ssh would keep this alive.
-function deck(t, sheetDefaults = {}) {
+// One deck per test, on its own port and its own db, signed in. ssh is the fake one: a bus delivery
+// to a fleet host must never reach the operator's machines, and a real ssh would keep this alive.
+async function deck(t, sheetDefaults = {}) {
   const dir = tmpdir('unblock');
   const PORT = port++;
   const state = path.join(dir, 'ssh.json');
   fs.writeFileSync(state, JSON.stringify({ hosts: {}, calls: [] }));
+  const operatorFile = path.join(dir, 'operator.json');
+  fs.writeFileSync(operatorFile, await OPERATOR_FILE_TEXT, { mode: 0o600 });
   const m = load(
     {
       PORT,
@@ -56,6 +66,7 @@ function deck(t, sheetDefaults = {}) {
       FLEET_FAKE_SSH_STATE: state,
       CLAUDE_SESSIONS_DIR: path.join(dir, 'no-desktop-sessions'),
       FLEETDECK_BUS_TOKEN: 'test-token',
+      FLEET_OPERATOR_FILE: operatorFile,
     },
     { listen: true }
   );
@@ -68,19 +79,26 @@ function deck(t, sheetDefaults = {}) {
       method,
       headers: { 'content-type': 'application/json', ...headers },
       ...(b === undefined ? {} : { body: JSON.stringify(b) }),
-    }).then(read);
+    });
+  const signin = await call('POST', '/api/operator/signin', { password: PASSWORD }, { origin });
+  assert.equal(signin.status, 200);
+  const operator = {
+    origin,
+    cookie: signin.headers.getSetCookie()[0].split(';')[0],
+    'x-fleetdeck-session': (await signin.json()).sessionToken,
+  };
   return {
     m,
     origin,
     base,
-    get: (p = '') => call('GET', '/api/unblock' + p),
-    post: (b, headers = {}) => call('POST', '/api/unblock', b, headers),
-    // Operator writes carry the browser's Origin unless a test says otherwise.
-    put: (p, b, headers = { origin }) => call('PUT', '/api/unblock' + p, b, headers),
-    act: (p, b = {}, headers = { origin }) => call('POST', '/api/unblock' + p, b, headers),
+    get: (p = '') => call('GET', '/api/unblock' + p).then(read),
+    post: (b, headers = {}) => call('POST', '/api/unblock', b, headers).then(read),
+    // Operator writes carry the browser's Origin and the session unless a test says otherwise.
+    put: (p, b, headers = operator) => call('PUT', '/api/unblock' + p, b, headers).then(read),
+    act: (p, b = {}, headers = operator) => call('POST', '/api/unblock' + p, b, headers).then(read),
     messages: () => fetch(base + '/api/messages').then(read),
     create: async (extra = {}) => {
-      const r = await call('POST', '/api/unblock', { ...SHEET, ...sheetDefaults, ...extra });
+      const r = await call('POST', '/api/unblock', { ...SHEET, ...sheetDefaults, ...extra }).then(read);
       assert.equal(r.status, 201, JSON.stringify(r.body));
       return r.body.id;
     },
@@ -90,7 +108,7 @@ function deck(t, sheetDefaults = {}) {
 // --- POST: the agent route
 
 test('a sheet posts without an Origin and answers 201 with its id and deck url', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const r = await d.post(SHEET);
   assert.equal(r.status, 201);
   assert.match(r.body.id, /^ub-[0-9a-f]{8}$/);
@@ -98,13 +116,13 @@ test('a sheet posts without an Origin and answers 201 with its id and deck url',
 });
 
 test('a foreign Origin is rejected even though a missing one is fine', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const r = await d.post(SHEET, { origin: 'http://evil.example' });
   assert.equal(r.status, 403);
 });
 
 test('every field of a sheet is validated before a row is written', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const q = SHEET.questions[0];
   const cases = [
     [{ ...SHEET, title: '' }, /title must be/],
@@ -140,7 +158,7 @@ test('every field of a sheet is validated before a row is written', async (t) =>
 // --- reads
 
 test('the list carries the counts, newest first; one sheet carries its questions', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const first = await d.create({ title: 'older' });
   // The order is by created_at, which has millisecond resolution: two sheets minted inside the
   // same millisecond would tie and the assertion below would be about the tiebreak, not the order.
@@ -168,7 +186,7 @@ test('the list carries the counts, newest first; one sheet carries its questions
 });
 
 test('the tailnet listener has no /api/unblock at all', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   await d.create();
   const r = await new Promise((resolve) => {
     const res = {
@@ -187,7 +205,7 @@ test('the tailnet listener has no /api/unblock at all', async (t) => {
 // --- PUT: the answer semantics
 
 test('answered_at moves on a new choice and stays put on the same one', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create();
   const first = await d.put('/' + id + '/answers/q1', { choice: 'sqlite' });
   assert.equal(first.status, 200);
@@ -212,7 +230,7 @@ test('answered_at moves on a new choice and stays put on the same one', async (t
 });
 
 test('the two standard options are choosable and label themselves', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create();
   const you = await d.put('/' + id + '/answers/q1', { choice: 'you-decide' });
   assert.equal(you.body.choiceLabel, '🤷 You decide');
@@ -223,7 +241,7 @@ test('the two standard options are choosable and label themselves', async (t) =>
 });
 
 test('note_at is set when a note appears, kept while it is unchanged, cleared when emptied', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create();
   const written = await d.put('/' + id + '/answers/q1', { note: 'ask the DBA first' });
   assert.equal(written.body.note, 'ask the DBA first');
@@ -241,7 +259,7 @@ test('note_at is set when a note appears, kept while it is unchanged, cleared wh
 });
 
 test('a bad choice, an unknown question and an unknown sheet are refused', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create();
   const bad = await d.put('/' + id + '/answers/q1', { choice: 'mysql' });
   assert.equal(bad.status, 400);
@@ -253,7 +271,7 @@ test('a bad choice, an unknown question and an unknown sheet are refused', async
 });
 
 test('an answer write without the browser Origin is forbidden', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create();
   assert.equal((await d.put('/' + id + '/answers/q1', { choice: 'sqlite' }, {})).status, 403);
   assert.equal(
@@ -269,7 +287,7 @@ test('an answer write without the browser Origin is forbidden', async (t) => {
 // --- send
 
 test('send puts one bus message on the queue and marks the answers sent', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create({ reply: { type: 'tmux', host: 'german-box', session: 'FD-ivy' } });
   await d.put('/' + id + '/answers/q1', { choice: 'sqlite', note: 'keep the file' });
 
@@ -298,8 +316,15 @@ test('send puts one bus message on the queue and marks the answers sent', async 
   assert.ok(row, 'the message reached the bus');
   assert.equal(row.source, 'unblock');
   assert.deepEqual(row.target, { type: 'tmux', host: 'german-box', session: 'FD-ivy' });
-  assert.match(row.text, /^\/adhd-unblock answers for "the enrollment lane"\n\{/);
-  assert.deepEqual(JSON.parse(row.text.split('\n').slice(1).join('\n')), sent.body.payload);
+  // The bus carries a pointer only (DECK-108): the seat fetches the sheet and verifies the answers.
+  assert.match(row.text, /^\/adhd-unblock answers are ready — this is a pointer, not the word: fetch GET \/api\/unblock\/ub-[0-9a-f]{8} /);
+  assert.deepEqual(JSON.parse(row.text.split('\n').slice(1).join('\n')), {
+    sheet: 'adhd-unblock',
+    sheetId: id,
+    title: 'the enrollment lane',
+    qids: ['q1'],
+  });
+  assert.ok(!row.text.includes('keep the file') && !row.text.includes('sqlite'), 'no choice, no note on the bus');
 
   const one = await d.get('/' + id);
   assert.equal(one.body.answers.q1.dirty, false, 'a sent answer is clean');
@@ -316,7 +341,7 @@ test('send puts one bus message on the queue and marks the answers sent', async 
 });
 
 test('a full sheet is not partial, and ids picks which answers travel', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create({ reply: { type: 'tmux', host: 'german-box', session: 'FD-ivy' } });
   await d.put('/' + id + '/answers/q1', { choice: 'sqlite' });
   await d.put('/' + id + '/answers/q2', { choice: 'flag' });
@@ -339,7 +364,7 @@ test('a full sheet is not partial, and ids picks which answers travel', async (t
 });
 
 test('a sheet with no reply target answers 409 carrying the payload to copy by hand', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create();
   await d.put('/' + id + '/answers/q1', { choice: 'sqlite' });
   const r = await d.act('/' + id + '/send');
@@ -352,7 +377,7 @@ test('a sheet with no reply target answers 409 carrying the payload to copy by h
 // --- close / reopen
 
 test('close and reopen move the status and the closed_at stamp', async (t) => {
-  const d = deck(t);
+  const d = await deck(t);
   const id = await d.create();
   const closed = await d.act('/' + id + '/close');
   assert.equal(closed.status, 200);

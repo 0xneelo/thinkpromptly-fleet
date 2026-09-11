@@ -14,7 +14,8 @@ const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
 const { DesktopSeatTitles } = require('./desktop-seat-titles');
 const { DocsIndex, defaultRoots } = require('./docs-index');
 const { createUnblock } = require('./unblock');
-const { createOperatorAuth, loadDeckSecret } = require('./operator-auth');
+const { createOperatorAuth, loadOperator } = require('./operator-auth');
+const { OP_AGENT_SOCK, createSigner, createVerifier, parseAllowedSigners, fingerprint } = require('./signer');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -515,7 +516,6 @@ const HOME = os.homedir();
 const SSH_DIR = path.join(HOME, '.ssh');
 const CERTS_DIR = path.join(SSH_DIR, 'deploy-certs');
 const MINT_SH = path.join(__dirname, 'deploy-keys', 'mint-deploy-cert.sh');
-const OP_AGENT_SOCK = path.join(HOME, 'Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock');
 const CLAUDE_BRIDGE = process.env.CLAUDE_BRIDGE || path.join(__dirname, '.fleetdeck', 'claude-desktop-send');
 // Every Claude Code desktop session publishes itself here: <pid>.json (its ListAgents name and
 // unix socket) plus a 0600 <pid>.<sha256(socket path)>.key holding the peer token a sender
@@ -3108,26 +3108,62 @@ function send(res, code, type, body) {
 
 const json = (res, obj, code = 200) => send(res, code, 'application/json', JSON.stringify(obj));
 
-// --- operator sign-in (DECK-108). up.sh hands the root-only deck secret over on /dev/fd/3, never
-// in env or argv, which any same-user `ps` reads. A set-but-broken secret stops the deck: it must
-// never quietly come up unsigned. The log line names the failure, never the file's contents.
-let deckSecret = null;
-if (process.env.FLEET_DECK_SECRET_FILE) {
-  const file = process.env.FLEET_DECK_SECRET_FILE;
-  try {
-    const text = fs.readFileSync(file, 'utf8');
-    const fd = /^\/dev\/fd\/(\d+)$/.exec(file);
-    if (fd) fs.closeSync(Number(fd[1]));
-    deckSecret = loadDeckSecret(text);
-  } catch (e) {
-    console.error('deck: FLEET_DECK_SECRET_FILE unusable (' + (e.code || e.message) + ') — refusing to start');
+// --- operator sign-in and click signing (DECK-108). The operator file holds the operator id and
+// the password's scrypt hash. Missing = sign-in OFF, and every unblock write then fails closed;
+// set-but-broken stops the deck. Log lines name the failure, never the file's contents.
+const OPERATOR_FILE = process.env.FLEET_OPERATOR_FILE || path.join(HOME, '.fleetdeck', 'operator.json');
+const ALLOWED_SIGNERS = process.env.FLEET_ALLOWED_SIGNERS || path.join(HOME, '.claude', 'fleet', 'allowed_signers');
+const SIG_TTL_SECS = Number(process.env.FLEET_UNBLOCK_SIG_TTL_SECS) > 0 ? Number(process.env.FLEET_UNBLOCK_SIG_TTL_SECS) : 7200;
+let deckOperator = null;
+try {
+  deckOperator = loadOperator(fs.readFileSync(OPERATOR_FILE, 'utf8'));
+} catch (e) {
+  if (e.code !== 'ENOENT') {
+    console.error('deck: operator file ' + OPERATOR_FILE + ' unusable (' + (e.code || e.message) + ') — refusing to start');
     process.exit(1);
   }
-  console.log('deck: operator sign-in ON for ' + deckSecret.operatorId);
-} else {
-  console.log('deck: operator sign-in OFF (FLEET_DECK_SECRET_FILE unset) — unblock answers are unsigned');
 }
-const operatorAuth = createOperatorAuth({ secret: deckSecret, allowedOrigins: ALLOWED_ORIGINS });
+// allowed_signers is read once: the deck signs with and verifies against the file it booted with,
+// so a key appended to it later (the file is user-writable) certifies nothing here until a restart.
+// Unreadable = empty, and then nothing verifies.
+let allowedSignersText = '';
+let allowedSignersError = null;
+try {
+  allowedSignersText = fs.readFileSync(ALLOWED_SIGNERS, 'utf8');
+} catch (e) {
+  allowedSignersError = e.code || 'error';
+}
+// The signer is built only when the operator's own key is in allowed_signers: that line's key is
+// what op-agent asks 1Password to sign with, and what every seat verifies against.
+let clickSigner = null;
+let signingOff = null;
+let signingKey = null;
+const signerSpec = process.env.FLEET_UNBLOCK_SIGNER || 'op-agent';
+if (!deckOperator) signingOff = 'sign-in is off';
+else if (signerSpec === 'off') signingOff = 'FLEET_UNBLOCK_SIGNER=off';
+else {
+  const line = parseAllowedSigners(allowedSignersText).find((l) => l.principals.includes(deckOperator.operatorId));
+  if (allowedSignersError) signingOff = 'allowed_signers ' + ALLOWED_SIGNERS + ' unreadable (' + allowedSignersError + ')';
+  else if (!line) signingOff = 'no line for ' + deckOperator.operatorId + ' in ' + ALLOWED_SIGNERS;
+  if (line) {
+    try {
+      clickSigner = createSigner(signerSpec, { operatorKey: line.key });
+      signingKey = fingerprint(Buffer.from(line.key.split(' ')[1], 'base64'));
+    } catch (e) {
+      signingOff = e.message;
+    }
+  }
+}
+if (deckOperator)
+  console.log('deck: operator sign-in ON for ' + deckOperator.operatorId + ' · click signer ' +
+    (clickSigner ? clickSigner.kind + ' · key ' + signingKey : 'OFF (' + signingOff + ')'));
+else
+  console.log('deck: operator sign-in OFF (no operator file at ' + OPERATOR_FILE + ') — every unblock write answers 503');
+const operatorAuth = createOperatorAuth({
+  operator: deckOperator,
+  allowedOrigins: ALLOWED_ORIGINS,
+  signer: clickSigner ? clickSigner.kind : null,
+});
 
 // --- unblock: the operator's answers to a seat's decision sheet. Loopback only, like /api/goals.
 const unblockRoute = createUnblock({
@@ -3138,6 +3174,9 @@ const unblockRoute = createUnblock({
   body,
   allowedOrigins: ALLOWED_ORIGINS,
   auth: operatorAuth,
+  signer: clickSigner,
+  verifier: createVerifier({ allowedSignersText }),
+  ttlSecs: SIG_TTL_SECS,
 });
 
 // --- registry. Shared by both listeners: orchestrators curl from loopback, box workers
