@@ -4,7 +4,10 @@
 // Loopback only, like /api/goals: a sheet carries the operator's own decisions, so no box worker
 // on the tailnet may read one or answer one. The POST is the one agent-facing route here — a seat
 // curling from this Mac carries no Origin, so it rejects a *foreign* origin rather than a missing
-// one. Every other write is the operator's browser and REQUIRES an allowed Origin.
+// one. Every other write is the operator's browser and REQUIRES an allowed Origin — and, once a
+// deck secret is configured (operator-auth.js), a signed-in operator session too, since any
+// same-user shell can forge an Origin. Every fresh click is then HMAC-signed; `sigValid` is
+// recomputed on each read, so a row edited in fleet.db or copied from another sheet reads false.
 //
 // Nothing is sent until the operator asks. `sent_sig` is the receipt: it holds the choice+note
 // that were sent, so an answer edited afterwards reads dirty again and can be re-sent.
@@ -75,7 +78,7 @@ function sheetError(b) {
   return null;
 }
 
-function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
+function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth }) {
   db.exec(`CREATE TABLE IF NOT EXISTS unblock_sheets (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -98,8 +101,14 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
     note_at TEXT,
     sent_sig TEXT,
     sent_at TEXT,
+    operator_id TEXT,
+    answer_sig TEXT,
     PRIMARY KEY (sheet_id, qid)
   )`);
+  // A db from before DECK-108 has the table without the two signing columns.
+  const cols = new Set(db.prepare('PRAGMA table_info(unblock_answers)').all().map((c) => c.name));
+  for (const col of ['operator_id', 'answer_sig'])
+    if (!cols.has(col)) db.exec('ALTER TABLE unblock_answers ADD COLUMN ' + col + ' TEXT');
 
   const insertSheet = db.prepare(
     `INSERT INTO unblock_sheets (id, title, intro, questions, source, reply, status, created_at, updated_at)
@@ -110,11 +119,12 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
   const sheetAnswers = db.prepare('SELECT * FROM unblock_answers WHERE sheet_id = ?');
   const oneAnswer = db.prepare('SELECT * FROM unblock_answers WHERE sheet_id = ? AND qid = ?');
   const upsertAnswer = db.prepare(
-    `INSERT INTO unblock_answers (sheet_id, qid, choice, choice_label, answered_at, note, note_at, sent_sig, sent_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO unblock_answers (sheet_id, qid, choice, choice_label, answered_at, note, note_at, sent_sig, sent_at, operator_id, answer_sig)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(sheet_id, qid) DO UPDATE SET
        choice = excluded.choice, choice_label = excluded.choice_label, answered_at = excluded.answered_at,
-       note = excluded.note, note_at = excluded.note_at`
+       note = excluded.note, note_at = excluded.note_at,
+       operator_id = excluded.operator_id, answer_sig = excluded.answer_sig`
   );
   const markSent = db.prepare(
     'UPDATE unblock_answers SET sent_sig = ?, sent_at = ? WHERE sheet_id = ? AND qid = ?'
@@ -132,6 +142,17 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
     noteAt: row.note_at,
     sentAt: row.sent_at,
     dirty: row.choice != null && row.sent_sig !== sig(row.choice, row.note || ''),
+    operatorId: row.operator_id,
+    sig: row.answer_sig,
+    // Recomputed on every read, never stored: a row edited in fleet.db reads false at once.
+    sigValid: auth.answerSigValid({
+      sheetId: row.sheet_id,
+      qid: row.qid,
+      choice: row.choice,
+      answeredAt: row.answered_at,
+      operatorId: row.operator_id,
+      sig: row.answer_sig,
+    }),
   });
 
   function listRow(sheet) {
@@ -242,6 +263,10 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
     if (req.method !== (rest[1] === 'answers' ? 'PUT' : 'POST'))
       return send(res, 405, 'text/plain', 'method not allowed');
     if (!operatorOk(req)) return forbidden(res);
+    // The Origin only proves a browser-shaped request; any same-user shell can forge it. With a
+    // deck secret configured the operator's signed-in session is what actually authorises a write.
+    const operatorId = auth.operator(req);
+    if (auth.configured && !operatorId) return json(res, { error: 'sign in required' }, 401);
 
     if (rest[1] === 'answers') {
       const qid = rest[2];
@@ -251,19 +276,27 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
       if (!b || typeof b !== 'object' || Array.isArray(b)) return json(res, { error: 'bad request body' }, 400);
       const stored = oneAnswer.get(sheet.id, qid) || {
         choice: null, choice_label: null, answered_at: null, note: '', note_at: null,
-        sent_sig: null, sent_at: null,
+        sent_sig: null, sent_at: null, operator_id: null, answer_sig: null,
       };
       let { choice, choice_label: label, answered_at: answeredAt, note, note_at: noteAt } = stored;
+      let { operator_id: signer, answer_sig: answerSig } = stored;
       note = note || '';
       const stamp = now();
 
       if ('choice' in b) {
         if (b.choice === null) {
-          [choice, label, answeredAt] = [null, null, null];
+          [choice, label, answeredAt, signer, answerSig] = [null, null, null, null, null];
         } else {
           if (typeof b.choice !== 'string' || !(hasOwn(STANDARD, b.choice) || q.options.some((o) => o.key === b.choice)))
             return json(res, { error: 'choice must be an option key of ' + qid + ', you-decide or more-info' }, 400);
-          if (b.choice !== stored.choice) answeredAt = stamp;
+          // A fresh click is a new choice, or — once a secret is configured — the same choice on a
+          // row that was never signed (answered before sign-in existed). Only a fresh click is
+          // stamped and signed; a note or label edit leaves the signature exactly as it was.
+          if (b.choice !== stored.choice || (auth.configured && !stored.answer_sig)) {
+            answeredAt = stamp;
+            signer = operatorId;
+            answerSig = auth.signAnswer({ sheetId: sheet.id, qid, choice: b.choice, answeredAt, operatorId });
+          }
           choice = b.choice;
           const option = q.options.find((o) => o.key === choice);
           label = filled(b.choiceLabel)
@@ -281,7 +314,9 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
         note = next;
       }
 
-      upsertAnswer.run(sheet.id, qid, choice, label, answeredAt, note, noteAt, stored.sent_sig, stored.sent_at);
+      upsertAnswer.run(
+        sheet.id, qid, choice, label, answeredAt, note, noteAt, stored.sent_sig, stored.sent_at, signer, answerSig
+      );
       touchSheet.run(stamp, sheet.id);
       const view = answerView(oneAnswer.get(sheet.id, qid));
       // Both readings of "the answer in the GET shape": the fields themselves, and under `answer`.

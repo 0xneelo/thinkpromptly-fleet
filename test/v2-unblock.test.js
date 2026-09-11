@@ -205,3 +205,56 @@ test('the rail groups the rows by repository, with the unnamed ones last', () =>
 test('the repo choice is remembered under its own key', () => {
   assert.strictEqual(_.REPO_KEY, 'adhd-unblock:repo');
 });
+
+// DECK-108: the operator sign-in bar, the per-answer signature line, and a refused write.
+test('the sign-in bar draws the form, who is signed in, a quiet unsigned line, or nothing', () => {
+  assert.strictEqual(_.signinMode({ configured: true, signedIn: false }), 'out', 'the password form');
+  assert.strictEqual(_.signinMode({ configured: true, signedIn: true, operatorId: 'neelo' }), 'in');
+  assert.strictEqual(_.signinMode({ configured: false, signedIn: false }), 'off', 'answers unsigned');
+  assert.strictEqual(_.signinMode(null), '', 'a failed session read draws nothing');
+});
+
+test('a refused sign-in says why, and never echoes the password', () => {
+  assert.strictEqual(_.signinError({ status: 401, body: { error: 'wrong password' } }), 'wrong password');
+  assert.strictEqual(_.signinError({ status: 429, body: { error: 'too many attempts', retryAfter: 30 } }),
+    'too many tries — wait 30s');
+  assert.strictEqual(_.signinError({ status: 409, body: { error: 'sign-in not configured' } }), 'sign-in not configured');
+  assert.strictEqual(_.signinError({ status: 403, body: {} }), 'sign-in failed', 'a bad Origin has no JSON');
+});
+
+test('the password field is one a password manager can fill, and it is never logged', () => {
+  assert.match(SOURCE, /\.type = 'password'/);
+  assert.match(SOURCE, /setAttribute\('autocomplete', 'current-password'\)/);
+  assert.doesNotMatch(SOURCE, /console\.[a-z]+\([^)]*password/i);
+});
+
+test('an answer reads signed only when the server verified it, strictly', () => {
+  assert.strictEqual(_.sigLine({ choice: 'a', sigValid: true }), '✅ signed');
+  assert.strictEqual(_.sigLine({ choice: 'a', sigValid: false, sig: 'x' }), '⚠ unsigned');
+  assert.strictEqual(_.sigLine({ choice: 'a', sigValid: 'true' }), '⚠ unsigned', 'a string is not true');
+  assert.strictEqual(_.sigLine({ choice: 'a' }), '⚠ unsigned', 'a row from before DECK-108');
+  assert.strictEqual(_.sigLine({ choice: null, sigValid: true }), '', 'unanswered says nothing');
+  assert.strictEqual(_.sigLine(undefined), '');
+});
+
+test('a write refused for want of a sign-in leaves the card on the last server row', () => {
+  const was = { choice: 'a', note: 'old', sigValid: true };
+  const answers = { one: was };
+  const drafts = { one: 'typed over it' };
+  assert.strictEqual(_.settleAnswer(answers, drafts, 'one', { status: 401, body: { error: 'sign in required' } }), 'signin');
+  assert.strictEqual(answers.one, was, 'the click is not shown as saved');
+  assert.strictEqual(drafts.one, undefined, 'and the typed note goes back to the saved one');
+  assert.strictEqual(_.signinMode({ configured: true, signedIn: false }, true), 'out');
+  assert.strictEqual(_.signinMode(null, true), 'out', 'the form shows even if the session read failed');
+  assert.strictEqual(_.SIGNIN_REQUIRED, 'sign in required — your click was not saved');
+});
+
+test('a bad Origin is not a sign-in, and a 200 is the row the server wrote', () => {
+  const answers = { one: { choice: 'a' } };
+  const drafts = { one: 'keep' };
+  assert.strictEqual(_.settleAnswer(answers, drafts, 'one', { status: 403, body: {} }), 'failed');
+  assert.strictEqual(drafts.one, 'keep');
+  const row = { choice: 'b', sigValid: true };
+  assert.strictEqual(_.settleAnswer(answers, drafts, 'one', { status: 200, body: row }), 'saved');
+  assert.strictEqual(answers.one, row);
+});

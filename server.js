@@ -14,6 +14,7 @@ const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
 const { DesktopSeatTitles } = require('./desktop-seat-titles');
 const { DocsIndex, defaultRoots } = require('./docs-index');
 const { createUnblock } = require('./unblock');
+const { createOperatorAuth, loadDeckSecret } = require('./operator-auth');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -3107,6 +3108,27 @@ function send(res, code, type, body) {
 
 const json = (res, obj, code = 200) => send(res, code, 'application/json', JSON.stringify(obj));
 
+// --- operator sign-in (DECK-108). up.sh hands the root-only deck secret over on /dev/fd/3, never
+// in env or argv, which any same-user `ps` reads. A set-but-broken secret stops the deck: it must
+// never quietly come up unsigned. The log line names the failure, never the file's contents.
+let deckSecret = null;
+if (process.env.FLEET_DECK_SECRET_FILE) {
+  const file = process.env.FLEET_DECK_SECRET_FILE;
+  try {
+    const text = fs.readFileSync(file, 'utf8');
+    const fd = /^\/dev\/fd\/(\d+)$/.exec(file);
+    if (fd) fs.closeSync(Number(fd[1]));
+    deckSecret = loadDeckSecret(text);
+  } catch (e) {
+    console.error('deck: FLEET_DECK_SECRET_FILE unusable (' + (e.code || e.message) + ') — refusing to start');
+    process.exit(1);
+  }
+  console.log('deck: operator sign-in ON for ' + deckSecret.operatorId);
+} else {
+  console.log('deck: operator sign-in OFF (FLEET_DECK_SECRET_FILE unset) — unblock answers are unsigned');
+}
+const operatorAuth = createOperatorAuth({ secret: deckSecret, allowedOrigins: ALLOWED_ORIGINS });
+
 // --- unblock: the operator's answers to a seat's decision sheet. Loopback only, like /api/goals.
 const unblockRoute = createUnblock({
   db,
@@ -3115,6 +3137,7 @@ const unblockRoute = createUnblock({
   json,
   body,
   allowedOrigins: ALLOWED_ORIGINS,
+  auth: operatorAuth,
 });
 
 // --- registry. Shared by both listeners: orchestrators curl from loopback, box workers
@@ -3584,6 +3607,8 @@ const server = http.createServer(async (req, res) => {
     // Loopback only, and deliberately absent from tailnetHandler: a decision sheet is the
     // operator's, and no box worker may read one or answer for them.
     if (p === '/api/unblock' || p.startsWith('/api/unblock/')) return await unblockRoute(req, res, p);
+    // Loopback only for the same reason: a box worker must not even try the operator's password.
+    if (p.startsWith('/api/operator/')) return await operatorAuth.route(req, res, p, { json, send, body });
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     // Loopback only, and deliberately absent from tailnetHandler (M13).
     // The epoch is deliberately withheld: it is the credential fenceCheck trusts, and this

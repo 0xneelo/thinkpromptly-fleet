@@ -36,7 +36,9 @@ if [ -n "$old" ]; then
 	fi
 fi
 
-nohup node server.js >>deck.log 2>&1 &
+# --disable-sigusr1 (DECK-108): every agent runs as this same user, and a same-user `kill -USR1`
+# would otherwise open the inspector on the running deck — its sessions and its signing path.
+nohup node --disable-sigusr1 server.js >>deck.log 2>&1 &
 pid=$!
 
 ok=

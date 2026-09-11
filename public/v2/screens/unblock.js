@@ -114,6 +114,45 @@
     ].filter(Boolean).join(' · ');
   }
 
+  // DECK-108: beside the time line, whether the server could verify the click against the
+  // operator's sign-in. Strictly `sigValid === true` — a missing or odd field never reads signed.
+  function sigLine(answer) {
+    if (!answer || !answer.choice) return '';
+    return answer.sigValid === true ? '✅ signed' : '⚠ unsigned';
+  }
+
+  // The sign-in bar at the top: 'in' (who, and sign out), 'out' (the password form), 'off' (the
+  // deck has no sign-in, so answers go unsigned) or '' (the session read failed — nothing, rather
+  // than a guess). A write refused for want of a sign-in forces the form open.
+  function signinMode(session, needed) {
+    if (session && session.signedIn) return 'in';
+    if (needed) return 'out';
+    if (!session) return '';
+    return session.configured ? 'out' : 'off';
+  }
+
+  var SIGNIN_REQUIRED = 'sign in required — your click was not saved';
+
+  // The line under a refused sign-in. Built from the response only — the password is never in it.
+  function signinError(r) {
+    var b = (r && r.body) || {};
+    if (r && r.status === 401) return 'wrong password';
+    if (r && r.status === 429) {
+      var s = Math.ceil(Number(b.retryAfter));
+      return 'too many tries — wait ' + (s > 0 ? s + 's' : 'a moment');
+    }
+    return safeText(b.error) || 'sign-in failed';
+  }
+
+  // An answer write, applied to the card. A 200 is the row the server wrote. A 401 wrote nothing:
+  // the card keeps the last row the server sent and a note typed over it goes too, so nothing on
+  // screen reads as saved. Anything else is the caller's error banner.
+  function settleAnswer(answers, drafts, qid, r) {
+    if (r.status === 200) { answers[qid] = r.body; return 'saved'; }
+    if (r.status === 401) { delete drafts[qid]; return 'signin'; }
+    return 'failed';
+  }
+
   // What a send would carry, in the standalone template's envelope. The server builds its own
   // copy and returns it; this is what fills the textarea when the sheet has no reply target and
   // the server could not, so the operator always has something to paste.
@@ -306,7 +345,8 @@
     visibleSheets: visibleSheets, options: options,
     dayKey: dayKey, repoOf: repoOf, repoOptions: repoOptions, dayPages: dayPages, pickDay: pickDay,
     dayLabel: dayLabel, dayOptions: dayOptions, filterSheets: filterSheets, groupByRepo: groupByRepo,
-    STANDARD: STANDARD, INLINE: INLINE, HIDE_KEY: HIDE_KEY, REPO_KEY: REPO_KEY, NO_REPO: NO_REPO,
+    sigLine: sigLine, signinMode: signinMode, signinError: signinError, settleAnswer: settleAnswer,
+    SIGNIN_REQUIRED: SIGNIN_REQUIRED, STANDARD: STANDARD, INLINE: INLINE, HIDE_KEY: HIDE_KEY, REPO_KEY: REPO_KEY, NO_REPO: NO_REPO,
     FIXTURE_VIEW: FIXTURE_VIEW,
   };
 
@@ -351,6 +391,9 @@
     repo: '', day: '',
     // Set by the card's own ResizeObserver, exactly as the bus sets busNarrow.
     narrow: false,
+    // DECK-108. `session` is GET /api/operator/session, or null until it answers (and after it
+    // fails). `signin.needed`: a write came back 401; `signin.note`: the line the bar shows.
+    session: null, signin: { needed: false, note: '' },
   };
 
   try { state.hideAnswered = root.localStorage.getItem(HIDE_KEY) === '1'; } catch (e) { /* no storage */ }
@@ -407,11 +450,11 @@
   // and the selected row is t.hoverBg behind it.
   var NARROW_AT = 620;
 
-  function gridStyle() {
+  function gridStyle(above) {
     var t = tok();
     var n = state.narrow;
     return 'display:grid;min-width:0;overflow:hidden;min-height:' + (n ? '0' : '520px') +
-      ';height:' + (n ? 'auto' : 'calc(100vh - 146px)') +
+      ';height:' + (n ? 'auto' : 'calc(100vh - ' + (146 + (above || 0)) + 'px)') +
       ';grid-template-columns:' + (n ? 'minmax(0,1fr)' : 'minmax(200px,28%) minmax(0,1fr)') +
       ';grid-template-rows:' + (n ? '160px auto' : 'minmax(0,1fr)') +
       ';border-radius:12px;border:1px solid ' + t.line + ';background:' + t.panel +
@@ -509,8 +552,10 @@
     if (isFixture()) return Promise.resolve();
     return ask('/api/unblock/' + encodeURIComponent(state.id) + '/answers/' + encodeURIComponent(qid), 'PUT', body)
       .then(function (r) {
-        if (r.status !== 200) throw fail(r, 'the answer did not save');
-        state.answers[qid] = r.body;
+        var got = settleAnswer(state.answers, state.noteDraft, qid, r);
+        // Refused for want of a sign-in: the whole card repaints from the last server row.
+        if (got === 'signin') { quiet = false; return askSignin(); }
+        if (got !== 'saved') throw fail(r, 'the answer did not save');
         state.error = '';
         if (!quiet) paint(); else stampCard(qid);   // the click shows at once…
         return refreshList().then(publish);         // …and the rail's n/N follows on its own read
@@ -527,6 +572,7 @@
     var body = ids ? { ids: ids } : {};
     return ask('/api/unblock/' + encodeURIComponent(state.id) + '/send', 'POST', body)
       .then(function (r) {
+        if (r.status === 401) return askSignin();
         // 409: the sheet names no seat to answer. The payload is the way out — by hand, in chat.
         if (r.status === 409) {
           var given = r.body && r.body.payload;
@@ -551,6 +597,7 @@
     if (isFixture()) return Promise.resolve();
     return ask('/api/unblock/' + encodeURIComponent(state.id) + '/' + op, 'POST', {})
       .then(function (r) {
+        if (r.status === 401) return askSignin();
         if (r.status !== 200) throw fail(r, 'the sheet did not ' + op);
         state.error = '';
         return loadList(function () { return loadSheet(state.id, true); });
@@ -566,6 +613,42 @@
     return ask('/api/unblock').then(function (r) {
       if (r.status === 200 && Array.isArray(r.body && r.body.sheets)) state.sheets = r.body.sheets;
     }).catch(function () { /* the counts wait for the next poll */ });
+  }
+
+  // DECK-108: who the deck thinks is answering. A failed read is null, and the bar draws nothing.
+  function loadSession() {
+    if (isFixture()) return Promise.resolve();
+    return ask('/api/operator/session')
+      .then(function (r) { state.session = r.status === 200 && r.body && typeof r.body === 'object' ? r.body : null; })
+      .catch(function () { state.session = null; })
+      .then(function () { paint(); });
+  }
+
+  // A write came back 401: nothing was saved, so the bar says so and the session is re-read.
+  function askSignin() {
+    state.signin = { needed: true, note: SIGNIN_REQUIRED };
+    return loadSession();
+  }
+
+  // The password leaves the input for this one request and is held nowhere else: not in state,
+  // not in a log. The field is empty again whatever the answer.
+  function signIn(input) {
+    var password = input.value;
+    input.value = '';
+    if (!password) return;
+    ask('/api/operator/signin', 'POST', { password: password })
+      .then(function (r) {
+        state.signin = r.status === 200 ? { needed: false, note: '' } : { needed: state.signin.needed, note: signinError(r) };
+      })
+      .catch(function () { state.signin.note = 'cannot reach fleetdeck'; })
+      .then(loadSession);
+  }
+
+  function signOut() {
+    state.signin = { needed: false, note: '' };
+    ask('/api/operator/signout', 'POST', {})
+      .catch(function () { /* the session read says what stuck */ })
+      .then(loadSession);
   }
 
   function select(id, quiet) {
@@ -601,6 +684,44 @@
     b.appendChild(el('span', 'flex:1;', state.error));
     b.appendChild(button('Dismiss', function () { state.error = ''; paint(); }, { colour: t.bad, border: t.bad }));
     box.appendChild(b);
+  }
+
+  // DECK-108: who is answering, one line at the top. After a refused write it is the one thing on
+  // the screen asking for attention. The form is a real <form> with a current-password field, so
+  // the operator's password manager fills it and Enter submits it.
+  function signinBar(box) {
+    var mode = signinMode(state.session, state.signin.needed);
+    if (!mode) return;
+    var t = tok();
+    if (mode === 'off') {
+      box.appendChild(el('p', 'margin:0;font-size:11.5px;color:' + t.ink45 + ';', 'answers unsigned — deck sign-in not configured'));
+      return;
+    }
+    if (mode === 'in') {
+      var row = el('div', ROW + 'font-size:12px;color:' + t.ink60 + ';');
+      row.appendChild(el('span', null, 'signed in as ' + safeText(state.session.operatorId) + ' ·'));
+      var out = el('button', 'border:0;background:transparent;padding:0;font:inherit;color:' + t.ink60 +
+        ';text-decoration:underline;cursor:pointer;', 'sign out');
+      out.onclick = signOut;
+      row.appendChild(out);
+      box.appendChild(row);
+      return;
+    }
+    var needed = state.signin.needed;
+    var f = el('form', 'margin:0;border-radius:10px;border:1px solid ' + (needed ? t.bad : t.line) +
+      ';padding:8px 14px;font-size:12.5px;' + ROW + 'align-items:center;');
+    f.appendChild(el('span', 'font-weight:600;color:' + (needed ? t.bad : t.ink75) + ';', '🔒 Sign in to answer'));
+    var pw = el('input', 'min-width:180px;border-radius:9999px;border:1px solid ' + t.line +
+      ';background:transparent;color:' + t.ink + ';padding:5px 12px;font-size:12.5px;');
+    pw.type = 'password';
+    pw.setAttribute('autocomplete', 'current-password');
+    pw.setAttribute('aria-label', 'Deck password');
+    pw.placeholder = 'Deck password';
+    f.appendChild(pw);
+    f.appendChild(button('Sign in', null, { colour: t.ink }));
+    if (state.signin.note) f.appendChild(el('span', 'color:' + t.bad + ';', state.signin.note));
+    f.onsubmit = function (e) { e.preventDefault(); signIn(pw); };
+    box.appendChild(f);
   }
 
   // The rail head, in the bus's own head row: one repo, one day, then the two list controls.
@@ -860,6 +981,11 @@
     var whenEl = c.querySelector('[data-fd-when]');
     if (chipEl) chipEl.textContent = chipText(n + 1, qs.length, (qs[n] || {}).topic, state.answers[qid]);
     if (whenEl) whenEl.textContent = whenLine(state.answers[qid]);
+    var sigEl = c.querySelector('[data-fd-sig]');
+    if (sigEl) {
+      sigEl.textContent = sigLine(state.answers[qid]);
+      sigEl.style.color = (state.answers[qid] || {}).sigValid === true ? tok().good : tok().warn;
+    }
   }
 
   function questionCard(box, q, n, total, answer) {
@@ -881,9 +1007,15 @@
 
     options(q).forEach(function (o) { c.appendChild(optionButton(q, o, answer)); });
 
+    var whenRow = el('div', ROW);
     var when = el('span', 'font-size:11.5px;color:' + t.ink45 + ';', whenLine(answer));
     when.setAttribute('data-fd-when', '1');
-    c.appendChild(when);
+    whenRow.appendChild(when);
+    var signed = el('span', 'font-size:11.5px;color:' + (answer && answer.sigValid === true ? t.good : t.warn) + ';',
+      sigLine(answer));
+    signed.setAttribute('data-fd-sig', '1');
+    whenRow.appendChild(signed);
+    c.appendChild(whenRow);
 
     var row = el('div', 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;');
     var note = el('input', 'flex:1;min-width:180px;border-radius:9999px;border:1px solid ' + t.line +
@@ -981,10 +1113,14 @@
     box.replaceChildren();
     var v = view();
     var t = tok();
+    signinBar(box);
     banner(box);
+    // The grid fills the viewport under whatever stands above it — the sign-in bar, an error — so
+    // neither pushes the page into a scroll. 14px is the mount's own gap.
+    var above = Array.prototype.reduce.call(box.children, function (h, k) { return h + k.offsetHeight + 14; }, 0);
 
     // One card, two panes: which sheet on the left, that sheet on the right.
-    var grid = el('div', gridStyle());
+    var grid = el('div', gridStyle(above));
     grid.appendChild(railPane(v));
     var pane = el('div', 'display:flex;flex-direction:column;min-height:0;min-width:0;');
     // The sheet header sits in a head of its own, like the bus's thread toolbar: only the cards
@@ -1074,6 +1210,7 @@
     }
     if (isFixture()) return paint();
     if (!poller) poller = root.setInterval(tick, POLL_MS);
+    if (!state.session) loadSession();   // a failed read is retried on the next visit
     // A deep link names its sheet, so that one is read first and the list follows: loadList
     // only picks a sheet of its own while none is open.
     var want = asked();
