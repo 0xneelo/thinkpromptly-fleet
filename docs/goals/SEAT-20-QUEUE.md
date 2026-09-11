@@ -11,6 +11,7 @@ Open items without a Linear ID (Linear MCP is not connected in this seat). Each 
 - operator · lowcap VPS `/etc/ssh-alert.env` chat id still annotated (digits + " private <name>"); Mac copy fixed. Word to seat 20 ("fix vps chat id") or answer the lowcap session · great-wescoff report ~19:20Z.
 
 ## Operator decisions
+- operator · DECK-108 follow-up: `allowed_signers`, the verify CLI and node are user-writable on the Mac, so a hostile same-user agent could swap them; decide whether to move them to a root-owned install (Bernward's residual, 2026-09-11).
 - operator · kill the leftover Opus test seat in local tmux `testseat` (researcher 3's experiment; its composer holds your unsubmitted line 'yes, that was my tamper test'): `tmux kill-session -t testseat`. Seat 20 does not kill sessions the operator typed into.
 - operator · `machinesUsage()` in server.js still branches on `sample_ts`, dead since b50ba50 removed the desktop snapshot; removing it touches the /api/machines contract · live-usage-overview session 2026-09-11.
 - operator · Ysolde Acceptance 1 baseline exception: two pre-existing suite failures (credits `3 !== 1`, v2 screens extra `goals`) — seat 20 rules after reproducing on base · Ysolde REPORT.md 1c1d12c.
