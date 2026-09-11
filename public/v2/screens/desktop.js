@@ -17,7 +17,7 @@
 // express four filter selects bound to live options, a Refresh button, a second
 // status chip, a machine-notes panel or a copy-progress label, and the template is
 // not ours to edit — so every one of those is a find-or-create DOM patch guarded by
-// a data-fd-l10 attribute. Improvisations I-L10-02..07; see the report in the goal.
+// a data-fd-l10 attribute. Improvisations I-L10-02..07 and I-L10-10; see the report in the goal.
 //
 // S2 runtime shim oracle audit — docs/design/fleetdeck-v2/audits/s2-shim-oracle-2026-09-08.md
 // (F1 positional row identity, F2 a throw in renderVals blanks every screen, F4 a select
@@ -94,6 +94,9 @@
   let pollHandle = null;
   let observer = null;
   let applyQueued = false;
+  // I-L10-10: group key -> true for every card the user collapsed, kept across reloads.
+  const COLLAPSED_KEY = 'fd-desktop-collapsed';
+  const collapsed = readCollapsed();
 
   // ---------------------------------------------------------------------------
   // Formatting
@@ -455,6 +458,7 @@
     syncCount(bar, view);
     syncNotes(el, bar, cards, view);
     syncRows(cards, view.groups);
+    syncCollapse(cards, view.keys);
   }
 
   // What logic.js will actually render: our filters, then its search box, then its
@@ -476,6 +480,7 @@
         .indexOf(dq) >= 0;
     const live = [];
     const out = [];
+    const keys = []; // one collapse key per group, in card order
     let count = 0;
     let total = 0;
     groups.forEach((g) => {
@@ -488,10 +493,16 @@
         if (r.live) live.push(r);
       });
       const rows = kept.slice().sort((a, b) => (b.live ? 1 : 0) - (a.live ? 1 : 0));
-      if (rows.length) out.push(rows);
+      if (rows.length) {
+        out.push(rows);
+        keys.push(groupKey(g));
+      }
     });
-    if (live.length) out.unshift(live);
-    return { groups: out, count, total, live: live.length };
+    if (live.length) {
+      out.unshift(live);
+      keys.unshift(LIVE_KEY);
+    }
+    return { groups: out, keys, count, total, live: live.length };
   }
 
   // -- 5.1 filter selects ------------------------------------------------------
@@ -732,6 +743,81 @@
     const scroller = kids(card)[1];
     const table = kids(scroller)[0];
     return kids(table).slice(1);
+  }
+
+  // -- 5.6 collapsible group cards (I-L10-10) -----------------------------------
+
+  // 'live' cannot collide with a person group: accountKey always holds a ':'.
+  const LIVE_KEY = 'live';
+  const groupKey = (g) => accountKey(g) + '|' + g.machine;
+  // The rows' own chevron, so the header and its rows point the same way.
+  const CHEVRON_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"' +
+    ' stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+
+  // Never throws: no storage, or a hand-edited value, reads as "nothing collapsed".
+  function readCollapsed() {
+    const out = {};
+    try {
+      const raw = JSON.parse(root.localStorage.getItem(COLLAPSED_KEY));
+      if (raw && typeof raw === 'object') Object.keys(raw).forEach((k) => { if (raw[k]) out[k] = true; });
+    } catch (err) {}
+    return out;
+  }
+
+  function toggleCollapsed(key) {
+    if (collapsed[key]) delete collapsed[key];
+    else collapsed[key] = true;
+    try {
+      root.localStorage.setItem(COLLAPSED_KEY, JSON.stringify(collapsed));
+    } catch (err) {} // the toggle still works for this page; it just will not survive a reload
+    scheduleApply();
+  }
+
+  // card > [group header, scroller]. The header becomes the toggle; the scroller is
+  // hidden, never removed, so rowEls() still finds every row by index. Cards are
+  // positional (audit F1), so the key is re-stamped on every apply and read at click
+  // time, and the header styles are re-set because a theme toggle rewrites them.
+  function syncCollapse(cards, keys) {
+    cards.forEach((card, gi) => {
+      const parts = kids(card);
+      const head = parts[0];
+      const body = parts[1];
+      const key = keys[gi];
+      if (!head || !body || !key) return;
+      const shut = !!collapsed[key];
+      head.__fdL10Key = key;
+      if (head.style.cursor !== 'pointer') head.style.cursor = 'pointer';
+      if (head.style.userSelect !== 'none') head.style.userSelect = 'none';
+      // Shut, the header's bottom rule would sit on the card's own border.
+      const edge = shut ? '0px' : '1px';
+      if (head.style.borderBottomWidth !== edge) head.style.borderBottomWidth = edge;
+      if (head.getAttribute('role') !== 'button') head.setAttribute('role', 'button');
+      if (head.getAttribute('tabindex') !== '0') head.setAttribute('tabindex', '0');
+      const expanded = shut ? 'false' : 'true';
+      if (head.getAttribute('aria-expanded') !== expanded) head.setAttribute('aria-expanded', expanded);
+      let chev = head.querySelector('[data-fd-l10="group-chevron"]');
+      if (!chev) {
+        chev = document.createElement('span');
+        chev.setAttribute('data-fd-l10', 'group-chevron');
+        chev.innerHTML = CHEVRON_SVG;
+        head.insertBefore(chev, head.firstChild);
+      }
+      if (chev.__fdL10Shut !== shut) {
+        chev.style.cssText = 'display:inline-flex;flex-shrink:0;opacity:.45;transition:transform .2s;transform:' +
+          (shut ? 'none' : 'rotate(90deg)') + ';';
+        chev.__fdL10Shut = shut;
+      }
+      const display = shut ? 'none' : '';
+      if (body.style.display !== display) body.style.display = display;
+      if (head.__fdL10Toggle) return;
+      head.__fdL10Toggle = true;
+      head.addEventListener('click', () => toggleCollapsed(head.__fdL10Key));
+      head.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        toggleCollapsed(head.__fdL10Key);
+      });
+    });
   }
 
   const CHIP_KEYS = ['archived', 'cached'];

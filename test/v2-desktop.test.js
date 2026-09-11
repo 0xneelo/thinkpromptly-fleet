@@ -71,6 +71,7 @@ function node(tag, attrs = {}) {
     },
     querySelector: (sel) => el.find(sel)[0] || null,
     querySelectorAll: (sel) => el.find(sel),
+    get firstChild() { return el.children[0] || null; },
     get lastChild() { return el.children[el.children.length - 1] || null; },
     get nextSibling() {
       const parent = el.parentNode;
@@ -110,6 +111,7 @@ function boot(body, opts = {}) {
       getElementById: () => null,
       hidden: false,
     },
+    localStorage: opts.localStorage,
     navigator: { clipboard: { writeText: (text) => { clipboard.push(text); return Promise.resolve(); } } },
     FD: {
       data: {
@@ -131,7 +133,7 @@ function boot(body, opts = {}) {
     el.fire('change');
     return pushed[pushed.length - 1][1];
   };
-  return { sandbox, pushed, clipboard, errors, selects, select };
+  return { sandbox, screen, pushed, clipboard, errors, selects, select };
 }
 
 const turn = () => new Promise((resolve) => setImmediate(resolve));
@@ -475,5 +477,55 @@ test('the poll stops when the Desktop screen is left and restarts when it comes 
   assert.equal(handles[1].ms, 30000);
   assert.deepEqual(handles[1].options, { whileVisible: true });
   assert.equal(handles[1].stopped, false, 'the restarted poll was stopped again');
+  assert.deepEqual(ctx.errors, []);
+});
+
+// ---------------------------------------------------------------------------
+// I-L10-10: every group card collapses from its header. The cards are built the
+// way the runtime draws them — card > [header, scroller > table > [column head]] —
+// and apply() runs off the same select 'change' the poll test uses.
+// ---------------------------------------------------------------------------
+
+function groupCard(screen) {
+  const card = screen.appendChild(node('div', { 'data-dc-tpl': '703' }));
+  const head = card.appendChild(node('div'));
+  const body = card.appendChild(node('div'));
+  body.appendChild(node('div')).appendChild(node('div'));
+  return { head, body };
+}
+
+test('a group header collapses its card, and the collapsed set is stored', async () => {
+  const store = { 'fd-desktop-collapsed': JSON.stringify({ live: true }) };
+  const localStorage = {
+    getItem: (k) => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+  };
+  const live = session({ id: 'local_live', live: true, liveState: 'live' });
+  const ctx = await loaded(payload([group({ sessions: [live] })]), { localStorage });
+  const liveNow = groupCard(ctx.screen);
+  const aylin = groupCard(ctx.screen);
+  const render = async () => { ctx.selects[0].fire('change'); await turn(); };
+  await render();
+
+  // "Live now" was stored shut; the person group was not.
+  assert.equal(liveNow.body.style.display, 'none', 'the stored collapse was not read at boot');
+  assert.equal(liveNow.head.getAttribute('aria-expanded'), 'false');
+  assert.equal(aylin.body.style.display, '');
+  assert.equal(aylin.head.getAttribute('aria-expanded'), 'true');
+  assert.equal(aylin.head.getAttribute('role'), 'button');
+  assert.equal(aylin.head.firstChild.getAttribute('data-fd-l10'), 'group-chevron');
+
+  liveNow.head.fire('click');
+  await turn();
+  assert.equal(liveNow.body.style.display, '', 'a click did not open the card');
+  aylin.head.fire('click');
+  await turn();
+  assert.equal(aylin.body.style.display, 'none', 'a click did not collapse the card');
+  assert.deepEqual(JSON.parse(store['fd-desktop-collapsed']), { 'acc-1:org-1|m1': true });
+
+  // Re-applying adds no second chevron and no second listener.
+  await render();
+  assert.equal(aylin.head.find('[data-fd-l10="group-chevron"]').length, 1);
+  assert.equal(aylin.head.listeners.click.length, 1);
   assert.deepEqual(ctx.errors, []);
 });

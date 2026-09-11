@@ -654,6 +654,20 @@ composer, no `POST /api/messages`, and none of the composer's six strings. They 
 `n.a. — superseded by O8` in `REPORT.md`'s behaviour checklist rather than silently dropped. Until L6
 lands the guarded call returns false and the click falls back to `FD.router.navigate('bus')`, also
 guarded, so the row still goes somewhere sensible.
+
+### I-L10-10 — Every group card collapses from its header, and collapse is a stored set
+
+**Serves:** the operator's ask (2026-09-11): "these windows like 'live now' should be collapsable".
+Live mode only; the fixture render and the pixel gate are unmoved.
+
+The mock's group cards ("Live now" and each person group) have no toggle. **Decision.** Like the
+bus rail (I-L12-07), the compiled header is decorated, not templated: `screens/desktop.js` adds the
+rows' own chevron, `role="button"`, `aria-expanded` and one click/Enter/Space handler to each card's
+header. A collapsed card hides its scroller with `display:none` and never drops it, so `rowEls()`
+still finds every row by index and the header keeps its count. The key is `live` for "Live now" and
+`<accountUuid>:<orgUuid>|<machine>` for a person group; it is re-stamped on every apply because
+cards are positional (audit F1). `fd-desktop-collapsed` in localStorage holds `{ key: true }`, read
+never-throwing, so a missing or hand-edited store reads as "nothing collapsed".
 ## L2 — app shell: sidebar · page header · right rail (Renate, `agent-v2-l2`, 2026-09-07)
 
 Ledger rows D03, D04, D05 (+ D06 with L1). Every entry below is **live mode only**: under
