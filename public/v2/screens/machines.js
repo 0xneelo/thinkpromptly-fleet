@@ -69,7 +69,9 @@
     if (!epoch) return '';
     var m = Math.round((epoch * 1000 - nowMs(now)) / 60000);
     if (m <= 0) return 'resets now';
-    return 'resets in ' + (m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + (m % 60) + 'm');
+    var h = Math.floor(m / 60), d = Math.floor(h / 24);
+    if (m < 60) return 'resets in ' + m + 'm';
+    return 'resets in ' + (d ? d + 'd ' + (h % 24) : h) + 'h ' + (m % 60) + 'm';
   }
 
   // The line under the badges: what would go stale first for this client.

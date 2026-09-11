@@ -36,6 +36,7 @@ test('until: resets now, minutes, then hours and minutes', () => {
   assert.equal(acct.until(SEC(NOW - 60000), NOW), 'resets now');
   assert.equal(acct.until(SEC(NOW + 26 * 60000), NOW), 'resets in 26m');
   assert.equal(acct.until(SEC(NOW + (4 * 60 + 26) * 60000), NOW), 'resets in 4h 26m');
+  assert.equal(acct.until(SEC(NOW + (116 * 60 + 3) * 60000), NOW), 'resets in 4d 20h 3m');
 });
 
 test('level: red over 90, amber from 70', () => {

@@ -219,12 +219,13 @@
     return Math.floor(Math.max(0, (now === undefined ? Date.now() : now) - at) / MIN);
   }
 
-  // 'resets in 129h 2m', the mock's bar sub-label.
+  // 'resets in 5d 9h 2m', the mock's bar sub-label (days once past 24h).
   function resetsIn(ts, now) {
     const at = toMillis(ts);
     if (at === null) return null;
     const d = Math.max(0, at - (now === undefined ? Date.now() : now));
-    return 'resets in ' + Math.floor(d / (60 * MIN)) + 'h ' + (Math.floor(d / MIN) % 60) + 'm';
+    const h = Math.floor(d / (60 * MIN)), days = Math.floor(h / 24);
+    return 'resets in ' + (days ? days + 'd ' + (h % 24) : h) + 'h ' + (Math.floor(d / MIN) % 60) + 'm';
   }
 
   function toTiles(sessions) {
