@@ -17,7 +17,7 @@
 // Nothing is sent until the operator asks. `sent_sig` is the receipt: it holds the choice+note
 // that were sent, so an answer edited afterwards reads dirty again and can be re-sent.
 const crypto = require('crypto');
-const { canonical, questionSha256, pin } = require('./signer');
+const { canonical, questionSha256, sheetSha256, pin } = require('./signer');
 
 // The two options every adhd-unblock question carries besides its own, and the labels the sheet
 // prints for them when the client sends none.
@@ -169,9 +169,10 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
   // successful sign and dropped by a fresh click, a clear or a failed sign. Any other signature in
   // fleet.db — an older one restored, or one a same-user process got from the 1Password agent
   // directly — reads not current. Deck memory: after a restart the operator signs again.
-  // Sheet ids are ub-<hex>, so the newline cannot shift the boundary.
+  // A JSON pair, not a join: a sheet id written into fleet.db may hold any character, and
+  // `<id>\nq1` + `x` must never be the same answer as `<id>` + `q1\nx`.
   const latest = new Map();
-  const latestKey = (sheetId, qid) => sheetId + '\n' + qid;
+  const latestKey = (sheetId, qid) => JSON.stringify([sheetId, qid]);
   // The click this deck saw from a signed-in session, per answer: { choice, answeredAt, operatorId },
   // a new object on every fresh click, deleted on a clear. /sign signs only the stored row that equals
   // it, so a row written into fleet.db is never signed; and a sign that comes back to find another
@@ -341,11 +342,14 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
         stamp
       );
       // The seat pins what it asked: each question's hash, taken from the stored text exactly as the
-      // GET will parse and serve it, bound to this sheet and question id. fleet.db is agent-writable,
-      // so the deck's later copy is not the pin.
+      // GET will parse and serve it, bound to this sheet, its question id and the sheet's own words as
+      // stored (sqlite turns a lone surrogate into U+FFFD). fleet.db is agent-writable, so the deck's
+      // later copy is not the pin.
+      const stored = oneSheet.get(id);
+      const words = sheetSha256({ title: stored.title, intro: stored.intro, source: parse(stored.source, null) });
       const questions = JSON.parse(questionsText).map((q) => {
         const h = questionSha256(q);
-        return { id: q.id, questionSha256: h, pin: pin(id, q.id, h) };
+        return { id: q.id, questionSha256: h, pin: pin(id, q.id, h, words) };
       });
       return json(res, { id, url: '/app#unblock?sheet=' + id, questions }, 201);
     }

@@ -14,7 +14,7 @@ const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
 const { DesktopSeatTitles } = require('./desktop-seat-titles');
 const { DocsIndex, defaultRoots } = require('./docs-index');
 const { createUnblock } = require('./unblock');
-const { createOperatorAuth, loadOperator } = require('./operator-auth');
+const { createOperatorAuth, loadOperator, operatorFingerprint } = require('./operator-auth');
 const { OP_AGENT_SOCK, createSigner, createVerifier, parseAllowedSigners, fingerprint } = require('./signer');
 
 const PORT = Number(process.env.PORT) || 3131;
@@ -2999,6 +2999,9 @@ const MIME = {
   '.mp4': 'video/mp4',
   '.webp': 'image/webp',
 };
+// No deck page may be framed (DECK-108): a framing page could steer the operator's clicks. Only
+// frame-ancestors — any other CSP directive could break the app.
+const NO_FRAME = { 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" };
 const VENDOR = {
   '/vendor/xterm.js': '@xterm/xterm/lib/xterm.js',
   '/vendor/xterm.css': '@xterm/xterm/css/xterm.css',
@@ -3062,9 +3065,11 @@ function sendFile(res, file, req) {
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return send(res, 404, 'text/plain', 'not found');
     const type = MIME[path.extname(file)] || 'application/octet-stream';
+    const frame = type === MIME['.html'] ? NO_FRAME : {};
     const range = parseByteRange(req && req.headers && req.headers.range, st.size);
     if (range === 'unsatisfiable') {
       res.writeHead(416, {
+        ...frame,
         'content-type': type,
         'accept-ranges': 'bytes',
         'content-range': 'bytes */' + st.size,
@@ -3074,6 +3079,7 @@ function sendFile(res, file, req) {
     const start = range ? range.start : 0;
     const end = range ? range.end : st.size - 1;
     const head = {
+      ...frame,
       'content-type': type,
       'accept-ranges': 'bytes',
       'content-length': st.size === 0 ? 0 : end - start + 1,
@@ -3156,9 +3162,12 @@ else {
     }
   }
 }
+// The operator fingerprint is the one deck-operator-init printed: a different value after a restart
+// means the operator file was replaced.
 if (deckOperator)
   console.log('deck: operator sign-in ON for ' + deckOperator.operatorId + ' · click signer ' +
-    (clickSigner ? clickSigner.kind + ' · key ' + signingKey : 'OFF (' + signingOff + ')'));
+    (clickSigner ? clickSigner.kind + ' · key ' + signingKey : 'OFF (' + signingOff + ')') +
+    ' · operator fingerprint: ' + operatorFingerprint(deckOperator.identity));
 else
   console.log('deck: operator sign-in OFF (no operator file at ' + OPERATOR_FILE + ') — every unblock write answers 503');
 const operatorAuth = createOperatorAuth({

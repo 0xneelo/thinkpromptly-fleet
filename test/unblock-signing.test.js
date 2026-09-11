@@ -39,15 +39,26 @@ test('canonical() is the v2 string: escaped fields, pipe-joined, no newline', ()
   assert.match(signer.questionSha256(q), /^[0-9a-f]{64}$/);
 });
 
-test('M1. pin() hashes the v2-pin string: sheet, question id and question hash, escaped like canonical()', () => {
+test('M1. pin() hashes the v2-pin string: sheet, question id, question hash and sheet hash, escaped like canonical()', () => {
   const h = 'ab'.repeat(32);
+  const w = 'cd'.repeat(32);
   const sha = (s) => crypto.createHash('sha256').update(Buffer.from(s, 'utf8')).digest('hex');
-  assert.equal(signer.pin('ub-1', 'q1', h), sha('v2-pin|ub-1|q1|' + h));
-  assert.equal(signer.pin('ub-1', 'q|%x', h), sha('v2-pin|ub-1|q%7C%25x|' + h));
-  assert.notEqual(signer.pin('ub-1', 'q|x', h), signer.pin('ub-1|q', 'x', h), 'the join is injective');
-  assert.notEqual(signer.pin('ub-2', 'q1', h), signer.pin('ub-1', 'q1', h), 'another sheet, another pin');
-  for (const [s, q, x, k] of [['ub-1', 'q\ud800', h, 'qid'], ['ub-1', 'q1', null, 'questionSha256'], [undefined, 'q1', h, 'sheetId']])
-    assert.throws(() => signer.pin(s, q, x), (e) => e instanceof TypeError && e.message.includes(k), k);
+  assert.equal(signer.pin('ub-1', 'q1', h, w), sha('v2-pin|ub-1|q1|' + h + '|' + w));
+  assert.equal(signer.pin('ub-1', 'q|%x', h, w), sha('v2-pin|ub-1|q%7C%25x|' + h + '|' + w));
+  assert.notEqual(signer.pin('ub-1', 'q|x', h, w), signer.pin('ub-1|q', 'x', h, w), 'the join is injective');
+  assert.notEqual(signer.pin('ub-2', 'q1', h, w), signer.pin('ub-1', 'q1', h, w), 'another sheet, another pin');
+  assert.notEqual(signer.pin('ub-1', 'q1', h, 'ef'.repeat(32)), signer.pin('ub-1', 'q1', h, w), 'other words, another pin');
+  for (const [s, q, x, y, k] of [
+    ['ub-1', 'q\ud800', h, w, 'qid'], ['ub-1', 'q1', null, w, 'questionSha256'], [undefined, 'q1', h, w, 'sheetId'], ['ub-1', 'q1', h, undefined, 'sheetSha256'],
+  ])
+    assert.throws(() => signer.pin(s, q, x, y), (e) => e instanceof TypeError && e.message.includes(k), k);
+
+  // sheet_sha256: the sheet's own words as GET serves them — title, intro ('' when absent), project ('' unless a string).
+  const words = (title, intro, project) => sha(JSON.stringify([title, intro, project]));
+  assert.equal(signer.sheetSha256({ title: 'T ✓', intro: 'I', source: { seat: 's', project: 'p' } }), words('T ✓', 'I', 'p'));
+  assert.equal(signer.sheetSha256({ title: 'T', intro: null, source: null }), words('T', '', ''));
+  assert.equal(signer.sheetSha256({ title: 'T', source: { project: 7 } }), words('T', '', ''));
+  assert.notEqual(signer.sheetSha256({ title: 'a', intro: 'b' }), signer.sheetSha256({ title: 'a","b', intro: '' }), 'injective');
 });
 
 test('parseAllowedSigners reads principals and the key, past options, blanks and comments', () => {
@@ -451,6 +462,42 @@ test('the window is fixed: refused attempts never extend it, and the right passw
   // A fresh window opens on the next wrong password, not on the old one.
   for (let i = 0; i < 5; i++) assert.equal((await signin('wrong')).code, 401);
   assert.equal((await signin(PASSWORD)).code, 429);
+});
+
+test('P4. every wrong password logs one secret-free line; a rate-limit trip logs once per window', async (t) => {
+  let clock = 1_000_000;
+  const lines = [];
+  t.mock.method(console, 'log', (...a) => lines.push(a.join(' ')));
+  const a = auth.createOperatorAuth({
+    operator: auth.loadOperator(await operatorText()),
+    allowedOrigins: new Set(['http://deck']),
+    now: () => clock,
+  });
+  const signin = async (password) => {
+    let code;
+    const res = { setHeader() {} };
+    await a.route({ method: 'POST', headers: { origin: 'http://deck' } }, res, '/api/operator/signin', {
+      json: (r, obj, c = 200) => (code = c),
+      send: (r, c) => (code = c),
+      body: async () => ({ password }),
+    });
+    return code;
+  };
+  const guesses = Array.from({ length: 5 }, (_, i) => 'guess ' + i + ' hunter2');
+  for (const g of guesses) assert.equal(await signin(g), 401);
+  clock += 20e3;
+  for (let i = 0; i < 3; i++) assert.equal(await signin(PASSWORD), 429);
+  const refused = 'operator: sign-in refused (wrong password)';
+  assert.deepEqual(lines, [...guesses.map(() => refused), 'operator: sign-in rate-limited (5 wrong in 60 s window, retry in 40 s)']);
+  clock += 40e3;
+  assert.equal(await signin(PASSWORD), 200);
+  // The next window trips, and logs, again.
+  for (let i = 0; i < 5; i++) assert.equal(await signin('wrong again'), 401);
+  assert.equal(await signin(PASSWORD), 429);
+  assert.equal(await signin(PASSWORD), 429);
+  assert.equal(lines.filter((l) => l.startsWith('operator: sign-in rate-limited (5 wrong in 60 s window, retry in 60 s)')).length, 1, lines.join('\n'));
+  assert.equal(lines.length, 12, lines.join('\n'));
+  for (const l of lines) for (const s of [PASSWORD, ...guesses, 'wrong again', 'hunter2']) assert.ok(!l.includes(s), l);
 });
 
 // --- a. the write gate: Origin first, then both halves of the session
@@ -883,7 +930,8 @@ test('fleetdeck-verify-answer --help prints the v2 string verbatim with its rule
   assert.ok(r.out.includes('lowercase hex SHA-256 of the UTF-8 bytes of JSON.stringify(question)'), r.out);
   assert.ok(r.out.includes('fleetdeck-unblock'), r.out);
   assert.match(r.out, /usage: fleetdeck-verify-answer <sheet> <qid> --pin <hex> \[--json\] \[--allowed-signers <file>\]/);
-  assert.ok(r.out.includes('v2-pin|sheetId|qid|question_sha256'), r.out);
+  assert.ok(r.out.includes('v2-pin|sheetId|qid|question_sha256|sheet_sha256'), r.out);
+  assert.ok(r.out.includes('JSON.stringify([title, intro, project])'), r.out);
   assert.match(r.out, /^ *0 /m);
   assert.match(r.out, /^ *1 /m);
   assert.match(r.out, /^ *2 /m);
@@ -1094,7 +1142,8 @@ test('j. question text or an option label rewritten in unblock_sheets: the seat\
     db.close();
     await refusedBoth(d, id, 'q1', 'pin-mismatch');
     // Pinned to the rewritten question instead, the old signature still does not verify.
-    const cli = await verify(d, id, 'q1', '--pin', signer.pin(id, 'q1', signer.questionSha256(questions[0])));
+    const served = (await d.get('/' + id)).body.sheet;
+    const cli = await verify(d, id, 'q1', '--pin', signer.pin(id, 'q1', signer.questionSha256(questions[0]), signer.sheetSha256(served)));
     assert.equal(cli.code, 1, cli.out);
     assert.match(cli.out, /^reason: invalid$/m);
   }
@@ -1102,21 +1151,28 @@ test('j. question text or an option label rewritten in unblock_sheets: the seat\
 
 // --- F3/M1. the seat pins what it asked: each question's pin, from its own POST response
 
-test('F3. the POST answers each question\'s hash and pin, both recomputed from the question the GET serves', async (t) => {
+test('F3. the POST answers each question\'s hash and pin, both recomputed from the sheet and question the GET serves', async (t) => {
   const d = await deck(t);
   // Unvalidated extras, a small float, non-ASCII and a lone surrogate in free text: all must round-trip.
   const odd = { ...question('q4', 'deploy-x', 'y'), explain: 'é ✓ \ud800 "q"', weight: 1e-7 };
-  const r = await d.op('POST', '/api/unblock', { ...SHEET, questions: [...SHEET.questions, odd] }, {});
-  assert.equal(r.status, 201, JSON.stringify(r.body));
-  const served = (await d.get('/' + r.body.id)).body.sheet.questions;
-  assert.deepEqual(
-    r.body.questions,
-    served.map((q) => ({ id: q.id, questionSha256: signer.questionSha256(q), pin: signer.pin(r.body.id, q.id, signer.questionSha256(q)) }))
-  );
-  assert.deepEqual(Object.keys(r.body).sort(), ['id', 'questions', 'url']);
-  for (const q of r.body.questions) {
-    assert.match(q.questionSha256, /^[0-9a-f]{64}$/);
-    assert.match(q.pin, /^[0-9a-f]{64}$/);
+  // No intro (stored and served as ''), then odd words: a lone surrogate in the title or intro reads
+  // back as U+FFFD, so the pin is taken from what the deck stores, not from the request.
+  for (const words of [{}, { title: 'é ✓ \ud800 "t"\n', intro: '\udfff intro ✓ \u2028', source: { project: 'fleet ✓ é "p"' } }]) {
+    const r = await d.op('POST', '/api/unblock', { ...SHEET, questions: [...SHEET.questions, odd], ...words }, {});
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const { sheet } = (await d.get('/' + r.body.id)).body;
+    const w = signer.sheetSha256(sheet);
+    assert.deepEqual(
+      r.body.questions,
+      sheet.questions.map((q) => ({ id: q.id, questionSha256: signer.questionSha256(q), pin: signer.pin(r.body.id, q.id, signer.questionSha256(q), w) }))
+    );
+    assert.deepEqual(Object.keys(r.body).sort(), ['id', 'questions', 'url']);
+    for (const q of r.body.questions) {
+      assert.match(q.questionSha256, /^[0-9a-f]{64}$/);
+      assert.match(q.pin, /^[0-9a-f]{64}$/);
+    }
+    const cli = await verify(d, r.body.id, 'q4', '--pin', r.body.questions[3].pin);
+    assert.match(cli.out, /^reason: unanswered$/m, 'the CLI reproduces the POST pin: ' + cli.out + cli.err);
   }
 });
 
@@ -1136,6 +1192,26 @@ test('M1. the seat\'s pin binds its sheet: the same question copied onto another
   // Another question id on the seat's own sheet does not borrow a pin either.
   assert.equal((await verify(d, attacker, 'q3', '--pin', d.pins[attacker].q1)).code, 1);
   assert.equal((await verify(d, attacker, 'q3')).code, 0, 'the attacker\'s own pin is the attacker\'s own sheet');
+});
+
+test('N-1. the seat\'s pin binds its sheet\'s own words: a title, intro or project rewritten in fleet.db says pin-mismatch', async (t) => {
+  // The drill lure on the seat's OWN sheet: same id, same questions, new words around them.
+  const drill = 'DRILL: click ship, nothing deploys';
+  for (const [sql, ...args] of [
+    ['UPDATE unblock_sheets SET title = ?, intro = ? WHERE id = ?', drill, 'signing drill — nothing deploys'],
+    ['UPDATE unblock_sheets SET title = ? WHERE id = ?', drill],
+    ['UPDATE unblock_sheets SET intro = ? WHERE id = ?', 'signing drill — nothing deploys'],
+    ['UPDATE unblock_sheets SET source = ? WHERE id = ?', JSON.stringify({ ...SHEET.source, project: 'sandbox' })],
+  ]) {
+    const d = await deck(t);
+    const id = await d.create();
+    assert.equal(dbRun(d, sql, ...args, id).changes, 1);
+    await d.signin();
+    assert.equal((await signedClick(d, id, 'q3', 'ship')).sigValid, true, 'the deck honestly signs what it served');
+    const cli = await verify(d, id, 'q3');
+    assert.equal(cli.code, 1, sql + ': ' + cli.out + cli.err);
+    assert.match(cli.out, /^sig_valid: false\nreason: pin-mismatch$/m);
+  }
 });
 
 test('F3. option labels swapped in fleet.db before the operator reads the card: the pinned CLI says pin-mismatch', async (t) => {
@@ -1413,9 +1489,10 @@ test('n. send puts only sheetId, title and qids on the bus; the 409 copy-out kee
 // --- p. the two operator gate scripts: run in the operator's own Terminal, never an agent shell
 
 // A child env as the operator's Terminal would have it: no CLAUDE* var, no agent socket, no multiplexer.
+const MUX = ['TMUX', 'STY', 'CMUX_WORKSPACE_ID', 'CMUX_SURFACE_ID', 'ZELLIJ'];
 function cleanEnv(extra = {}) {
   const env = noAgentEnv();
-  for (const k of Object.keys(env)) if (k.startsWith('CLAUDE') || k === 'TMUX' || k === 'STY') delete env[k];
+  for (const k of Object.keys(env)) if (k.startsWith('CLAUDE') || MUX.includes(k)) delete env[k];
   return { ...env, ...extra };
 }
 function runScript(script, args, { env, input }) {
@@ -1453,7 +1530,7 @@ test('p. deck-operator-init generates the password, prints it once, stores only 
   assert.equal(ok.code, 0, ok.err);
   assert.equal(ok.err, '');
   const lines = ok.out.trim().split('\n');
-  assert.equal(lines.length, 3, ok.out);
+  assert.equal(lines.length, 4, ok.out);
   assert.equal(lines[0], 'wrote ' + file + ' for neelo@test');
   const pw = lines[1];
   assert.match(pw, /^[A-Za-z0-9_-]{24,}$/, 'base64url, at least 24 characters (144 bits)');
@@ -1465,6 +1542,10 @@ test('p. deck-operator-init generates the password, prints it once, stores only 
   assert.ok(!text.includes(pw), 'the file holds the hash only');
   const o = auth.loadOperator(text);
   assert.equal(o.operatorId, 'neelo@test');
+  // P2: the fingerprint the deck logs at boot, from the hash just written — 8 hex of sha256(hash).
+  assert.equal(auth.operatorFingerprint(o.identity), crypto.createHash('sha256').update(o.identity.hash).digest('hex').slice(0, 8));
+  assert.equal(lines[3], 'operator fingerprint: ' + auth.operatorFingerprint(o.identity));
+  assert.match(lines[3], /^operator fingerprint: [0-9a-f]{8}$/);
   assert.equal(await auth.verifyPassword(pw, o.identity.hash), true);
   assert.equal(await auth.verifyPassword('chosen password', o.identity.hash), false);
   for (const secret of [o.identity.hash, ...o.identity.hash.split('$').slice(4)])
@@ -1487,13 +1568,17 @@ test('p. deck-operator-init generates the password, prints it once, stores only 
   assert.equal(await auth.verifyPassword(pw2, auth.loadOperator(fs.readFileSync(other, 'utf8')).identity.hash), true);
 });
 
-test('L1. deck-operator-init refuses inside tmux or screen: the scrollback would keep the password', async () => {
+test('L1. deck-operator-init refuses inside tmux, screen, cmux or zellij: the scrollback would keep the password', async () => {
   const dir = tmpdir('signing-init-mux');
   const file = path.join(dir, 'operator.json');
-  for (const [k, v] of [['TMUX', '/private/tmp/tmux-501/default,1,0'], ['STY', '1234.ttys001.mac']]) {
+  const uuid = '6F1C2A3B-0000-4000-8000-000000000001';
+  for (const [k, v] of [
+    ['TMUX', '/private/tmp/tmux-501/default,1,0'], ['STY', '1234.ttys001.mac'],
+    ['CMUX_WORKSPACE_ID', uuid], ['CMUX_SURFACE_ID', uuid], ['ZELLIJ', '0'],
+  ]) {
     const r = await runScript('deck-operator-init.js', ['neelo@test'], { env: cleanEnv({ FLEET_OPERATOR_FILE: file, [k]: v }) });
     assert.equal(r.code, 1, k + ': ' + r.err);
-    assert.match(r.err, /run it in a plain Terminal window, not tmux\/screen — the password is printed once and a multiplexer keeps scrollback any same-user process can read/);
+    assert.match(r.err, /run it in a plain Terminal window, not tmux, screen, cmux or zellij — the password is printed once and a multiplexer keeps scrollback any same-user process can read/);
     assert.equal(r.out, '', k + ': no password');
     assert.deepEqual(fs.readdirSync(dir), [], k + ': nothing written');
   }
@@ -1595,12 +1680,15 @@ test('the boot log names the operator, the signer and its public key — never t
 
   const on = await bootChild({ FLEET_OPERATOR_FILE: operatorFile, FLEET_ALLOWED_SIGNERS: signers, FLEET_UNBLOCK_SIGNER: 'file:' + key.file });
   assert.equal(on.code, 0, on.out);
-  assert.ok(on.out.includes('deck: operator sign-in ON for neelo@test · click signer file · key ' + key.fp), on.out);
+  // P2: the operator file's fingerprint sits next to the signing key's, as deck-operator-init printed it.
+  const fp = auth.operatorFingerprint(auth.loadOperator(fs.readFileSync(operatorFile, 'utf8')).identity);
+  assert.ok(on.out.includes('deck: operator sign-in ON for neelo@test · click signer file · key ' + key.fp + ' · operator fingerprint: ' + fp + '\n'), on.out);
   for (const part of [hash, ...hash.split('$').slice(4), key.text.split('\n')[1]]) assert.ok(!on.out.includes(part));
 
   const noLine = await bootChild({ FLEET_OPERATOR_FILE: operatorFile, FLEET_ALLOWED_SIGNERS: allowedSigners(dir, [['x@y', key.pub]], 'other'), FLEET_UNBLOCK_SIGNER: '' });
   assert.equal(noLine.code, 0, noLine.out);
   assert.match(noLine.out, /deck: operator sign-in ON for neelo@test · click signer OFF \(no line for neelo@test in .*other\)/);
+  assert.ok(noLine.out.includes(' · operator fingerprint: ' + fp + '\n'), 'with the signer off too: ' + noLine.out);
   const off = await bootChild({ FLEET_OPERATOR_FILE: operatorFile, FLEET_ALLOWED_SIGNERS: signers, FLEET_UNBLOCK_SIGNER: 'off' });
   assert.match(off.out, /click signer OFF \(FLEET_UNBLOCK_SIGNER=off\)/);
   const bogus = await bootChild({ FLEET_OPERATOR_FILE: operatorFile, FLEET_ALLOWED_SIGNERS: signers, FLEET_UNBLOCK_SIGNER: 'bogus' });
@@ -1705,4 +1793,46 @@ test('a question\'s deployClass, when present, must be a boolean', async (t) => 
     assert.match(r.body.error, /q1: deployClass must be a boolean/);
   }
   await d.create({ questions: [{ ...question('q1', 'a', 'b'), deployClass: false }] });
+});
+
+// --- P3. no page of the deck can be framed: a framing page could steer the operator's clicks
+
+test('P3. every HTML page answers X-Frame-Options DENY and frame-ancestors \'none\', and nothing more in its CSP', async (t) => {
+  const d = await deck(t);
+  for (const p of ['/app', '/v2/', '/board.html']) {
+    const r = await fetch(d.base + p, { redirect: 'manual' });
+    assert.equal(r.status, 200, p);
+    assert.match(r.headers.get('content-type'), /^text\/html/, p);
+    assert.equal(r.headers.get('x-frame-options'), 'DENY', p);
+    assert.equal(r.headers.get('content-security-policy'), "frame-ancestors 'none'", p);
+    await r.body.cancel();
+  }
+  const js = await fetch(d.base + '/v2/router.js');
+  assert.equal(js.status, 200);
+  assert.equal(js.headers.get('content-security-policy'), null, 'a script is not a page');
+  await js.body.cancel();
+});
+
+// --- P5. the per-answer key cannot be shifted: a sheet id with a newline is not another answer
+
+test('P5. a planted sheet whose id and question id straddle the old newline join never borrows a click', async (t) => {
+  const d = await deck(t);
+  const id = await d.create({ questions: [question('q1\nx', 'deploy-now', 'hold')] });
+  await d.signin();
+  assert.equal((await d.put('/' + id + '/answers/' + encodeURIComponent('q1\nx'), { choice: 'deploy-now' })).status, 200);
+  // sheet `<id>\nq1`, question `x`: the same `<id>\nq1\nx` a newline join would make.
+  const planted = id + '\nq1';
+  const q = question('x', 'deploy-now', 'hold');
+  const stamp = new Date().toISOString();
+  dbRun(d, `INSERT INTO unblock_sheets (id, title, intro, questions, source, status, created_at, updated_at) VALUES (?, 'planted', '', ?, NULL, 'open', ?, ?)`,
+    planted, JSON.stringify([q]), stamp, stamp);
+  dbRun(d, `INSERT INTO unblock_answers (sheet_id, qid, choice, choice_label, answered_at, note, operator_id)
+            SELECT ?, 'x', choice, choice_label, answered_at, '', operator_id FROM unblock_answers WHERE sheet_id = ? AND qid = ?`, planted, id, 'q1\nx');
+  const a = (await d.get('/' + encodeURIComponent(planted))).body.answers.x;
+  assert.equal(a.choice, 'deploy-now');
+  assert.equal(a.clickSeen, false, 'the planted row is not the operator\'s click');
+  const s = await d.sign(encodeURIComponent(planted), 'x', { choice: a.choice, answeredAt: a.answeredAt, questionSha256: signer.questionSha256(q) });
+  assert.equal(s.status, 409, JSON.stringify(s.body));
+  assert.equal(s.body.error, 'click not seen by this deck');
+  assert.equal((await d.get('/' + id)).body.answers['q1\nx'].clickSeen, true, 'the real click still stands');
 });

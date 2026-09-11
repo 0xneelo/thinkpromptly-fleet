@@ -30,12 +30,18 @@ const canonical = (f) => joined('v2', f, FIELDS);
 // JSON.stringify escapes a lone surrogate (`\ud800`), so these bytes stay injective without a check.
 const questionSha256 = (question) => sha256(JSON.stringify(question));
 
-// The seat's pin, from its own POST: binds the sheet, the question id and the question text, so the
-// same question copied onto another sheet pins differently. Lowercase hex SHA-256 of the UTF-8 bytes of
-//   v2-pin|sheetId|qid|question_sha256
+// The sheet's own words as GET /api/unblock/:id serves them: title, intro ('' when absent) and
+// source.project ('' unless a string). A JSON array, so the three stay apart without escaping.
+const sheetSha256 = ({ title, intro, source }) =>
+  sha256(JSON.stringify([title, intro == null ? '' : intro, source && typeof source.project === 'string' ? source.project : '']));
+
+// The seat's pin, from its own POST: binds the sheet, the question id, the question text and the
+// sheet's own words, so the same question copied onto another sheet — or its sheet retitled into a
+// "drill" — pins differently. Lowercase hex SHA-256 of the UTF-8 bytes of
+//   v2-pin|sheetId|qid|question_sha256|sheet_sha256
 // escaped and refused like canonical().
-const pin = (sheetId, qid, questionSha256) =>
-  sha256(joined('v2-pin', { sheetId, qid, questionSha256 }, ['sheetId', 'qid', 'questionSha256']));
+const pin = (sheetId, qid, questionSha256, sheetSha256) =>
+  sha256(joined('v2-pin', { sheetId, qid, questionSha256, sheetSha256 }, ['sheetId', 'qid', 'questionSha256', 'sheetSha256']));
 
 // allowed_signers lines: `principals [options] keytype base64 [comment]`. An options field may be
 // quoted (namespaces="a,b"), so tokens keep their quotes whole.
@@ -188,6 +194,6 @@ function createSigner(spec, { operatorKey, bin = 'ssh-keygen', timeoutMs = 12000
 }
 
 module.exports = {
-  NAMESPACE, OP_AGENT_SOCK, canonical, questionSha256, pin, parseAllowedSigners, fingerprint,
+  NAMESPACE, OP_AGENT_SOCK, canonical, questionSha256, sheetSha256, pin, parseAllowedSigners, fingerprint,
   verifySignature, createVerifier, createSigner,
 };

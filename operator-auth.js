@@ -75,6 +75,11 @@ function loadOperator(text) {
   return { operatorId: s.operatorId, identity: { kind: s.identity.kind, hash: s.identity.hash } };
 }
 
+// The operator file's fingerprint: deck-operator-init prints it, the deck logs it at boot, so a
+// replaced file shows as a different value after a restart. 8 hex of sha256(identity.hash): the
+// hash is readable by every same-user agent anyway, so this gives nothing away.
+const operatorFingerprint = (identity) => crypto.createHash('sha256').update(identity.hash).digest('hex').slice(0, 8);
+
 const COOKIE = 'fleetdeck_operator';
 const HEADER = 'x-fleetdeck-session';
 const TTL_MS = 12 * 3600e3;
@@ -96,8 +101,8 @@ function createOperatorAuth({ operator, allowedOrigins, signer = null, now = Dat
   const identity = operator ? identityFrom(operator.identity) : null;
   // A session is two tokens: the HttpOnly cookie and a header token handed out once in the sign-in
   // body. Browsers send cookies to every port on 127.0.0.1/localhost, so any dev server the
-  // operator opens would receive a replayable cookie; the header token lives in the deck page's
-  // origin-scoped storage, which no other port can read. Keyed by sha256(cookie) and holding
+  // operator opens would receive a replayable cookie; the header token lives only in the deck
+  // page's memory, which no other port can read (a reload means signing in again). Keyed by sha256(cookie) and holding
   // sha256(header), so the map never holds a usable token. In memory only: a restart signs
   // everyone out, which is the point.
   const sessions = new Map();
@@ -106,6 +111,8 @@ function createOperatorAuth({ operator, allowedOrigins, signer = null, now = Dat
   let windowStart = 0;
   let wrong = 0;
   let pending = 0;
+  // The window whose trip is already logged: a guessing loop leaves one line per window, not one per try.
+  let loggedTrip = null;
 
   function session(req) {
     const token = cookieToken(req);
@@ -162,8 +169,13 @@ function createOperatorAuth({ operator, allowedOrigins, signer = null, now = Dat
     // refused attempt is neither verified nor counted, and never moves the window.
     const t0 = now();
     if (windowStart && t0 - windowStart >= WINDOW_MS) [windowStart, wrong] = [0, 0];
+    // Audit lines carry the outcome only — never the password or the body.
     if (wrong + pending >= MAX_WRONG) {
       const retryAfter = Math.max(1, Math.ceil((windowStart + WINDOW_MS - t0) / 1000));
+      if (loggedTrip !== windowStart) {
+        loggedTrip = windowStart;
+        console.log('operator: sign-in rate-limited (' + MAX_WRONG + ' wrong in ' + WINDOW_MS / 1000 + ' s window, retry in ' + retryAfter + ' s)');
+      }
       res.setHeader('retry-after', String(retryAfter));
       return json(res, { error: 'too many attempts', retryAfter }, 429);
     }
@@ -177,6 +189,7 @@ function createOperatorAuth({ operator, allowedOrigins, signer = null, now = Dat
     }
     if (!ok) {
       wrong++;
+      console.log('operator: sign-in refused (wrong password)');
       return json(res, { error: 'wrong password' }, 401);
     }
     [windowStart, wrong] = [0, 0];
@@ -196,4 +209,4 @@ function createOperatorAuth({ operator, allowedOrigins, signer = null, now = Dat
   return { configured: !!operator, operatorId: operator ? operator.operatorId : null, operator: operatorOf, route };
 }
 
-module.exports = { hashPassword, verifyPassword, identityFrom, loadOperator, createOperatorAuth, OPERATOR_ID };
+module.exports = { hashPassword, verifyPassword, identityFrom, loadOperator, operatorFingerprint, createOperatorAuth, OPERATOR_ID };
