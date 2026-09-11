@@ -5,7 +5,7 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const { spawn } = require('child_process');
-const { tmpdir, hostsFile } = require('./helpers');
+const { OPERATOR_DEFAULTS, tmpdir, hostsFile } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 // Second loopback address, so both listeners can share a port. It is an lo0 alias only on the
@@ -30,6 +30,7 @@ async function startServer(env = {}, opts = {}) {
     {
       env: {
         ...process.env,
+        ...OPERATOR_DEFAULTS,
         PORT: String(port),
         FLEET_DB: file,
         FLEET_HOSTS_FILE: hosts,

@@ -14,6 +14,8 @@ const { DesktopSessions, uuid: desktopUuid } = require('./desktop-sessions');
 const { DesktopSeatTitles } = require('./desktop-seat-titles');
 const { DocsIndex, defaultRoots } = require('./docs-index');
 const { createUnblock } = require('./unblock');
+const { createOperatorAuth, loadOperator, operatorFingerprint } = require('./operator-auth');
+const { OP_AGENT_SOCK, createSigner, createVerifier, parseAllowedSigners, fingerprint } = require('./signer');
 
 const PORT = Number(process.env.PORT) || 3131;
 const TAILNET_IP = process.env.TAILNET_IP || '100.125.231.25'; // Mac's tailscale address; token broker for box workers
@@ -514,7 +516,6 @@ const HOME = os.homedir();
 const SSH_DIR = path.join(HOME, '.ssh');
 const CERTS_DIR = path.join(SSH_DIR, 'deploy-certs');
 const MINT_SH = path.join(__dirname, 'deploy-keys', 'mint-deploy-cert.sh');
-const OP_AGENT_SOCK = path.join(HOME, 'Library/Group Containers/2BUA8C4S2C.com.1password/t/agent.sock');
 const CLAUDE_BRIDGE = process.env.CLAUDE_BRIDGE || path.join(__dirname, '.fleetdeck', 'claude-desktop-send');
 // Every Claude Code desktop session publishes itself here: <pid>.json (its ListAgents name and
 // unix socket) plus a 0600 <pid>.<sha256(socket path)>.key holding the peer token a sender
@@ -3000,6 +3001,9 @@ const MIME = {
   '.mp4': 'video/mp4',
   '.webp': 'image/webp',
 };
+// No deck page may be framed (DECK-108): a framing page could steer the operator's clicks. Only
+// frame-ancestors — any other CSP directive could break the app.
+const NO_FRAME = { 'x-frame-options': 'DENY', 'content-security-policy': "frame-ancestors 'none'" };
 const VENDOR = {
   '/vendor/xterm.js': '@xterm/xterm/lib/xterm.js',
   '/vendor/xterm.css': '@xterm/xterm/css/xterm.css',
@@ -3063,9 +3067,11 @@ function sendFile(res, file, req) {
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return send(res, 404, 'text/plain', 'not found');
     const type = MIME[path.extname(file)] || 'application/octet-stream';
+    const frame = type === MIME['.html'] ? NO_FRAME : {};
     const range = parseByteRange(req && req.headers && req.headers.range, st.size);
     if (range === 'unsatisfiable') {
       res.writeHead(416, {
+        ...frame,
         'content-type': type,
         'accept-ranges': 'bytes',
         'content-range': 'bytes */' + st.size,
@@ -3075,6 +3081,7 @@ function sendFile(res, file, req) {
     const start = range ? range.start : 0;
     const end = range ? range.end : st.size - 1;
     const head = {
+      ...frame,
       'content-type': type,
       'accept-ranges': 'bytes',
       'content-length': st.size === 0 ? 0 : end - start + 1,
@@ -3109,6 +3116,68 @@ function send(res, code, type, body) {
 
 const json = (res, obj, code = 200) => send(res, code, 'application/json', JSON.stringify(obj));
 
+// --- operator sign-in and click signing (DECK-108). The operator file holds the operator id and
+// the password's scrypt hash. Missing = sign-in OFF, and every unblock write then fails closed;
+// set-but-broken stops the deck. Log lines name the failure, never the file's contents.
+const OPERATOR_FILE = process.env.FLEET_OPERATOR_FILE || path.join(HOME, '.fleetdeck', 'operator.json');
+const ALLOWED_SIGNERS = process.env.FLEET_ALLOWED_SIGNERS || path.join(HOME, '.claude', 'fleet', 'allowed_signers');
+// A minute to a day; anything else (unset, junk, a value past the Date range) is the two-hour default.
+const sigTtl = Number(process.env.FLEET_UNBLOCK_SIG_TTL_SECS);
+const SIG_TTL_SECS = sigTtl >= 60 && sigTtl <= 86400 ? sigTtl : 7200;
+let deckOperator = null;
+try {
+  deckOperator = loadOperator(fs.readFileSync(OPERATOR_FILE, 'utf8'));
+} catch (e) {
+  if (e.code !== 'ENOENT') {
+    console.error('deck: operator file ' + OPERATOR_FILE + ' unusable (' + (e.code || e.message) + ') — refusing to start');
+    process.exit(1);
+  }
+}
+// allowed_signers is read once: the deck signs with and verifies against the file it booted with,
+// so a key appended to it later (the file is user-writable) certifies nothing here until a restart.
+// Unreadable = empty, and then nothing verifies.
+let allowedSignersText = '';
+let allowedSignersError = null;
+try {
+  allowedSignersText = fs.readFileSync(ALLOWED_SIGNERS, 'utf8');
+} catch (e) {
+  allowedSignersError = e.code || 'error';
+}
+// The signer is built only when the operator's own key is in allowed_signers: that line's key is
+// what op-agent asks 1Password to sign with, and what every seat verifies against.
+let clickSigner = null;
+let signingOff = null;
+let signingKey = null;
+const signerSpec = process.env.FLEET_UNBLOCK_SIGNER || 'op-agent';
+if (!deckOperator) signingOff = 'sign-in is off';
+else if (signerSpec === 'off') signingOff = 'FLEET_UNBLOCK_SIGNER=off';
+else {
+  const line = parseAllowedSigners(allowedSignersText).find((l) => l.principals.includes(deckOperator.operatorId));
+  if (allowedSignersError) signingOff = 'allowed_signers ' + ALLOWED_SIGNERS + ' unreadable (' + allowedSignersError + ')';
+  else if (!line) signingOff = 'no line for ' + deckOperator.operatorId + ' in ' + ALLOWED_SIGNERS;
+  if (line) {
+    try {
+      clickSigner = createSigner(signerSpec, { operatorKey: line.key });
+      signingKey = fingerprint(Buffer.from(line.key.split(' ')[1], 'base64'));
+    } catch (e) {
+      signingOff = e.message;
+    }
+  }
+}
+// The operator fingerprint is the one deck-operator-init printed: a different value after a restart
+// means the operator file was replaced.
+if (deckOperator)
+  console.log('deck: operator sign-in ON for ' + deckOperator.operatorId + ' · click signer ' +
+    (clickSigner ? clickSigner.kind + ' · key ' + signingKey : 'OFF (' + signingOff + ')') +
+    ' · operator fingerprint: ' + operatorFingerprint(deckOperator.identity));
+else
+  console.log('deck: operator sign-in OFF (no operator file at ' + OPERATOR_FILE + ') — every unblock write answers 503');
+const operatorAuth = createOperatorAuth({
+  operator: deckOperator,
+  allowedOrigins: ALLOWED_ORIGINS,
+  signer: clickSigner ? clickSigner.kind : null,
+});
+
 // --- unblock: the operator's answers to a seat's decision sheet. Loopback only, like /api/goals.
 const unblockRoute = createUnblock({
   db,
@@ -3117,6 +3186,10 @@ const unblockRoute = createUnblock({
   json,
   body,
   allowedOrigins: ALLOWED_ORIGINS,
+  auth: operatorAuth,
+  signer: clickSigner,
+  verifier: createVerifier({ allowedSignersText }),
+  ttlSecs: SIG_TTL_SECS,
 });
 
 // --- registry. Shared by both listeners: orchestrators curl from loopback, box workers
@@ -3586,6 +3659,8 @@ const server = http.createServer(async (req, res) => {
     // Loopback only, and deliberately absent from tailnetHandler: a decision sheet is the
     // operator's, and no box worker may read one or answer for them.
     if (p === '/api/unblock' || p.startsWith('/api/unblock/')) return await unblockRoute(req, res, p);
+    // Loopback only for the same reason: a box worker must not even try the operator's password.
+    if (p.startsWith('/api/operator/')) return await operatorAuth.route(req, res, p, { json, send, body });
     if (LEASE_ROUTES.has(p)) return await leaseRoute(req, res, p);
     // Loopback only, and deliberately absent from tailnetHandler (M13).
     // The epoch is deliberately withheld: it is the credential fenceCheck trusts, and this

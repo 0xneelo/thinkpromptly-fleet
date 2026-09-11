@@ -40,11 +40,21 @@ function hostsFile(dir, hosts = ['german-box']) {
   return f;
 }
 
+// DECK-108: a real operator file or allowed_signers on this Mac must never make a test deck
+// require sign-in or reach 1Password — in-process (load) or as a child (boot, http.js startServer).
+// Paths that cannot exist, not '' — '' deletes the var and the deck would fall back to the real
+// defaults. A test's own env still wins.
+const OPERATOR_DEFAULTS = {
+  FLEET_OPERATOR_FILE: '/nonexistent/fleetdeck-operator.json',
+  FLEET_ALLOWED_SIGNERS: '/nonexistent/fleetdeck-allowed_signers',
+  FLEET_UNBLOCK_SIGNER: 'off',
+};
+
 // Boot server.js as a child that binds nothing and exits when the module finishes loading.
 // Throws with the child's stderr if the boot assertions fail — that is the M9 test.
 function boot(env) {
   return execFileSync(process.execPath, [path.join(ROOT, 'server.js')], {
-    env: { ...process.env, FLEET_NO_LISTEN: '1', FLEET_NO_REAPER: '1', ...env },
+    env: { ...process.env, ...OPERATOR_DEFAULTS, FLEET_NO_LISTEN: '1', FLEET_NO_REAPER: '1', ...env },
     encoding: 'utf8',
     timeout: 30000,
   });
@@ -74,6 +84,7 @@ function load(env = {}, opts = {}) {
     FLEET_TAILNET_KEY: '',
     FLEET_NAME_CLOSE_SCRIPT: '',
     FLEET_TAILNET_BIND: TAILNET_BIND,
+    ...OPERATOR_DEFAULTS,
     ...env,
   };
   for (const [k, v] of Object.entries(full))
@@ -94,4 +105,4 @@ async function unload(mod) {
   try { mod.db.close(); } catch (e) { /* already closed */ }
 }
 
-module.exports = { ROOT, tmpdir, legacyDb, hostsFile, boot, load, unload };
+module.exports = { ROOT, OPERATOR_DEFAULTS, tmpdir, legacyDb, hostsFile, boot, load, unload };
