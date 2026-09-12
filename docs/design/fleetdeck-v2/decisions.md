@@ -117,7 +117,10 @@ the note is the last word".
 
 Answers go back over the message bus, and only when the operator says so: **Send new (N)** posts the
 answers changed since the last send (`partial: true`, same JSON the HTML sheet prints), **Send all**
-the whole sheet, each card its own **Send this**. Nothing auto-sends a half-answered sheet. The reply
+the whole sheet, each card its own **Send this**. Nothing auto-sends a half-answered sheet. The send
+that leaves every question answered and nothing pending closes the sheet itself (`closed: true` in the
+reply, a `closed` chip by the title) — the operator never wonders whether it is still open; **Reopen
+sheet** brings it back. The reply
 target is the bus target the seat named when it posted; a sheet with no target gets a copy box instead
 of a send button.
 

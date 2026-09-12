@@ -731,7 +731,8 @@
         return loadSheet(state.id, true);
       })
       .catch(function (e) { state.error = safeText(e && e.message) || 'the send failed'; })
-      .then(function () { state.sending = false; refreshList(); paint(); });
+      // The rail follows the re-read, so a sheet that closed itself leaves the open list at once.
+      .then(function () { state.sending = false; paint(); return refreshList().then(paint); });
   }
 
   function setStatus(op) {
@@ -1074,7 +1075,12 @@
     var pending = pendingIds(qs, v.answers);
     // Lives in the pane's head, above the scroll body, so no card ever rolls behind it.
     var c = card('');
-    c.appendChild(el('span', 'font-size:15px;font-weight:600;color:' + t.ink + ';', safeText(v.sheet.title)));
+    var closed = v.sheet.status === 'closed';
+    var titleRow = el('div', 'display:flex;align-items:center;gap:8px;flex-wrap:wrap;');
+    titleRow.appendChild(el('span', 'font-size:15px;font-weight:600;color:' + t.ink + ';', safeText(v.sheet.title)));
+    // A sent-out sheet closes itself (server rule); the chip says so where the eye already is.
+    if (closed) titleRow.appendChild(chip('closed', t.ink45));
+    c.appendChild(titleRow);
     if (v.sheet.intro)
       c.appendChild(el('p', 'margin:0;font-size:12.5px;color:' + t.ink60 + ';', safeText(v.sheet.intro)));
 
@@ -1103,7 +1109,6 @@
     if (allBtn.disabled) allBtn.setAttribute('style', allBtn.getAttribute('style') + 'opacity:.45;cursor:default;');
     row.appendChild(allBtn);
 
-    var closed = v.sheet.status === 'closed';
     var closeBtn = button(closed ? 'Reopen sheet' : 'Close sheet', function () { setStatus(closed ? 'reopen' : 'close'); },
       { colour: t.ink45 });
     closeBtn.disabled = readOnly();
