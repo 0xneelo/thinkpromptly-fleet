@@ -6,6 +6,6 @@
     { "id": "onboarding-vps", "host": "onboarding-box", "label": "onboarding-vps", "os": "linux", "route": "ssh", "ssh": "ob-deploy" },
     { "id": "thinkpromptly-vps", "label": "thinkpromptly-vps", "os": "linux", "route": "ssh", "ssh": "vps-deploy" },
     { "id": "ivy-vps", "label": "ivy-vps", "os": "linux", "route": "ssh", "ssh": "ivybox-deploy" },
-    { "id": "rog-strix", "label": "ROG Strix", "os": "windows", "route": "push" }
+    { "id": "rog-strix", "label": "ROG Strix", "os": "windows+wsl", "route": "ssh", "ssh": "rs-deploy", "wsl": true }
   ]
 }

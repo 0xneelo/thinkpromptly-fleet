@@ -1926,7 +1926,7 @@ function machinesView() {
 }
 
 // --- Machines push. Shared by both listeners, same gate as the credits push: a machine with
-// no ssh route from here (rog-strix) runs fleet-logins.sh push on a cron and carries no
+// no ssh route from here (route: push) runs fleet-logins.sh push on a cron and carries no
 // Origin, so a *foreign* origin is rejected rather than a missing one. The body is one
 // fleet-logins.sh line, and it names a machine this deck knows AND does not poll itself —
 // a polled machine's row is only ever what the deck read over ssh, never what a tailnet

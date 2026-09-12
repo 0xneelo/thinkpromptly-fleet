@@ -117,12 +117,13 @@ tagged `WSL` and `Windows`.
 
 **Nothing is installed on a polled machine.** `box/fleet-logins.sh` is piped over
 `ssh <host> [wsl] sh -s`, so the master copy in this repo is the only copy. A machine with no
-ssh route from here (rog-strix) pushes instead, on a cron — the page prints the exact line.
+ssh route from here would push instead, on a cron — the page prints the exact line. (No fleet
+machine needs it today: rog-strix got a cert route on 2026-09-06.)
 Only a `route: push` machine is accepted there; a polled machine's row is what the deck read
 over ssh, never what a tailnet peer claims about it. A wrapper fallback line (no python3,
 collector crashed) shows as the row's error, not as "nothing installed":
 
-    sh fleet-logins.sh push http://<tailnet-ip>:3131/api/machines rog-strix
+    sh fleet-logins.sh push http://<tailnet-ip>:3131/api/machines <machine-id>
 
 Rows are keyed by the `machines.json` id, never by the hostname a machine reports: the Mac
 answers `hostname -s` with an rfc1918 address that names nobody — that answer travels as
@@ -130,7 +131,8 @@ answers `hostname -s` with an rfc1918 address that names nobody — that answer 
 its last known logins on screen with the ssh error beside them.
 
 **ssh aliases are deploy certs.** `machines.json` names `gb-deploy`, `ob-deploy`,
-`vps-deploy` and `ivybox-deploy` — the certificate aliases under `~/.ssh/deploy-certs/current`.
+`vps-deploy`, `ivybox-deploy` and `rs-deploy` — the certificate aliases under
+`~/.ssh/deploy-certs/current` (mint with `-n root,vibe,misterisley` so one cert covers all five).
 The older `german-box` / `onboarding-box` aliases go through the 1Password agent or a static
 key, so a sweep that used them would fail whenever 1Password happened to be locked; the deck
 must not depend on that. An expired cert is an operator gate, never something the deck mints.

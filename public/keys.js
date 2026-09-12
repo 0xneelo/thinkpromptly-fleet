@@ -1,6 +1,6 @@
 const TTLS = ['1h', '4h', '8h'];
 // root = the VPS boxes' login (think-box, onboarding-app-box, ivy-box), vibe = german-box login.
-const PRINCIPALS = ['root', 'vibe'];
+const PRINCIPALS = ['root', 'vibe', 'misterisley']; // root = VPSes, vibe = german-box, misterisley = rog-strix
 // Exactly what you paste after `ssh` to use this cert and nothing else from the agent.
 const sshOpts = (dir) =>
   `-o IdentitiesOnly=yes -o IdentityAgent=none -i ${dir}/deployer -o CertificateFile=${dir}/deployer-cert.pub`;
