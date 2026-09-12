@@ -85,6 +85,7 @@ logged** — the same rule the in-process broker followed.
 | `503 train broker unreachable at 127.0.0.1:3132 — is the com.fleetdeck.train launch agent loaded?` | the broker is not running | `sh mac/install-train-agent.sh --status`, then `--uninstall && install` |
 | `502` with 1Password's own text | vault locked, or CLI integration off | unlock 1Password; Settings → Developer → CLI integration |
 | `502 ... is not a PEM private key` | `GH_APP_KEY_OP` points at the wrong document | fix `deploy-keys/github-app.env` |
+| `409 train start superseded by a later end or start — the window is as that request left it` | the start was still waiting on the 1Password approval when an end (or a newer start) landed; the later request wins, so an ended train stays ended | nothing to fix — start again if a window is wanted |
 | `500 GH_APP_ID / GH_APP_INSTALLATION_ID must be numeric` | typo in `deploy-keys/github-app.env` | fix it; it is re-read per request, no restart needed |
 
 The two `503`s are worded differently on purpose. One is the train being closed, which is

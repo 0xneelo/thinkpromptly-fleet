@@ -76,8 +76,15 @@ function ghConfig() {
 }
 
 let ghTrain = null; // { pem, expiresAt, timer, caffeinate } while a train is running
+// Bumped by every start and every end. A start awaits the 1Password read before it can set
+// ghTrain; if an end (or a newer start) lands during that wait, the older start's result is
+// stale and must be dropped — otherwise it would reopen the window the end just closed.
+let trainGen = 0;
+
+const trainStatus = () => ({ active: !!ghTrain, expiresAt: ghTrain ? ghTrain.expiresAt : null });
 
 function endTrain() {
+  trainGen++; // even with no window open: a start still parked on op must not open one now
   if (!ghTrain) return;
   clearTimeout(ghTrain.timer);
   try {
@@ -96,7 +103,13 @@ async function startTrain(ttl) {
   if (!cfg) return { code: 500, body: { ok: false, error: GH_ENV_UNREADABLE } };
   const keyOp = cfg.GH_APP_KEY_OP;
   if (!keyOp) return { code: 500, body: { ok: false, error: 'GH_APP_KEY_OP missing from deploy-keys/github-app.env' } };
+  const gen = ++trainGen;
   const { err, stdout, stderr } = await run(OP_BIN, ['document', 'get', keyOp], { timeout: MINT_TIMEOUT });
+  if (gen !== trainGen)
+    return {
+      code: 409,
+      body: { ok: false, error: 'train start superseded by a later end or start — the window is as that request left it' },
+    };
   if (err)
     return {
       code: 502,
@@ -207,7 +220,7 @@ async function handler(req, res) {
     }
     if (p === '/api/ghtrain') {
       if (req.method === 'GET')
-        return json(res, { active: !!ghTrain, expiresAt: ghTrain ? ghTrain.expiresAt : null });
+        return json(res, trainStatus());
       if (req.method !== 'POST') return send(res, 405, 'text/plain', 'method not allowed');
       const b = await body(req).catch(() => null);
       if (!b) return json(res, { ok: false, error: 'bad request body' }, 400);
@@ -245,4 +258,4 @@ for (const sig of ['SIGTERM', 'SIGINT'])
     setTimeout(() => process.exit(0), 1000).unref();
   });
 
-module.exports = { server, handler, ghTokenForTest: ghToken, endTrain };
+module.exports = { server, handler, ghTokenForTest: ghToken, startTrainForTest: startTrain, endTrain, trainStatus };
