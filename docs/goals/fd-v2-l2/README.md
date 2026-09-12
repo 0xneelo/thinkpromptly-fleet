@@ -4,7 +4,11 @@
 |---|---|
 | Project / sub-project | `remote-system` / `fleetdeck-v2` |
 | Worker | **Renate** · `frontend-developer` · tag `agent-renate` · Claude, high · `/goal` |
+<<<<<<< HEAD
 | Branch | `agent-v2-l2` off `origin/agent-v2-s2`; first action `git merge --no-edit origin/agent-v2-l1` |
+=======
+| Branch | `agent-v2-l2` off `origin/agent-v2-base`; first action `git merge --no-edit origin/agent-v2-l1` |
+>>>>>>> claude/fleetdeck-v2-redesign-plan-5a5cd5
 | Ledger rows | D03, D04, D05 (+ D06 key migration with L1) (`docs/design/fleetdeck-v2/diff.md`) |
 | Owned file | `public/v2/screens/shell.js` + this screen's methods in `logic.js` |
 | Data identifiers | groups ← FD.data.toGroups(sessions); rail/header values through the shell methods in logic.js |
@@ -36,6 +40,7 @@ Make the **app shell: sidebar · page header · right rail** screen work on live
 
 ## Acceptance (definition of done)
 
+<<<<<<< HEAD
 - [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim. Six items are **n.a.** with a stated reason (the drawer, Escape, the old DOM ids, the org timers) and three are **partial** with the departure named (grouping, the `€` colour, the health pill split).
 - [x] `verify/l2/report.json` allPass **36/36**, max 0.032948 % (fixture mode); `verify/l2/live.json` **59/59**, zero console errors; `verify/l2/live-dark.png` + `live-light.png` filed. Two of the newest checks are mutation-proven to fail without their fix.
 - [x] `improvised.md` entries + screenshots for every improvisation — 15 entries (I-L2-01 … I-L2-15), 7 screenshots in `improvised/` plus the tooltips captured as text.
@@ -45,6 +50,17 @@ Make the **app shell: sidebar · page header · right rail** screen work on live
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 
 - Base `origin/agent-v2-s2` (S2: plain-JS compile — `public/v2/index.html`, `runtime.js`, `logic.js`, `app.js`, `fixture.js`, `template.dc.html`, `FD.setData(name,value)`, `FD.fixture`, and empty `public/v2/screens/<screen>.js` files wired in the shell). First action: `git merge --no-edit origin/agent-v2-l1` (L1: `public/v2/data.js` fetchers + adapters, `router.js`, fixture extractor, API fixtures under `docs/design/fleetdeck-v2/fixtures/api/`).
+=======
+- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
+- [ ] `verify/l2/report.json` allPass 36/36 (fixture mode); `verify/l2/live.json` all pass; live screenshots filed.
+- [ ] `improvised.md` entries + screenshots for every improvisation.
+- [ ] Hooks provided are defined; hooks used are guarded.
+- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Renate**; registry row `done`.
+
+## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
+
+- Base `origin/agent-v2-base` (S2: plain-JS compile — `public/v2/index.html`, `runtime.js`, `logic.js`, `app.js`, `fixture.js`, `template.dc.html`, `FD.setData(name,value)`, `FD.fixture`, and empty `public/v2/screens/<screen>.js` files wired in the shell). First action: `git merge --no-edit origin/agent-v2-l1` (L1: `public/v2/data.js` fetchers + adapters, `router.js`, fixture extractor, API fixtures under `docs/design/fleetdeck-v2/fixtures/api/`).
+>>>>>>> claude/fleetdeck-v2-redesign-plan-5a5cd5
 - You own exactly ONE file, `public/v2/screens/shell.js`, plus your own screen's methods in `logic.js`. Never edit the shell, `runtime.js`, `app.js`, the template, `data.js`, other screens' methods or files. Need something from another slice? Call its hook guarded (`FD.screens?.bus?.open?.(t)`) and note the dependency in `REPORT.md`; never merge another L-branch.
 - Data enters only through `FD.setData(<mock identifier>, adapterOutput)`; fixture mode (`?fixture=1`) stays untouched and pixel-identical.
 - Hooks you PROVIDE (define in your first commit, no-ops until wired): FD.shell.setBadge(n), FD.shell.setLiveApi(text), FD.shell.refresh(), FD.shell.selectSession(host,name)

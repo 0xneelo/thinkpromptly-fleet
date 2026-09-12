@@ -33,6 +33,7 @@ Make the **Machines cards** screen work on live data exactly like today's app (`
 
 ## Acceptance (definition of done)
 
+<<<<<<< HEAD
 - [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
       One item is *partial by design* — the per-session `.sess` lines, which the mock replaced with
       the count chip and Open in Registry (improvised.md I-L9-07). Two are *n.a.*, both because
@@ -58,6 +59,13 @@ Make the **Machines cards** screen work on live data exactly like today's app (`
       carries that key at `~/.claude/fleet/fleet.env` (mode 0600), which is where
       `box/hooks/fd-common.sh:44` sources it from. The pack's bare `curl` omits the header, which
       is why it answers 401 on its own.
+=======
+- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
+- [ ] `verify/l9/report.json` allPass 36/36 (fixture mode); `verify/l9/live.json` all pass; live screenshots filed.
+- [ ] `improvised.md` entries + screenshots for every improvisation.
+- [ ] Hooks provided are defined; hooks used are guarded.
+- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Eckbert**; registry row `done`.
+>>>>>>> claude/fleetdeck-v2-redesign-plan-5a5cd5
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

@@ -1,6 +1,10 @@
 # fd-v2-l2 — launch record
 
+<<<<<<< HEAD
 Worker **Renate** (`frontend-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l2`, worktree `~/projects/remote-system/.claude/worktrees/v2-l2`, branch `agent-v2-l2`, base `origin/agent-v2-s2`.
+=======
+Worker **Renate** (`frontend-developer`), Claude high, `/goal`, german-box. Session `FD-v2-l2`, worktree `~/projects/remote-system/.claude/worktrees/v2-l2`, branch `agent-v2-l2`, base `origin/agent-v2-base`.
+>>>>>>> claude/fleetdeck-v2-redesign-plan-5a5cd5
 Launch condition: S2 pushed with parity 36/36 + report.json allPass, L1 merges cleanly.
 
 ```bash
@@ -8,7 +12,11 @@ ssh german-box "wsl tee /home/vibe/launch/launch-renate.txt" < docs/goals/fd-v2-
 ```
 
 ```bash
+<<<<<<< HEAD
 ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Renate v2-l2 origin/agent-v2-s2
+=======
+ssh german-box wsl sh /home/vibe/fd-launch-claude.sh Renate v2-l2 origin/agent-v2-base
+>>>>>>> claude/fleetdeck-v2-redesign-plan-5a5cd5
 ```
 
 ```bash

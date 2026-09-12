@@ -41,6 +41,18 @@ Fallback (only via `operator:decision`): the precedent's DOM-dump method.
   (the DSL parser that mirrors dc-runtime; change its emitter from JSX to plain calls). Those repos are on the operator's
   Mac; the design seat copies the four files into `docs/design/fleetdeck-v2/precedent/` before launch.
 
+## T3 — the one extra substitution (operator ruling 2026-09-07)
+
+Every seed array/const in the logic class (`regData`, `busSessions`, `busGroups`, `seedThreads`, `orgScopeData`,
+`keyRows`, `accounts`, `machines`, `dsData`, `tiles`, `groups`, `titles`, and the data inside `termLinesFor`)
+becomes `const X = FD.fixture.X`; the literals move **byte-identical** into `public/v2/fixture.js`
+(`window.FD = window.FD || {}; FD.fixture = { regData: [...], … }`, mock identifiers as keys, source order).
+`runtime.js` gains `FD.setData(name, value)`: replaces `FD.fixture[name]` and triggers the same re-render path
+as `setState`. Every OUT→IN quoted in the commit body; parity gates unchanged. Why: nine logic slices L2–L10
+edit `logic.js` in parallel, each only its own screen's methods, feeding data through `FD.setData`.
+Coordination with L1 (Juergen): his `tools/extract-fixture.mjs` must regenerate `fixture.js` byte-identically
+from the mock; whoever lands first creates the file, the other verifies.
+
 ## Scope
 
 **In**

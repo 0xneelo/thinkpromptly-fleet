@@ -35,6 +35,7 @@ Make the **Org chart on live seats + sessions** screen work on live data exactly
 
 ## Acceptance (definition of done)
 
+<<<<<<< HEAD
 - [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
       Six items are **partial** and four are **n.a.**, each with its reason in the checklist; one
       deliberate divergence (I-L5-05, an absent expiry reads `none`).
@@ -54,6 +55,13 @@ Make the **Org chart on live seats + sessions** screen work on live data exactly
       reason in the code. The pre-existing `v2-data` failure (DECK-90) was fixed by L1.1.
       Branch pushed; `REPORT.md` signed **Dietlind**. Registry row: the deck answers `unauthorized`
       (HTTP 401) to every POST from this box (XYZ-2137), so no row could be written.
+=======
+- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
+- [ ] `verify/l5/report.json` allPass 36/36 (fixture mode); `verify/l5/live.json` all pass; live screenshots filed.
+- [ ] `improvised.md` entries + screenshots for every improvisation.
+- [ ] Hooks provided are defined; hooks used are guarded.
+- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Dietlind**; registry row `done`.
+>>>>>>> claude/fleetdeck-v2-redesign-plan-5a5cd5
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

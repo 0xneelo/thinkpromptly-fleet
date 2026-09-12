@@ -36,11 +36,19 @@ Make the **Message bus threads + reply toast** screen work on live data exactly 
 
 ## Acceptance (definition of done)
 
+<<<<<<< HEAD
 - [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim. — 41 items: 31 done, 4 done-and-adapted with the reason in `improvised.md`, 1 partial (`maxlength`, absent from the mock's markup), 5 n.a. (server-side). Error strings, `fd-bus-seen`, `fd-bus-pinned`, 15 s / 60 s / 7 s all verbatim.
 - [x] `verify/l6/report.json` allPass 36/36 (fixture mode); `verify/l6/live.json` all pass; live screenshots filed. — pixel **36/36 allPass**, max 0.0329 % (registry-dark AA noise; message-bus itself 0.000000 % both themes). Live **47/47 allPass**, 0 console errors, `live-dark.png` + `live-light.png`.
 - [x] `improvised.md` entries + screenshots for every improvisation. — I-L6-01..12; six screenshots under `improvised/l6-*.png` (the six visual ones; six entries are data- or behaviour-only).
 - [x] Hooks provided are defined; hooks used are guarded. — `FD.screens.bus.open(target)` defined as a no-op in `440fbaa` and wired in `1c330de`; `FD.shell.setBadge` (L2) and `FD.screens.windows.openMax` (L3) wrapped once, proven safe when absent **and** when throwing.
 - [x] `npm test` green; branch pushed; `REPORT.md` signed **Gerhild**; registry row `done`. — `npm test` **332/332, 0 fail** (incl. 29 new in `test/v2-bus.test.js`); `agent-v2-l6` pushed; report signed. Registry POST answers 401 from the box (known, see `REGISTRY-PENDING.md`); DECK-49 carries the state.
+=======
+- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
+- [ ] `verify/l6/report.json` allPass 36/36 (fixture mode); `verify/l6/live.json` all pass; live screenshots filed.
+- [ ] `improvised.md` entries + screenshots for every improvisation.
+- [ ] Hooks provided are defined; hooks used are guarded.
+- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Gerhild**; registry row `done`.
+>>>>>>> claude/fleetdeck-v2-redesign-plan-5a5cd5
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

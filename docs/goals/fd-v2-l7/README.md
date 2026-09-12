@@ -35,11 +35,19 @@ Make the **SSH keys + GitHub train** screen work on live data exactly like today
 
 ## Acceptance (definition of done)
 
+<<<<<<< HEAD
 - [x] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md` §2), texts/confirms/keys verbatim. Two items are **n.a.** with reasons: the old DOM ids (the mock has no such ids and hand-adding them is forbidden) and the 405 text (the screen never issues a wrong method; the `HTTP <status>` path that renders it is proven at L7-35/L7-48).
 - [x] `verify/l7/report.json` **allPass 36/36** (fixture mode), `ssh-keys` 0.000000 % both themes; `verify/l7/live.json` **66/66 allPass**, zero console errors; `live-dark.png` / `live-light.png` filed.
 - [x] `improvised.md` I-L7-01 … I-L7-08, each with its screenshot under `docs/design/fleetdeck-v2/improvised/`.
 - [x] Hooks provided: **none** (declared in the first commit). Hooks used: **none**. The one internal seam, `FD.screens.keys.sync()`, is called guarded from `logic.js`.
 - [x] `npm test` **320 pass / 320, 0 fail** on the current base (the `fixture.js` failure that dogged earlier runs, DECK-85, was fixed by the L1.2 base move). Branch pushed; `REPORT.md` signed **Tankred**; registry row gated (see REPORT §3).
+=======
+- [ ] Every `BEHAVIOUR.md` item ported (checklist in `REPORT.md`), texts/confirms/keys verbatim.
+- [ ] `verify/l7/report.json` allPass 36/36 (fixture mode); `verify/l7/live.json` all pass; live screenshots filed.
+- [ ] `improvised.md` entries + screenshots for every improvisation.
+- [ ] Hooks provided are defined; hooks used are guarded.
+- [ ] `npm test` green; branch pushed; `REPORT.md` signed **Tankred**; registry row `done`.
+>>>>>>> claude/fleetdeck-v2-redesign-plan-5a5cd5
 
 ## Cross-slice contract (nine slices edit in parallel — obey or the weave fails)
 

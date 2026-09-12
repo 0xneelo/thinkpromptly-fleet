@@ -109,3 +109,31 @@ source badge text, principal chips, anything else discovered while wiring logic.
 
 Stretch factors: GitHub train window must be open for every worker push; a red pixel gate returns a slice
 (one rerun, then escalate); the weave into main needs a live remote-system 🎛 ORCHESTRATOR (none at plan time).
+
+
+## OPERATOR RULING 2026-09-07 (evening) — ship by 2026-09-08 evening, maximum parallelism
+
+1. After S2 (Julius) and L1 (Juergen) land, **all nine logic slices L2–L10 launch at once** (no waves). L11 (cut-over)
+   launches the moment the last of them pushes green.
+2. **Reviews no longer gate launches**: launch on push, run `reviewer` in parallel, route findings back as follow-up
+   goals over the bus. The pixel gate (fixture mode, 36/36 ≤ 0.5 %) stays mandatory per slice.
+3. **S2 gets substitution T3** (seed literals → `public/v2/fixture.js`, `const X = FD.fixture.X`, `FD.setData` +
+   re-render hook) so nine workers edit `logic.js` without conflicts; L1's fixture identifiers = mock identifiers;
+   L-slices call `FD.setData` with adapter output and touch only their own screen's methods.
+4. **Breeds**: Claude high for L2, L3, L4, L5, L6, L10; GPT Astra xhigh for L7, L8, L9, L11. A Claude worker
+   reporting `usage_limited` is relaunched on Astra.
+5. **Weave**: no remote-system orchestrator is live → the design seat merges accepted slices into a local pinned
+   branch `weave/fd-v2` in a scratch worktree (never main, never pushed to main), runs `npm test` + the full gate,
+   then hands the operator ONE line: `git merge --ff-only weave/fd-v2 && ./up.sh`. Target 2026-09-08 afternoon.
+6. Milestone reports only: S2 landed · all nine launched · first slice accepted · L11 launched · weave ready.
+
+Base for every L-slice: `origin/agent-v2-s2`; first action `git merge --no-edit origin/agent-v2-l1`.
+
+### Revised timeline
+
+| When | Milestone |
+|---|---|
+| 2026-09-08 morning | S2 + L1 landed; L2–L10 launched (9 workers) |
+| 2026-09-08 midday | first slices accepted; follow-up goals from reviews in flight |
+| 2026-09-08 afternoon | L11 cut-over launched; `weave/fd-v2` assembled, tests + full gate green |
+| 2026-09-08 evening | operator runs `git merge --ff-only weave/fd-v2 && ./up.sh` |
