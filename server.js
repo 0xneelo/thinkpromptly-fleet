@@ -1163,12 +1163,17 @@ const safeParse = (s) => {
     return null;
   }
 };
+// When a reading was taken, not when it was relayed. A desktop sample is dated by the app
+// that took it, and a machine whose app last saw an org two weeks ago still relays that
+// same sample on every collect; dated by relay time it outranked a fresh sample from the
+// machine the account is live on whenever its ssh reply landed a second later.
+const readAt = (r) => r.sample_ts || r.updated_at || 0;
 const beats = (a, b) => {
   if (!b) return true;
   const ra = SOURCE_RANK[a.source] || 0;
   const rb = SOURCE_RANK[b.source] || 0;
-  const at = a.updated_at || 0;
-  const bt = b.updated_at || 0;
+  const at = readAt(a);
+  const bt = readAt(b);
   // A read that failed carries no numbers, so it must not displace a recent one that
   // succeeded: a single rate-limited call would otherwise erase a good live reading.
   if (ra === rb && b.state === 'ok' && a.state !== 'ok' && at - bt < RANK_STALE) return false;
@@ -1448,7 +1453,7 @@ function creditsWrite(rows) {
     if (hasSignal(r)) continue;
     const alt = (groups.get(k) || [])
       .filter((o) => o !== r && hasSignal(o))
-      .sort((a, b) => (SOURCE_RANK[b.source] || 0) - (SOURCE_RANK[a.source] || 0) || b.updated_at - a.updated_at)[0];
+      .sort((a, b) => (SOURCE_RANK[b.source] || 0) - (SOURCE_RANK[a.source] || 0) || readAt(b) - readAt(a))[0];
     if (alt) best.set(k, { ...r, windows: alt.windows, sample_ts: alt.sample_ts, windows_from: alt.source });
   }
   // A collect carries no pushed rows, so without comparing against what is already stored
@@ -2962,4 +2967,6 @@ module.exports = {
   reaperTick, reaperLoop, REAPER,
   // Test seams: the pure joins the Machines view renders from, no I/O of their own.
   machinesUsage, machinesSessions, clientUsage,
+  // Test seam: which of several machines' reports of one account gets stored.
+  creditsWrite,
 };
