@@ -606,6 +606,10 @@ function runInput(cmd, args, input, opts = {}) {
     child.stdout.on('data', (chunk) => (stdout += chunk));
     child.stderr.on('data', (chunk) => (stderr += chunk));
     child.on('error', (error) => (spawnError = error));
+    // An ssh that exits before reading its input (unreachable host, refused cert) closes the
+    // pipe under this write. The EPIPE is not news — exit code and stderr carry the story —
+    // and left unhandled it is an uncaught 'error' event that takes the whole deck down.
+    child.stdin.on('error', () => {});
     child.on('close', (code, signal) =>
       resolve({
         err:

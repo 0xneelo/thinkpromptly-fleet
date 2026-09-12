@@ -8,16 +8,16 @@
 # is the deck's real fan-out, real stdin piping and real error handling — only the transport
 # is faked. Two knobs, both env, so the argv the deck builds is never rewritten by a test:
 #
-#   FLEET_SHIM_ARGV_LOG   append one NUL-delimited argv record per call, for argv assertions
+#   FLEET_SHIM_ARGV_DIR   write one NUL-delimited argv record per call, each its own file here
 #   FLEET_SHIM_UNREACH    space-separated hosts that answer like an unreachable box
 #   FLEET_SHIM_MAP_WSL    1 = run `wsl sh -s` as plain `sh -s` (no WSL interop available)
 
-# The deck polls machines concurrently, so several shims append to this log at once. One
-# `printf` reuses its format for every argument, so a whole record is a single small write
-# to an O_APPEND descriptor opened once — which is what keeps two racing shims from
-# interleaving a record. A loop of one printf per element would not be.
-if [ -n "$FLEET_SHIM_ARGV_LOG" ]; then
-  { printf '%s\0' "$@"; printf '\n'; } >> "$FLEET_SHIM_ARGV_LOG"
+# The deck polls machines concurrently, so several shims record at once. One file per call,
+# created O_EXCL by mktemp, so no two records can share a write. Appending all of them to one
+# log was two write(2)s per record (the shell flushes after each printf, elements then the
+# newline), and under load two shims interleaved into one merged line plus a blank one.
+if [ -n "$FLEET_SHIM_ARGV_DIR" ]; then
+  printf '%s\0' "$@" > "$(mktemp "$FLEET_SHIM_ARGV_DIR/call.XXXXXX")"
 fi
 
 # Walk off the option pairs the deck always sends; whatever is left is host then command.

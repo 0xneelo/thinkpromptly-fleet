@@ -146,13 +146,16 @@ const LINE = {
   clients: [{ client: 'claude_cli', where: 'local', installed: true, signed_in: true, state: 'ok', proof: 'profile', email: 'aylianator@gmail.com', org: ORG }],
 };
 
-// One record per ssh call: every argv element NUL-terminated, then a newline.
-const argvLog = (f) =>
-  fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map((r) => r.split('\0').slice(0, -1));
+// One file per ssh call, every argv element NUL-terminated. A file each rather than one shared
+// log: the shim's record was two writes, and two shims recording at once interleaved them
+// into a single merged line — the test then failed under load with no change to the deck.
+const argvLog = (d) =>
+  fs.readdirSync(d).map((f) => fs.readFileSync(path.join(d, f), 'utf8').split('\0').slice(0, -1));
 
 test('/api/machines — the ssh argv per route, and no ssh at all for local or push', async (t) => {
   const dir = tmpdir('machines-ssh');
-  const log = path.join(dir, 'argv.log');
+  const log = path.join(dir, 'argv');
+  fs.mkdirSync(log);
   const env = {
     ...fixture(dir, LINE, [
       { id: 'german-box', label: 'German Box', os: 'windows', route: 'ssh', ssh: 'gb-deploy', wsl: true, host: 'german-box' },
@@ -161,7 +164,7 @@ test('/api/machines — the ssh argv per route, and no ssh at all for local or p
       { id: 'rog-strix', label: 'ROG Strix', os: 'windows', route: 'push' },
     ]),
     FLEET_SSH_BIN: SHIM,
-    FLEET_SHIM_ARGV_LOG: log,
+    FLEET_SHIM_ARGV_DIR: log,
     FLEET_SHIM_MAP_WSL: '1', // `wsl` resolves only as wsl.exe inside WSL, so run the payload plainly
   };
   const s = await startServer(env, { dir });
@@ -171,8 +174,8 @@ test('/api/machines — the ssh argv per route, and no ssh at all for local or p
   assert.equal(r.status, 200);
   const rows = new Map(r.body.machines.map((m) => [m.id, m]));
 
-  // Both boxes are polled at once, so the log order is whichever shim wrote first: find the
-  // record by its host rather than assuming one.
+  // Both boxes are polled at once and each record is its own file, so the order is arbitrary:
+  // find the record by its host rather than assuming one.
   const calls = argvLog(log);
   const call = (host) => calls.find((c) => c[4] === host);
   // A Windows box is reached through WSL; a Linux one is not, and the deck must not send
@@ -275,6 +278,32 @@ test('/api/machines — an unreachable box carries its own error and does not po
   assert.notEqual(down.state, 'ok');
   assert.equal(rows.get('vps').state, 'ok');
   assert.equal(rows.get('vps').error, null);
+});
+
+// The same unreachable box, with a script bigger than the pipe buffer: ssh exits at once
+// without reading, so the deck's write to its stdin hits EPIPE for certain rather than by
+// timing. Unhandled, that error event was an uncaught exception that killed the whole deck.
+test('/api/machines — an ssh that dies before reading its script does not take the deck down', async (t) => {
+  const dir = tmpdir('machines-epipe');
+  const env = {
+    ...fixture(dir, LINE, [
+      { id: 'german-box', label: 'German Box', os: 'windows', route: 'ssh', ssh: 'gb-deploy', wsl: true },
+      { id: 'vps', label: 'VPS', os: 'linux', route: 'ssh', ssh: 'vps-deploy' },
+    ]),
+    FLEET_SSH_BIN: SHIM,
+    FLEET_SHIM_UNREACH: 'gb-deploy',
+    FLEET_SHIM_MAP_WSL: '1',
+  };
+  fs.appendFileSync(env.FLEET_LOGINS_SH, '# pad\n'.repeat(40000)); // ~240 KB, past any pipe buffer
+  const s = await startServer(env, { dir });
+  t.after(() => s.stop());
+
+  const r = await s.get('/api/machines?refresh=1');
+  assert.equal(r.status, 200);
+  const rows = new Map(r.body.machines.map((m) => [m.id, m]));
+  assert.ok(rows.get('german-box').error.includes('Connection timed out'), rows.get('german-box').error);
+  assert.equal(rows.get('vps').state, 'ok');
+  assert.equal(s.child.exitCode, null, 'the deck died:\n' + s.log());
 });
 
 test('/api/machines — the row is keyed by the configured host, the machine reports its own', async (t) => {
