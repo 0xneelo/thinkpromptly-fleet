@@ -559,7 +559,12 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins, auth,
       markSent.run(sig(r.choice, r.note || ''), stamp, sheet.id, qid);
     }
     touchSheet.run(stamp, sheet.id);
-    return json(res, { sent: ids.length, messageId: message.id, payload });
+    // A send that leaves every question answered and nothing pending is the sheet's last word: it
+    // closes itself, so the operator never wonders whether it is still open. Reopen brings it back.
+    const after = listRow(oneSheet.get(sheet.id));
+    const closed = after.status !== 'closed' && after.total > 0 && after.answered === after.total && after.pending === 0;
+    if (closed) setStatus.run('closed', stamp, stamp, sheet.id);
+    return json(res, { sent: ids.length, messageId: message.id, payload, ...(closed ? { closed: true } : {}) });
   }
 
   return route;

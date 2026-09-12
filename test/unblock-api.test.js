@@ -364,6 +364,29 @@ test('a full sheet is not partial, and ids picks which answers travel', async (t
   assert.deepEqual(all.body.payload.answers.map((a) => a.id), ['q1', 'q2'], 'question order');
 });
 
+test('the send that leaves every question answered closes the sheet', async (t) => {
+  const d = await deck(t);
+  const id = await d.create({ reply: { type: 'tmux', host: 'german-box', session: 'FD-ivy' } });
+  await d.put('/' + id + '/answers/q1', { choice: 'sqlite' });
+  const half = await d.act('/' + id + '/send');
+  assert.equal(half.body.closed, undefined, 'a half-answered sheet stays open');
+  assert.equal((await d.get()).body.sheets[0].status, 'open');
+
+  await d.put('/' + id + '/answers/q2', { choice: 'flag' });
+  const last = await d.act('/' + id + '/send');
+  assert.equal(last.body.sent, 1);
+  assert.equal(last.body.closed, true);
+  const listed = (await d.get()).body.sheets[0];
+  assert.equal(listed.status, 'closed');
+  assert.ok(listed.closed_at);
+
+  // Reopened, re-answered, sent again: it closes again.
+  await d.act('/' + id + '/reopen');
+  await d.put('/' + id + '/answers/q1', { note: 'still sqlite' });
+  assert.equal((await d.act('/' + id + '/send')).body.closed, true);
+  assert.equal((await d.get()).body.sheets[0].status, 'closed');
+});
+
 test('a sheet with no reply target answers 409 carrying the payload to copy by hand', async (t) => {
   const d = await deck(t);
   const id = await d.create();
