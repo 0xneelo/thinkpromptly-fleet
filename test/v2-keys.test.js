@@ -142,7 +142,13 @@ test('every box chip carries the login that actually opens it', () => {
     keys.BOXES.map((b) => b.user),
     ['misterisley', 'vibe', 'root', 'root', 'root']
   );
-  assert.ok(keys.BOXES.every((b) => b.title && b.title.length), 'a title per box');
+  assert.ok(keys.BOXES.every((b) => b.title && b.desc), 'a tooltip heading and body per box');
+  // The three root boxes cannot be scoped apart, and each one's tooltip names the
+  // other two so the operator learns it before minting, not after.
+  const roots = keys.BOXES.filter((b) => b.user === 'root');
+  roots.forEach((b) => roots.filter((o) => o !== b).forEach((o) => {
+    assert.ok(b.desc.includes(o.id), b.id + ' names ' + o.id);
+  }));
 });
 
 test('principalsFor — the three root boxes collapse to one principal', () => {

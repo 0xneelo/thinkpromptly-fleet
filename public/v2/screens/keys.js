@@ -43,17 +43,27 @@
   //
   // promptly, onboarding and ivy all log in as root, so ONE principal reaches
   // all three: picking any of them necessarily grants the other two, and their
-  // titles say so. Scoping a cert to one of them would mean giving each box its
+  // tooltips say so. Scoping a cert to one of them would mean giving each box its
   // own principal in its CA trust line — a change on the boxes, not here.
   // Ruling O9 wanted this from hosts.json, which carries no user field — see
   // improvised.md I-L7-01. machines.json has the ssh aliases but no user either.
-  var SHARED_ROOT = ' · root login, so this also reaches ';
+  //
+  // `title` is the tooltip heading (box · login), `desc` its body: what runs there
+  // and what a cert to it is used for. public/v2/tip.js draws them from the
+  // data-tip-title / data-tip attributes paintMint sets — not `title`, whose
+  // native tooltip is the thing the deck is replacing.
+  var SHARED_ROOT = ' Root login is shared, so this cert also opens ';
   var BOXES = [
-    { id: 'rog-strix', user: 'misterisley', title: 'rog-strix (Windows) · logs in as misterisley' },
-    { id: 'german', user: 'vibe', title: 'german-box · logs in as vibe' },
-    { id: 'onboarding', user: 'root', title: 'onboarding-app-box' + SHARED_ROOT + 'promptly and ivy' },
-    { id: 'promptly', user: 'root', title: 'think-box' + SHARED_ROOT + 'onboarding and ivy' },
-    { id: 'ivy', user: 'root', title: 'ivy-box' + SHARED_ROOT + 'onboarding and promptly' },
+    { id: 'rog-strix', user: 'misterisley', title: 'rog-strix · Windows 11 + WSL2 · logs in as misterisley',
+      desc: 'ASUS ROG Strix G834JY on the tailnet (symmio). Second worker box: WSL Ubuntu for Claude and Codex worker sessions. Only a cert carrying the misterisley principal reaches it.' },
+    { id: 'german', user: 'vibe', title: 'german-box · Windows 11 + WSL2 · logs in as vibe',
+      desc: 'The worker lane: the fleetdeck tmux fleet of Claude and Codex workers runs here, kept alive by the RDP holder. Most certs are minted to launch and shepherd those workers.' },
+    { id: 'onboarding', user: 'root', title: 'onboarding-app-box · Hetzner CPX32 · logs in as root',
+      desc: 'Serves vibe.permissionless.credit, the onboarding app. Certs here are for deploys and log checks.' + SHARED_ROOT + 'promptly and ivy.' },
+    { id: 'promptly', user: 'root', title: 'think-box · Hetzner CPX42 · logs in as root',
+      desc: 'Serves thinkpromptly.com and lowcapsxyz.com; the lowcaps deploys land here.' + SHARED_ROOT + 'onboarding and ivy.' },
+    { id: 'ivy', user: 'root', title: 'ivy-box · Hetzner CX23 · logs in as root',
+      desc: 'Serves ivy.market.' + SHARED_ROOT + 'onboarding and promptly.' },
   ];
   var BOX_IDS = BOXES.map(function (b) { return b.id; });
 
@@ -309,7 +319,7 @@
   }
 
   // §2 Mint ­— the TTL and principal chips are already bound to logic.js; this
-  // adds the titles, the aria state, the Mint click and the error line.
+  // adds the tooltips, the aria state, the Mint click and the error line.
   function paintMint(card) {
     var row = kids(card)[1];
     if (!row) return;
@@ -317,7 +327,10 @@
     var boxBtns = btns.slice(TTLS.length, TTLS.length + BOXES.length);
     boxBtns.forEach(function (b, i) {
       var box = BOXES[i];
-      b.title = box.title;
+      // Written only on change: tip.js watches these while the chip is hovered,
+      // and a poll tick must not make it repaint an unchanged popover.
+      if (b.getAttribute('data-tip-title') !== box.title) b.setAttribute('data-tip-title', box.title);
+      if (b.getAttribute('data-tip') !== box.desc) b.setAttribute('data-tip', box.desc);
       b.setAttribute('aria-pressed', String(!!chosen[box.id]));
     });
     var mintBtn = btns[btns.length - 1];

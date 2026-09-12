@@ -2242,3 +2242,20 @@ properties are re-set on every apply rather than cached, since the theme toggle 
 style they are merged into. `shape()` records its last label → `{key, count, collapsed}` map in a
 module variable, which is what the DOM pass reads: it decorates headers it did not compute, and
 logic.js calls `shape()` on every render, so the map is never behind the DOM.
+
+## L13 — tooltips (`claude/cert-tooltips-6ff382`, 2026-09-09)
+
+### I-L13-01 — one popover for every `title`, drawn by `public/v2/tip.js`
+
+The mock's icon buttons (desktop-session actions, nav rail, terminal header) and the keys chips carry
+`title` attributes, so the only tooltip the deck had was the browser's native one — delayed, unstyled,
+and barely shown in the desktop app's webview. Operator ask 2026-09-09: proper tooltips, starting with the
+cert chips (what the box is, which apps are deployed there, what a cert to it is used for) and the
+desktop-session action icons. `tip.js` is a document-level delegate: on a 220 ms dwell over the nearest
+ancestor with `data-tip-title`/`data-tip`, a `title`, or an icon-only `aria-label`, it paints the bus
+header's `tipStyle` popover (heading + body, themed off `documentElement.dataset.theme`) under the
+element, clamped to the viewport. The element's `title` is parked in `data-tip-parked` while the popover
+is up so the native box stays quiet, and restored on leave; a MutationObserver repaints when the app
+rewrites the title mid-hover (`screens/desktop.js` flips a copy button to `Copied`). Fixture mode
+registers nothing, so the pixel gate is untouched. The keys chips no longer set `title` at all:
+`paintMint` writes `data-tip-title` (box · login) and `data-tip` (`BOXES[].desc`) instead.
