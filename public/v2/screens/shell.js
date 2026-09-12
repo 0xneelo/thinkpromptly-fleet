@@ -22,18 +22,17 @@
   FD.shell = FD.shell || {};
 
   /* Compiler node ids for the shell's markup (public/v2/app.js). One table, so a
-   * recompile that renumbers the template is a single edit here. */
+   * recompile that renumbers the template is a single edit here, and
+   * test/v2-tpl-ids.test.js names the new id when one drifts. */
   var TPL = {
-    connectAll: '217',      // sidebar "Connect all" button
-    sessionList: '221',     // sidebar sessions scroller
-    sessionRow: '227',      // session row button
+    connectAll: '235',      // sidebar "Connect all" button
+    sessionList: '239',     // sidebar sessions scroller
+    sessionRow: '245',      // session row button
     themeBtn: '132',        // sidebar header theme toggle
-    livePill: '239',        // page-header "Live API" pill
-    refresh: '241',         // page-header "Refresh" button
-    windows: '247',         // Windows screen container
-    tile: '250',            // one terminal tile (L3's data, read only to count)
-    accountRow: '749',      // right-rail account row
-    boxRow: '762',          // right-rail box row
+    livePill: '257',        // page-header "Live API" pill
+    refresh: '259',         // page-header "Refresh" button
+    accountRow: '780',      // right-rail account row
+    boxRow: '793',          // right-rail box row
   };
 
   /* ---- hooks L2 PROVIDES -------------------------------------------------- */

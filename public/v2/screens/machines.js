@@ -334,8 +334,9 @@
 
   // --- after-render: the two things the compiled template cannot bind -----------
   // Called from AppLogic's componentDidMount/componentDidUpdate (logic.js). Anchors are the
-  // compiled template's own data-dc-tpl ids — never a class grafted onto mock markup.
-  var TPL = { card: '609', kindChip: '614', reported: '618', row: '623', note: '647', refresh: '241' };
+  // compiled template's own data-dc-tpl ids — never a class grafted onto mock markup. A
+  // recompile renumbers them; test/v2-tpl-ids.test.js names the new id when one drifts.
+  var TPL = { card: '627', kindChip: '632', reported: '636', row: '641', note: '665', refresh: '259' };
 
   function screenEl() {
     return root.document && root.document.querySelector('[data-screen-label="Machines"]');
