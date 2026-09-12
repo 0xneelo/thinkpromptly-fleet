@@ -1,0 +1,18 @@
+# LINEAR-PENDING — goalkeeper (G3)
+
+Linear was unreachable when this pack was written (no Linear MCP in the orchestrator's desktop
+session; box Codex MCP returns `oauth_token_invalid_grant`). File these when Linear is back,
+newest at the bottom. Workers append their own entries below the line.
+
+| # | when (UTC) | title | labels | body |
+|---|---|---|---|---|
+| P1 | 2026-09-07T01:40Z | `[ORCHESTRATOR 34] G3 Goalkeeper v1 — auditor seat, skill, CLI, deck refusal` | project:remote-system subproject:goalkeeper goal:G3 | Parent issue. Plan docs/goals/goalkeeper/PLAN.md v2 (ab3896b). Lanes P2, P3. |
+| P2 | 2026-09-07T01:40Z | `[Giselher · tooling-engineer] GK-M — session kind, guard, /goalkeeper skill, goalkeeper.py, data repo, installer (Mac-local)` | agent:giselher project:remote-system subproject:goalkeeper session:cli-worker | Brief docs/goals/goalkeeper/lane-giselher-mac.md. Mac-local by operator ruling 2026-09-07. |
+| P3 | 2026-09-07T01:40Z | `[Luitpold · backend-developer] GK-D — deck refuses messages to 🥅 at deliverDesktopSession + skill isolation lines` | agent:luitpold project:remote-system subproject:goalkeeper session:cli-worker | Brief docs/goals/goalkeeper/lane-luitpold-deck.md. |
+| P4 | 2026-09-07T01:40Z | `operator:gate — re-authenticate Linear on the german-box Codex MCP and the Mac desktop` | operator:gate project:remote-system | Every /goal lane since 09-06 stalled or went pending on this. |
+| P5 | 2026-09-07T01:40Z | `operator:gate — ./up.sh on the deck` | operator:gate project:remote-system | G1 machines page + G2 sessions page are on main but not running; GK-D's refusal will need it too. |
+
+---
+| P12 | 2026-09-07T19:25Z | `fleetdeck bus: the messages endpoint answers 200 ok:false for both "target not found" and "target not live"; Mac seat/worker registrations go stale (mac\|LC-giselher live=false since 03:53Z; mac\|orchestrator seen live=false at 17:57Z by ORCHESTRATOR 28)` | project:remote-system subproject:fleetdeck-bus needs:orchestrator | Reported by 🎛 ORCHESTRATOR 28 (lowcap) 2026-09-07 ~19:00Z: five finished box lanes posted final reports to the desktop seat, all HTTP 200 ok:false delivered_at:null, sat idle up to 2h. Their hardcoded seat name lives in the box-side script /home/vibe/launch/seat-notify.sh (authored by O45, not in this repo). Repo-side fixes: a distinguishable status (4xx or explicit reason), and the Mac lease/pinger that lets mac rows go stale. Candidate lane after G3 weaves; needs an operator goal line. |
+| P13 | 2026-09-07T20:00Z | `deploy-keys/mint-github-token.sh --askpass leaves the live token in plaintext under $TMPDIR/tmp.gh*/askpass.sh and relies on every caller to delete it` | project:remote-system subproject:deploy-keys security needs:orchestrator | Giselher found a live token on disk at 2026-09-07T16:24Z left by an unidentified caller (not this seat: no push ran then), plus one from 2026-09-05. Harden the helper: self-expire (background sweeper or TTL check on next mint), 0700 dir + 0600 file, and print the dir path on a fixed stderr line so callers can trap it; consider a fifo instead of a file. Candidate lane after G3; needs an operator goal line. |
+| P14 | 2026-09-07T21:19Z | `operator:gate — both key windows shut: start a GitHub train AND re-mint the root,vibe deploy cert on localhost:3131/keys.html` | operator:gate project:remote-system | Broker answered 503 at 21:19Z and the deploy cert expired 2026-09-08T00:16:54 local (one event, rule 4). Blocked until then: pushing weave/goalkeeper-v1 and the orchestrator branch, Giselher's GK-M.6 push, box ssh (retiring Luitpold's session). The weave itself proceeds from local branches. |
