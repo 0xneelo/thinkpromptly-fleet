@@ -12,6 +12,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -29,6 +30,14 @@ TIME_KEYS = ("reported_at", "verified_at", "next_report_due")
 QUEUE_KEYS = ("id", "item", "default", "opened_at", "deadline")
 
 MARKER_KINDS = ", ".join(name for name, _ in bl.MILESTONE_MARKERS)
+
+# DESIGN §4a: an evidence entry is an external pointer — a URL, a `git:<sha>`, or a path.
+# Anything else ("", "done", "trust me") is a claim, not evidence.
+EVIDENCE_SHAPE = re.compile(r"^(?:https?://\S+|git:[0-9a-f]{7,40}|/?[\w.~-]+(?:/[\w.~-]+)+/?)$")
+
+
+def evidence_ok(entry):
+    return isinstance(entry, str) and EVIDENCE_SHAPE.match(entry.strip()) is not None
 
 
 def is_int(value):
@@ -156,16 +165,16 @@ def check_lane(lane, index, seen_ids, fails):
                      "verified, only believed. Name at least one of: %s (DESIGN §4b)"
                      % (lid, lane["done_milestone"], MARKER_KINDS))
 
-    # DESIGN §4a/§4b: no green without an external pointer.
+    # DESIGN §4a/§4b: no green without an external pointer. The list must hold at least one
+    # entry shaped like one — [""] is non-empty and still proves nothing.
     evidence = lane.get("evidence")
-    has_evidence = isinstance(evidence, list) and len(evidence) > 0
-    if state == "done-verified":
-        if lane.get("verified_at") is None:
-            fails.append("lane %s: done-verified needs a non-null verified_at (DESIGN §4a)" % lid)
-        if not has_evidence:
-            fails.append("lane %s: done-verified needs a non-empty evidence list (DESIGN §4a)" % lid)
-    elif state == "done-claimed" and not has_evidence:
-        fails.append("lane %s: done-claimed needs a non-empty evidence list (DESIGN §4a)" % lid)
+    has_evidence = isinstance(evidence, list) and any(evidence_ok(entry) for entry in evidence)
+    if state == "done-verified" and lane.get("verified_at") is None:
+        fails.append("lane %s: done-verified needs a non-null verified_at (DESIGN §4a)" % lid)
+    if state in ("done-verified", "done-claimed") and not has_evidence:
+        fails.append("lane %s: %s needs at least one evidence entry that is a path, URL, or "
+                     "git:<sha> — got %r (DESIGN §4a: never done without an evidence link)"
+                     % (lid, state, evidence))
 
 
 def check_bundle(board, path, now, fails, warns):
