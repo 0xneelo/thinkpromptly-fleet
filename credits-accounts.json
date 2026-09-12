@@ -19,10 +19,12 @@
     "d24c4827-df47-40e3-af74-574418a03a4b": {
       "email": "aylianator@gmail.com",
       "label": "Aylin Yeter",
-      "confirmed": false
+      "confirmed": true
     }
   },
   "codex": {
-    "admin@deus.finance": { "label": "Daniel Tabor (personal · ChatGPT)" }
+    "admin@deus.finance": {
+      "label": "Daniel Tabor (personal \u00b7 ChatGPT)"
+    }
   }
 }

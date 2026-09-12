@@ -5,8 +5,12 @@
 # mapping any CLI config on this machine can prove, and Codex rollout rate limits.
 #   sh fleet-credits.sh            -> print the line
 #   sh fleet-credits.sh push <url> -> POST the line to a fleetdeck /api/credits
+# The account behind the live read is whatever the token's own profile says — never the
+# email in ~/.claude.json, which only records who last configured this CLI (2026-09-02:
+# config said one account, the keychain token was a colleague's, and the deck filed that
+# colleague's 4% under a name really sitting at 93%). No profile, no usage read.
 # The access token is read on the machine that owns it, kept in shell memory, and used
-# only for the usage call below. It is never printed, stored, logged or sent anywhere
+# only for the two calls below. It is never printed, stored, logged or sent anywhere
 # else — the Authorization header goes through a 0600 temp file so the token never
 # appears in `ps`. Runs on mac, WSL and linux; the collect case takes no arguments.
 
@@ -15,6 +19,7 @@ JQ=$(command -v jq)
 HOST=$(hostname -s 2>/dev/null || hostname)
 TS=$(date +%s)
 USAGE_URL=https://api.anthropic.com/api/oauth/usage
+PROFILE_URL=https://api.anthropic.com/api/oauth/profile
 
 # First non-empty value among the dotted paths, from the JSON on stdin. Empty on any miss.
 jval() {
@@ -49,6 +54,9 @@ STATE=absent
 EMAIL=""
 USAGE=""
 ORG=""
+PROVEN=""
+TIER=""
+TYPE=""
 if [ -n "$CRED" ]; then
   TOKEN=$(printf %s "$CRED" | jval claudeAiOauth.accessToken accessToken)
   EXP=$(printf %s "$CRED" | jval claudeAiOauth.expiresAt expiresAt)
@@ -68,8 +76,27 @@ if [ -n "$CRED" ]; then
     trap 'rm -f "$HDR" "$BODY"' EXIT INT TERM
     printf 'Authorization: Bearer %s\n' "$TOKEN" > "$HDR"
     # -o/-w rather than -f: 401/403 has to be told apart from every other failure.
-    CODE=$(curl --max-time 10 -s -o "$BODY" -w '%{http_code}' -H @"$HDR" \
-      -H 'anthropic-beta: oauth-2025-04-20' -H 'Content-Type: application/json' "$USAGE_URL")
+    call() {
+      curl --max-time 10 -s -o "$BODY" -w '%{http_code}' -H @"$HDR" \
+        -H 'anthropic-beta: oauth-2025-04-20' -H 'Content-Type: application/json' "$1"
+    }
+    # Identity first: the usage numbers are filed under the account the token proves.
+    CODE=$(call "$PROFILE_URL")
+    case $CODE in
+      2??)
+        PEMAIL=$(jval account.email account.email_address < "$BODY")
+        PORG=$(jval organization.uuid < "$BODY")
+        if [ -n "$PEMAIL" ] && [ -n "$PORG" ]; then
+          EMAIL=$PEMAIL
+          ORG=$PORG
+          PROVEN=1
+          TIER=$(jval organization.rate_limit_tier < "$BODY")
+          TYPE=$(jval organization.organization_type < "$BODY")
+          CODE=$(call "$USAGE_URL")
+        else
+          CODE=000 # a profile that names nobody proves nobody
+        fi ;;
+    esac
     case $CODE in
       2??) STATE=ok; USAGE=$(cat "$BODY") ;;
       401 | 403) STATE=token_expired ;; # no refresh flow here: the human reopens Claude Code
@@ -87,7 +114,8 @@ CRED=""
 # and it covers every org the app has sampled — including accounts with no CLI login here.
 # The token cache in that same directory (config.json) is NEVER read, parsed or emitted.
 # The org -> email pairs come from the CLI configs on this machine (this user's, the WSL
-# users', and the Windows side reachable from WSL), so the deck can resolve an org itself.
+# users', and the Windows side reachable from WSL) plus the pair the token itself proved
+# above, so the deck can resolve an org itself.
 # `desktop` stays the newest sample per org; `history` is the trend behind it, thinned.
 EXTRA=""
 [ -n "$PY" ] && EXTRA=$("$PY" -c '
@@ -167,6 +195,7 @@ fi
 LINE=""
 if [ -n "$PY" ]; then
   LINE=$(HOSTN="$HOST" TSN="$TS" CL_EMAIL="$EMAIL" CL_ORG="$ORG" CL_STATE="$STATE" CL_USAGE="$USAGE" \
+    CL_PROVEN="$PROVEN" CL_TIER="$TIER" CL_TYPE="$TYPE" \
     CX="$CX" CX_STATE="$CXSTATE" EXTRA="$EXTRA" "$PY" -c '
 import json, os
 e = os.environ
@@ -178,9 +207,15 @@ claude = None if e["CL_STATE"] == "absent" else {
     "usage": jl(e["CL_USAGE"])}
 codex = None if e["CX_STATE"] == "absent" else dict(jl(e["CX"]) or {}, state=e["CX_STATE"])
 x = jl(e["EXTRA"]) or {}
+accts = x.get("accounts") or []
+# The token-proved pair outranks any config file naming the same org.
+if e["CL_PROVEN"] == "1" and claude:
+    accts = [a for a in accts if a.get("org") != claude["org"]] + [{
+        "org": claude["org"], "email": claude["email"],
+        "tier": e["CL_TIER"] or None, "type": e["CL_TYPE"] or None}]
 print(json.dumps({"host": e["HOSTN"], "ts": int(e["TSN"]), "claude": claude, "codex": codex,
                   "desktop": x.get("desktop") or [], "history": x.get("history") or [],
-                  "accounts": x.get("accounts") or []},
+                  "accounts": accts},
                  separators=(",", ":")))
 ')
 elif [ -n "$JQ" ]; then

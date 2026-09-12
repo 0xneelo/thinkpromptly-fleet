@@ -87,8 +87,16 @@ account and how.
 
 `credits-accounts.json` maps each Claude org uuid to a person. A CLI login on any fleet
 machine proves an account's email and flips its row to confirmed; unconfirmed rows are
-labelled as such in the view. To confirm the remaining one, sign that account into Claude
-Code once on any fleet machine and refresh.
+labelled as such in the view. To confirm one, sign that account into Claude Code once on
+any fleet machine and refresh.
+
+**Whose numbers a live read is.** The collector asks the token itself (`/api/oauth/profile`)
+before it reads usage, and files the numbers under that account. `~/.claude.json` only
+records who last configured the CLI; its email is used for the org map, never for the live
+read. The two do drift apart (2026-09-02: config said Lafayette, the keychain token was
+Aylin's, and Aylin's 4% sat under Lafayette's name while she was at 93%). A machine whose
+CLI moves to another account releases the row it held on the next collect, whatever the
+rank, and between two desktop samples of one account the newer sample wins.
 
 `box/fleet-credits.sh` is the master copy, installed on the box like `fleet-lastmsg.sh`:
 

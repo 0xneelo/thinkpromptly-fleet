@@ -1033,7 +1033,8 @@ db.exec(
   `CREATE TABLE IF NOT EXISTS credits_history (org TEXT, t INTEGER, fh REAL, sd REAL, xu REAL, PRIMARY KEY (org, t))`
 );
 
-const CREDITS_SH = path.join(__dirname, 'box', 'fleet-credits.sh');
+// Overridable so a test can feed the collect path canned lines instead of the Mac's token.
+const CREDITS_SH = process.env.FLEET_CREDITS_SH || path.join(__dirname, 'box', 'fleet-credits.sh');
 // Quote-free, argument-free: the same remote-command rule as fleet-lastmsg.sh. No wsl
 // prefix here — remote() adds it per host, so a plain Linux host runs the script directly.
 const CREDITS_REMOTE = 'sh /home/vibe/bin/fleet-credits.sh';
@@ -1066,6 +1067,9 @@ const beats = (a, b) => {
   // A read that failed carries no numbers, so it must not displace a recent one that
   // succeeded: a single rate-limited call would otherwise erase a good live reading.
   if (ra === rb && b.state === 'ok' && a.state !== 'ok' && at - bt < RANK_STALE) return false;
+  // Two desktop samples of one account: the newer sample wins, not the machine whose
+  // collect ran last — a box's days-old copy must not outvote the Mac's minutes-old one.
+  if (ra === rb && a.sample_ts && b.sample_ts && a.sample_ts !== b.sample_ts) return a.sample_ts > b.sample_ts;
   return ra === rb ? at >= bt : ra > rb || at - bt > RANK_STALE;
 };
 
@@ -1332,10 +1336,18 @@ function creditsWrite(rows) {
   }
   // A collect carries no pushed rows, so without comparing against what is already stored
   // a local snapshot would clobber a better report an off-fleet machine pushed earlier.
+  // Every machine heard from in this batch. A stored claim whose machine reported again
+  // without repeating it — its CLI signed into another account, say — is superseded by
+  // what that machine and the rest say now, rank aside; a claim from a machine not heard
+  // from stands on rank until it goes stale.
+  const reporting = new Set(rows.map((r) => r.host));
   let written = 0;
   for (const [k, r] of best) {
-    const prev = creditsGetId.get(r.kind, r.id);
-    if (prev && !beats(r, safeParse(prev.payload))) continue;
+    const prev = safeParse((creditsGetId.get(r.kind, r.id) || {}).payload);
+    const lapsed =
+      prev && reporting.has(prev.host) && r.updated_at > (prev.updated_at || 0) &&
+      !groups.get(k).some((c) => c.host === prev.host && c.source === prev.source);
+    if (prev && !lapsed && !beats(r, prev)) continue;
     // Which machines report this account and how — every candidate for the key, not just
     // the winner: an account signed in on three boxes is a different fact from one on one.
     const seen = [];

@@ -4,6 +4,21 @@
     {
       "name": "fleetdeck",
       "url": "http://localhost:3131"
+    },
+    {
+      "name": "fleetdeck-worktree",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "PORT=3135",
+        "FLEET_DB=/private/tmp/claude-501/-Users-misterislez-remote-system--claude-worktrees-root-selection-onboarding-vps-f096cf/77c7fa35-0801-4301-a47e-aba8704dc6d1/scratchpad/deck/fleet.db",
+        "FLEET_HOSTS_FILE=/private/tmp/claude-501/-Users-misterislez-remote-system--claude-worktrees-root-selection-onboarding-vps-f096cf/77c7fa35-0801-4301-a47e-aba8704dc6d1/scratchpad/deck/hosts.json",
+        "FLEET_NO_REAPER=1",
+        "FLEET_TAILNET_BIND=127.0.0.2",
+        "FLEET_TAILNET_HOST=127.0.0.2:3135",
+        "node",
+        "server.js"
+      ],
+      "port": 3135
     }
   ]
 }
