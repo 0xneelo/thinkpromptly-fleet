@@ -1,6 +1,6 @@
 {
  "project": "remote-system",
- "updated": "2026-09-10",
+ "updated": "2026-09-11",
  "goals": [
   {
    "id": "G1",
@@ -140,7 +140,7 @@
    "asks": [],
    "theme": "fleetdeck",
    "asked": "2026-09-10",
-   "status": "active",
+   "status": "done",
    "health": "moving",
    "progress": "",
    "next": "",
@@ -155,11 +155,53 @@
    "sources": [
     "operator word 'gpt xhigh' 2026-09-10 on seat 20's plan; finding O20-SEATS-1 from lowcap 🎛 36"
    ],
-   "updated": "2026-09-10",
+   "updated": "2026-09-11",
    "log": [
     {
      "at": "2026-09-10",
      "note": "added"
+    },
+    {
+     "at": "2026-09-11",
+     "note": "status → active — 2026-09-11 woven into main as 7c10bbf; live Acceptance 2 check pending the deck restart"
+    },
+    {
+     "at": "2026-09-11",
+     "note": "status → done — 2026-09-11 00:45 local: after the deck restart (pid 90303) 'orchestrator remote-system', 'orchestrator lowcap-connector' and 'researcher 3' all resolved with resolvedVia=title; weave 7c10bbf"
+    }
+   ]
+  },
+  {
+   "id": "G5",
+   "goal": "Fleet ssh trust rotated to a CA that exists only in 1Password, with deploy/admin role certs, and the on-disk CA key and four static keys gone or chained",
+   "why": "the deploy CA private key sat unencrypted at ~/.ssh/id_ed25519 since 2026-07-21; any local process could mint fleet-wide root certs without Touch ID (RESEARCHER 3, 2026-09-10)",
+   "asks": [],
+   "theme": "security",
+   "asked": "2026-09-10",
+   "status": "active",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "docs/research/ssh-ca-rotation-2026-09-10.md; docs/goals/ssh-ca-rotation/; lane Ivo FD-ssh-ca-rotation"
+    },
+    {
+     "ref": "branch agent-ssh-ca-rotation"
+    }
+   ],
+   "sources": [
+    "operator via RESEARCHER 3: 'package it and notify the orchestrator to get it launched'"
+   ],
+   "updated": "2026-09-11",
+   "log": [
+    {
+     "at": "2026-09-10",
+     "note": "added"
+    },
+    {
+     "at": "2026-09-11",
+     "note": "status → active — 2026-09-11 ~02:05 local: repo artifacts woven into main as bcd7ee6 (Ivo, 25 commits, 12 hunter + 5 oracle findings fixed, 2 optional WONTFIX). Host applies S1-S5 remain gated per owner; nothing applied yet"
     }
    ]
   }
