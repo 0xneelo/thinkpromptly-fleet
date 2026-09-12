@@ -80,6 +80,8 @@ test('until says nothing without an epoch and "resets now" once it has passed', 
   assert.strictEqual(_.until(SEC + 59 * MIN, NOW), 'resets in 59m');
   assert.strictEqual(_.until(SEC + 200 * MIN, NOW), 'resets in 3h 20m');
   assert.strictEqual(_.until(SEC + 60 * MIN, NOW), 'resets in 1h 0m');
+  assert.strictEqual(_.until(SEC + 24 * HOUR, NOW), 'resets in 1d 0h 0m');
+  assert.strictEqual(_.until(SEC + 116 * HOUR + 3 * MIN, NOW), 'resets in 4d 20h 3m');
 });
 
 // ---------------------------------------------------------------------------

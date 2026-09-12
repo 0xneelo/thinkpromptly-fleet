@@ -74,7 +74,9 @@
     if (!epoch) return '';
     const m = Math.round((epoch * 1000 - nowMs(now)) / 60000);
     if (m <= 0) return 'resets now';
-    return 'resets in ' + (m < 60 ? m + 'm' : Math.floor(m / 60) + 'h ' + (m % 60) + 'm');
+    const h = Math.floor(m / 60), d = Math.floor(h / 24);
+    if (m < 60) return 'resets in ' + m + 'm';
+    return 'resets in ' + (d ? d + 'd ' + (h % 24) : h) + 'h ' + (m % 60) + 'm';
   }
 
   // A pause has an end, and a clock time is the one form of it a reader can act on.
