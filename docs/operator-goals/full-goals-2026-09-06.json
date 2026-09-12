@@ -1,0 +1,1171 @@
+{
+ "project": "remote-system",
+ "updated": "2026-09-06",
+ "goals": [
+  {
+   "id": "G1",
+   "goal": "Machines page live on fleetdeck (localhost:3131/machines.html): every machine, which Claude/Codex account each CLI + desktop client is signed in as, the live sessions on it, and its usage",
+   "why": "operator 2026-09-05: build out the localhost:3131/machines page where we have an overview of all of our machines and what claude / codex session they are logged in; earlier ask: machine overview with all logins and the usage",
+   "asked": "2026-09-05",
+   "status": "active",
+   "health": "blocked",
+   "progress": "woven to main @ 1a8d3bf; pending operator ./up.sh (XYZ-2148)",
+   "next": "operator: ./up.sh, then verify /machines.html",
+   "tasks": [
+    {
+     "ref": "claude/account-usage-cronjob-29e68a@505d53a"
+    },
+    {
+     "ref": "XYZ-2112",
+     "who": "Rhoda",
+     "lane": "agent-rhoda/machines-land",
+     "state": "In Progress",
+     "emoji": "🔨"
+    },
+    {
+     "ref": "XYZ-2113",
+     "who": "Valentin",
+     "lane": "agent-valentin/machines-usage@1c563ec",
+     "state": "Done",
+     "emoji": "✅"
+    },
+    {
+     "ref": "XYZ-2111",
+     "who": "O32",
+     "state": "Backlog",
+     "emoji": "🗂"
+    }
+   ],
+   "sources": [
+    "session 0efd1f19 (ORCHESTRATOR 32)",
+    "session 5197172c 09-05",
+    "session 0efd1f19 09-06",
+    "session bfd190b0 09-06",
+    "session 282bc0f7 09-06",
+    "files (coordinator/decisions, memory) 09-05"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-05",
+     "note": "added"
+    },
+    {
+     "at": "2026-09-06",
+     "note": "status moving→active (schema fix), health blocked on operator ./up.sh; full pass attached sources"
+    }
+   ],
+   "notes": [
+    "2026-09-06: both lanes woven to origin/main @ 1a8d3bf (Rhoda 7e0fee6 + Valentin 1c563ec), suite 206 green, live fleet sweep all ok. Pending operator ./up.sh — XYZ-2148."
+   ],
+   "theme": "deck",
+   "asks": [
+    "can we build a page called \"machines\" where we show all of our machines... and then we show what each machine is logged in?",
+    "Run this — it is the only"
+   ]
+  },
+  {
+   "id": "G2",
+   "goal": "Lightweight remote terminal deck for tmux workers, styled like Claude desktop",
+   "why": "it should be super lightweight basically just a remote terminal connecting to our claude instances via tmux and a simple button to \"re-connect\" or \"connect\" to all of our worker machines",
+   "asks": [
+    "please make it a proper UI similiar as if we would be using claude desktop :)",
+    "we should add the ability to maximize certain worker windows and minimize them again, basically have the overview mode and also ability to maximize windows :) because right now i cant really write into any of them",
+    "lets also add the maximize button in the left sidemenu and lets also make it possible to expand the sidemenu while in fullscreen mode then we have a good system really",
+    "there is no button to close the sidemenu once opened in fullscreen"
+   ],
+   "theme": "deck",
+   "asked": "2026-08-13",
+   "status": "done",
+   "health": "moving",
+   "progress": "deck live on :3131 since 08-13",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session beb64355 08-13"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G3",
+   "goal": "Fleetdeck sessions connect, render and copy reliably",
+   "why": "i am having issues copying an url from the terminal session",
+   "asks": [
+    "i cant connect to my workers",
+    "somehow this tmux window is not rendered correctly",
+    "all my sessions cant be connected in fleetdeck, but german-box is online i can ssh",
+    "somehow we have agents here where the last msg isnt counted correctly?",
+    "On the operator's Mac there are ~46 orphaned `node .../server.js` processes (ppid 1) left behind by fleetdeck test runs ... make the leak structural-impossible"
+   ],
+   "theme": "deck",
+   "asked": "2026-08-14",
+   "status": "done",
+   "health": "moving",
+   "progress": "pty leak, tmux render, URL copy, Codex last-msg fixed",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session beb64355 08-14",
+    "session bdd2c520 08-19",
+    "session bc599223 08-20",
+    "session c7ecde1c 08-22",
+    "session 66f3eeb1 08-27",
+    "session 1d1fac4b 08-30"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G4",
+   "goal": "Session registry: classify, sort, filter, bulk-kill, hide workers",
+   "why": "i suggest we build a proper table and database and also tell the orchestrators and agents to classify the agents properly e.g. \"lane 24 worker\" ... then also i think we should make it so i can in the fleetdeck \"kill\" the session completly or tag it for killing for the orchestrator etc",
+   "asks": [
+    "we probably need some type of file where the orchestrators can make workers as active or inactive and then we can filter them?",
+    "can we actually read the contents of the underlying claude session to find out when they send the last message? :D",
+    "lets also have one column for the linear task associated and they should always only add one linear task \"the main\" task of the lane. so it gets very easy to identify the agents, per task and per trainID etc",
+    "two things, the \"registry\" is somehow a window above a window? lets make it fullscreen instead of overlay. also lets add as action button \"show\" so it opens the respective agent in fullscreen",
+    "we gotta add mass selectors in the registry so i can kill all selected",
+    "ok we need filters as well like last message older than 1 day"
+   ],
+   "theme": "deck",
+   "asked": "2026-08-17",
+   "status": "done",
+   "health": "moving",
+   "progress": "registry + filters + mass kill landed 09-06",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "XYZ-1742"
+    }
+   ],
+   "sources": [
+    "session c7ecde1c 08-22",
+    "session 2e6e84d1 08-17",
+    "session 1502a37c 08-23",
+    "session f2b06723 09-06",
+    "session c7ecde1c 08-23",
+    "session 64ab012a 08-25"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G5",
+   "goal": "SSH keys page in the deck: view and mint with no CLI",
+   "why": "we should include that into the fleetdeck as a seperate page so we can see all of our ssh keys how long they are valid and also create new keys easily for our systems, no command line scripts needed everything plugged into our fleetdeck",
+   "asks": [
+    "the \"kill now\" in the fleet still doesnt delete the cert in the frontend. it should be removed from the list or atleast put to inactive",
+    "when you click on mint lets open a popup that shows me a live view on whats happening till the 1pass popup launches and after as well, so it all feels interactive and live",
+    "i think it makes no sense to ask the operator to type root, vibe it should be selectable \nmulti choice."
+   ],
+   "theme": "deck",
+   "asked": "2026-08-15",
+   "status": "done",
+   "health": "moving",
+   "progress": "keys page + live mint popup live",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 0bcc0bcf 08-15",
+    "session ab159c00 08-28",
+    "session 1e3928ea 08-27",
+    "session 1e3928ea 08-28"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G6",
+   "goal": "One command launches the whole deck, operator-only",
+   "why": "lets build a proper launch script that i can run with ./up.sh or something",
+   "asks": [
+    "for me there should be really just a single command to launch the server if i want",
+    "detect when the server process was started from a Claude agent shell (any CLAUDE_* env var, e.g. CLAUDE_CODE_ENTRYPOINT) and fail loudly"
+   ],
+   "theme": "deck",
+   "asked": "2026-08-28",
+   "status": "active",
+   "health": "stalled",
+   "progress": "./up.sh + agent-shell refusal landed; single fleet command open",
+   "next": "operator: say if ./up.sh already counts as done",
+   "tasks": [],
+   "sources": [
+    "session 08934c1a 08-28",
+    "session 04d213ad 08-29",
+    "session 40d0c721 08-28"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G7",
+   "goal": "Accounts page: all 5 accounts' usage, credits and limits, live, like Claude's own",
+   "why": "we have 5 seperate users contributing to these repos ... can we somehow draw their usage credits and infos into fleetdeck as well?",
+   "asks": [
+    "build a proper account page",
+    "lets show the data like claude shows it. otherwise i am confused",
+    "lafayette@infinite-holdings.llc is almost at 5 hour limit but the fleetdeck doesnt show it at all",
+    "we are missing the fable bar",
+    "lets build a proper account usage check. its a cronjob that logs into our claude & codex sessions once every half hour and checks the usage and serves it on fleetdeck is it possible",
+    "can we now read all usage stats live?..."
+   ],
+   "theme": "accounts",
+   "asked": "2026-08-28",
+   "status": "active",
+   "health": "moving",
+   "progress": "credits + accounts pages live; hour limits, Fable bar, 30-min cron open",
+   "next": "RESEARCHER 4: usage cron + live read → orchestrator",
+   "tasks": [],
+   "sources": [
+    "session f221d303 08-28",
+    "session 8bf745bb 08-31",
+    "session 77c7fa35 09-02",
+    "session 6b34ed65 09-03",
+    "session 5197172c 09-05",
+    "session 228bdd91 09-06"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G8",
+   "goal": "Fleet deck page merging all Claude desktop sessions across accounts",
+   "why": "we need a page in fleet deck that merges all of our claude desktop sessions across multiple claude desktop accounts",
+   "asks": [],
+   "theme": "deck",
+   "asked": "2026-09-06",
+   "status": "active",
+   "health": "moving",
+   "progress": "asked 09-06 14:58; session fleet-deck-desktop-sessions-merge open",
+   "next": "orchestrator: package the merge-page lane",
+   "tasks": [],
+   "sources": [
+    "session af7e234b 09-06"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G9",
+   "goal": "A fleet page per project on the deck, fed by the goal database",
+   "why": "maybe we should have a fleet, uh, page on the fleet deck. Right? So every every project has, like, a page in the fleet deck, and there is also the goal.",
+   "asks": [],
+   "theme": "deck",
+   "asked": "2026-09-05",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session e3470c09 09-05"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G10",
+   "goal": "Amber holder state when RDP is active, never a false red",
+   "why": "how is it reading that? because i have a terminal open on the rdp with sleep infinity",
+   "asks": [],
+   "theme": "deck",
+   "asked": "2026-08-18",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 745d04d5 08-18"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G11",
+   "goal": "Deck runs on short-lived certs, never per-window 1Password approvals",
+   "why": "why do i have to ssh approve every single tmux window? instead of all at once?",
+   "asks": [
+    "The fleetdeck deck server must stop using the 1Password SSH agent. It currently spawns `ssh -o BatchMode=yes ... german-box \"tmux ls -F ...\"` ... every ~20s"
+   ],
+   "theme": "deck",
+   "asked": "2026-08-22",
+   "status": "done",
+   "health": "moving",
+   "progress": "deck off the 1Password agent since 08-31 (XYZ-1904)",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "XYZ-1904"
+    }
+   ],
+   "sources": [
+    "session c7ecde1c 08-22",
+    "session 63d9ec7f 08-31"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G12",
+   "goal": "Cross-app messaging: any Claude/Codex seat or CLI addressable, with ACK",
+   "why": "we want cross-app messaging between claude and codex desktop apps. thats the main feature + all of our CLIs etc",
+   "asks": [
+    "but how can we for example send a message to researcher 14? if we can only send messages to current chat",
+    "i suggest we create a skill like /notify orchestrator-lowcapconnector ... but the delivery is handled by our python script so we can always be sure it receives\n\nthen we also ask the receiver to respond by calling our api again with response",
+    "worked everything."
+   ],
+   "theme": "workers",
+   "asked": "2026-08-27",
+   "status": "active",
+   "health": "moving",
+   "progress": "/notify + seat delivery built; ACK loop live after deck restart",
+   "next": "verify /notify ACK end to end after ./up.sh",
+   "tasks": [
+    {
+     "ref": "XYZ-1964"
+    },
+    {
+     "ref": "XYZ-1965"
+    },
+    {
+     "ref": "XYZ-1966"
+    },
+    {
+     "ref": "XYZ-1802"
+    }
+   ],
+   "sources": [
+    "session 3ff77a58 08-28",
+    "session 3ff77a58 08-27",
+    "session fe36eee0 09-01"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G13",
+   "goal": "Bus messages name the real sender, project and recipient",
+   "why": "why does it here just say claude desktop session? it should be more detailed, saying its the orchestrator",
+   "asks": [
+    "update our /fleet message bus skill so the agent says his name and project before sending a message currently its unclear who said the message"
+   ],
+   "theme": "fleet",
+   "asked": "2026-08-27",
+   "status": "done",
+   "health": "moving",
+   "progress": "landed 08-31",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 3ff77a58 08-27",
+    "session 534bfc18 08-31"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G14",
+   "goal": "Fleet lifecycle + org chart: backend owns machines, live tree view",
+   "why": "i had this idea to build a \"orgchart\" in a tree system ... the goal of the chart is to show the live overview of our current fleet, across all of our chatgpt desktop, claude desktop(potentially multiple accounts), claude cli and chatgpt cli",
+   "asks": [
+    "the main issue i see in all of this is that we need an actual backend service that \"owns\" the machines because i see that these agents do not turn them off correctly",
+    "when can i expect the fleet org chart system to be ready?\nits going for ages now",
+    "lift S6",
+    "when can we expect the org chart v0.3?"
+   ],
+   "theme": "fleet",
+   "asked": "2026-08-27",
+   "status": "active",
+   "health": "stalled",
+   "progress": "v0.1/v0.2 landed (XYZ-1742); tree view, leaf capture, v0.3 open",
+   "next": "orchestrator: scope org-chart v0.3 lane",
+   "tasks": [
+    {
+     "ref": "XYZ-1742"
+    }
+   ],
+   "sources": [
+    "session 6bd5f4a4 08-27",
+    "session f28b86ff 09-03",
+    "session 04d213ad 08-29",
+    "session 19d27e15 08-28"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G15",
+   "goal": "Every box on the same CA-trust model, inventory documented, access locked",
+   "why": "use the same security model as with think-box and german-box using CA",
+   "asks": [
+    "we have\nmacbook (our orchestrator machine)\ngit train (0xneelo)\ngerman-box (our worker lane)\nonboarding-app-box (vibe.permissionless.credit)\nthink-box (thinkpromptly.com / lowcapsxyz.com )its where we deploy lowcaps we called it \"root\" so far i guess)\nivy-box (ivy.market)",
+    "also what about our onboarding-app vps?",
+    "we gotta setup our vps systems",
+    "ok now setup the rogstrix its a tailscale windows machine",
+    "also the last thing is getting the access control on the german-box in control :D i guess it has a full access github key and other keys?"
+   ],
+   "theme": "fleet",
+   "asked": "2026-08-15",
+   "status": "done",
+   "health": "moving",
+   "progress": "all 7 machines + VPSes + ROG Strix on CA trust by 09-06",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 1e3928ea 08-27",
+    "session 0c8f0b9e 09-06",
+    "session 0bcc0bcf 08-15"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G16",
+   "goal": "Message bus warns and lets sessions appeal before inactivity close",
+   "why": "the fleetdeck mark.sh backend can also use the message-bus to tell sessions that they are closed out because they havnt reported a lifesign for x minutes and got closed out. if they think its a mistake they should report to the orchestrator why",
+   "asks": [],
+   "theme": "fleet",
+   "asked": "2026-08-27",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 6bd5f4a4 08-27"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G17",
+   "goal": "Orchestrator cleans lanes and shuts down its predecessor on takeover",
+   "why": "maybe we have to invoke this into the skills so the orchestrator cleans the lanes better and the orchestrator that takes over a session turns of the old orchestrator etc",
+   "asks": [],
+   "theme": "fleet",
+   "asked": "2026-08-27",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 6bd5f4a4 08-27"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G18",
+   "goal": "Linear MCP proxy so agents stop losing Linear connections",
+   "why": "our agents keep loosing their linear mcp connections i suggest we build a proxy into the fleetdeck",
+   "asks": [],
+   "theme": "fleet",
+   "asked": "2026-09-05",
+   "status": "active",
+   "health": "moving",
+   "progress": "RESEARCHER 3 · linear mcp proxy live",
+   "next": "RESEARCHER 3: findings brief → orchestrator",
+   "tasks": [],
+   "sources": [
+    "session 85554c80 09-05"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G19",
+   "goal": "Research rival multi-agent systems and borrow what fits",
+   "why": "any of these interesting for our orchestrator, coordinator, goal-tracker...worker fleetdeck ideas?",
+   "asks": [
+    "research bridgemind.ai and check if they offer what we offer"
+   ],
+   "theme": "fleet",
+   "asked": "2026-09-05",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "LangGraph/CrewAI/AutoGen eval done 09-05; bridgemind.ai open",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 1e2de144 09-05",
+    "session f0e59359 09-05"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G20",
+   "goal": "GPT worker and hunter lanes run on Astra 6",
+   "why": "change our system to use astra 6 on high or xhigh now as gpt workers and hunters",
+   "asks": [],
+   "theme": "workers",
+   "asked": "2026-09-04",
+   "status": "done",
+   "health": "moving",
+   "progress": "applied 09-04 (gpt-6-astra, box + Mac Codex updated)",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "D-30"
+    }
+   ],
+   "sources": [
+    "files (coordinator/decisions, memory) 09-04"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G21",
+   "goal": "Coordinator v0.1→v0.2 built by a fleet worker: init ritual, boot gate, reconcile",
+   "why": "i suggest we let a thinkpromptly-fleet worker build it",
+   "asks": [
+    "Route now, Claude breed",
+    "build the initialization ritual as well as v0.2 finished",
+    "arm the boot gate, weekly reconcile, dead-man auto-UNKNOWN, operator-debt inbox",
+    "the coordinator-init should be run with a coordinator-portal agent in the respective repository, create a /portal skill the portal to the coordinator! :)",
+    "lets say i have an idea or an insight that is super important long-term what do i do?",
+    "Fix: for done-verified (and done-claimed, which coordinator-run requires evidence for), require at least one non-blank evidence entry that looks like a path, URL, or git:<sha>"
+   ],
+   "theme": "coordinator",
+   "asked": "2026-08-28",
+   "status": "active",
+   "health": "stalled",
+   "progress": "v0.1, init ritual, inbox, portal landed; v0.2 gate + weekly reconcile open",
+   "next": "Alistair: ship v0.2 (boot gate, weekly reconcile, dead-man)",
+   "tasks": [
+    {
+     "ref": "XYZ-1827"
+    }
+   ],
+   "sources": [
+    "session 19d27e15 08-28",
+    "session 19d27e15 08-29",
+    "files (coordinator/decisions, memory) 08-28",
+    "session 04d213ad 08-29",
+    "session e1aeef3e 08-29",
+    "session 1b75bd6a 09-05"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G22",
+   "goal": "Coordinator served entirely via API from the always-on german-box",
+   "why": "there should be a fleetdeck-portal backend service that serves everything to the portal via api :)",
+   "asks": [
+    "why does it have to connect to the remote-system repo at all?\neverything should be served via APIs",
+    "i think we should host this api on the german-box\nits always online"
+   ],
+   "theme": "coordinator",
+   "asked": "2026-08-29",
+   "status": "active",
+   "health": "stalled",
+   "progress": "portal backend built (XYZ-1842/1850); german-box hosting open",
+   "next": "orchestrator: host the portal API on the german-box",
+   "tasks": [
+    {
+     "ref": "XYZ-1842"
+    },
+    {
+     "ref": "XYZ-1850"
+    }
+   ],
+   "sources": [
+    "session 04d213ad 08-29",
+    "session cbeb6a6f 08-29"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G23",
+   "goal": "Northstar defined via /grill-me at coordinator initiation",
+   "why": "the northstar should be defined at the beginning of the coordinator initiation by using the /grill-me skill there should be only one coordinator per project. In the future we might create a meta-coordinato",
+   "asks": [],
+   "theme": "coordinator",
+   "asked": "2026-08-29",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 19d27e15 08-29"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G24",
+   "goal": "Someday: a meta-coordinator spanning multiple projects",
+   "why": "In the future we might create a meta-coordinato",
+   "asks": [],
+   "theme": "coordinator",
+   "asked": "2026-08-29",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 19d27e15 08-29"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G25",
+   "goal": "One local orchestrator per project plus one global orchestrator",
+   "why": "i am suggesting that we have a local-orchestrator per project and then maybe a global-orchestrator across all projects.",
+   "asks": [],
+   "theme": "coordinator",
+   "asked": "2026-08-30",
+   "status": "done",
+   "health": "moving",
+   "progress": "split live since 08-30",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 7d6bb291 08-30"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G26",
+   "goal": "Portals per repository, each bound to its own board",
+   "why": "the portals should be per repository imo",
+   "asks": [
+    "the portals should be per repository"
+   ],
+   "theme": "coordinator",
+   "asked": "2026-09-06",
+   "status": "done",
+   "health": "moving",
+   "progress": "ruled + applied 09-06",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 1cb9b460 09-06",
+    "files (coordinator/decisions, memory) 09-06"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G27",
+   "goal": "Coordinator records every important detail and recovers from lost-goal rot",
+   "why": "I'm wondering about the coordinator if we can make it even more bulletproof that everything that is important in the session is kind of recorded into goals",
+   "asks": [
+    "how can we get the coordinator/orchesrrator back on track in case they lost a goal on the way?",
+    "We would probably need to audit the last coordinator sessions and see if there was any data lost. from coordinator to coordinator."
+   ],
+   "theme": "coordinator",
+   "asked": "2026-09-05",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "audit of prior coordinator sessions done 09-05",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 3a14c165 09-05",
+    "session e3470c09 09-05"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G28",
+   "goal": "Cheatsheet: what to tell the coordinator/portal vs the orchestrator",
+   "why": "i need a cheatsheet as to what i should tell the coordinator /portal session and what i should tell the orchestrator right now its somehow chaotic",
+   "asks": [],
+   "theme": "coordinator",
+   "asked": "2026-09-06",
+   "status": "done",
+   "health": "moving",
+   "progress": "written 09-06",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 1cb9b460 09-06"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G29",
+   "goal": "Coordinator instance lives in lowcap-connector; deck board root instance-aware",
+   "why": "Move into lowcap-connector this week",
+   "asks": [],
+   "theme": "coordinator",
+   "asked": "2026-09-04",
+   "status": "active",
+   "health": "stalled",
+   "progress": "ruled D-25 09-04; move + DECK-11 open",
+   "next": "worker: DECK-11 instance-aware board root",
+   "tasks": [
+    {
+     "ref": "XYZ-2026"
+    },
+    {
+     "ref": "DECK-11"
+    }
+   ],
+   "sources": [
+    "files (coordinator/decisions, memory) 09-04"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G30",
+   "goal": "Goal-keeper role tracks goal completion beside the coordinator",
+   "why": "we need to create a new role \"goal-keeper\" he works side by side with the coordinator and orchestrator but his job is just keeping track of goals, absolutely nothing else",
+   "asks": [
+    "a Chrome job running on all of the the all of the lanes to see if they finish something. Right? Um, Yeah. based on the Git commits and deployments.",
+    "The goals are attached to linear tasks, and we see how these tasks are finished or not. What do you think?",
+    "launch all workers"
+   ],
+   "theme": "coordinator",
+   "asked": "2026-09-05",
+   "status": "active",
+   "health": "moving",
+   "progress": "role defined 09-05; lane XYZ-2169 pending launch",
+   "next": "operator: launch XYZ-2169 goal-keeper lane",
+   "tasks": [
+    {
+     "ref": "XYZ-2169"
+    }
+   ],
+   "sources": [
+    "session e3470c09 09-05",
+    "session 0efd1f19 09-06"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G31",
+   "goal": "Operator sees where we stand on goals, not tasks (/adhd-goals family)",
+   "why": "I feel like we're missing that skill that actually pushes orchestrator and coordinator, right, to think about these goals or, like, yeah, task... super tasks. Right?",
+   "asks": [
+    "I need to know where we stand with our goals, not with our tasks.",
+    "reply with corrections... then say \"commit the ledger\" and I land it",
+    "we ask the coordinator or orchestrator to tell us the list of goals if there would be no limitations no time restrictions basically what would be the goals if we could do absolutely everything based on exactly what the operator wanted and mentioned the complete goal list /adhd-full-goals"
+   ],
+   "theme": "skills",
+   "asked": "2026-09-05",
+   "status": "active",
+   "health": "moving",
+   "progress": "/adhd-goals + ledger 09-05; /adhd-full-goals 09-06",
+   "next": "operator: prune or promote the 💭 goals",
+   "tasks": [],
+   "sources": [
+    "session 7cb2e629 09-05",
+    "files (coordinator/decisions, memory) 09-05",
+    "session 90052376 09-06"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals"
+    }
+   ]
+  },
+  {
+   "id": "G32",
+   "goal": "ADHD table, roadmap and unblock sheet that keeps operator inputs",
+   "why": "give me an /adhd-table and roadmap",
+   "asks": [
+    "make an /adhd-unblock\nthen handoff to orchestrator",
+    "push the adhd-unblock skill to 0xneelo skills github",
+    "every time the agent update something on the file it resets all of the inputs that the operator has done until that moment... which is kind of stressful",
+    "the unblock me sheet should be done in a way that already answered questions could be hidden"
+   ],
+   "theme": "skills",
+   "asked": "2026-08-29",
+   "status": "done",
+   "health": "moving",
+   "progress": "all four live; unblock sheet persists input since 09-05",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 19d27e15 08-29",
+    "session 891a3ad2 08-29",
+    "session ee6ec62d 09-05",
+    "session 9d86e91b 09-05"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G33",
+   "goal": "/operator-gone: unattended full-bypass work windows",
+   "why": "basically the work should be done as if everything is approved in that time and if the operator would never come back. only after the timer is over is it allowed to have questions or be blocked again",
+   "asks": [],
+   "theme": "workers",
+   "asked": "2026-08-30",
+   "status": "done",
+   "health": "moving",
+   "progress": "skill live since 08-30",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 2fd8c448 08-30"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G34",
+   "goal": "See what every session did: export + 7-day cross-session summary",
+   "why": "create a skill that an orchestrator can call that collects all active sessions of his repo and copies the last messages into a md file",
+   "asks": [
+    "we need a skill that scans all of our sessions over the last 7 days through all of our claude sessions and makes a summary in a table with the session name and a quick 2 sentence summary what the problem was that was solved there and if it was actually solved or is still open"
+   ],
+   "theme": "workers",
+   "asked": "2026-09-03",
+   "status": "done",
+   "health": "moving",
+   "progress": "/session-export + /session-summary live 09-03",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 8c0f0b5e 09-03",
+    "session bfc57777 09-03"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G35",
+   "goal": "Worker names reaped automatically on lane death",
+   "why": "name.py should reap on lane death + rotate at 7 days — if that lands it is a fleet-repo change and would come to you as a lane",
+   "asks": [],
+   "theme": "workers",
+   "asked": "2026-09-06",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 0efd1f19 09-06"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  },
+  {
+   "id": "G36",
+   "goal": "Box workers stop dying mysteriously; lessons baked into the skill",
+   "why": "in our simple-ivy-vaults system we had violet worker dying a few times, can we understand why? launch 5 readers",
+   "asks": [
+    "should we add that to the /german-box-workers skill ?"
+   ],
+   "theme": "workers",
+   "asked": "2026-08-17",
+   "status": "done",
+   "health": "moving",
+   "progress": "Violet root-caused; /german-box-workers updated 08-17",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 806d4382 08-17"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G37",
+   "goal": "Short-lived SSH certs + GitHub App tokens, one system, one approval per train",
+   "why": "i think we should figure out a way how to have local 1 hour ssh keys or 4 hours or 8h that we create with our 1pass ssh key and provide it for a deployer",
+   "asks": [
+    "can we also create github keys programmatically?",
+    "also package the original ssh idea all into one",
+    "lets do the github app too",
+    "cant we get the github PEM into 1pass and secure it with a fingerprint?",
+    "i approve the 1pass one / few times in a train and then all agents can work without EVER prompting 1pass for 1h or 4h or 8h",
+    "build the broker\n\nthat sounds exactly like i had it in mind, we are basically creating a proxy service giving him rights for 8h then deleting the key after",
+    "about tailnet, the box workers should self-serve\nwhat if our macbook is offline?"
+   ],
+   "theme": "git",
+   "asked": "2026-08-14",
+   "status": "done",
+   "health": "moving",
+   "progress": "deploy-keys + broker live since 08-15; /how-to-fleet-git documents it",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 0bcc0bcf 08-14",
+    "session 0bcc0bcf 08-15",
+    "session 7f8a6883 08-29"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G38",
+   "goal": "Git train broker survives deck restarts",
+   "why": "i think we should isolate the git train service so it doesnt get shutdown constantly on restarts as we are devving the fleetdeck further",
+   "asks": [
+    "the gittrain is still constantly interrupted when we restart.",
+    "Fix: give each start a generation counter (or AbortController); after the await, discard the result if a newer end/start happened."
+   ],
+   "theme": "git",
+   "asked": "2026-08-29",
+   "status": "done",
+   "health": "moving",
+   "progress": "broker cutover 08-29; train-end race fixed 09-05",
+   "next": "",
+   "tasks": [
+    {
+     "ref": "XYZ-1854"
+    },
+    {
+     "ref": "XYZ-1844"
+    },
+    {
+     "ref": "XYZ-1860"
+    }
+   ],
+   "sources": [
+    "session 04d213ad 08-29",
+    "session 5dd32297 08-29",
+    "session a68962be 09-05"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G39",
+   "goal": "All diverged branches merged into one canonical main",
+   "why": "i guess we need to merge everything into main",
+   "asks": [],
+   "theme": "git",
+   "asked": "2026-09-06",
+   "status": "done",
+   "health": "moving",
+   "progress": "main @ 26ebf49 'one canonical branch' 09-06",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 0efd1f19 09-06"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as done"
+    }
+   ]
+  },
+  {
+   "id": "G40",
+   "goal": "Live token-cost ledger per agent and seat",
+   "why": "the token-cost ledger (POST usage per LLM call -> sqlite + per-agent cost rollups) which would give your org chart live cost-per-seat",
+   "asks": [],
+   "theme": "accounts",
+   "asked": "2026-08-27",
+   "status": "mentioned",
+   "health": "moving",
+   "progress": "",
+   "next": "",
+   "tasks": [],
+   "sources": [
+    "session 6bd5f4a4 08-27"
+   ],
+   "updated": "2026-09-06",
+   "log": [
+    {
+     "at": "2026-09-06",
+     "note": "added by /adhd-full-goals as mentioned"
+    }
+   ]
+  }
+ ]
+}
