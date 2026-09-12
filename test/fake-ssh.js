@@ -230,6 +230,23 @@ try {
     return out('');
   }
 
+  // A bus delivery: load-buffer (the text arrives on stdin, which this fixture need not read),
+  // then paste-buffer and send-keys into the target session. The session must exist on the
+  // host, exactly as tmux insists — a seat that is gone fails the paste, not the load.
+  if (/tmux (load-buffer|delete-buffer)/.test(cmd)) {
+    if (state.local) return out(runLocal(cmd));
+    return out('');
+  }
+  if (/tmux (paste-buffer|send-keys)/.test(cmd)) {
+    if (state.local) return out(runLocal(cmd));
+    const target = localTarget(cmd);
+    if (!((h.sessions || {})[target])) {
+      process.stderr.write("can't find session: " + target + '\n');
+      process.exit(1);
+    }
+    return out('');
+  }
+
   if (/tmux display-message/.test(cmd)) {
     if (state.local) return out(runLocal(cmd));
     return out('');

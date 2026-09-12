@@ -45,8 +45,12 @@ const SHEET = {
 function deck(t, sheetDefaults = {}) {
   const dir = tmpdir('unblock');
   const PORT = port++;
+  // One live worker on the german-box, so a bus delivery to FD-ivy lands and one to any other
+  // session fails the way tmux fails it.
   const state = path.join(dir, 'ssh.json');
-  fs.writeFileSync(state, JSON.stringify({ hosts: {}, calls: [] }));
+  fs.writeFileSync(state, JSON.stringify({
+    hosts: { 'german-box': { sessions: { 'FD-ivy': { activity: 'now' } } } }, calls: [],
+  }));
   const m = load(
     {
       PORT,
@@ -347,6 +351,54 @@ test('a sheet with no reply target answers 409 carrying the payload to copy by h
   assert.equal(r.body.error, 'no reply target');
   assert.equal(r.body.payload.answers.length, 1);
   assert.equal((await d.get('/' + id)).body.answers.q1.dirty, true, 'nothing was marked sent');
+});
+
+test('a delivery the bus fails answers 502 under the id the click chose, and marks nothing sent', async (t) => {
+  const d = deck(t);
+  // No desktop session is live in the test deck, so this target fails at delivery, not before.
+  const id = await d.create({ reply: { type: 'claude-desktop', session: 'ghost seat' } });
+  await d.put('/' + id + '/answers/q1', { choice: 'sqlite' });
+
+  const r = await d.act('/' + id + '/send', { messageId: 'op-click-000001' });
+  assert.equal(r.status, 502);
+  assert.equal(r.body.messageId, 'op-click-000001', 'the popup follows the row it named');
+  assert.equal(r.body.status, 'failed');
+  assert.match(r.body.error, /"ghost seat" is not live/);
+  assert.equal(r.body.payload.answers.length, 1, 'the payload is still there to paste by hand');
+
+  const row = (await d.messages()).body.messages.find((m) => m.id === 'op-click-000001');
+  assert.equal(row.status, 'failed');
+  assert.equal((await d.get('/' + id)).body.answers.q1.dirty, true, 'the answer still owes a send');
+
+  assert.equal((await d.act('/' + id + '/send', { messageId: 'nope' })).status, 400, 'a malformed id is refused');
+  assert.equal((await d.get('/' + id)).body.answers.q1.dirty, true);
+
+  // The tmux shape of the same failure: the worker is gone, the paste fails.
+  const gone = await d.create({ reply: { type: 'tmux', host: 'german-box', session: 'FD-gone' } });
+  await d.put('/' + gone + '/answers/q1', { choice: 'sqlite' });
+  const g = await d.act('/' + gone + '/send');
+  assert.equal(g.status, 502);
+  assert.match(g.body.error, /paste-buffer failed: can't find session: FD-gone/);
+  assert.equal((await d.get('/' + gone)).body.answers.q1.dirty, true);
+});
+
+test('a delivered send says so, with the bus stamp the popup shows', async (t) => {
+  const d = deck(t);
+  const id = await d.create({ reply: { type: 'tmux', host: 'german-box', session: 'FD-ivy' } });
+  await d.put('/' + id + '/answers/q1', { choice: 'sqlite' });
+  const r = await d.act('/' + id + '/send', { messageId: 'op-click-000002' });
+  assert.equal(r.status, 200);
+  assert.equal(r.body.messageId, 'op-click-000002');
+  assert.equal(r.body.status, 'delivered');
+  assert.ok(Date.parse(r.body.delivered_at) > 0, 'delivered_at is the bus stamp');
+
+  // The same id again: the bus would hand back the old delivered row, which says nothing about
+  // these answers, so the route refuses it and marks nothing.
+  await d.put('/' + id + '/answers/q1', { note: 'changed' });
+  const again = await d.act('/' + id + '/send', { messageId: 'op-click-000002' });
+  assert.equal(again.status, 400);
+  assert.match(again.body.error, /already used/);
+  assert.equal((await d.get('/' + id)).body.answers.q1.dirty, true);
 });
 
 // --- close / reopen

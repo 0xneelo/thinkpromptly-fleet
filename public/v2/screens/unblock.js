@@ -15,6 +15,11 @@
 // reply target answers 409 with the payload, which the screen puts in a textarea for the operator
 // to paste in chat by hand — the template's original way out, kept.
 //
+// A send opens a popup (bottom right, outside the card) that stays until the bus has delivered
+// the answers to the seat or gave up: the click names the bus message, and while the POST is in
+// flight the popup reads that row off GET /api/messages, so the queued → sending → delivered it
+// shows is what the bus wrote.
+//
 // Data enters the UI ONLY through FD.setData('unblockLive', view) — this slice's own key, the
 // same seam convention as goalsLive / accountsLive.
 (function (root) {
@@ -300,8 +305,54 @@
     },
   };
 
+  // Where the answers go, as the popup names it: the seat that posted the sheet, else the bus
+  // address the sheet gave.
+  function targetLabel(sheet) {
+    var sh = sheet || {};
+    if (sh.source && sh.source.seat) return safeText(sh.source.seat);
+    var r = sh.reply;
+    if (!r || !r.type) return 'no reply target';
+    if (r.type === 'tmux') return safeText(r.host || 'mac') + ':' + safeText(r.session);
+    return 'Claude Desktop · ' + safeText(r.session);
+  }
+
+  function clock(iso) {
+    var at = Date.parse(iso || '');
+    if (isNaN(at)) return '';
+    return new Date(at).toLocaleTimeString([], { timeStyle: 'medium' });
+  }
+
+  // The popup's three rows, from what the send has learnt so far. The seconds run from the
+  // click and stop when the bus answers; the bus row is the message's own, once a poll saw it.
+  // 'none': the server found nothing new to send — another tab already sent these answers.
+  function sendStages(p, now) {
+    var n = p.count;
+    var end = p.ended || now || Date.now();
+    var secs = (Math.max(0, end - p.started) / 1000).toFixed(1) + ' s';
+    if (p.stage === 'none') {
+      return [
+        { state: 'done', label: 'Nothing new to send' },
+        { state: 'done', label: 'Bus: not needed' },
+        { state: 'done', label: 'Already with ' + p.target },
+      ];
+    }
+    var rows = [{ state: 'done', label: 'Packed ' + n + (n === 1 ? ' answer' : ' answers') }];
+    if (p.stage === 'bus') {
+      rows.push({ state: 'busy', label: p.bus ? 'Bus: ' + safeText(p.bus.status) : 'Bus: handing over', detail: secs });
+      rows.push({ state: 'todo', label: 'Received by ' + p.target });
+    } else if (p.stage === 'delivered') {
+      rows.push({ state: 'done', label: 'Bus: delivered', detail: secs });
+      rows.push({ state: 'done', label: 'Received by ' + p.target, detail: clock(p.at) });
+    } else {
+      rows.push({ state: 'bad', label: 'Bus: failed', detail: secs });
+      rows.push({ state: 'todo', label: 'Received by ' + p.target });
+    }
+    return rows;
+  }
+
   var pure = {
     safeText: safeText, explainTokens: explainTokens, isDirty: isDirty, answeredIds: answeredIds,
+    targetLabel: targetLabel, clock: clock, sendStages: sendStages,
     pendingIds: pendingIds, chipText: chipText, fmt: fmt, whenLine: whenLine, payloadText: payloadText,
     visibleSheets: visibleSheets, options: options,
     dayKey: dayKey, repoOf: repoOf, repoOptions: repoOptions, dayPages: dayPages, pickDay: pickDay,
@@ -344,7 +395,7 @@
 
   var state = {
     sheets: [], sheet: null, answers: {}, id: '',
-    error: '', loading: false, sending: false, blocked: null,
+    error: '', loading: false, sending: false, blocked: null, progress: null,
     showClosed: false, hideAnswered: false, fresh: '', noteDraft: {}, noteTimer: {},
     // '' is every repo, '-' the sheets that name none. The day is not remembered: a new session
     // starts on the newest day there is.
@@ -519,13 +570,60 @@
       .then(function () { if (!quiet) paint(); else stampCard(qid); });
   }
 
+  // --- the send popup ------------------------------------------------------------
+  // A bus delivery takes seconds, and until it was over the screen changed nothing: the click
+  // felt dead. The popup opens on the click and stays until the seat has the answers or the bus
+  // gave up. The click chooses the message id, so the poll can pick that row and no other.
+  var PROGRESS = 'fd-unblock-progress';
+  var TICK_MS = 250;
+  var BUS_POLL_MS = 700;
+  var LINGER_MS = 2500;
+  var timers = { tick: null, bus: null, linger: null };
+
+  function stopTimers() {
+    Object.keys(timers).forEach(function (k) {
+      if (!timers[k]) return;
+      root.clearInterval(timers[k]);
+      root.clearTimeout(timers[k]);
+      timers[k] = null;
+    });
+  }
+
+  function messageId() {
+    var c = root.crypto;
+    if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+    return 'unblock-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+  }
+
+  function pollBus() {
+    var p = state.progress;
+    if (!p || p.stage !== 'bus') return;
+    ask('/api/messages?limit=10').then(function (r) {
+      var list = (r.body && r.body.messages) || [];
+      var row = list.filter(function (m) { return m && m.id === p.messageId; })[0];
+      if (row && state.progress === p) { p.bus = row; progressPaint(); }
+    }).catch(function () { /* the POST's own answer is the one that counts */ });
+  }
+
+  function closeProgress() {
+    stopTimers();
+    state.progress = null;
+    progressPaint();
+  }
+
   function send(ids) {
     if (isFixture() || state.sending) return Promise.resolve();
+    stopTimers();
+    var p = state.progress = {
+      ids: ids, count: ids.length, messageId: messageId(), target: targetLabel(state.sheet),
+      stage: 'bus', started: Date.now(), ended: 0, bus: null, error: '', at: '',
+    };
     state.sending = true;
     state.blocked = null;
     paint();
-    var body = ids ? { ids: ids } : {};
-    return ask('/api/unblock/' + encodeURIComponent(state.id) + '/send', 'POST', body)
+    timers.tick = root.setInterval(progressPaint, TICK_MS);
+    timers.bus = root.setInterval(pollBus, BUS_POLL_MS);
+    return ask('/api/unblock/' + encodeURIComponent(state.id) + '/send', 'POST', { ids: ids, messageId: p.messageId })
       .then(function (r) {
         // 409: the sheet names no seat to answer. The payload is the way out — by hand, in chat.
         if (r.status === 409) {
@@ -534,17 +632,90 @@
             error: safeText((r.body && r.body.error) || 'this sheet has no reply target'),
             // The route sends the payload as an object; the operator pastes text.
             payload: given && typeof given === 'object' ? JSON.stringify(given, null, 2)
-              : safeText(given) ||
-                payloadText(state.sheet, questions(), state.answers, ids || pendingIds(questions(), state.answers)),
+              : safeText(given) || payloadText(state.sheet, questions(), state.answers, ids),
           };
+          if (state.progress === p) state.progress = null;
           return;
         }
         if (r.status !== 200) throw fail(r, 'the send failed');
+        // The server's count is the one that shipped: another tab may have sent some, or all.
+        p.count = r.body && typeof r.body.sent === 'number' ? r.body.sent : p.count;
+        p.stage = p.count ? 'delivered' : 'none';
+        p.at = (r.body && r.body.delivered_at) || new Date().toISOString();
         state.error = '';
         return loadSheet(state.id, true);
       })
-      .catch(function (e) { state.error = safeText(e && e.message) || 'the send failed'; })
-      .then(function () { state.sending = false; refreshList(); paint(); });
+      .catch(function (e) { p.stage = 'failed'; p.error = safeText(e && e.message) || 'the send failed'; })
+      .then(function () {
+        p.ended = Date.now();
+        state.sending = false;
+        stopTimers();
+        // Delivered (or nothing to do): the popup lingers long enough to be read, then leaves.
+        // Failed: it stays.
+        if (p.stage !== 'failed')
+          timers.linger = root.setTimeout(function () { if (state.progress === p) closeProgress(); }, LINGER_MS);
+        refreshList();
+        paint();
+      });
+  }
+
+  function spinnerCss() {
+    if (document.getElementById(PROGRESS + '-css')) return;
+    var css = document.createElement('style');
+    css.id = PROGRESS + '-css';
+    css.textContent = '@keyframes fd-unblock-spin{to{transform:rotate(360deg)}}';
+    document.head.appendChild(css);
+  }
+
+  function stageIcon(kind) {
+    var t = tok();
+    if (kind === 'busy') {
+      spinnerCss();
+      return el('span', 'width:11px;height:11px;flex:none;border-radius:50%;border:2px solid ' + t.line +
+        ';border-top-color:' + t.warn + ';animation:fd-unblock-spin .8s linear infinite;');
+    }
+    var colour = kind === 'done' ? t.good : kind === 'bad' ? t.bad : t.ink35;
+    return el('span', 'width:15px;flex:none;text-align:center;font-size:12px;color:' + colour + ';',
+      kind === 'done' ? '✓' : kind === 'bad' ? '✗' : '○');
+  }
+
+  // Its own node under <body>, outside the card paint() rebuilds: the ticker redraws only this.
+  function progressPaint() {
+    var old = document.getElementById(PROGRESS);
+    var p = state.progress;
+    if (!p) { if (old) old.remove(); return; }
+    var t = tok();
+    var box = old || el('div');
+    box.id = PROGRESS;
+    box.setAttribute('style', 'position:fixed;right:18px;bottom:18px;z-index:60;width:min(380px,calc(100vw - 36px));');
+    box.replaceChildren();
+    var edge = p.stage === 'failed' ? t.bad : p.stage === 'delivered' ? t.good : t.warn;
+    var c = card('border-color:' + edge + ';gap:8px;');
+    var head = el('div', 'display:flex;align-items:center;gap:8px;min-width:0;flex-wrap:wrap;');
+    var what = p.count + (p.count === 1 ? ' answer' : ' answers');
+    head.appendChild(el('span', 'flex:1;white-space:nowrap;font-size:13.5px;font-weight:600;color:' + t.ink + ';',
+      p.stage === 'delivered' ? '✅ Sent ' + what : p.stage === 'none' ? '✅ Already sent'
+        : p.stage === 'failed' ? '❌ Not sent: ' + what : '📤 Sending ' + what));
+    head.appendChild(chip(p.target, t.ink60));
+    c.appendChild(head);
+    sendStages(p).forEach(function (row) {
+      var r = el('div', 'display:flex;align-items:center;gap:8px;font-size:12.5px;');
+      r.appendChild(stageIcon(row.state));
+      r.appendChild(el('span', 'flex:1;color:' + (row.state === 'todo' ? t.ink45 : row.state === 'bad' ? t.bad : t.ink) + ';', row.label));
+      if (row.detail) r.appendChild(el('span', 'font-size:11.5px;color:' + t.ink45 + ';white-space:nowrap;' + MONO, row.detail));
+      c.appendChild(r);
+    });
+    if (p.stage === 'failed' && p.error)
+      c.appendChild(el('p', 'margin:0;font-size:12px;color:' + t.bad + ';white-space:pre-wrap;word-break:break-word;', p.error));
+    if (p.stage !== 'bus') {
+      var foot = el('div', 'display:flex;justify-content:flex-end;gap:8px;');
+      if (p.stage === 'failed')
+        foot.appendChild(button('Send again', function () { closeProgress(); send(p.ids); }, { colour: t.warn, border: t.warn }));
+      foot.appendChild(button('Close', closeProgress, { colour: t.ink45 }));
+      c.appendChild(foot);
+    }
+    box.appendChild(c);
+    if (!old) document.body.appendChild(box);
   }
 
   function setStatus(op) {
@@ -1018,6 +1189,7 @@
     }
     restore();
     rescroll();
+    progressPaint();
     if (observer) observer.takeRecords();
     painting = false;
   }

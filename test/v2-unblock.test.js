@@ -205,3 +205,37 @@ test('the rail groups the rows by repository, with the unnamed ones last', () =>
 test('the repo choice is remembered under its own key', () => {
   assert.strictEqual(_.REPO_KEY, 'adhd-unblock:repo');
 });
+
+test('the send popup names the seat, then walks packed → bus → received', () => {
+  const reply = { type: 'tmux', host: 'german-box', session: 'FD-ivy' };
+  assert.strictEqual(_.targetLabel({ source: { seat: '🎛 ORCHESTRATOR 3' }, reply }), '🎛 ORCHESTRATOR 3');
+  assert.strictEqual(_.targetLabel({ reply }), 'german-box:FD-ivy');
+  assert.strictEqual(_.targetLabel({ reply: { type: 'claude-desktop', session: 'orch 3' } }), 'Claude Desktop · orch 3');
+  assert.strictEqual(_.targetLabel({}), 'no reply target');
+
+  const p = { count: 2, target: 'FD-ivy', stage: 'bus', started: 1000, ended: 0, bus: null, error: '', at: '' };
+  let rows = _.sendStages(p, 3400);
+  assert.deepStrictEqual(rows.map((r) => r.state), ['done', 'busy', 'todo']);
+  assert.strictEqual(rows[0].label, 'Packed 2 answers');
+  assert.strictEqual(rows[1].label, 'Bus: handing over');
+  assert.strictEqual(rows[1].detail, '2.4 s', 'the seconds run from the click');
+  assert.strictEqual(rows[2].label, 'Received by FD-ivy');
+
+  p.bus = { status: 'sending' };
+  assert.strictEqual(_.sendStages(p, 3400)[1].label, 'Bus: sending', 'the bus row, once a poll saw it');
+
+  p.stage = 'delivered'; p.ended = 5000; p.at = '2026-09-11T12:00:00Z';
+  rows = _.sendStages(p, 9000);
+  assert.deepStrictEqual(rows.map((r) => r.state), ['done', 'done', 'done']);
+  assert.strictEqual(rows[1].detail, '4.0 s', 'the clock stops when the bus answers');
+  assert.strictEqual(rows[2].detail, _.clock('2026-09-11T12:00:00Z'));
+
+  p.stage = 'failed'; p.error = 'Claude Desktop session "x" is not live';
+  rows = _.sendStages(p, 9000);
+  assert.deepStrictEqual(rows.map((r) => r.state), ['done', 'bad', 'todo']);
+  assert.strictEqual(_.sendStages({ count: 1, target: 'x', stage: 'bus', started: 0 }, 100)[0].label, 'Packed 1 answer');
+
+  // The server found nothing new — another tab sent these — so the popup must not say "Sent".
+  rows = _.sendStages({ count: 0, target: 'FD-ivy', stage: 'none', started: 0 }, 100);
+  assert.deepStrictEqual(rows.map((r) => r.label), ['Nothing new to send', 'Bus: not needed', 'Already with FD-ivy']);
+});

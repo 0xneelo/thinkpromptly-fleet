@@ -321,6 +321,8 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
     let message;
     try {
       message = await messageBus.send({
+        // The click may name the message, so the screen can follow that row on the bus live.
+        ...(typeof b.messageId === 'string' ? { id: b.messageId } : {}),
         source: 'unblock',
         target: reply,
         text: '/adhd-unblock answers for "' + sheet.title + '"\n' + JSON.stringify(payload, null, 2),
@@ -329,13 +331,27 @@ function createUnblock({ db, messageBus, send, json, body, allowedOrigins }) {
       // A target the bus refuses is the operator's problem to fix, so nothing is marked sent.
       return json(res, { error: error.message, payload }, Number.isInteger(error.code) ? error.code : 500);
     }
+    // A reused id hands back the OLD row untouched, so its "delivered" would say nothing about
+    // these answers. The click chooses a fresh id every time; anything else is a caller's bug.
+    if (message.duplicate) return json(res, { error: 'messageId was already used', messageId: message.id, payload }, 400);
+    // The bus resolves once the delivery attempt is over, delivered or failed. Only a delivered
+    // message marks the answers sent: a failed one would otherwise read as clean, and the seat
+    // would be waiting on answers the operator believes it has.
+    if (message.status !== 'delivered')
+      return json(
+        res,
+        { error: message.error || 'the bus could not deliver the answers', messageId: message.id, status: message.status, payload },
+        502
+      );
     const stamp = now();
     for (const qid of ids) {
       const r = byId.get(qid);
       markSent.run(sig(r.choice, r.note || ''), stamp, sheet.id, qid);
     }
     touchSheet.run(stamp, sheet.id);
-    return json(res, { sent: ids.length, messageId: message.id, payload });
+    return json(res, {
+      sent: ids.length, messageId: message.id, status: message.status, delivered_at: message.delivered_at, payload,
+    });
   }
 
   return route;

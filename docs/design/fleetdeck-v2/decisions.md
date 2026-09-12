@@ -168,3 +168,21 @@ Each row's Open-in-app icon POSTs an id to `/api/docs/open-app` and the deck run
 the app map (`FLEET_DOCS_APPS` over html/Artifact → Google Chrome, md → Cursor) is the server's, so
 no page ever names an executable, and the Origin check fails closed — unlike `POST /api/docs`, which
 a shell hook posts to with no Origin, this route launches a local application.
+
+## 2026-09-11 · a send on the `#unblock` screen shows its own bus row live, and a failed delivery is not "sent"
+
+Send new / Send all / Send this used to change nothing on screen until the POST came back, and a
+bus delivery takes seconds: the click felt dead. Now the click opens a popup (bottom right,
+outside the two-pane card) that stays until the seat has the answers or the bus gave up. The
+click chooses the bus message id and sends it as `messageId`; while the POST is in flight the
+popup polls `GET /api/messages` for that row, so the `queued → sending → delivered` it shows is
+what the bus wrote. Delivered lingers 2.5 s and leaves; failed stays, with the bus error and a
+Send again. The count the popup ends on is the server's `sent`, and `sent: 0` (another tab already
+sent these) reads "Already sent", never "Sent".
+
+`POST /api/unblock/:id/send` answers `502 { error, messageId, status: 'failed', payload }` when
+the bus could not deliver, and marks nothing sent. Before, the route only caught a target the bus
+*refused*; a delivery that *failed* (a seat not live, a tmux paste error) still marked every
+answer clean and returned 200, so the operator read "sent" while the seat had nothing. A reused
+`messageId` is a 400: the bus hands back the old row untouched, and its status says nothing about
+these answers.
