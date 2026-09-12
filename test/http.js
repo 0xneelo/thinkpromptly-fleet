@@ -4,8 +4,7 @@
 const fs = require('fs');
 const http = require('http');
 const path = require('path');
-const { spawn } = require('child_process');
-const { tmpdir, hostsFile } = require('./helpers');
+const { tmpdir, hostsFile, spawnChild } = require('./helpers');
 
 const ROOT = path.join(__dirname, '..');
 const TAILNET_BIND = '127.0.0.2'; // second loopback address, so both listeners can share a port
@@ -20,9 +19,8 @@ async function startServer(env = {}, opts = {}) {
   const port = env.PORT ? Number(env.PORT) : nextPort++;
   const file = env.FLEET_DB || path.join(dir, 'fleet.db');
   const hosts = env.FLEET_HOSTS_FILE || hostsFile(dir, opts.hosts);
-  const child = spawn(
-    process.execPath,
-    [path.join(ROOT, 'server.js')],
+  const child = spawnChild(
+    path.join(ROOT, 'server.js'),
     {
       env: {
         ...process.env,
@@ -34,7 +32,6 @@ async function startServer(env = {}, opts = {}) {
         FLEET_NO_REAPER: '1', // reaper tests drive the tick by hand
         ...env,
       },
-      stdio: ['ignore', 'pipe', 'pipe'],
     }
   );
   let out = '';
@@ -42,7 +39,10 @@ async function startServer(env = {}, opts = {}) {
   child.stderr.on('data', (c) => (out += c));
 
   const ready = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('server did not start:\n' + out)), 15000);
+    const timer = setTimeout(() => {
+      clearInterval(poll);
+      reject(new Error('server did not start:\n' + out));
+    }, opts.timeoutMs || 15000);
     const check = () => {
       if (/tailnet broker http/.test(out)) {
         clearTimeout(timer);
@@ -57,7 +57,14 @@ async function startServer(env = {}, opts = {}) {
       reject(new Error('server exited ' + code + ':\n' + out));
     });
   });
-  await ready;
+  // A boot that never finished still spawned a process: every one of the operator's ~46
+  // orphans came from this path, where the reject skipped the stop() the test would have run.
+  try {
+    await ready;
+  } catch (e) {
+    child.kill('SIGKILL');
+    throw e;
+  }
 
   // Host header is set explicitly: the loopback listener allow-lists it and the tailnet
   // listener matches it against its own authority, so both gates are really under test.
@@ -118,7 +125,7 @@ async function startServer(env = {}, opts = {}) {
 // Linux; a test that wants the real spawn clears FLEET_TRAIN_NO_CAFFEINATE itself.
 async function startBroker(env = {}, opts = {}) {
   const port = env.FLEET_TRAIN_PORT ? Number(env.FLEET_TRAIN_PORT) : nextPort++;
-  const child = spawn(process.execPath, [path.join(ROOT, 'fleetdeck-train.js')], {
+  const child = spawnChild(path.join(ROOT, 'fleetdeck-train.js'), {
     cwd: opts.cwd || ROOT,
     env: {
       ...process.env,
@@ -127,14 +134,16 @@ async function startBroker(env = {}, opts = {}) {
       FLEET_TRAIN_NO_CAFFEINATE: '1',
       ...env,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
   child.stdout.on('data', (c) => (out += c));
   child.stderr.on('data', (c) => (out += c));
 
-  await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('broker did not start:\n' + out)), 15000);
+  const ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      clearInterval(poll);
+      reject(new Error('broker did not start:\n' + out));
+    }, opts.timeoutMs || 15000);
     const poll = setInterval(() => {
       if (!/fleetdeck-train http:\/\//.test(out)) return;
       clearTimeout(timer);
@@ -147,6 +156,12 @@ async function startBroker(env = {}, opts = {}) {
       reject(new Error('broker exited ' + code + ':\n' + out));
     });
   });
+  try {
+    await ready;
+  } catch (e) {
+    child.kill('SIGKILL');
+    throw e;
+  }
 
   // Host is set explicitly so the broker's DNS-rebinding guard is really under test; a test
   // that wants to fail that guard passes its own `host` header through `headers`.

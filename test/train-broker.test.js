@@ -11,7 +11,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { tmpdir } = require('./helpers');
+const { tmpdir, spawnChild } = require('./helpers');
 const { startBroker } = require('./http');
 const { startFakeGitHub } = require('./fake-github');
 
@@ -225,11 +225,9 @@ test('SIGTERM ends the broker cleanly, so launchd stop wipes the window', async 
 // would put the PEM-holding process on the network while the rebinding guard agreed with it —
 // the guard would still "pass" and the invariant would be silently gone. It refuses instead.
 test('a bind that is not loopback is refused at startup, not served', async () => {
-  const { spawn } = require('child_process');
   for (const bind of ['0.0.0.0', '10.0.0.5', '100.125.231.25', '::']) {
-    const child = spawn(process.execPath, [path.join(__dirname, '..', 'fleetdeck-train.js')], {
+    const child = spawnChild(path.join(__dirname, '..', 'fleetdeck-train.js'), {
       env: { ...process.env, FLEET_TRAIN_BIND: bind, FLEET_TRAIN_PORT: '0' },
-      stdio: ['ignore', 'pipe', 'pipe'],
     });
     let err = '';
     child.stderr.on('data', (c) => (err += c));
@@ -247,10 +245,8 @@ test('the loopback addresses a test legitimately needs are still accepted', asyn
   // and deliberately BELOW test/http.js's 20000-40000 random band: 127.0.0.2 is also the
   // tailnet bind every deck in the suite uses, so a port inside that band would sometimes
   // collide with a sibling test's listener and fail a lifecycle test far from here.
-  const { spawn } = require('child_process');
-  const child = spawn(process.execPath, [path.join(__dirname, '..', 'fleetdeck-train.js')], {
+  const child = spawnChild(path.join(__dirname, '..', 'fleetdeck-train.js'), {
     env: { ...process.env, FLEET_TRAIN_BIND: '127.0.0.2', FLEET_TRAIN_PORT: '18311' },
-    stdio: ['ignore', 'pipe', 'pipe'],
   });
   let out = '';
   child.stdout.on('data', (c) => (out += c));

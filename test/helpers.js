@@ -3,9 +3,37 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
+const { execFileSync, spawn } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
+
+// Every node child a test starts goes through here, so none of them can outlive this process.
+// Two layers, because neither alone holds: the exit hook kills survivors when the file ends or
+// a test throws, and the stdin pipe covers this process being SIGKILLed, where no hook of ours
+// runs at all — the kernel closes the write end and the preloaded guard exits the child on EOF.
+const children = new Set();
+
+function spawnChild(script, opts = {}) {
+  const [, out = 'pipe', err = 'pipe'] = opts.stdio || [];
+  const child = spawn(process.execPath, ['--require', path.join(__dirname, 'die-with-parent.js'), script], {
+    ...opts,
+    stdio: ['pipe', out, err], // fd 0 is the deadman's switch, never 'ignore'
+  });
+  child.stdin.on('error', () => {}); // EPIPE if the child dies first
+  child.stdin.unref(); // an open pipe must not keep this process alive
+  children.add(child);
+  child.on('exit', () => children.delete(child));
+  return child;
+}
+
+// The pids still running, so a test can assert a failed boot left nothing behind.
+const liveChildren = () => [...children].map((c) => c.pid);
+
+process.on('exit', () => {
+  for (const c of children) {
+    try { c.kill('SIGKILL'); } catch (e) { /* already gone */ }
+  }
+});
 
 function tmpdir(tag) {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'fleetdeck-' + tag + '-'));
@@ -88,4 +116,4 @@ async function unload(mod) {
   try { mod.db.close(); } catch (e) { /* already closed */ }
 }
 
-module.exports = { ROOT, tmpdir, legacyDb, hostsFile, boot, load, unload };
+module.exports = { ROOT, tmpdir, legacyDb, hostsFile, boot, load, unload, spawnChild, liveChildren };
